@@ -31,8 +31,7 @@ public:
      * in vol_t with the take_backup() method.
      */
     RestoreMgr(const sm_options&, LogArchiver::ArchiveDirectory*, vol_t*,
-            bool useBackup, lsn_t failureLSN = lsn_t::null,
-            bool takeBackup = false);
+            bool useBackup, bool takeBackup = false);
     virtual ~RestoreMgr();
 
     /** \brief Returns true if given page is already restored.
@@ -78,6 +77,13 @@ public:
      * restore of accessed pages.
      */
     void setSinglePass(bool singlePass = true);
+
+    /** \brief Sets the LSN of the restore_begin log record
+     *
+     * This is required so that we know (up to) which LSN to request from the
+     * log archiver. It must be set before the thread is forked.
+     */
+    void setFailureLSN(lsn_t l) { failureLSN = l; }
 
     /** \brief True if all segments have been restored
      *

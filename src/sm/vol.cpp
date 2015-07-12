@@ -503,10 +503,24 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
 
     bool useBackup = _backups.size() > 0;
 
+    /*
+     * The order of operations in this method is crucial. We may only set
+     * failed after the restore manager is created, otherwise read/write
+     * operations will find a null restore manager and thus will not be able to
+     * wait for restore. Generating a failure LSN must occur after we've set
+     * the failed flag, because we must guarantee that no read or write
+     * occurred after the failure LSN (restore_begin log record).  Finally, the
+     * restore manager may only be forked once the failure LSN has been set,
+  lsn_t::null,   * which is why we cannot pass the failureLSN in the constructor.
+     */
+
     // open backup file -- may already be open due to new backup being taken
     if (useBackup && _backup_fd < 0) {
         W_DO(open_backup());
     }
+
+    _restore_mgr = new RestoreMgr(ss_m::get_options(),
+            ss_m::logArchiver->getDirectory(), this, useBackup);
 
     set_failed(true);
 
@@ -523,10 +537,10 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
         // Create and insert logrec manually to get its LSN
         new (_logrec_buf) restore_begin_log(_vid);
         W_DO(ss_m::log->insert(*((logrec_t*) _logrec_buf), &failureLSN));
+        W_DO(ss_m::log->flush(failureLSN));
     }
 
-    _restore_mgr = new RestoreMgr(ss_m::get_options(),
-            ss_m::logArchiver->getDirectory(), this, useBackup, failureLSN);
+    _restore_mgr->setFailureLSN(failureLSN);
     _restore_mgr->fork();
 
     return RCOK;
@@ -571,6 +585,9 @@ bool vol_t::check_restore_finished(bool redo)
     // with a read latch, check if finished -- most likely no
     {
         spinlock_read_critical_section cs(&_mutex);
+        if (!is_failed()) {
+            return true;
+        }
         if (!_restore_mgr->finished()) {
             return false;
         }
@@ -1091,7 +1108,7 @@ rc_t vol_t::take_backup(string path)
 
     // Instantiate special restore manager for taking backup
     RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
-            this, useBackup, lsn_t::null, true /* takeBackup */);
+            this, useBackup, true /* takeBackup */);
     restore.setSinglePass(true);
     restore.fork();
     restore.join();

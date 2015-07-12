@@ -162,11 +162,11 @@ void RestoreScheduler::setSinglePass(bool singlePass)
 
 RestoreMgr::RestoreMgr(const sm_options& options,
         LogArchiver::ArchiveDirectory* archive, vol_t* volume, bool useBackup,
-        lsn_t failureLSN, bool takeBackup)
+        bool takeBackup)
     : smthread_t(t_regular, "Restore Manager"),
     archive(archive), volume(volume), numRestoredPages(0),
     metadataRestored(false), useBackup(useBackup), takeBackup(takeBackup),
-    failureLSN(failureLSN)
+    failureLSN(lsn_t::null)
 {
     w_assert0(archive);
     w_assert0(volume);
@@ -594,6 +594,11 @@ void RestoreMgr::markSegmentRestored(char* workspace, unsigned segment, bool red
 
 void RestoreMgr::run()
 {
+    if (failureLSN == lsn_t::null && !takeBackup) {
+        W_FATAL_MSG(fcINTERNAL,
+                << "failureLSN must be set before forking restore mgr");
+    }
+
     LogArchiver* la = smlevel_0::logArchiver;
     w_assert0(la);
     w_assert0(la->getDirectory());
