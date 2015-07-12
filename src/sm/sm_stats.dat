@@ -75,6 +75,7 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long bf_log_flush_lsn        Number of partial log flushes by bf_cleaner
     u_long bf_write_out        Pages written out in background or forced
     u_long bf_sleep_await_clean     Times slept awaiting cleaner to clean a page for fix()
+    u_long bf_invoked_spr        Number of single-page recovery invocations due to stale LSN
 
     u_long bf_fg_scan_cnt        Foreground scans of buffer pool
 

@@ -2439,12 +2439,13 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
     else if (p_emlsn > page.lsn)
     {
         // Child is stale. Apply Single-Page-Recovery
-        ERROUT(<< "Stale Child LSN found! Invoking Single-Page-Recovery.. parent=" << parent->pid
-            << ", child pid=" << shpid << ", EMLSN=" << p_emlsn << " LSN=" << page.lsn);
+        // ERROUT(<< "Stale Child LSN found! Invoking Single-Page-Recovery.. parent=" << parent->pid
+        //     << ", child pid=" << shpid << ", EMLSN=" << p_emlsn << " LSN=" << page.lsn);
 #if W_DEBUG_LEVEL>0
         // debug_dump(std::cerr);
 #endif // W_DEBUG_LEVEL>0
 
+        INC_TSTAT(bf_invoked_spr);
         DBGOUT3(<<"bf_tree_m::_check_read_page: After recovery, target page emlsn < parent emlsn"
                 << ", recover again without page_emlsn (From Log Analysis)");
         W_DO(_try_recover_page(parent, idx, vol, shpid, false /*corrupted*/, lsn_t::null));
