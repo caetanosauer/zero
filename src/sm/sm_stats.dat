@@ -329,5 +329,8 @@ SM Storage manager = 0x00060000 sm_stats_t {
     // Restore stats
     u_long restore_sched_seq        Restore scheduled a page in single-pass restore
     u_long restore_sched_queued     Restore scheduled a page which was queued (on-demand)
+
+    // Log archiver stats
+    u_long la_log_slow              Log archiver activated with small window due to slow log growth
 };
 

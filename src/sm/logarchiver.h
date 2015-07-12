@@ -199,7 +199,7 @@ public:
         virtual ~ReaderThread() {}
 
         void shutdown();
-        void activate(lsn_t startLSN, lsn_t endLSN);
+        void activate(lsn_t endLSN);
 
         bool isActive() { return control.activated; }
     };
@@ -652,7 +652,7 @@ public:
         virtual ~LogConsumer();
         void shutdown();
 
-        void open(lsn_t endLSN);
+        void open(lsn_t endLSN, bool readWholeBlocks = DFT_READ_WHOLE_BLOCKS);
         bool next(logrec_t*& lr);
         lsn_t getNextLSN() { return nextLSN; }
 
@@ -667,6 +667,7 @@ public:
         char* currentBlock;
         size_t blockSize;
         size_t pos;
+        bool readWholeBlocks;
 
         bool nextBlock();
     };
@@ -700,6 +701,8 @@ public:
     const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
     const static int DFT_WSPACE_SIZE= 10240 * 10240; // 100MB
     const static bool DFT_EAGER = false;
+    const static bool DFT_READ_WHOLE_BLOCKS = true;
+    const static int DFT_GRACE_PERIOD = 100000; // 100ms
 
     const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
     const static char* RUN_PREFIX;
@@ -717,7 +720,9 @@ private:
     ArchiverControl control;
     bool selfManaged;
     bool eager;
-    lsn_t lastEndLSN;
+    bool readWholeBlocks;
+    int slowLogGracePeriod;
+    lsn_t nextActLSN;
     lsn_t flushReqLSN;
 
     void replacement();
@@ -752,7 +757,8 @@ private:
 class LogScanner {
 public:
     bool nextLogrec(char* src, size_t& pos, logrec_t*& lr,
-            lsn_t* nextLSN = NULL, lsn_t* stopLSN = NULL);
+            lsn_t* nextLSN = NULL, lsn_t* stopLSN = NULL,
+            int* lrLength = NULL);
 
     LogScanner(size_t blockSize)
         : truncCopied(0), truncMissing(0), toSkip(0), blockSize(blockSize)

@@ -111,18 +111,10 @@ void LogArchiver::ReaderThread::shutdown()
     lintel::atomic_thread_fence(lintel::memory_order_release);
 }
 
-void LogArchiver::ReaderThread::activate(lsn_t startLSN, lsn_t endLSN)
+void LogArchiver::ReaderThread::activate(lsn_t endLSN)
 {
-    if (currentFd == -1) { // first activation
-        w_assert0(nextPartition == (uint) startLSN.hi());
-    }
-    else {
-        w_assert0(nextPartition - 1 == (uint) startLSN.hi());
-    }
-    // ignore if invoking activate on the same LSN repeatedly
-    pos = startLSN.lo();
-    DBGTHRD(<< "Activating reader thread from " << startLSN << " to "
-            << endLSN);
+    // pos = startLSN.lo();
+    DBGTHRD(<< "Activating reader thread until " << endLSN);
     control.activate(true, endLSN);
 }
 
@@ -323,9 +315,9 @@ LogArchiver::LogArchiver(
     smthread_t(t_regular, "LogArchiver"),
     directory(d), consumer(c), heap(h), blkAssemb(b),
     shutdownFlag(false), control(&shutdownFlag), selfManaged(false),
-    eager(false), flushReqLSN(lsn_t::null)
+    flushReqLSN(lsn_t::null)
 {
-    lastEndLSN = directory->getStartLSN();
+    nextActLSN = directory->getStartLSN();
 }
 
 LogArchiver::LogArchiver(const sm_options& options)
@@ -340,6 +332,10 @@ LogArchiver::LogArchiver(const sm_options& options)
         options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
 
     eager = options.get_bool_option("sm_archiver_eager", DFT_EAGER);
+    readWholeBlocks = options.get_bool_option(
+            "sm_archiver_read_whole_blocks", DFT_READ_WHOLE_BLOCKS);
+    slowLogGracePeriod = options.get_int_option(
+            "sm_archiver_slow_log_grace_period", DFT_GRACE_PERIOD);
 
     if (archdir.empty()) {
         W_FATAL_MSG(fcINTERNAL,
@@ -347,7 +343,7 @@ LogArchiver::LogArchiver(const sm_options& options)
     }
 
     directory = new ArchiveDirectory(archdir, blockSize);
-    lastEndLSN = directory->getStartLSN();
+    nextActLSN = directory->getStartLSN();
 
     consumer = new LogConsumer(directory->getStartLSN(), blockSize);
     heap = new ArchiverHeap(workspaceSize);
@@ -723,11 +719,12 @@ void LogArchiver::LogConsumer::shutdown()
     }
 }
 
-void LogArchiver::LogConsumer::open(lsn_t endLSN)
+void LogArchiver::LogConsumer::open(lsn_t endLSN, bool readWholeBlocks)
 {
     this->endLSN = endLSN;
+    this->readWholeBlocks = readWholeBlocks;
 
-    reader->activate(nextLSN, endLSN);
+    reader->activate(endLSN);
 
     nextBlock();
 }
@@ -767,10 +764,27 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
 {
     w_assert1(nextLSN <= endLSN);
 
+    int lrLength;
     bool scanned = logScanner->nextLogrec(currentBlock, pos, lr, &nextLSN,
-            &endLSN);
+            &endLSN, &lrLength);
 
-    if (!scanned && nextLSN == endLSN) {
+    bool stopReading = nextLSN == endLSN;
+    if (!scanned && readWholeBlocks && !stopReading) {
+        /*
+         * If the policy is to read whole blocks only, we must also stop
+         * reading when an incomplete log record was fetched on the last block.
+         * Under normal circumstances, we would fetch the next block to
+         * assemble the remainder of the log record. In this case, however, we
+         * must wait until the next activation. This case is detected when the
+         * length of the next log record is larger than the space remaining in
+         * the current block, or if the length is negative (meaning there are
+         * not enough bytes left on the block to tell the length).
+         */
+        stopReading = endLSN.hi() == nextLSN.hi() &&
+            (lrLength <= 0 || (endLSN.lo() - nextLSN.lo() < lrLength));
+    }
+
+    if (!scanned && stopReading) {
         DBGTHRD(<< "Replacement reached end LSN on " << nextLSN);
         /*
          * nextLogrec returns false if it is about to read the LSN given in the
@@ -1325,7 +1339,8 @@ void LogArchiver::replacement()
     while(true) {
         logrec_t* lr;
         if (!consumer->next(lr)) {
-            w_assert0(control.endLSN <= consumer->getNextLSN());
+            w_assert0(readWholeBlocks ||
+                    control.endLSN <= consumer->getNextLSN());
             if (control.endLSN < consumer->getNextLSN()) {
                 // nextLSN may be greater than endLSN due to skip
                 control.endLSN = consumer->getNextLSN();
@@ -1461,31 +1476,56 @@ void LogArchiver::run()
             continue;
         }
 
-        if (eager && control.endLSN.hi() == lastEndLSN.lo() &&
-                control.endLSN.lo() - lastEndLSN.lo()
+        bool logTooSlow = false;
+
+        if (eager && control.endLSN.hi() == nextActLSN.hi() &&
+                control.endLSN.lo() - nextActLSN.lo()
                 < (int) directory->getBlockSize())
         {
+            // If this happens to often, the block size should be decreased.
+            DBGTHRD(<< "Activation window too small, trying again...");
+            ::usleep(slowLogGracePeriod);
             // To better exploit device bandwidth, we only start archiving if
             // at least one block worth of log is available for consuption.
-            continue;
+            // This happens when the log is growing too slow.
+            // However, if it seems like log activity has stopped (i.e.,
+            // durable_lsn did not advance since we started), then we proceed
+            // with the small activation window.
+            if (control.endLSN != smlevel_0::log->durable_lsn()) {
+                continue;
+            }
+            INC_TSTAT(la_log_slow);
+            DBGTHRD(<< "Log growing too slow; using small activation window");
+            logTooSlow = true;
+        }
+
+        // Try to keep activation window at block boundaries to better utilize
+        // I/O bandwidth
+        if (eager && readWholeBlocks && !logTooSlow) {
+            size_t boundary = directory->getBlockSize() *
+                (control.endLSN.lo() / directory->getBlockSize());
+            control.endLSN = lsn_t(control.endLSN.hi(), boundary);
+            if (control.endLSN <= nextActLSN) {
+                continue;
+            }
+            DBGTHRD(<< "Adjusted activation window to block boundary " <<
+                    control.endLSN);
         }
 
         if (control.endLSN == lsn_t::null
-                || control.endLSN <= lastEndLSN)
+                || control.endLSN <= nextActLSN)
         {
             DBGTHRD(<< "Archiver already passed this range. Continuing...");
             continue;
         }
-        w_assert1(control.endLSN > lastEndLSN);
+        w_assert1(control.endLSN > nextActLSN);
 
-        DBGTHRD(<< "Log archiver activated from " << lastEndLSN << " to "
+        DBGTHRD(<< "Log archiver activated from " << nextActLSN << " to "
                 << control.endLSN);
 
-        consumer->open(control.endLSN);
+        consumer->open(control.endLSN, readWholeBlocks && !logTooSlow);
 
         replacement();
-
-        w_assert1(consumer->getNextLSN() >= control.endLSN);
 
         /*
          * Selection is not invoked here because log archiving should be a
@@ -1500,9 +1540,9 @@ void LogArchiver::run()
          * cycles, but on signals/events generated by the writer thread (TODO)
          */
 
+        nextActLSN = consumer->getNextLSN();
         DBGTHRD(<< "Log archiver consumed all log records until LSN "
-                << control.endLSN);
-        lastEndLSN = control.endLSN;
+                << nextActLSN);
 
         if (!eager) {
             control.endLSN = lsn_t::null;
@@ -1560,7 +1600,7 @@ void LogArchiver::requestFlushSync(lsn_t reqLSN)
  * Method loops until any in-block skipping is completed.
  */
 bool LogScanner::nextLogrec(char* src, size_t& pos, logrec_t*& lr, lsn_t* nextLSN,
-        lsn_t* stopLSN)
+        lsn_t* stopLSN, int* lrLength)
 {
 tryagain:
     if (nextLSN && stopLSN && *stopLSN == *nextLSN) {
@@ -1588,7 +1628,7 @@ tryagain:
         w_assert1(truncCopied == lr->length());
     }
     // we need at least two bytes to read the length
-    else if (lr->length() > remaining || remaining == 1) {
+    else if (remaining == 1 || lr->length() > remaining) {
         // remainder of logrec must be read from next block
         DBGTHRD(<< "Log record with length "
                 << (remaining > 1 ? lr->length() : -1)
@@ -1598,6 +1638,11 @@ tryagain:
         truncCopied = remaining;
         truncMissing = lr->length() - remaining;
         pos += remaining;
+
+        if (lrLength) {
+            *lrLength = (remaining > 1) ? lr->length() : -1;
+        }
+
         return false;
     }
 
@@ -1614,6 +1659,10 @@ tryagain:
 
     if (nextLSN) {
         *nextLSN += lr->length();
+    }
+
+    if (lrLength) {
+        *lrLength = lr->length();
     }
 
     // handle ignorred logrecs
