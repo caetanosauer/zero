@@ -18,6 +18,7 @@
 #include "allocator.h"
 #include "vol.h"
 #include "restore.h"
+#include "log_spr.h"
 #include <sstream>
 
 #include <iomanip>
@@ -997,6 +998,13 @@ operator<<(ostream& o, const logrec_t& l)
                     o << ' ' << param;
                 }
                 break;
+        case t_page_evict:
+                {
+                    page_evict_t* pev = (page_evict_t*) l._data;
+                    o << " slot: " << pev->_child_slot << " emlsn: "
+                        << pev->_child_lsn;
+                    break;
+                }
 
         default: /* nothing */
                 break;

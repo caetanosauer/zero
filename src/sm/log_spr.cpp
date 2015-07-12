@@ -16,13 +16,13 @@
 
 page_evict_log::page_evict_log (const btree_page_h& p,
                                 general_recordid_t child_slot, lsn_t child_lsn) {
-    new (_data) page_evict_t(child_lsn, child_slot);
+    new (data_ssx()) page_evict_t(child_lsn, child_slot);
     fill(p, sizeof(page_evict_t));
 }
 
 void page_evict_log::redo(fixable_page_h* page) {
     borrowed_btree_page_h bp(page);
-    page_evict_t *dp = (page_evict_t*) _data;
+    page_evict_t *dp = (page_evict_t*) data_ssx();
     bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
 }
 
@@ -84,7 +84,7 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     w_assert1(p.is_fixed());
     lpid_t pid = p.pid();
     DBGOUT1(<< "Single-Page-Recovery on " << pid << ", EMLSN=" << emlsn);
-    if (smlevel_0::bk->page_exists(p.vol(), pid.page)) 
+    if (smlevel_0::bk->page_exists(p.vol(), pid.page))
     {
         W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
         w_assert1(pid == p.pid());
@@ -111,8 +111,8 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
             DBGOUT1(<< "Backup page last write LSN > emlsn");
             W_FATAL(eBAD_BACKUPPAGE);
         }
-    } 
-    else 
+    }
+    else
     {
         DBGOUT1(<< "No backup page. Recovering from log only");
 
@@ -120,7 +120,7 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
         // backup) or no backup file at all, we need to recover the page purely from the log.
         // If caller specify 'from_lsn', then use the last write LSN on the page as the starting point
         // of the recovery, otherwise set page lsn to NULL to force a complete recovery
-        
+
         if (false == from_lsn)
         {
             // Complete recovery
@@ -254,13 +254,13 @@ rc_t restart_m::_collect_single_page_recovery_logs(
         }
 
         // follow next pointer. This log might touch multi-pages. So, check both cases.
-        if (pid.page == record->shpid()) 
+        if (pid.page == record->shpid())
         {
             // Target pid matches the first page ID in the log recoredd
             nxt = record->page_prev_lsn();
         }
         else if (!record->is_multi_page()
-            || pid.page != record->data_ssx_multi()->_page2_pid) 
+            || pid.page != record->data_ssx_multi()->_page2_pid)
         {
             // No match to either the first pid or the 2nd pid (if exists)
             if (!record->is_multi_page())
@@ -287,7 +287,7 @@ rc_t restart_m::_collect_single_page_recovery_logs(
                 << ", obtained_lsn=" << obtained << ", log=" << *record);
 
         }
-        else 
+        else
         {
             // Multi-page log record, this is a page rebalance log record (split or merge)
             // while the 2nd page is the source page
