@@ -801,6 +801,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             {
                 // except a virgin page. then the page is anyway empty
                 DBGOUT3(<<"bf_tree_m: adding a virgin page ("<<vol<<"."<<shpid<<")to bufferpool.");
+                memset(&_buffer[idx], 0, sizeof(generic_page));
             }
             else
             {
