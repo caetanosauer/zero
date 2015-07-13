@@ -477,17 +477,6 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
             }
         }
 
-#define LOG_INSERT(constructor_call, rlsn)            \
-    do {                                              \
-        new (logrec) constructor_call;                \
-        W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
-        if(!ss_m::log->consume_chkpt_reservation(logrec->length())) { \
-            chkpt_serial_m::write_release();                    \
-            W_FATAL(eOUTOFLOGSPACE);                            \
-        }                                                       \
-    } while(0)
-
-
         switch (r.type())
         {
             case logrec_t::t_chkpt_begin:
@@ -666,7 +655,7 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
                         pid.page += i;
 
                         size_t page;
-                        if(page = indexOf(evict_pid, pid) != -1) { //page already exists
+                        if( (page = indexOf(evict_pid, pid)) != -1) { //page already exists
                             last_evict[page] = lsn;
                         }
                         else {
@@ -702,10 +691,8 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
                     }
 
                     lpid_t pid = r.construct_pid();
-                    size_t page = distance(new_chkpt.pid.begin(), find(new_chkpt.pid.begin(),
-                                                                       new_chkpt.pid.end(),
-                                                                       pid));
-                    if(page != new_chkpt.pid.size()) { //page exist in table
+                    size_t page;
+                    if ( (page = indexOf(new_chkpt.pid, pid)) != -1) { //page exists in table
                         if(lsn.data() < new_chkpt.rec_lsn[page].data()) {
                             new_chkpt.rec_lsn[page] = lsn;
                         }
@@ -731,10 +718,8 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
                     //
                     if (r.is_redo()) {
                         lpid_t pid = r.construct_pid();
-                        size_t page = distance(new_chkpt.pid.begin(), find(new_chkpt.pid.begin(),
-                                                                           new_chkpt.pid.end(),
-                                                                           pid));
-                        if(page != new_chkpt.pid.size()) { //page exist in table
+                        size_t page;
+                        if ( (page = indexOf(new_chkpt.pid, pid)) != -1) { //page exists in table
                             if(lsn.data() < new_chkpt.rec_lsn[page].data()) {
                                 new_chkpt.rec_lsn[page] = lsn;
                             }
@@ -771,7 +756,7 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
     for(uint i=0; i<new_chkpt.pid.size(); i++) {
         lpid_t pid = new_chkpt.pid[i];
         size_t page;
-        if(page = indexOf(evict_pid, pid) != -1) { // page was evicted at some time
+        if( (page = indexOf(evict_pid, pid)) != -1) { // page was evicted at some time
             if(last_evict[page] > new_chkpt.page_lsn[i]) { // page was evicted after last update
                 // this means the page is not in the buffer pool
                 new_chkpt.pid.erase(new_chkpt.pid.begin() + i);
