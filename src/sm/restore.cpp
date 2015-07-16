@@ -426,6 +426,7 @@ void RestoreMgr::restoreLoop()
 
         lsn_t lsn = lsn_t::null;
         char* workspace = backup->fix(segment);
+        memset(workspace, 0, segmentSize * sizeof(generic_page));
 
         if (useBackup) {
             // Log archiver is queried with lowest the LSN in the segment, to
