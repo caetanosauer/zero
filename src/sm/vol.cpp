@@ -739,7 +739,7 @@ rc_t vol_t::check_disk()
 
 rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
 {
-    if (!redo) check_metadata_restored();
+    // if (!redo) check_metadata_restored();
 
     w_assert1(_alloc_cache);
     if (!redo) {
@@ -773,7 +773,7 @@ rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
 
 rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
 {
-    if (!redo) check_metadata_restored();
+    // if (!redo) check_metadata_restored();
 
     w_assert1(_alloc_cache);
     if (!redo) {
@@ -793,7 +793,7 @@ rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
 
 rc_t vol_t::store_operation(const store_operation_param& param, bool redo)
 {
-    if (!redo) check_metadata_restored();
+    // if (!redo) check_metadata_restored();
 
     w_assert1(param.snum() < stnode_page_h::max);
     w_assert1(_stnode_cache);
@@ -803,7 +803,7 @@ rc_t vol_t::store_operation(const store_operation_param& param, bool redo)
 
 rc_t vol_t::set_store_flags(snum_t snum, smlevel_0::store_flag_t flags)
 {
-    check_metadata_restored();
+    // check_metadata_restored();
 
     w_assert2(flags & smlevel_0::st_regular
            || flags & smlevel_0::st_tmp
@@ -823,7 +823,7 @@ rc_t vol_t::set_store_flags(snum_t snum, smlevel_0::store_flag_t flags)
 rc_t vol_t::get_store_flags(snum_t snum, smlevel_0::store_flag_t& flags,
         bool ok_if_deleting)
 {
-    check_metadata_restored();
+    // check_metadata_restored();
 
     if (!is_valid_store(snum))    {
         DBG(<<"get_store_flags: BADSTID");
@@ -862,7 +862,7 @@ rc_t vol_t::get_store_flags(snum_t snum, smlevel_0::store_flag_t& flags,
 
 rc_t vol_t::create_store(smlevel_0::store_flag_t flags, snum_t& snum)
 {
-    check_metadata_restored();
+    // check_metadata_restored();
 
     w_assert1(_stnode_cache);
     snum = _stnode_cache->get_min_unused_store_ID();
@@ -884,7 +884,7 @@ rc_t vol_t::create_store(smlevel_0::store_flag_t flags, snum_t& snum)
 
 rc_t vol_t::set_store_root(snum_t snum, shpid_t root)
 {
-    check_metadata_restored();
+    // check_metadata_restored();
 
     if (!is_valid_store(snum))    {
         DBG(<<"set_store_root: BADSTID");
@@ -899,16 +899,13 @@ rc_t vol_t::set_store_root(snum_t snum, shpid_t root)
 
 bool vol_t::is_alloc_store(snum_t f) const
 {
-    check_metadata_restored();
-
+    // check_metadata_restored();
     return _stnode_cache->is_allocated(f);
 }
+
 shpid_t vol_t::get_store_root(snum_t f) const
 {
-    check_metadata_restored();
-
-    FUNC(get_root);
-
+    // check_metadata_restored();
     return _stnode_cache->get_root_pid(f);
 }
 
