@@ -1005,6 +1005,12 @@ operator<<(ostream& o, const logrec_t& l)
                         << pev->_child_lsn;
                     break;
                 }
+        case t_alloc_a_page:
+        case t_dealloc_a_page:
+                {
+                    o << " page: " << *((vid_t*) l.data_ssx()) << "."
+                        << *((shpid_t*) (l.data_ssx() + sizeof(vid_t)));
+                }
 
         default: /* nothing */
                 break;
