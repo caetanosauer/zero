@@ -414,7 +414,7 @@ public:
         bool add(logrec_t* lr);
         void finish(int run);
         void shutdown();
-        void requestFlush();
+        bool hasPendingBlocks();
 
         lsn_t getLastLSN() { return lastLSN; }
 
@@ -702,7 +702,7 @@ public:
     const static int DFT_WSPACE_SIZE= 10240 * 10240; // 100MB
     const static bool DFT_EAGER = false;
     const static bool DFT_READ_WHOLE_BLOCKS = true;
-    const static int DFT_GRACE_PERIOD = 100000; // 100ms
+    const static int DFT_GRACE_PERIOD = 1000000; // 1 sec
 
     const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
     const static char* RUN_PREFIX;
@@ -728,6 +728,10 @@ private:
     void replacement();
     bool selection();
     void pushIntoHeap(logrec_t*);
+    bool waitForActivation();
+    bool processFlushRequest();
+    bool isLogTooSlow();
+    bool shouldActivate(bool logTooSlow);
 
 };
 

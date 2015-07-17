@@ -612,9 +612,17 @@ void RestoreMgr::run()
 
         // wait for log record to be consumed
         while (la->getNextConsumedLSN() < failureLSN) {
-            ::usleep(1000); // 1ms
+            ::usleep(10000); // 10ms
         }
-        la->requestFlushSync(failureLSN);
+
+        // Time to wait until requesting a log archive flush (msec). If we're
+        // lucky, log is archiving very fast and a flush request is not needed.
+        int waitBeforeFlush = 100;
+        ::usleep(waitBeforeFlush * 1000);
+
+        if (la->getDirectory()->getLastLSN() < failureLSN) {
+            la->requestFlushSync(failureLSN);
+        }
     }
 
     restoreLoop();
