@@ -208,8 +208,17 @@ w_rc_t bf_tree_m::_get_replacement_block() {
     }
 #endif // SIMULATE_MAINMEMORYDB
     uint32_t evicted_count, unswizzled_count;
+
+    /*
+     * Changed clenaer behavior to be less aggressive and more persistent,
+     * i.e., always run with normal urgency but keep trying until free frames
+     * are available. This behavior plays nicer with instant restore.
+     */
+
     // evict with gradually higher urgency
-    for (int urgency = EVICT_NORMAL; urgency <= EVICT_COMPLETE; ++urgency) {
+    int urgency = EVICT_NORMAL;
+    while (true) {
+    // for (int urgency = EVICT_NORMAL; urgency <= EVICT_COMPLETE; ++urgency) {
         W_DO(evict_blocks(evicted_count, unswizzled_count, (evict_urgency_t) urgency));
         if (evicted_count > 0 || _freelist_len > 0) {
             return RCOK;
@@ -220,12 +229,6 @@ w_rc_t bf_tree_m::_get_replacement_block() {
         // debug_dump(std::cout);
     }
 
-    ERROUT(<<"whoa, couldn't find an evictable page for long time. gave up!");
-    // debug_dump(std::cerr);
-    W_DO(evict_blocks(evicted_count, unswizzled_count, EVICT_COMPLETE));
-    if (evicted_count > 0 || _freelist_len > 0) {
-        return RCOK;
-    }
     return RC(eFRAMENOTFOUND);
 }
 
