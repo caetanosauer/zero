@@ -284,7 +284,8 @@ void LogArchiver::WriterThread::run()
 
         int run = BlockAssembly::getRunFromBlock(src);
         if (currentRun != run) {
-            w_assert1(run == currentRun + 1);
+            // when writer is restarted, currentRun resets to zero
+            w_assert1(currentRun == 0 || run == currentRun + 1);
             /*
              * Selection (producer) guarantees that logrec fits in block.
              * lastLSN is the LSN of the first log record in the new block
