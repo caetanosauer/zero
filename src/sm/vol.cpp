@@ -1212,7 +1212,8 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
 
 #if W_DEBUG_LEVEL > 2
     for (int j = 1; j < cnt; j++) {
-        w_assert1(pages[j].pid.page - 1 == pages[j-1].pid.page);
+        w_assert1(ignoreRestore ||
+                pages[j].pid.page - 1 == pages[j-1].pid.page);
         w_assert1(pages[j].pid.vol() == _vid);
         // CS: this assertion should hold, but some test cases fail it
         // e.g., TreeBufferpoolTest.Swizzle in test_bf_tree.cpp

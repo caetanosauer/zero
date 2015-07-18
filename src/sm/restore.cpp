@@ -294,6 +294,7 @@ bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
         return false;
     }
 
+    DBGTHRD(<< "Requesting restore of page " << pid);
     scheduler->enqueue(pid);
 
     if (addr && reuseRestoredBuffer) {
@@ -482,6 +483,11 @@ void RestoreMgr::restoreLoop()
                     page->pid = lrpid;
                 }
                 fixable.setup_for_restore(page);
+            }
+
+            if (lr->lsn_ck() <= page->lsn) {
+                // update may already be reflected on page
+                continue;
             }
 
             w_assert1(lr->page_prev_lsn() == lsn_t::null ||
