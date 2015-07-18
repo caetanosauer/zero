@@ -1826,7 +1826,7 @@ ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
     w_assert3(xct() != 0);
     xct_t* xp = xct();
     xct_t& x = *xp;
-    DBG(<<"commit " << ((char *)lazy?" LAZY":"") << x );
+    DBGOUT5(<<"commit " << ((char *)lazy?" LAZY":"") << x );
 
     if (x.is_piggy_backed_single_log_sys_xct()) {
         // then, commit() does nothing
@@ -1848,7 +1848,7 @@ ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
         _stats = x.steal_stats();
         _stats->compute();
     }
-    bool was_sys_xct W_IFDEBUG3(= x.is_sys_xct());
+    W_IFDEBUG3(bool was_sys_xct = x.is_sys_xct());
     delete xp;
     w_assert3(was_sys_xct || xct() == 0);
 

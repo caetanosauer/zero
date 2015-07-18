@@ -122,6 +122,14 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define W_IFNDEBUG4(x)    x
 #endif
 
+#if W_DEBUG_LEVEL>4
+#define W_IFDEBUG5(x)    x
+#define W_IFNDEBUG5(x)    /**/
+#else
+#define W_IFDEBUG5(x)    /**/
+#define W_IFNDEBUG5(x)    x
+#endif
+
 #define W_IFDEBUG9(x)    /**/
 #define W_IFNDEBUG9(x)    x
 
