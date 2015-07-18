@@ -410,7 +410,7 @@ ss_m::_construct_once()
      *  Reset flags
      */
     shutting_down = false;
-    shutdown_clean = true;
+    shutdown_clean = _options.get_bool_option("sm_shutdown_clean", true);
 
     // choose log manager implementation
     std::string logimpl = _options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
@@ -889,6 +889,7 @@ ss_m::_destruct_once()
     int nprepared = xct_t::cleanup(false /* don't dispose of prepared xcts */);
     (void) nprepared; // Used only for debugging assert
     if (shutdown_clean) {
+        DBGTHRD(<< "SM performing clean shutdown");
         // dismount all volumes which aren't locked by a prepared xct
         // We can't use normal dismounting for the prepared xcts because
         // they would be logged as dismounted. We need to dismount them
@@ -911,7 +912,7 @@ ss_m::_destruct_once()
         // from now no more logging and checkpoints will be done
         chkpt->retire_chkpt_thread();
     } else {
-        /* still have to close the files, but don't log since not clean !!! */
+        DBGTHRD(<< "SM performing dirty shutdown");
 
         // from now no more logging and checkpoints will be done
         chkpt->retire_chkpt_thread();
