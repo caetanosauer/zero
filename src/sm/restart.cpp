@@ -5249,7 +5249,6 @@ DBGOUT1(<<"Start child thread REDO phase");
             page.set_recovery_access();
             W_COERCE(smlevel_0::recovery->recover_single_page(page,    // page to recover
                                                               emlsn,   // emlsn which is the end point of recovery
-                                                              true,    // actual_emlsn
                                                               true));  // from_lsn because this is not a corrupted page
             page.clear_recovery_access();
 

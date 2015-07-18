@@ -1465,6 +1465,7 @@ void btree_split_log::redo(fixable_page_h* p)
     else {
         // redoing the foster parent
         borrowed_btree_page_h bp(p);
+        w_assert1(bp.nrecs() > bulk->move_count);
         bp.delete_range(bp.nrecs() - bulk->move_count, bp.nrecs());
 
         w_keystr_t new_high_fence, new_chain;

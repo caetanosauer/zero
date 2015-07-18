@@ -2519,7 +2519,7 @@ w_rc_t bf_tree_m::_try_recover_page(generic_page* parent,     // In: parent page
     if (lsn_t::null != page_emlsn)
     {
         // From Restart, use the last write lsn on the page for recovery (not complete recovery)
-        return smlevel_0::recovery->recover_single_page(p, emlsn, true, true);
+        return smlevel_0::recovery->recover_single_page(p, emlsn, true);
     }
     else
     {

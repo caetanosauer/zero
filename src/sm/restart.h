@@ -313,7 +313,7 @@ public:
         // M2 - restart thread for REDO and UNDO
         // M3 - on-demand driven by user transactions, no restart thread
         // M4 - mixed mode, behaves the same for both M2 and M4
-        // M5 - ARIES mode, behaves the same for both M2 and M4        
+        // M5 - ARIES mode, behaves the same for both M2 and M4
 
         // Restart is in progress if one of the conditions is true:
         // Serial mode (M1) and
@@ -526,33 +526,26 @@ private:
     * @param[in] pid ID of the page to recover.
     * @param[in] current_lsn the LSN the page is currently at.
     * @param[in] emlsn the LSN up to which we should recover the page.
-    * @param[out] log_copy_buffer the collected logs will be contiguously
-    * copied in to this buffer in the \b reverse order of the log.
-    * For example, the first entry would be the log record with EMLSN.
-    * @param[in] buffer_size size of log_copy_buffer.
-    * If we need a bigger buffer, we return an error.
-    * @param[out] ordered_entries point to each log
-    * record in log_copy_buffer in the order of the log.
-    * This is easier to use for the purpose of applying them.
+    * @param[out] buffer into which the log records will be copied
+    * @param[out] buffer_size end position of the log records in the buffer
     * @pre current_lsn < emlsn
     */
-    static rc_t _collect_single_page_recovery_logs(
+    static rc_t _collect_spr_logs(
         const lpid_t& pid, const lsn_t &current_lsn, const lsn_t &emlsn,
-        char* log_copy_buffer, size_t buffer_size,
-        std::vector<logrec_t*> &ordered_entries,
-        const bool valid_start_emlan = true);
+        char*& log_copy_buffer, size_t& buffer_size);
 
     /**
     * \brief Apply the given logs to the given page.
     * \ingroup Single-Page-Recovery
     * Defined in log_spr.cpp.
     * @param[in, out] p the page to recover.
-    * @param[in] ordered_entries the log records to apply
-    * in the order of the log.
+    * @param[in] buffer buffer containing the log records to apply
+    * @param[in] bufsize total usable size of buffer (i.e., the end)
     * @pre p is already fixed with exclusive latch
     */
-    static rc_t _apply_single_page_recovery_logs(fixable_page_h &p,
-        const std::vector<logrec_t*> &ordered_entries);
+    static rc_t _apply_spr_logs(fixable_page_h &p, char* buffer,
+            size_t bufsize);
+
 
 public:
 
@@ -571,17 +564,14 @@ public:
     * \NOTE This method returns an error if the user had truncated
     * the transaction logs required for the recovery.
     * @param[in, out] p the page to recover.
-    * @param[in] emlsn the LSN up to which we should recover the page.
-    * @param[in] actual_emlsn is set to false if we do not have the actual emlsn due to page corruption
-    *                         during recovery (no parent page)
-    * @param[in] from_lsn is set to true if we can use the last write lsn on the page as the starting
-    *                         point for recovery, do not rely on backup file only
-    *                         if this is set to false (default) then if no backup, then complete recovery
-    * @pre p has a backup in the backup file
+    * @param[in] emlsn the LSN up to which we should recover the page
+    *            (null if EMLSN not available -- must scan log to find it)
+    * @param[in] from_lsn true if we can use the last write lsn on the page as
+    *            the starting point for recovery, do not rely on backup file only.
     * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)
     */
     static rc_t recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
-                                    const bool actual_emlsn = true, const bool from_lsn = false);
+                                     const bool from_lsn = false);
 
 private:
     // TODO(Restart)... it was for a space-recovery hack, not needed
