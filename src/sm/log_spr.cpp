@@ -214,13 +214,14 @@ rc_t restart_m::_collect_spr_logs(
         DBGOUT1(<< "restart_m::_collect_single_page_recovery_logs, log = " << *lr);
 
         if (lr->length() > pos) {
-            // double size of buffer
-            pos += buffer_capacity;
+            // double capacity of buffer
+            DBGOUT1(<< "Doubling SPR buffer capacity");
             buffer_capacity *= 2;
             char* tmp = new char[buffer_capacity];
-            memcpy(tmp, buffer, pos);
+            memcpy(tmp + buffer_capacity/2, buffer, buffer_capacity/2);
             delete[] buffer;
             buffer = tmp;
+            pos += buffer_capacity/2;
             w_assert0(lr->length() <= pos);
         }
 
