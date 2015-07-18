@@ -1533,6 +1533,7 @@ void LogArchiver::run()
         if (!shouldActivate(logTooSlow)) {
             continue;
         }
+        INC_TSTAT(la_activations);
 
         DBGTHRD(<< "Log archiver activated from " << nextActLSN << " to "
                 << control.endLSN);

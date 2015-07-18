@@ -332,5 +332,6 @@ SM Storage manager = 0x00060000 sm_stats_t {
 
     // Log archiver stats
     u_long la_log_slow              Log archiver activated with small window due to slow log growth
+    u_long la_activations           How often log archiver was activated
 };
 
