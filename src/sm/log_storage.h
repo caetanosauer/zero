@@ -262,6 +262,7 @@ private:
                             char*               buf,
                             int                 bufsz,
                             bool                old_style = false);
+    bool _partition_exists(partition_number_t pnum);
 
 
 private:

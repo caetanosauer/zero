@@ -1077,6 +1077,24 @@ log_storage::find_partition(lsn_t& ll, bool existing, bool recovery, bool forwar
     return p;
 }
 
+bool log_storage::_partition_exists(partition_number_t pnum)
+{
+    char fname[smlevel_0::max_devname];
+    make_log_name(pnum, fname, smlevel_0::max_devname);
+    int flags = smthread_t::OPEN_RDONLY;
+    int fd = -1;
+    rc_t rc = me()->open(fname, flags, 0644, fd);
+    if (rc.is_error()) {
+        // we assume file does not exist for any kind of error -- more info
+        // than that is unfortunately not available with sdisk_unix_t::open
+        return false;
+    }
+    else {
+        W_COERCE(me()->close(fd));
+        return true;
+    }
+}
+
 rc_t log_storage::last_lsn_in_partition(partition_number_t pnum, lsn_t& lsn)
 {
     partition_t* p = get_partition(pnum);
@@ -1084,8 +1102,12 @@ rc_t log_storage::last_lsn_in_partition(partition_number_t pnum, lsn_t& lsn)
         // we are not sure if the previous partition exists or not
         // if it does exist, we want to know its size
         // if not, we have reached EOF
+        if (!_partition_exists(pnum)) {
+            lsn = lsn_t::null;
+        }
         bool recovery = false;
-        p = _open_partition_for_read(pnum, lsn_t::null, false, recovery);
+        bool existing = true;
+        p = _open_partition_for_read(pnum, lsn_t::null, existing, recovery);
         if(!p)
             W_FATAL_MSG(eINTERNAL, << "Open partition failed");
     }

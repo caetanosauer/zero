@@ -148,6 +148,8 @@ public:
         { return _storage->limit(); }
     virtual void release()
         { _storage->release_partition_lock(); }
+    virtual const char* dir_name() const
+        { return _storage->dir_name(); }
 
     // exported from log_resv
     virtual rc_t file_was_archived(const char *file)

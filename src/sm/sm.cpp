@@ -90,8 +90,6 @@ class prologue_rc_t;
 #include "logbuf_core.h"
 #include "eventlog.h"
 
-#include <netdb.h> // CS: for generate_new_lvid
-
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<SmStoreMetaStats*>;
@@ -908,20 +906,17 @@ ss_m::_destruct_once()
 
         // Take a synch checkpoint (blocking) after buffer pool flush but before shutting down
         chkpt->synch_take();
-
-        // from now no more logging and checkpoints will be done
-        chkpt->retire_chkpt_thread();
-    } else {
-        DBGTHRD(<< "SM performing dirty shutdown");
-
-        // from now no more logging and checkpoints will be done
         chkpt->retire_chkpt_thread();
 
-        log_m* saved_log = log;
-        log = 0;                // turn off logging
-
-        log = saved_log;            // turn on logging
+        if (_options.get_bool_option("sm_truncate_log", false)) {
+            W_COERCE(_truncate_log());
+        }
     }
+    else {
+        DBGTHRD(<< "SM performing dirty shutdown");
+        chkpt->retire_chkpt_thread();
+    }
+
 
     // this should come before xct and log shutdown so that any
     // ongoing restore has a chance to finish cleanly. Should also come after
@@ -1000,6 +995,94 @@ ss_m::_destruct_once()
      if (e.is_error())  {
         cerr << "ss_m: Warning: set_bufsize(0):" << endl << e << endl;
      }
+}
+
+#include "logdef_gen.cpp" // required to regenerate chkpt_end
+
+rc_t ss_m::_truncate_log()
+{
+    /*
+     * Take contents from last checkpoint until the end of the log file and
+     * copy them into a new log file, deleting all older files.
+     */
+    lsn_t master = log->master_lsn();
+    lsn_t min_chkpt = log->min_chkpt_rec_lsn();
+    w_assert0(master == min_chkpt);
+
+    int partition = master.hi();
+    size_t offset = master.lo();
+
+    const char* logdir = log->dir_name();
+    stringstream ss;
+    int new_part = partition + 1;
+    ss << logdir << '/' << log_storage::log_prefix() << new_part << ends;
+    string newLogFile = ss.str();
+
+    ss.seekp(0);
+    ss << logdir << '/' << log_storage::log_prefix() << partition << ends;
+    string oldLogFile = ss.str();
+
+    int flags = smthread_t::OPEN_RDONLY;
+    int oldFd, newFd;
+    W_DO(me()->open(oldLogFile.c_str(), flags, 0744, oldFd));
+
+    flags = smthread_t::OPEN_WRONLY | smthread_t::OPEN_TRUNC
+        | smthread_t::OPEN_CREATE;
+    W_DO(me()->open(newLogFile.c_str(), flags, 0744, newFd));
+
+    char* buf = new char[partition_t::XFERSIZE];
+    int done = 0;
+    W_DO(me()->pread_short(oldFd, buf, partition_t::XFERSIZE, offset, done));
+
+    // fix LSN of all log records
+    size_t pos = 0;
+    while (true) {
+        logrec_t* lr = (logrec_t*) (buf + pos);
+        lsn_t newLSN(new_part, pos);
+        pos += lr->length();
+        memcpy(buf + pos - sizeof(lsn_t), &newLSN, sizeof(lsn_t));
+        if (lr->type() == logrec_t::t_skip) {
+            break;
+        }
+        if (lr->type() == logrec_t::t_chkpt_end) {
+            // rebuild with correct fields
+            new (lr) chkpt_end_log(newLSN, lsn_t(new_part, 0),
+                    lsn_t(new_part, 0));
+        }
+    }
+
+    W_DO(me()->pwrite(newFd, buf, partition_t::XFERSIZE, 0));
+
+    W_DO(me()->close(oldFd));
+    W_DO(me()->close(newFd));
+    delete[] buf;
+
+    while (partition > 0) {
+        ss.seekp(0);
+        ss << logdir << '/' << log_storage::log_prefix() << partition << ends;
+        string file = ss.str();
+        unlink(file.c_str());
+        partition--;
+    }
+
+    // delete old chk file and create new one
+    ss.seekp(0);
+    ss << logdir << '/' << log_storage::master_prefix() << 'v'
+        << log_storage::_version_major << '.'
+        << log_storage::_version_minor << '_'
+        << master << '_' << master << ends;
+    unlink(ss.str().c_str());
+
+    ss.seekp(0);
+    ss << logdir << '/' << log_storage::master_prefix() << 'v'
+        << log_storage::_version_major << '.'
+        << log_storage::_version_minor << '_'
+        << new_part << ".0" << '_'
+        << new_part << ".0" << ends;
+    W_DO(me()->open(ss.str().c_str(), flags, 0644, newFd));
+    W_DO(me()->close(newFd));
+
+    return RCOK;
 }
 
 void ss_m::set_shutdown_flag(bool clean)

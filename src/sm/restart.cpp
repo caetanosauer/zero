@@ -1409,13 +1409,6 @@ restart_m::analysis_pass_backward(
     // would overwrite the data in log_rec_buf
     while (scan.xct_next(lsn, log_rec_buf))
     {
-        if (true == scan_done)
-        {
-            // Done with backward scan, do not process this log record
-            // exit from the while loop now
-            break;
-        }
-
         // New log record, reset the flag
         acquire_lock = true;
 
@@ -1882,6 +1875,10 @@ restart_m::analysis_pass_backward(
             // }
             break;
         }// switch
+
+        if (scan_done) {
+            break;
+        }
     }
 
     // Finished backward log scan of all the recovery logs, we should

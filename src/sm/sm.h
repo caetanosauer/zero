@@ -631,6 +631,7 @@ private:
     void                _destruct_once();
     void                _do_restart();
     void                _finish_recovery();
+    rc_t                _truncate_log();
     void                _set_recovery_mode();
 
     // Used for cosntructing xct object depending on chosen implementation

@@ -181,7 +181,7 @@ public:
      * \details
      * Used by xct_t for error reporting, callback-handling.
      */
-    static const char * dir_name();
+    virtual const char * dir_name() const = 0;
 
     /**\brief  Return the amount of space left in the log.
      * \details
