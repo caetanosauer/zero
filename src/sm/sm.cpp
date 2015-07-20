@@ -999,8 +999,12 @@ ss_m::_destruct_once()
 
 #include "logdef_gen.cpp" // required to regenerate chkpt_end
 
+/*
+ * WARNING: this method assumes that all transaction activity has stopped.
+ */
 rc_t ss_m::_truncate_log()
 {
+    DBGTHRD(<< "Truncating log on LSN " << log->durable_lsn());
     /*
      * Take contents from last checkpoint until the end of the log file and
      * copy them into a new log file, deleting all older files.
@@ -1027,12 +1031,15 @@ rc_t ss_m::_truncate_log()
     W_DO(me()->open(oldLogFile.c_str(), flags, 0744, oldFd));
 
     flags = smthread_t::OPEN_WRONLY | smthread_t::OPEN_TRUNC
-        | smthread_t::OPEN_CREATE;
+        | smthread_t::OPEN_CREATE | smthread_t::OPEN_SYNC;
     W_DO(me()->open(newLogFile.c_str(), flags, 0744, newFd));
 
     char* buf = new char[partition_t::XFERSIZE];
     int done = 0;
     W_DO(me()->pread_short(oldFd, buf, partition_t::XFERSIZE, offset, done));
+
+    lsn_t newPartLSN = lsn_t(new_part, 0);
+    lsn_t newEndLSN = lsn_t(new_part, 0);
 
     // fix LSN of all log records
     size_t pos = 0;
@@ -1042,12 +1049,12 @@ rc_t ss_m::_truncate_log()
         pos += lr->length();
         memcpy(buf + pos - sizeof(lsn_t), &newLSN, sizeof(lsn_t));
         if (lr->type() == logrec_t::t_skip) {
+            newEndLSN = lsn_t(new_part, pos - lr->length());
             break;
         }
         if (lr->type() == logrec_t::t_chkpt_end) {
             // rebuild with correct fields
-            new (lr) chkpt_end_log(newLSN, lsn_t(new_part, 0),
-                    lsn_t(new_part, 0));
+            new (lr) chkpt_end_log(newLSN, newPartLSN, newPartLSN);
         }
     }
 
@@ -1056,6 +1063,24 @@ rc_t ss_m::_truncate_log()
     W_DO(me()->close(oldFd));
     W_DO(me()->close(newFd));
     delete[] buf;
+
+    // Wait for archiver
+    if (logArchiver) {
+        logArchiver->setEager(false);
+        while (logArchiver->getNextConsumedLSN() < newEndLSN) {
+            logArchiver->activate(newEndLSN);
+            ::usleep(10000); // 10ms
+        }
+        logArchiver->requestFlushSync(newEndLSN);
+        logArchiver->shutdown();
+
+        // generate empty run to fill hole of new partition
+        logArchiver->getDirectory()->openNewRun();
+        logArchiver->getDirectory()->closeCurrentRun(newEndLSN, true);
+        delete logArchiver;
+        logArchiver = NULL;
+    }
+
 
     while (partition > 0) {
         ss.seekp(0);

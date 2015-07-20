@@ -604,13 +604,14 @@ rc_t LogArchiver::ArchiveDirectory::openNewRun()
     return RCOK;
 }
 
-rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
+rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN,
+        bool allowEmpty)
 {
     if (appendFd < 0) {
         W_FATAL_MSG(fcINTERNAL,
             << "Attempt to close unopened run");
     }
-    if (appendPos == 0) {
+    if (appendPos == 0 && !allowEmpty) {
         // nothing was appended -- just close file and return
         w_assert0(runEndLSN == lsn_t::null);
         W_DO(me()->close(appendFd));
@@ -1423,7 +1424,6 @@ bool LogArchiver::processFlushRequest()
 {
     if (flushReqLSN != lsn_t::null) {
         DBGTHRD(<< "Archive flush requested until LSN " << flushReqLSN);
-        w_assert0(flushReqLSN <= smlevel_0::log->durable_lsn());
         if (getNextConsumedLSN() < flushReqLSN) {
             // if logrec hasn't been read into heap yet, then selection
             // will never reach it. Do another round until heap has
@@ -1471,9 +1471,10 @@ bool LogArchiver::isLogTooSlow()
         // However, if it seems like log activity has stopped (i.e.,
         // durable_lsn did not advance since we started), then we proceed
         // with the small activation window.
-        if (control.endLSN.hi() != nextActLSN.hi() ||
-                control.endLSN.lo() - nextActLSN.lo() >= minActWindow)
-        {
+        bool smallWindow = control.endLSN.hi() == nextActLSN.hi() &&
+                control.endLSN.lo() - nextActLSN.lo() < minActWindow;
+        bool logStopped = control.endLSN == smlevel_0::log->durable_lsn();
+        if (!smallWindow && !logStopped) {
             return false;
         }
         INC_TSTAT(la_log_slow);
@@ -1594,6 +1595,9 @@ bool LogArchiver::requestFlushAsync(lsn_t reqLSN)
 
 void LogArchiver::requestFlushSync(lsn_t reqLSN)
 {
+    if (!eager) {
+        activate(reqLSN);
+    }
     while (!requestFlushAsync(reqLSN))
     {}
     // when log archiver is done processing the flush request, it will set
@@ -1667,7 +1671,8 @@ tryagain:
 #if W_DEBUG_LEVEL >=1
     // TODO add assert macros with DBG message
     if (nextLSN != NULL && !lr->valid_header(*nextLSN)) {
-        DBGTHRD(<< "Unexpected LSN in scanner: " << lr->lsn_ck()
+        DBGTHRD(<< "Unexpected LSN in scanner at pos " << pos
+                << " : " << lr->lsn_ck()
                 << " expected " << *nextLSN);
     }
 #endif
@@ -2018,15 +2023,22 @@ void LogArchiver::ArchiveIndex::probeNext(ProbeResult*& prev, lsn_t endLSN)
     CRITICAL_SECTION(cs, mutex);
 
     size_t index = prev->runIndex + 1;
-    w_assert0(index <= runs.size());
-    if (
-        (endLSN != lsn_t::null && endLSN < prev->runEnd) || // passed given end
-        ((int) index > lastFinished) // no more (finished) runs available
-       )
-    {
-        delete prev;
-        prev = NULL;
-        return;
+    while (true) {
+        w_assert0(index <= runs.size());
+        if (
+                (endLSN != lsn_t::null && endLSN < prev->runEnd) || // passed given end
+                ((int) index > lastFinished) // no more (finished) runs available
+           )
+        {
+            delete prev;
+            prev = NULL;
+            return;
+        }
+        // skip empty runs
+        if (runs[index].entries.size() > 0) {
+            break;
+        }
+        index++;
     }
 
     prev->runIndex = index;

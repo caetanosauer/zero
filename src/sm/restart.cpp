@@ -463,7 +463,8 @@ restart_m::restart(
             redo_log_pass(redo_lsn, curr_lsn, in_doubt_count);
 
             // no logging during redo
-            w_assert1(curr_lsn == log->curr_lsn());
+            // CS: commented out -- there may be event log records coming in
+            // w_assert1(curr_lsn == log->curr_lsn());
 
             // We took a checkpoint at the end of Log Analysis phase which caused
             // a log flush, therefore the buffer pool flush at the end of the REDO phase

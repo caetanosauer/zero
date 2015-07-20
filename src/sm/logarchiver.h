@@ -317,7 +317,7 @@ public:
 
         // run generation methods
         rc_t append(const char* data, size_t length);
-        rc_t closeCurrentRun(lsn_t runEndLSN);
+        rc_t closeCurrentRun(lsn_t runEndLSN, bool allowEmpty = false);
         rc_t openNewRun();
 
         // run scanning methods
@@ -691,6 +691,11 @@ public:
 
     ArchiveDirectory* getDirectory() { return directory; }
     lsn_t getNextConsumedLSN() { return consumer->getNextLSN(); }
+    void setEager(bool e)
+    {
+        eager = e;
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+    }
 
     static void initLogScanner(LogScanner* logScanner);
 
