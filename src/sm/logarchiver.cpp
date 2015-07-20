@@ -232,6 +232,7 @@ void LogArchiver::ReaderThread::run()
                 DBGTHRD(<< "Reader reached EOF (bytesRead = 0)");
                 W_COERCE(openPartition());
                 pos = 0;
+                blockPos = 0;
                 W_COERCE(me()->pread_short(
                             currentFd, dest, blockSize, pos, bytesRead));
                 if (bytesRead == 0) {
@@ -394,11 +395,11 @@ void LogArchiver::shutdown()
     // this flag indicates that reader and writer threads delivering null
     // blocks is not an error, but a termination condition
     shutdownFlag = true;
+    join();
     // make other threads see new shutdown value
     lintel::atomic_thread_fence(lintel::memory_order_release);
     consumer->shutdown();
     blkAssemb->shutdown();
-    join();
 }
 
 LogArchiver::~LogArchiver()
@@ -810,7 +811,9 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
         if (lr->type() == logrec_t::t_skip) {
             // Try again if reached skip -- next block should be from next file
             nextLSN = lsn_t(nextLSN.hi() + 1, 0);
+            pos = 0;
             DBGTHRD(<< "Reached skip logrec, set nextLSN = " << nextLSN);
+            w_assert1(!logScanner->hasPartialLogrec());
         }
         if (!nextBlock()) {
             // reader thread finished and consume request failed
@@ -1609,6 +1612,11 @@ void LogArchiver::requestFlushSync(lsn_t reqLSN)
         }
         ::usleep(1000); // 1ms
     }
+}
+
+bool LogScanner::hasPartialLogrec()
+{
+    return truncMissing > 0;
 }
 
 /**

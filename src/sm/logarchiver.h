@@ -769,6 +769,8 @@ public:
             lsn_t* nextLSN = NULL, lsn_t* stopLSN = NULL,
             int* lrLength = NULL);
 
+    bool hasPartialLogrec();
+
     LogScanner(size_t blockSize)
         : truncCopied(0), truncMissing(0), toSkip(0), blockSize(blockSize)
     {
