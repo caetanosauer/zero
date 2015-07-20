@@ -401,9 +401,9 @@ void LogArchiver::shutdown()
     // this flag indicates that reader and writer threads delivering null
     // blocks is not an error, but a termination condition
     shutdownFlag = true;
-    join();
     // make other threads see new shutdown value
     lintel::atomic_thread_fence(lintel::memory_order_release);
+    join();
     consumer->shutdown();
     blkAssemb->shutdown();
 }
@@ -1014,11 +1014,6 @@ void LogArchiver::BlockAssembly::finish(int run)
 void LogArchiver::BlockAssembly::shutdown()
 {
     w_assert0(!dest);
-    while (dest) {
-        DBGTHRD(<< "BlockAssembly still has an active block -- waiting");
-        ::usleep(1000); // 1ms
-    }
-
     writebuf->set_finished();
     writer->join();
 }
@@ -1982,12 +1977,6 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
 
     w_assert0(i < run->entries.size());
 
-    /*
-     * CS comparisons use just page number instead of whole lpid_t, which
-     * means that multiple volumes are not supported (TODO)
-     * To fix this, we ought to look for usages of the lpid_t operators
-     * in sm_s.h and see what the semantics is.
-     */
     if (run->entries[i].pid <= pid &&
             (i == run->entries.size() - 1 || run->entries[i+1].pid >= pid))
     {
