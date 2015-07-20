@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -154,7 +154,7 @@ class PoorMansOldestLsnTracker;
  * This is in part because there are so many ways for failure and we
  * need to be able to return a w_rc_t.
  */
-class log_m : public smlevel_0 
+class log_m : public smlevel_0
 {
 public:
     /*
@@ -168,16 +168,16 @@ public:
 
     virtual rc_t                file_was_archived(const char *file) = 0;
 
-    typedef    smlevel_0::partition_number_t partition_number_t; 
+    typedef    smlevel_0::partition_number_t partition_number_t;
 
     /**\brief Do whatever needs to be done before destructor is called, then destruct.
      *\details
      * Shutdown calls the desctructor; the server, after calling shutdown,
      * nulls out its pointer.
      */
-    virtual void           shutdown() = 0; 
+    virtual void           shutdown() = 0;
 
-    /**\brief Return name of directory holding log files 
+    /**\brief Return name of directory holding log files
      * \details
      * Used by xct_t for error reporting, callback-handling.
      */
@@ -185,7 +185,7 @@ public:
 
     /**\brief  Return the amount of space left in the log.
      * \details
-     * Used by xct_impl for error-reporting. 
+     * Used by xct_impl for error-reporting.
      */
     virtual fileoff_t           space_left() const = 0;
     virtual fileoff_t           space_for_chkpt() const = 0;
@@ -197,7 +197,7 @@ public:
     virtual const char * make_log_name(uint32_t n,
                         char*              buf,
                         int                bufsz) = 0;
-    
+
     /**\brief Infect the log.
      * \details
      * Used by ss_m for testing.
@@ -209,7 +209,7 @@ public:
      */
     virtual void                start_log_corruption() = 0;
 
-    /**\brief Return first lsn of a given partition. 
+    /**\brief Return first lsn of a given partition.
      * \details
      * Used by xct_impl.cpp in handling of emergency log flush.
      */
@@ -235,10 +235,10 @@ public:
     virtual lsn_t               master_lsn() const = 0;
 
     // not called from the implementation:
-    virtual rc_t                scavenge(const lsn_t &min_rec_lsn, 
+    virtual rc_t                scavenge(const lsn_t &min_rec_lsn,
                                const lsn_t &min_xct_lsn) = 0;
     virtual rc_t                insert(logrec_t &r, lsn_t* ret) = 0;
-    virtual rc_t                compensate(const lsn_t& orig_lsn, 
+    virtual rc_t                compensate(const lsn_t& orig_lsn,
                                const lsn_t& undo_lsn) = 0;
 
     // used by log_i and xct_impl
@@ -252,26 +252,26 @@ public:
     virtual rc_t                wait_for_space(fileoff_t &amt, int32_t timeout) = 0;
     virtual fileoff_t           consume_chkpt_reservation(fileoff_t howmuch) = 0;
     virtual void                activate_reservations()  = 0;
-                     
-    virtual void                set_master(const lsn_t& master_lsn, 
-                            const lsn_t& min_lsn, 
+
+    virtual void                set_master(const lsn_t& master_lsn,
+                            const lsn_t& min_lsn,
                             const lsn_t& min_xct_lsn) = 0;
 
 
     // used by bf_m
-    lsn_t               global_min_lsn() const { 
+    lsn_t               global_min_lsn() const {
                           return std::min(master_lsn(), min_chkpt_rec_lsn()); }
-    lsn_t               global_min_lsn(lsn_t const &a) const { 
+    lsn_t               global_min_lsn(lsn_t const &a) const {
                           return std::min(global_min_lsn(), a); }
     // used by implementation
-    lsn_t               global_min_lsn(lsn_t const &a, lsn_t const &b) const { 
+    lsn_t               global_min_lsn(lsn_t const &a, lsn_t const &b) const {
                           return std::min(global_min_lsn(a), b); }
-    
+
     // flush won't return until target lsn before durable_lsn(), so
     // back off by one byte so we don't depend on other inserts to
     // arrive after us
     // used by bf_m
-    rc_t    flush_all(bool block=true) { 
+    rc_t    flush_all(bool block=true) {
                           return flush(curr_lsn().advance(-1), block); }
 
     virtual PoorMansOldestLsnTracker* get_oldest_lsn_tracker() = 0;

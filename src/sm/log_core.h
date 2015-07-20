@@ -5,20 +5,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -99,7 +99,7 @@ public:
         return _durable_lsn;
     }
 
-    void start_flush_daemon() 
+    void start_flush_daemon()
     {
         _flush_daemon_running = true;
         _flush_daemon->fork();
@@ -127,7 +127,7 @@ public:
         { return _resv->wait_for_space(amt, timeout); }
     virtual fileoff_t           consume_chkpt_reservation(fileoff_t howmuch)
         { return _resv->consume_chkpt_reservation(howmuch); }
-    virtual void                activate_reservations() 
+    virtual void                activate_reservations()
         { _resv->activate_reservations(curr_lsn()); }
     PoorMansOldestLsnTracker* get_oldest_lsn_tracker()
         { return _resv->get_oldest_lsn_tracker(); }
@@ -180,12 +180,12 @@ public:
 #if SM_PAGESIZE < 8192
     enum { SEGMENT_SIZE= 256 * log_storage::BLOCK_SIZE };
 #else
-    enum { SEGMENT_SIZE= 128 * log_storage::BLOCK_SIZE };    
+    enum { SEGMENT_SIZE= 128 * log_storage::BLOCK_SIZE };
 #endif
 
     static const uint64_t DFT_LOGBUFSIZE;
     static fileoff_t max_logsz;
-    
+
 
 protected:
     virtual lsn_t           flush_daemon_work(lsn_t old_mark) = 0;
@@ -213,10 +213,10 @@ protected:
 #endif
 
     long _start; // byte number of oldest unwritten byte
-    long                 start_byte() const { return _start; } 
+    long                 start_byte() const { return _start; }
 
     long _end; // byte number of insertion point
-    long                 end_byte() const { return _end; } 
+    long                 end_byte() const { return _end; }
 
     long _segsize; // log buffer size
     long                 segsize() const { return _segsize; }
@@ -264,20 +264,20 @@ protected:
     consisting of a fixed number of "segments." A partition is the
     largest file that will be created and a segment is the size of the
     in-memory buffer. Segments are further divided into "blocks" which
-    are the unit of I/O. 
+    are the unit of I/O.
 
-    Threads insert "entries" into the log (log records). 
+    Threads insert "entries" into the log (log records).
 
     One or more entries make up an "epoch" (data that will be flushed
     using a single I/O). Epochs normally end at the end of a segment.
     The log flush daemon constantly flushes any unflushed portion of
     "valid" epochs. (An epoch is valid if its end > start.)
-    When an epoch reaches the end of a segment, the final log entry 
-    will usually spill over into the next segment and the next 
+    When an epoch reaches the end of a segment, the final log entry
+    will usually spill over into the next segment and the next
     entry will begin a new epoch at a non-zero
     offset of the new segment. However, a log entry which would spill
     over into a new partition will begin a new epoch and join it.
-    Log records do not span partitions. 
+    Log records do not span partitions.
     */
 
     /* FRJ: Partitions are not protected by either the insert or flush
@@ -311,7 +311,7 @@ protected:
     /** @cond */ char    _padding4[CACHELINE_MCS_PADDING]; /** @endcond */
 
     // paired with _wait_cond, _flush_cond
-    pthread_mutex_t      _wait_flush_lock; 
+    pthread_mutex_t      _wait_flush_lock;
     pthread_cond_t       _wait_cond;  // paired with _wait_flush_lock
     pthread_cond_t       _flush_cond;  // paird with _wait_flush_lock
 
@@ -357,11 +357,11 @@ public:
 
     // INTERFACE METHODS BEGIN
 
-    virtual rc_t            insert(logrec_t &r, lsn_t* l); 
+    virtual rc_t            insert(logrec_t &r, lsn_t* l);
     virtual rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
     virtual rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
     virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
-    virtual void            shutdown(); 
+    virtual void            shutdown();
 
 
     // INTERFACE METHODS END
