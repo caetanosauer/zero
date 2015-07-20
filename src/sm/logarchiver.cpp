@@ -275,8 +275,8 @@ void LogArchiver::WriterThread::run()
              * that all pending blocks are written out before shutdown.
              */
             DBGTHRD(<< "Finished flag set on writer thread");
-            if (lastLSN != lsn_t::null) {
-                W_COERCE(directory->closeCurrentRun(lastLSN));
+            if (maxLSNInRun != lsn_t::null) {
+                W_COERCE(directory->closeCurrentRun(maxLSNInRun));
             }
             return; // finished is set on buf
         }
@@ -295,17 +295,23 @@ void LogArchiver::WriterThread::run()
              *  bound on the next run, which allows us to verify whether
              *  holes exist in the archive.
              */
-            W_COERCE(directory->closeCurrentRun(lastLSN));
+            W_COERCE(directory->closeCurrentRun(maxLSNInRun));
             W_COERCE(directory->openNewRun());
             currentRun = run;
+            maxLSNInRun = lsn_t::null;
             DBGTHRD(<< "Opening file for new run " << run
                     << " starting on LSN " << directory->getLastLSN());
         }
 
-        lastLSN = BlockAssembly::getLSNFromBlock(src);
+        lsn_t blockLSN = BlockAssembly::getLSNFromBlock(src);
+        if (blockLSN > maxLSNInRun) {
+            maxLSNInRun = blockLSN;
+        }
+
         W_COERCE(directory->append(src, blockSize));
 
-        DBGTHRD(<< "Wrote out block " << (void*) src);
+        DBGTHRD(<< "Wrote out block " << (void*) src
+                << " with max LSN " << blockLSN);
 
         buf->consumerRelease();
     }
@@ -872,7 +878,7 @@ bool LogArchiver::selection()
 }
 
 LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
-    : dest(NULL), lastLSN(lsn_t::null), lastLength(0),
+    : dest(NULL), maxLSNInBlock(lsn_t::null), lastLength(0),
     lastRun(-1)
 {
     archIndex = directory->getIndex();
@@ -944,8 +950,10 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
         firstPID = lr->construct_pid();
     }
 
-    lastLSN = lr->lsn_ck();
-    lastLength = lr->length();
+    if (maxLSNInBlock < lr->lsn_ck()) {
+        maxLSNInBlock = lr->lsn_ck();
+        lastLength = lr->length();
+    }
 
     memcpy(dest + pos, lr, lr->length());
     pos += lr->length();
@@ -986,8 +994,19 @@ void LogArchiver::BlockAssembly::finish(int run)
      * if it is a skip log record, since the property that must be respected is
      * simply that run boundaries must match (i.e., endLSN(n) == beginLSN(n+1)
      */
-    h->lsn = lastLSN.advance(lastLength);
+    h->lsn = maxLSNInBlock.advance(lastLength);
 
+#if W_DEBUG_LEVEL>=3
+    // verify that all log records are within end boundary
+    size_t vpos = sizeof(BlockHeader);
+    while (vpos < pos) {
+        logrec_t* lr = (logrec_t*) (dest + vpos);
+        w_assert3(lr->lsn_ck() < h->lsn);
+        vpos += lr->length();
+    }
+#endif
+
+    maxLSNInBlock = lsn_t::null;
     writebuf->producerRelease();
     dest = NULL;
 }

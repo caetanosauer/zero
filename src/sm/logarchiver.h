@@ -354,7 +354,7 @@ public:
     private:
         ArchiveDirectory* directory;
         uint8_t currentRun;
-        lsn_t lastLSN;
+        lsn_t maxLSNInRun;
 
         rc_t openNewRun();
 
@@ -369,7 +369,7 @@ public:
         WriterThread(AsyncRingBuffer* writebuf, ArchiveDirectory* directory)
             :
               BaseThread(writebuf, "LogArchiver_WriterThread"),
-              directory(directory), currentRun(0), lastLSN(lsn_t::null)
+              directory(directory), currentRun(0), maxLSNInRun(lsn_t::null)
         {
         }
 
@@ -416,8 +416,6 @@ public:
         void shutdown();
         bool hasPendingBlocks();
 
-        lsn_t getLastLSN() { return lastLSN; }
-
         // methods that abstract block metadata
         static int getRunFromBlock(const char* b);
         static lsn_t getLSNFromBlock(const char* b);
@@ -430,7 +428,7 @@ public:
         size_t blockSize;
         size_t pos;
         lpid_t firstPID;
-        lsn_t lastLSN;
+        lsn_t maxLSNInBlock;
         int lastLength;
         int lastRun;
     public:
