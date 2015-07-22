@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -79,7 +79,7 @@ class lpid_t {
 public:
     vid_t          _vol;
     shpid_t        page;
-    
+
     lpid_t();
     lpid_t(const stid_t& s, shpid_t p);
     lpid_t(vid_t v, shpid_t p);
@@ -164,7 +164,7 @@ public:
     bool operator==(const rid_t& r) const;
     bool operator!=(const rid_t& r) const;
     bool operator<(const rid_t& r) const;
-    
+
     friend ostream& operator<<(ostream&, const rid_t& s);
     friend istream& operator>>(istream&, rid_t& s);
 
