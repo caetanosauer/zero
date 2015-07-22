@@ -117,8 +117,10 @@ bool inline fixed_lists_mem_t::is_list_empty(size_t block_size)
  * Initialize the buffer with all blocks of the maximum size
  */
 fixed_lists_mem_t::fixed_lists_mem_t(size_t bufsize, size_t incr, size_t max)
-    : _incr(incr), _max(max), _bufsize(bufsize)
+    : _incr(incr), _max(max)
 {
+    // make sure bufsize is multiple of max
+    _bufsize = (bufsize / max) * max;
     _buf = new char[bufsize];
     _lists = new list_header_t*[max/incr];
     ::memset(_lists, 0, max/incr * sizeof(list_header_t*));

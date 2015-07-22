@@ -78,7 +78,7 @@ private:
             prev = NULL;
             next = NULL;
         }
-        
+
         void set_free() {
             tag &= 0x7FFF;
             update_footer();
@@ -127,7 +127,7 @@ private:
 
     const size_t _incr;
     const size_t _max;
-    const size_t _bufsize;
+    size_t _bufsize;
     list_header_t ** _lists;
     char * _buf;
     size_t _first_non_empty;
