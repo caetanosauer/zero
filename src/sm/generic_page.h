@@ -8,6 +8,7 @@
 #include <boost/static_assert.hpp>
 
 #include "sm_s.h"
+#include "lsn.h"
 #include "w_defines.h"
 
 

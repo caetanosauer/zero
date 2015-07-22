@@ -80,7 +80,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #endif
 
 #ifndef SM_S_H
-#include <sm_s.h> // declares lsn_t
+#include <sm_s.h>
+#include <lsn.h>
 #endif
 
 #include <string>

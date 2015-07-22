@@ -237,6 +237,7 @@ public:
     /** Const version */
     const multi_page_log_t*     data_ssx_multi() const;
     const lsn_t&         lsn_ck() const {  return *_lsn_ck(); }
+    const lsn_t&         lsn() const {  return *_lsn_ck(); }
     const lsn_t          get_lsn_ck() const {
                                 lsn_t    tmp = *_lsn_ck();
                                 return tmp;

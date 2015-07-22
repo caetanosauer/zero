@@ -183,7 +183,6 @@ typedef uint64_t lsndata_t;
 const lsndata_t lsndata_null = 0;
 const lsndata_t lsndata_max = 0xFFFFFFFFFFFFFFFF;
 
-/*\bug GNATS 136: TODO make thread-safe for 32-bit platform */
 /**\brief Log Sequence Number. See \ref LSNS.
  *
  * \ingroup LSNS
@@ -302,6 +301,8 @@ public:
     bool operator==(const lsn_t& l) const { return _data == l._data; }
     bool operator!=(const lsn_t& l) const { return !(*this == l); }
 
+    std::string str();
+
 
 /*
  * This is the SM's idea of on-disk and in-structure 
@@ -337,4 +338,19 @@ private:
     static uint64_t from_rba(sm_diskaddr_t data) { 
                 return to_rba(data); }
 };
+
+inline ostream& operator<<(ostream& o, const lsn_t& l)
+{
+    return o << l.file() << '.' << l.rba();
+}
+
+inline istream& operator>>(istream& i, lsn_t& l)
+{
+    sm_diskaddr_t d;
+    char c;
+    uint64_t f;
+    i >> f >> c >> d;
+    l = lsn_t(f, d);
+    return i;
+}
 #endif

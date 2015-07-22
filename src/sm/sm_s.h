@@ -172,23 +172,6 @@ public:
 };
 
 
-#include <lsn.h>
-
-inline ostream& operator<<(ostream& o, const lsn_t& l)
-{
-    return o << l.file() << '.' << l.rba();
-}
-
-inline istream& operator>>(istream& i, lsn_t& l)
-{
-    sm_diskaddr_t d;
-    char c;
-    uint64_t f;
-    i >> f >> c >> d;
-    l = lsn_t(f, d);
-    return i;
-}
-
 inline lpid_t::lpid_t() : page(0) {}
 
 inline lpid_t::lpid_t(const stid_t& s, shpid_t p) : _vol(s.vol), page(p)
