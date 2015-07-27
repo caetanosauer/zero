@@ -266,6 +266,8 @@ public:
     shpid_t next();
     void setSinglePass(bool singlePass = true);
 
+    bool isOnDemand() { return onDemand; }
+
 protected:
     RestoreMgr* restore;
 
@@ -274,6 +276,10 @@ protected:
 
     /// Perform single-pass restore while no requests are available
     bool trySinglePass;
+    /// Support on-demand scheduling (if false, trySinglePass must be true)
+    bool onDemand;
+    /// Perform single-pass scheduling in random order instead of sequential
+    bool randomOrder;
 
     size_t numPages;
 
@@ -282,6 +288,9 @@ protected:
      */
     shpid_t firstNotRestored;
 
+    /// List of segments to restore (used when randomOrder == true)
+    std::vector<unsigned> randomSegments;
+    size_t currentRandomSegment;
 };
 
 #endif

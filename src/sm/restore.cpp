@@ -8,6 +8,8 @@
 #include "sm_options.h"
 #include "backup_reader.h"
 
+#include <algorithm>
+
 RestoreBitmap::RestoreBitmap(size_t size)
     : bits(size, false) // initialize all bits to false
 {
@@ -106,6 +108,26 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
     firstNotRestored = restore->getFirstDataPid();
     trySinglePass =
         options.get_bool_option("sm_restore_sched_singlepass", true);
+    onDemand =
+        options.get_bool_option("sm_restore_sched_ondemand", true);
+    randomOrder =
+        options.get_bool_option("sm_restore_sched_random", false);
+
+    if (!onDemand) {
+        // override single-pass option
+        trySinglePass = true;
+    }
+
+    if (randomOrder) {
+        // create list of segments in random order
+        size_t numSegments = numPages / restore->getSegmentSize() + 1;
+        randomSegments.resize(numSegments);
+        for (size_t i = 0; i < numSegments; i++) {
+            randomSegments[i] = i;
+        }
+        std::random_shuffle(randomSegments.begin(), randomSegments.end());
+        currentRandomSegment = 0;
+    }
 }
 
 RestoreScheduler::~RestoreScheduler()
@@ -123,21 +145,29 @@ shpid_t RestoreScheduler::next()
     spinlock_write_critical_section cs(&mutex);
 
     shpid_t next = firstNotRestored;
-    if (queue.size() > 0) {
+    if (onDemand && queue.size() > 0) {
         next = queue.front();
         queue.pop();
         INC_TSTAT(restore_sched_queued);
     }
     else if (trySinglePass) {
-        // if queue is empty, find the first not-yet-restored PID
-        while (next <= numPages && restore->isRestored(next)) {
-            // if next pid is already restored, then the whole segment is
-            next = next + restore->getSegmentSize();
+        if (randomOrder) {
+            next = randomSegments[currentRandomSegment]
+                * restore->getSegmentSize();
+            currentRandomSegment++;
         }
-        firstNotRestored = next;
+        else {
+            // if queue is empty, find the first not-yet-restored PID
+            while (next <= numPages && restore->isRestored(next)) {
+                // if next pid is already restored, then the whole segment is
+                next = next + restore->getSegmentSize();
+            }
+            firstNotRestored = next;
+        }
         INC_TSTAT(restore_sched_seq);
     }
     else {
+        w_assert0(onDemand);
         next = shpid_t(0); // no next pid for now
     }
 
@@ -291,6 +321,10 @@ void RestoreMgr::setSinglePass(bool singlePass)
 bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
 {
     if (pid < firstDataPid || pid >= numPages) {
+        return false;
+    }
+
+    if (!scheduler->isOnDemand()) {
         return false;
     }
 
