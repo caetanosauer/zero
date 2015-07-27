@@ -754,6 +754,8 @@ rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
         ssx.end_sys_xct(log_alloc_a_page(vid(), shpid));
     }
 
+    INC_TSTAT(page_alloc_cnt);
+
     return RCOK;
 }
 
@@ -787,6 +789,8 @@ rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
         sys_xct_section_t ssx(true);
         ssx.end_sys_xct(log_dealloc_a_page(vid(), pid));
     }
+
+    INC_TSTAT(page_dealloc_cnt);
 
     return RCOK;
 }
@@ -1159,7 +1163,7 @@ rc_t vol_t::write_backup(shpid_t first, size_t count, void* buf)
  *  Write the buffer "page" to the page at "pnum" of the volume.
  *
  *********************************************************************/
-rc_t vol_t::write_page(shpid_t pnum, generic_page& page)
+inline rc_t vol_t::write_page(shpid_t pnum, generic_page& page)
 {
     return write_many_pages(pnum, &page, 1);
 }
