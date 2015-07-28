@@ -1140,14 +1140,6 @@ rc_t vol_t::write_backup(shpid_t first, size_t count, void* buf)
     w_assert1(count > 0);
     size_t offset = size_t(first) * sizeof(generic_page);
 
-#if W_DEBUG_LEVEL > 2
-    generic_page* pages = (generic_page*) buf;
-    for (size_t j = 1; j < count; j++) {
-        w_assert3(pages[j].pid.page - 1 == pages[j-1].pid.page);
-        w_assert3(pages[j].pid.vol() == _vid);
-    }
-#endif
-
     W_DO(me()->pwrite(_backup_write_fd, buf, sizeof(generic_page) * count,
                 offset));
 
