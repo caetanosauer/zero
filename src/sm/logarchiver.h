@@ -768,6 +768,7 @@ public:
             int* lrLength = NULL);
 
     bool hasPartialLogrec();
+    void reset();
 
     LogScanner(size_t blockSize)
         : truncCopied(0), truncMissing(0), toSkip(0), blockSize(blockSize)

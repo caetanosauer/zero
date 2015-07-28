@@ -809,7 +809,7 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
     w_assert1(nextLSN <= endLSN);
     w_assert1(!scanned || lr->lsn_ck() + lr->length() == nextLSN);
 
-    if (!scanned || lr->type() == logrec_t::t_skip) {
+    if (!scanned || (lrLength > 0 && lr->type() == logrec_t::t_skip)) {
         /*
          * nextLogrec returning false with nextLSN != endLSN means that we are
          * suppose to read another block and call the method again.
@@ -819,6 +819,7 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
             nextLSN = lsn_t(nextLSN.hi() + 1, 0);
             pos = 0;
             DBGTHRD(<< "Reached skip logrec, set nextLSN = " << nextLSN);
+            logScanner->reset();
             w_assert1(!logScanner->hasPartialLogrec());
         }
         if (!nextBlock()) {
@@ -1631,6 +1632,11 @@ void LogArchiver::requestFlushSync(lsn_t reqLSN)
 bool LogScanner::hasPartialLogrec()
 {
     return truncMissing > 0;
+}
+
+void LogScanner::reset()
+{
+    truncMissing = 0;
 }
 
 /**
