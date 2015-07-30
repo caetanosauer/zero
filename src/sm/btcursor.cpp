@@ -62,7 +62,7 @@ void bt_cursor_t::_init(
 {
     _lower = lower;
     _upper = upper;
-    
+
     _store = store;
     _lower_inclusive = lower_inclusive;
     _upper_inclusive = upper_inclusive;
@@ -119,7 +119,7 @@ rc_t bt_cursor_t::_locate_first() {
     if (_needs_lock) {
         W_DO(smlevel_0::lm->intent_vol_store_lock(_store, _ex_lock ? okvl_mode::IX : okvl_mode::IS));
     }
-    
+
     if (_lower > _upper || (_lower == _upper && (!_lower_inclusive || !_upper_inclusive))) {
         _eof = true;
         return RCOK;
@@ -172,7 +172,7 @@ rc_t bt_cursor_t::_locate_first() {
             // in other words, val(slot - 1) < key < val(slot).
             w_assert1(_slot >= 0);
             w_assert1(_slot <= leaf.nrecs());
-            
+
             if (_forward) {
                 --_slot; // subsequent next() will read the slot
                 if (_slot == -1) {
@@ -277,7 +277,7 @@ rc_t bt_cursor_t::next()
     w_assert3(p.pid().page == _pid);
 
     W_DO(_check_page_update(p));
-    
+
     // Move one slot to the right(left if backward scan)
     bool eof_ret = false;
     W_DO(_find_next(p, eof_ret));
@@ -332,7 +332,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
         --_slot;
     }
     eof = false;
-    
+
     // keep following the next page.
     // because we might see empty pages to skip consecutively!
     while (true) {
@@ -366,7 +366,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
             } else {
                 // if we are going backwards, the current page had
                 // low = [current-fence-low], high = [current-fence-high]
-                // and the previous page should have 
+                // and the previous page should have
                 // low = [?], high = [current-fence-low].
                 p.copy_fence_low_key(neighboring_fence);
                 // let's find a page which has this value as high-fence
@@ -378,7 +378,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
                 }
             }
             p.unfix();
-            
+
             // take lock for the fence key
             if (_needs_lock) {
                 lockid_t lid (_store, (const unsigned char*) neighboring_fence.buffer_as_keystr(), neighboring_fence.get_length_as_keystr());
@@ -391,7 +391,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
                 // we can unconditionally request lock because we already released latch
                 W_DO(ss_m::lm->lock(lid, lock_mode, false, false));
             }
-            
+
             // TODO this part should check if we find an exact match of fence keys.
             // because we unlatch above, it's possible to not find exact match.
             // in that case, we should change the traverse_mode to fence_contains and continue
@@ -458,7 +458,7 @@ rc_t bt_cursor_t::_make_rec(const btree_page_h& page)
     page.copy_element(_slot, _elbuf, _elen, ghost);
 
 #if W_DEBUG_LEVEL>0
-    w_assert1(_elen <= sizeof(_elbuf));    
+    w_assert1(_elen <= sizeof(_elbuf));
     // this should have been skipped at _advance_one_slot()
     w_assert1(!ghost);
 
@@ -466,6 +466,6 @@ rc_t bt_cursor_t::_make_rec(const btree_page_h& page)
     page.get_key(_slot, key_again);
     w_assert1(key_again.compare(_key) == 0);
 #endif // W_DEBUG_LEVEL>0
-    
+
     return RCOK;
 }

@@ -22,7 +22,7 @@ class btree_page_h;
     bt_cursor_t cursor (volid, storeid,
         lower_bound, lower_inclusive,
         upper_bound, upper_inclusive,
-        is_forward_direction);    
+        is_forward_direction);
     do {
         W_DO(cursor.next());
         if (cursor.eof()) {
@@ -38,26 +38,26 @@ class btree_page_h;
  * after each next() call to allow concurrent accesses.
  * Thus, it also checks if the current page has been
  * changed after its last access using \e _lsn variable.
- * 
+ *
  * If it has been changed, and if the page still contains
  * the key we previously read, we just re-locate \e _slot
  * in the page and goes on.
- * 
+ *
  * If it has been changed and also the page doesn't contain
  * the key we previously read any more, we re-locate \e _pid
  * by re-traversing the tree.
- * 
+ *
  * These two events are expensive,
  * but happen only after the LSN check, so they are rare too.
- * 
+ *
  * \section Locking-and-Concurrency
  * A cursor object also takes locks on the keys and their
  * intervals it read. Here, the complication is that
  * the cursor object has two modes; \e forward and \e backward.
  * Unfortunately, these two are not quite symmetric because
- * the key range locks are on half-open interval (a key 
+ * the key range locks are on half-open interval (a key
  * and open interval on its _right_).
- * 
+ *
  * Also, there's a trade-off between concurrency and overhead.
  * In this class, we try to minimize overhead rather than
  * concurrency. See jira ticket:89 "Cursor case: overhead-concurrency trade-off" (originally trac ticket:91) for more details.
@@ -111,8 +111,8 @@ public:
      * Moves the BTree cursor to next slot.
      */
     rc_t next();
-    
-    bool          is_valid() const { return _first_time || !_eof; } 
+
+    bool          is_valid() const { return _first_time || !_eof; }
     bool          is_forward() const { return _forward; }
     void          close();
 
