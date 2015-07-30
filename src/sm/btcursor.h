@@ -91,6 +91,20 @@ public:
         const w_keystr_t& upper, bool upper_inclusive,
         bool              forward);
 
+    /**
+     * Constructs an open-end scan, with a start condition only.
+     * @param[in] vol Volume ID
+     * @param[in] store Store ID
+     * @param[in] bound start condition for the scan (lower if forward, upper otherwise)
+     * @param[in] inclusive true if returning a tuple exactly matching the bound
+     * @param[in] forward true if this cursor goes forward from lower bound, false if
+     * this cursor goes backwards from upper bound.
+     */
+    bt_cursor_t(
+        stid_t store,
+        const w_keystr_t& bound, bool inclusive,
+        bool              forward);
+
     ~bt_cursor_t() {close();}
 
     /**

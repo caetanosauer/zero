@@ -30,6 +30,22 @@ bt_cursor_t::bt_cursor_t(stid_t store, bool forward)
 
 bt_cursor_t::bt_cursor_t(
     stid_t store,
+    const w_keystr_t& bound, bool inclusive,
+    bool              forward)
+{
+    w_keystr_t termination;
+    if (forward) {
+        termination.construct_posinfkey();
+        _init (store, bound, inclusive, termination,  true, forward);
+    }
+    else {
+        termination.construct_neginfkey();
+        _init (store, termination, true, bound,  inclusive, forward);
+    }
+}
+
+bt_cursor_t::bt_cursor_t(
+    stid_t store,
     const w_keystr_t& lower, bool lower_inclusive,
     const w_keystr_t& upper, bool upper_inclusive,
     bool              forward)
