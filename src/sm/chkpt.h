@@ -64,6 +64,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_base.h"
 #include "w_heap.h"
 
+//#include "lock.h"               // Lock re-acquisition
+//#include "btree_impl.h"         // Lock re-acquisition
+//#include "btree_logrec.h"       // Lock re-acquisition
+
 #include <vector>
 #include <algorithm>
 
@@ -76,7 +80,6 @@ struct chkpt_t{
   lsn_t begin_lsn;
   lsn_t min_rec_lsn;
   lsn_t min_xct_lsn;
-  uint16_t total_page_dirty;
 
   //Volume Table
   vid_t next_vid;
@@ -143,12 +146,24 @@ public:
     void             take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap, const bool record_lock = false);
     void             dcpld_take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap, const bool record_lock = false);
     void             scan_log(lsn_t& begin, lsn_t& end, chkpt_t& new_chkpt);
+    void             backward_scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt, const bool restart_with_lock);
+
 
 
 private:
     chkpt_thread_t*  _chkpt_thread;
     long             _chkpt_count;
     lsn_t            _chkpt_last;
+
+    bool             _analysis_system_log(logrec_t& r, chkpt_t& new_chkpt, set<lpid_t>& written_pages);
+    void             _analysis_ckpt_bf_log(logrec_t& r,  chkpt_t& new_chkpt, set<lpid_t>& written_pages);
+    void             _analysis_ckpt_xct_log(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR);
+    void             _analysis_ckpt_lock_log(logrec_t& r, chkpt_t& new_chkpt);
+    void             _analysis_other_log(logrec_t& r, chkpt_t& new_chkpt, uint xct_idx, set<lpid_t>& written_pages);
+    void             _analysis_process_lock(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR, uint xct_idx);
+    void             _analysis_acquire_lock_log(logrec_t& r, chkpt_t& new_chkpt, uint xct_idx);
+    void             _analysis_process_compensation_map(tid_CLR_map& mapCLR, chkpt_t& new_chkpt);
+    void             _analysis_process_txn_table(chkpt_t& new_chkpt);
 
     template<typename T>
     size_t indexOf(vector<T> vector, T value) {
