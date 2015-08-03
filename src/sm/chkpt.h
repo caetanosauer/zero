@@ -145,7 +145,6 @@ public:
     void             synch_take(XctLockHeap& lock_heap);  // Record lock information in heap
     void             take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap, const bool record_lock = false);
     void             dcpld_take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap, const bool record_lock = false);
-    void             scan_log(lsn_t& begin, lsn_t& end, chkpt_t& new_chkpt);
     void             backward_scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt, const bool restart_with_lock);
 
 
