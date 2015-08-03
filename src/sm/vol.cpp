@@ -31,8 +31,6 @@
 // Needed to get LSN of restore_begin log record
 #include "logdef_gen.cpp"
 
-
-
 vol_t::vol_t(const sm_options& options)
              : _unix_fd(-1),
                _apply_fake_disk_latency(false),
