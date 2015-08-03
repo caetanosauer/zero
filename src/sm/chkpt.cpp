@@ -2604,6 +2604,23 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
 
     w_assert1(0 == lock_heap.NumElements());
 
+    /*
+     * checkpoints are fuzzy
+     * but must be serialized wrt each other.
+     *
+     * Acquire the 'write' mutex immediatelly to serialize concurrent checkpoint requests.
+     *
+     * NB: EVERYTHING BETWEEN HERE AND RELEASING THE MUTEX
+     * MUST BE W_COERCE (not W_DO).
+     *
+     * The W_COERCE is like W_DO(x), but instead of returning in the error
+     * case, it fails catastrophically.
+     * It is used in checkpoint function because
+     *   Checkpoint has no means to return error information
+     */
+    chkpt_serial_m::write_acquire();
+    DBGOUT1(<<"BEGIN chkpt_m::dcpld_take");
+
     INC_TSTAT(log_chkpt_cnt);
 
     //Verify if checkpoint can be taken:
@@ -2715,51 +2732,56 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
     const lsn_t curr_lsn = ss_m::log->curr_lsn();
     lsn_t begin_lsn = lsn_t::null;
 
-
-    chkpt_t new_chkpt;
+    
     LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
-
-    new_chkpt.begin_lsn = begin_lsn;
-    new_chkpt.min_xct_lsn = begin_lsn;
-    new_chkpt.min_rec_lsn = begin_lsn;
-    new_chkpt.total_page_dirty = 0;
 
     w_assert1(curr_lsn.data() <= begin_lsn.data());
 
-    lsn_t last_chkpt = ss_m::log->master_lsn();
-    if(last_chkpt != 0) {
+    lsn_t master_lsn = ss_m::log->master_lsn();
+    chkpt_t new_chkpt;
+    backward_scan_log(master_lsn, begin_lsn, new_chkpt, false);
 
-        scan_log(last_chkpt, begin_lsn, new_chkpt);
+    //scan_log(last_chkpt, begin_lsn, new_chkpt);
 
-        DBGOUT1(<<"==================== CHECKPOINT ====================");
-        DBGOUT1(<<"new_chkpt.next_vid = " << new_chkpt.next_vid);
-        for(uint i=0; i<new_chkpt.dev_paths.size(); i++) {
-            DBGOUT1(<<"new_chkpt.dev_paths[" << i << "] = " << new_chkpt.dev_paths[i]);
-        }
-        LOG_INSERT(chkpt_dev_tab_log(new_chkpt.next_vid, new_chkpt.dev_paths), 0);
-
-
-        LOG_INSERT(chkpt_backup_tab_log(new_chkpt.backup_vids, new_chkpt.backup_paths), 0);
-        //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
-
-        for(uint i=0; i<new_chkpt.pid.size(); i++) {
-            DBGOUT1(<<"pid["<<i<<"]="<<new_chkpt.pid[i]<< " , " <<
-                      "store["<<i<<"]="<<new_chkpt.store[i]<< " , " <<
-                      "rec_lsn["<<i<<"]="<<new_chkpt.rec_lsn[i]<< " , " <<
-                      "page_lsn["<<i<<"]="<<new_chkpt.page_lsn[i]);
-        }
-        LOG_INSERT(chkpt_bf_tab_log(new_chkpt.pid.size(), (const lpid_t*)(&new_chkpt.pid),
-                                                          (const snum_t*)(&new_chkpt.store),
-                                                          (const lsn_t*)(&new_chkpt.rec_lsn),
-                                                          (const lsn_t*)(&new_chkpt.page_lsn)), 0);
-        //LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chunk_lock_count, lock_mode, lock_hash), 0);
-        LOG_INSERT(chkpt_xct_tab_log(new_chkpt.youngest, new_chkpt.tid.size(), (const tid_t*)(&new_chkpt.tid),
-                                                                               (const smlevel_0::xct_state_t*)(&new_chkpt.state),
-                                                                               (const lsn_t*)(&new_chkpt.last_lsn),
-                                                                               (const lsn_t*)(&new_chkpt.undo_nxt),
-                                                                               (const lsn_t*)(&new_chkpt.first_lsn)), 0);
-        DBGOUT1(<<"====================================================");
+    DBGOUT1(<<"==================== CHECKPOINT ====================");
+    DBGOUT1(<<"new_chkpt.begin_lsn = " << new_chkpt.begin_lsn);
+    DBGOUT1(<<"new_chkpt.min_rec_lsn = " << new_chkpt.min_rec_lsn);
+    DBGOUT1(<<"new_chkpt.min_xct_lsn = " << new_chkpt.min_xct_lsn);
+    DBGOUT1(<<"new_chkpt.next_vid = " << new_chkpt.next_vid);
+    for(uint i=0; i<new_chkpt.dev_paths.size(); i++) {
+        DBGOUT1(<<"new_chkpt.dev_paths[" << i << "] = " << new_chkpt.dev_paths[i]);
     }
+    LOG_INSERT(chkpt_dev_tab_log(new_chkpt.next_vid, new_chkpt.dev_paths), 0);
+
+
+    LOG_INSERT(chkpt_backup_tab_log(new_chkpt.backup_vids, new_chkpt.backup_paths), 0);
+    //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
+
+    for(uint i=0; i<new_chkpt.pid.size(); i++) {
+        DBGOUT1(<<"pid["<<i<<"]="<<new_chkpt.pid[i]<< " , " <<
+                  "store["<<i<<"]="<<new_chkpt.store[i]<< " , " <<
+                  "rec_lsn["<<i<<"]="<<new_chkpt.rec_lsn[i]<< " , " <<
+                  "page_lsn["<<i<<"]="<<new_chkpt.page_lsn[i]);
+    }
+    LOG_INSERT(chkpt_bf_tab_log(new_chkpt.pid.size(), (const lpid_t*)(&new_chkpt.pid[0]),
+                                                      (const snum_t*)(&new_chkpt.store[0]),
+                                                      (const lsn_t*)(&new_chkpt.rec_lsn[0]),
+                                                      (const lsn_t*)(&new_chkpt.page_lsn[0])), 0);
+    //LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chunk_lock_count, lock_mode, lock_hash), 0);
+
+    for(uint i=0; i<new_chkpt.tid.size(); i++) {
+        DBGOUT1(<<"tid["<<i<<"]="<<new_chkpt.tid[i]<<" , " <<
+                  "state["<<i<<"]="<<new_chkpt.state[i]<< " , " <<
+                  "last_lsn["<<i<<"]="<<new_chkpt.last_lsn[i]<<" , " <<
+                  "undo_nxt["<<i<<"]="<<new_chkpt.undo_nxt[i]<<" , " <<
+                  "first_lsn["<<i<<"]="<<new_chkpt.first_lsn[i]);
+    }
+    LOG_INSERT(chkpt_xct_tab_log(new_chkpt.youngest, new_chkpt.tid.size(), (const tid_t*)(&new_chkpt.tid[0]),
+                                                                           (const smlevel_0::xct_state_t*)(&new_chkpt.state[0]),
+                                                                           (const lsn_t*)(&new_chkpt.last_lsn[0]),
+                                                                           (const lsn_t*)(&new_chkpt.undo_nxt[0]),
+                                                                           (const lsn_t*)(&new_chkpt.first_lsn[0])), 0);
+    DBGOUT1(<<"====================================================");
 
 
     if (ss_m::shutting_down && !ss_m::shutdown_clean) // Dirty shutdown (simulated crash)
@@ -2774,30 +2796,16 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
     }
     else
     {
-        if (new_chkpt.min_rec_lsn > new_chkpt.begin_lsn)
-            new_chkpt.min_rec_lsn = new_chkpt.begin_lsn;
-        if (new_chkpt.min_xct_lsn > new_chkpt.begin_lsn)
-            new_chkpt.min_xct_lsn = new_chkpt.begin_lsn;
-
-            w_assert3(new_chkpt.min_rec_lsn.hi() > 0);
-            w_assert3(new_chkpt.min_xct_lsn.hi() > 0);
-
-        if (0 == new_chkpt.total_page_dirty)
+        if (0 == new_chkpt.pid.size())
         {
             // No dirty page, the begin checkpoint lsn and redo_lsn (min_rec_lsn)
             // must be the same
-            w_assert1(new_chkpt.begin_lsn == new_chkpt.min_rec_lsn);
-            LOG_INSERT(chkpt_end_log (new_chkpt.begin_lsn,
-                                      new_chkpt.begin_lsn,
-                                      new_chkpt.min_xct_lsn), 0);
+            w_assert1(new_chkpt.min_rec_lsn == lsn_t::null);
         }
-        else
-        {
-            // Has dirty page
-            LOG_INSERT(chkpt_end_log (new_chkpt.begin_lsn,
-                                      new_chkpt.min_rec_lsn,
-                                      new_chkpt.min_xct_lsn), 0);
-        }
+
+        LOG_INSERT(chkpt_end_log (new_chkpt.begin_lsn,
+                                  new_chkpt.min_rec_lsn,
+                                  new_chkpt.min_xct_lsn), 0);
 
         W_COERCE(ss_m::log->flush_all() );
         DBGOUT1(<<"Setting master_lsn to " << new_chkpt.begin_lsn);
@@ -2807,6 +2815,9 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
     }
 
     DBGOUT1(<<"Exiting dcpld_take()");
+
+    // Release the 'write' mutex so the next checkpoint request can come in
+    chkpt_serial_m::write_release();
 }
 
 
@@ -3710,7 +3721,8 @@ try
 
             // Finished a completed checkpoint
             DBGOUT1(<< "END chkpt_m::take, begin LSN = " << master
-                    << ", min_rec_lsn = " << min_rec_lsn);
+                    << ", min_rec_lsn = " << min_rec_lsn
+                    << ", min_xct_lsn = " << min_xct_lsn);
 
         }
     }
