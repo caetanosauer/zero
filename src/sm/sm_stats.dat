@@ -329,9 +329,17 @@ SM Storage manager = 0x00060000 sm_stats_t {
     // Restore stats
     u_long restore_sched_seq        Restore scheduled a page in single-pass restore
     u_long restore_sched_queued     Restore scheduled a page which was queued (on-demand)
+    u_long restore_time_read        Time spent by restore reading backup segments (msec)
+    u_long restore_time_replay      Time spent by restore replaying log archive (msec)
+    u_long restore_time_replay_useless  Time spent by restore with empty replays (msec)
+    u_long restore_time_openscan    Time spent by restore opening archive scan (msec)
+    u_long restore_time_write       Time spent by restore writing restored segments (msec)
+    u_long restore_skipped_segs     Number of segments on which no log replay was performed
+    u_long restore_backup_reads     Number of segment reads on backup file
 
     // Log archiver stats
     u_long la_log_slow              Log archiver activated with small window due to slow log growth
     u_long la_activations           How often log archiver was activated
+    u_long la_block_reads           Number of reads performed during log archive scans
 };
 

@@ -671,6 +671,8 @@ rc_t LogArchiver::ArchiveDirectory::openForScan(int& fd, lsn_t runBegin,
 rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
         fileoff_t& offset)
 {
+    INC_TSTAT(la_block_reads);
+
     rc_t rc = (me()->pread(fd, buf, blockSize, offset));
     if (rc.is_error()) {
         if (rc.err_num() == stSHORTIO) {
@@ -1051,6 +1053,8 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
         merger->addInput(runScanner);
         archIndex->probeNext(runProbe, endLSN);
     }
+
+    DBGOUT3(<< "RunMerger opened with " << merger->heapSize() << " runs");
 
     return merger;
 }

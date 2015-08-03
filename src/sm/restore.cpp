@@ -10,6 +10,8 @@
 
 #include <algorithm>
 
+#include "stopwatch.h"
+
 RestoreBitmap::RestoreBitmap(size_t size)
     : bits(size, false) // initialize all bits to false
 {
@@ -435,6 +437,8 @@ void RestoreMgr::restoreLoop()
     LogArchiver::ArchiveScanner logScan(archive);
     fixable_page_h fixable;
 
+    W_IFDEBUG1(stopwatch_t timer;);
+
     while (numRestoredPages < numPages) {
         shpid_t requested = scheduler->next();
         if (isRestored(requested)) {
@@ -446,6 +450,8 @@ void RestoreMgr::restoreLoop()
             continue;
         }
         w_assert0(requested >= firstDataPid);
+
+        W_IFDEBUG1(timer.reset(););
 
         unsigned segment = getSegmentForPid(requested);
         shpid_t firstPage = getPidForSegment(segment);
@@ -483,8 +489,16 @@ void RestoreMgr::restoreLoop()
             }
         }
 
+#if W_DEBUG_LEVEL>=1
+        ADD_TSTAT(restore_time_read, timer.time_ms());
+#endif
+
         LogArchiver::ArchiveScanner::RunMerger* merger =
             logScan.open(start, end, lsn);
+
+#if W_DEBUG_LEVEL>=1
+        ADD_TSTAT(restore_time_openscan, timer.time_ms());
+#endif
 
         generic_page* page = (generic_page*) workspace;
         shpid_t current = firstPage;
@@ -548,11 +562,23 @@ void RestoreMgr::restoreLoop()
             DBGTHRD(<< "Restore applied " << redone << " logrecs in segment "
                     << segment);
         }
+        else {
+            INC_TSTAT(restore_skipped_segs);
+        }
+
+#if W_DEBUG_LEVEL>=1
+        if (redone > 0) { ADD_TSTAT(restore_time_replay, timer.time_ms()); }
+        else { ADD_TSTAT(restore_time_replay_useless, timer.time_ms()); }
+#endif
 
         // in the last segment, we may write less than the segment size
         finishSegment(workspace, segment, current - firstPage);
 
         backup->unfix(segment);
+
+#if W_DEBUG_LEVEL>=1
+        ADD_TSTAT(restore_time_write, timer.time_ms());
+#endif
 
         delete merger;
     }

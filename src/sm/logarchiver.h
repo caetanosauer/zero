@@ -543,6 +543,11 @@ public:
             bool next(logrec_t*& lr);
             void dumpHeap(ostream& out);
 
+            size_t heapSize()
+            {
+                return heap.NumElements();
+            }
+
         private:
             MergeHeapCmp cmp;
             Heap<MergeHeapEntry, MergeHeapCmp> heap;

@@ -16,6 +16,7 @@ BackupOnDemandReader::BackupOnDemandReader(vol_t* volume, size_t segmentSize)
 
 char* BackupOnDemandReader::fix(unsigned segment)
 {
+    INC_TSTAT(restore_backup_reads);
     w_assert1(fixedSegment < 0);
 
     W_COERCE(volume->read_backup(shpid_t(segment * segmentSize), segmentSize,
@@ -192,6 +193,7 @@ void BackupPrefetcher::run()
 
         // perform the read into the slot found
         shpid_t firstPage = shpid_t(next * segmentSize);
+        INC_TSTAT(restore_backup_reads);
         W_COERCE(volume->read_backup(firstPage, segmentSize, readSlot));
 
         // signalize read to waiting threads
