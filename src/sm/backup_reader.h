@@ -58,7 +58,8 @@ protected:
 class DummyBackupReader : public BackupReader {
 public:
     DummyBackupReader(size_t segmentSize)
-        : BackupReader(segmentSize * sizeof(generic_page))
+        : BackupReader(segmentSize * sizeof(generic_page)),
+        segmentSize(segmentSize)
     {
     }
 
@@ -68,6 +69,7 @@ public:
 
     virtual char* fix(unsigned)
     {
+        memset(buffer, 0, segmentSize * sizeof(generic_page));
         return buffer;
     }
 
@@ -75,8 +77,10 @@ public:
     {
     }
 
-public:
     static const std::string IMPL_NAME;
+
+private:
+    size_t segmentSize;
 };
 
 /** \brief Simple on-demand backup reader without prefetching

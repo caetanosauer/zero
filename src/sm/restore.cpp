@@ -467,7 +467,6 @@ void RestoreMgr::restoreLoop()
 
         lsn_t lsn = lsn_t::null;
         char* workspace = backup->fix(segment);
-        memset(workspace, 0, segmentSize * sizeof(generic_page));
 
         if (useBackup) {
             // Log archiver is queried with lowest the LSN in the segment, to
@@ -479,8 +478,8 @@ void RestoreMgr::restoreLoop()
             // segment.
             generic_page* page = (generic_page*) workspace;
             for (int i = 0; i < segmentSize; i++, page++) {
-                // If checksum does not match, we consider it a virgin page
-                if (page->checksum != page->calculate_checksum()) {
+                // If page ID does not match, we consider it a virgin page
+                if (page->pid.page != firstPage + i) {
                     continue;
                 }
                 if (lsn == lsn_t::null || page->lsn < lsn) {
@@ -523,6 +522,8 @@ void RestoreMgr::restoreLoop()
                 page++;
                 DBGOUT4(<< "Restoring page " << current);
             }
+
+            w_assert1(page->pid.page == 0 || page->pid.page == current);
 
             if (!fixable.is_fixed() || fixable.pid().page != lrpid.page) {
                 // PID is manually set for virgin pages
