@@ -1,22 +1,14 @@
+#define private public
+
 #include "btree_test_env.h"
-#include "gtest/gtest.h"
-#include "sm_vas.h"
-#include "btree.h"
-#include "btcursor.h"
-#include "xct.h"
 #include "sm_base.h"
-#include "sm_external.h"
+#include "log_core.h"
+#include "vol.h"
+#include "chkpt.h"
 
 btree_test_env *test_env;
 vol_m* volMgr;
 std::string volpath_base;
-
-//#define DEFAULT_TEST(test, function) \
-//    TEST (test, function) { \
-//        test_env->empty_logdata_dir(); \
-//        options.set_bool_option("sm_testenv_init_vol", false); \
-//        EXPECT_EQ(test_env->runBtreeTest(function, options), 0); \
-//    }
 
 void init()
 {
@@ -79,19 +71,18 @@ rc_t deviceTable(ss_m*, test_volume_t*)
 
     W_DO(ss_m::checkpoint_sync());
 
-
     // now dismount and check volMgr state
     volpath = volpath_base + "_1";
-    W_COERCE(volMgr->sx_dismount(volpath.c_str(), false));
+    W_COERCE(volMgr->sx_dismount(volpath.c_str(), true));
 
     volpath = volpath_base + "_2";
-    W_COERCE(volMgr->sx_dismount(volpath.c_str(), false));
+    W_COERCE(volMgr->sx_dismount(volpath.c_str(), true));
 
     volpath = volpath_base + "_3";
-    W_COERCE(volMgr->sx_dismount(volpath.c_str(), false));
+    W_COERCE(volMgr->sx_dismount(volpath.c_str(), true));
 
     volpath = volpath_base + "_4";
-    W_COERCE(volMgr->sx_dismount(volpath.c_str(), false));
+    W_COERCE(volMgr->sx_dismount(volpath.c_str(), true));
 
     checkEmpty();
 
@@ -110,30 +101,17 @@ rc_t bufferTable(ss_m* ssm, test_volume_t* test_vol)
     lpid_t  _root_pid;
 
     W_DO(x_btree_create_index(ssm, test_vol, _stid_list[0], _root_pid));
-
-    /*
-    for(int i=0; i<10; i++) {
-        ostringstream key;
-        ostringstream data;
-        key << "aa" << i;
-        data << "data" << i;
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], key.str().c_str(), data.str().c_str()));
-    }
-    */
-    //W_DO(ss_m::force_buffers());
-    //W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa4", "data4"));
-    //W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
     W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit));  // flags: Checkpoint, commit
-    
-    W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, false, '1'));  // flags: Checkpoint, commit
-
-    //W_DO(ss_m::force_buffers());
     W_DO(ss_m::checkpoint_sync());
 
-    //W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa4", "data4"));
-    //W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
-    //W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa5", "data5"));
-    //W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa2", "data2"));
+    //chkpt_t chkpt;
+    //ssm->chkpt->scan_log(begin_scan, end_scan, chkpt);
+    
+    W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_in_flight, false, '1'));  // flags: Checkpoint, commit
+    W_DO(ss_m::checkpoint_sync());
+
+    W_DO(ss_m::force_buffers());
+    //W_DO(ss_m::checkpoint_sync());
 
     return RCOK;
 }
