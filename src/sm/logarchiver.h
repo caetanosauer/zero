@@ -229,13 +229,13 @@ public:
 
         void newBlock(lpid_t firstPID);
         rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
-        ProbeResult* probeFirst(lpid_t pid, lsn_t lsn);
+        ProbeResult* probeFirst(lpid_t startPID, lpid_t endPID, lsn_t lsn);
         void probeNext(ProbeResult*& prev, lsn_t endLSN = lsn_t::null);
 
         rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
         rc_t loadRunInfo(const char* fname);
         void sortRunVector();
-        void appendNewEntry();
+        void appendNewEntry(/*lpid_t lastPID*/);
 
         void setLastFinished(int f) { lastFinished = f; }
 
@@ -255,6 +255,9 @@ public:
             // properly serialized and deserialized!
             // std::vector<bool> filter;
 
+            // Simpler min-max filter
+            lpid_t lastPID;
+
             // one entry reserved for last pid with offset = block size
             std::vector<BlockEntry> entries;
 
@@ -272,7 +275,7 @@ public:
         char* readBuffer;
         int lastFinished;
 
-        size_t findRun(lsn_t lsn);
+        size_t findRun(lpid_t endPID, lsn_t lsn);
         void probeInRun(ProbeResult*);
         // binary search
         fileoff_t findEntry(RunInfo* run, lpid_t pid,
@@ -428,6 +431,7 @@ public:
         size_t blockSize;
         size_t pos;
         lpid_t firstPID;
+        // lpid_t lastPID;
         lsn_t maxLSNInBlock;
         int lastLength;
         int lastRun;

@@ -501,6 +501,14 @@ void RestoreMgr::restoreLoop()
         ADD_TSTAT(restore_time_openscan, timer.time_ms());
 #endif
 
+        if (!merger) {
+            // segment does not need any log replay
+            finishSegment(workspace, segment, segmentSize);
+            backup->unfix(segment);
+            INC_TSTAT(restore_skipped_segs);
+            continue;
+        }
+
         generic_page* page = (generic_page*) workspace;
         shpid_t current = firstPage;
         shpid_t prevPage = 0;
@@ -564,9 +572,6 @@ void RestoreMgr::restoreLoop()
             current++;
             DBGTHRD(<< "Restore applied " << redone << " logrecs in segment "
                     << segment);
-        }
-        else {
-            INC_TSTAT(restore_skipped_segs);
         }
 
 #if W_DEBUG_LEVEL>=1

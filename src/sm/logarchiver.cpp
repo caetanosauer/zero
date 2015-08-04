@@ -952,6 +952,7 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
     if (firstPID == lpid_t::null) {
         firstPID = lr->construct_pid();
     }
+    // lastPID = lr->construct_pid();
 
     if (maxLSNInBlock < lr->lsn_ck()) {
         maxLSNInBlock = lr->lsn_ck();
@@ -976,6 +977,7 @@ void LogArchiver::BlockAssembly::finish(int run)
     if (archIndex) {
         // Add new entry to index when we see a new run coming.
         if (run != lastRun) {
+            // archIndex->appendNewEntry(lastPID);
             archIndex->appendNewEntry();
             lastRun = run;
         }
@@ -1038,7 +1040,7 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
 
     // probe for runs
     ArchiveIndex::ProbeResult* runProbe =
-        archIndex->probeFirst(startPID, startLSN);
+        archIndex->probeFirst(startPID, endPID, startLSN);
 
     while (runProbe) {
         RunScanner* runScanner = new RunScanner(
@@ -1055,6 +1057,12 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
     }
 
     DBGOUT3(<< "RunMerger opened with " << merger->heapSize() << " runs");
+    if (merger->heapSize() == 0) {
+        // all runs pruned from probe
+        delete merger;
+        return NULL;
+    }
+
 
     return merger;
 }
@@ -1782,7 +1790,7 @@ LogArchiver::ArchiveIndex::~ArchiveIndex()
     delete[] readBuffer;
 }
 
-void LogArchiver::ArchiveIndex::newBlock(lpid_t lastPID)
+void LogArchiver::ArchiveIndex::newBlock(lpid_t firstPID)
 {
     CRITICAL_SECTION(cs, mutex);
 
@@ -1790,7 +1798,7 @@ void LogArchiver::ArchiveIndex::newBlock(lpid_t lastPID)
 
     BlockEntry e;
     e.offset = blockSize * runs.back().entries.size();
-    e.pid = lastPID;
+    e.pid = firstPID;
     runs.back().entries.push_back(e);
 }
 
@@ -1810,29 +1818,39 @@ rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
     return RCOK;
 }
 
-rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd, fileoff_t offset)
+rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
+        fileoff_t offset)
 {
     // Assumption: mutex is held by caller
 
+    // lastPID is stored on first block, but we reserve space for it in every
+    // block to simplify things
     int entriesPerBlock =
-        (blockSize - sizeof(BlockHeader)) / sizeof(BlockEntry);
+        (blockSize - sizeof(BlockHeader) - sizeof(lpid_t)) / sizeof(BlockEntry);
     int remaining = run.entries.size();
     int i = 0;
+    size_t currEntry = 0;
 
     while (remaining > 0) {
         int j = 0;
+        size_t bpos = sizeof(BlockHeader);
         while (j < entriesPerBlock && remaining > 0)
         {
-            unsigned pos1 = sizeof(BlockHeader) + (j * sizeof(BlockEntry));
-            unsigned pos2 = (i*entriesPerBlock) + j;
-            memcpy(writeBuffer + pos1, &run.entries[pos2],
+            memcpy(writeBuffer + bpos, &run.entries[currEntry],
                         sizeof(BlockEntry));
             j++;
+            currEntry++;
             remaining--;
+            bpos += sizeof(BlockEntry);
         }
         BlockHeader* h = (BlockHeader*) writeBuffer;
         h->entries = j;
         h->blockNumber = i;
+
+        // copy lastPID into last block (space was reserved above)
+        // if (remaining == 0) {
+        //     memcpy(writeBuffer + bpos, &run.lastPID, sizeof(lpid_t));
+        // }
 
         W_COERCE(me()->pwrite(fd, writeBuffer, blockSize, offset));
         offset += blockSize;
@@ -1858,23 +1876,27 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
 
     fileoff_t offset = dataBlockCount * blockSize;
 
-    int i = 0;
     while (indexBlockCount > 0) {
         W_DO(me()->pread(fd, readBuffer, blockSize, offset));
         BlockHeader* h = (BlockHeader*) readBuffer;
 
         unsigned j = 0;
+        size_t bpos = sizeof(BlockHeader);
         while(j < h->entries)
         {
-            unsigned pos = sizeof(BlockHeader) + (j * sizeof(BlockEntry));
-            BlockEntry* e = (BlockEntry*)(readBuffer + pos);
+            BlockEntry* e = (BlockEntry*)(readBuffer + bpos);
             run.entries.push_back(*e);
 
+            bpos += sizeof(BlockEntry);
             j++;
-            i++;
         }
         indexBlockCount--;
-        offset = offset + blockSize;
+        offset += blockSize;
+
+        // if (indexBlockCount == 0) {
+        //     // read lasPID from last block
+        //     run.lastPID = *((lpid_t*) (readBuffer + bpos));
+        // }
     }
 
     W_DO(me()->close(fd));
@@ -1889,6 +1911,10 @@ void LogArchiver::ArchiveIndex::sortRunVector()
 void LogArchiver::ArchiveIndex::appendNewEntry()
 {
     CRITICAL_SECTION(cs, mutex);
+
+    // if (runs.size() > 0) {
+    //     runs.back().lastPID = lastPID;
+    // }
 
     RunInfo newRun;
     runs.push_back(newRun);
@@ -1924,7 +1950,7 @@ rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
     return RCOK;
 }
 
-size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
+size_t LogArchiver::ArchiveIndex::findRun(lpid_t endPID, lsn_t lsn)
 {
     // Assumption: mutex is held by caller
     if (lsn == lsn_t::null) {
@@ -1941,10 +1967,24 @@ size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
         result--;
     }
 
-    if(result == 0 && runs[result].firstLSN > lsn) {
+    if (result == 0 && runs[result].firstLSN > lsn) {
         // looking for an LSN which is not contained in the archive
         // (can only happen if old runs were recycled)
         result = -1;
+    }
+
+    if (result >= 0 && endPID != lpid_t::null) {
+        // Now go forward pruning with the given pid.  For old segments probing
+        // against new runs, endPID of segmend will likely be less than the
+        // first PID in the runs, meaning the run can be pruned.
+        while (result <= lastFinished &&
+                endPID < runs[result].entries[0].pid)
+        {
+            result++;
+        }
+        if (result > lastFinished) {
+            result = -1;
+        }
     }
 
     // caller must check if returned index is valid
@@ -2024,12 +2064,13 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result)
     result->offset = findEntry(&runs[index], result->pid);
 }
 
-ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t pid, lsn_t lsn)
+ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t startPID,
+        lpid_t endPID, lsn_t lsn)
 {
     CRITICAL_SECTION(cs, mutex);
 
     lsn_t runEndLSN;
-    size_t index = findRun(lsn);
+    size_t index = findRun(endPID, lsn);
 
     if ((int) index > lastFinished) {
         // runs beyond lastFinished are unavailable for probing
@@ -2037,7 +2078,7 @@ ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t pid, lsn_t lsn)
     }
 
     ProbeResult* result = new ProbeResult();
-    result->pid = pid;
+    result->pid = startPID;
     result->runIndex = index;
     probeInRun(result);
 
