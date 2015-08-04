@@ -681,6 +681,11 @@ restart_m::analysis_pass_forward(
      */
     int num_chkpt_end_handled = 0;
 
+    // CS TODO -- dirty hack; see comments below
+    char* devtab = NULL;
+    char* bkptab = NULL;
+
+
     // At the beginning of the Recovery from a system crash, both the transaction table
     // and buffer pool should be initialized with the information from the specified checkpoint,
     // and then modified according to the following log records in the recovery log
@@ -897,7 +902,20 @@ restart_m::analysis_pass_forward(
             {
                 // Still processing the master checkpoint record.
                 // _analysis_ckpt_dev_log(r, mount);
-                r.redo(0);
+
+                // CS: dirty trick to fix mounts and backups during backward
+                // log analysis, allowing them to appear in any order. This
+                // code is temporary, since a proper fix should also apply to
+                // the individual log records (see below).  CS TODO
+                // r.redo(0);
+                if (r.type() == logrec_t::t_chkpt_dev_tab) {
+                    devtab = new char[logrec_t::max_sz];
+                    memcpy(devtab, &r, r.length());
+                }
+                else {
+                    bkptab = new char[logrec_t::max_sz];
+                    memcpy(bkptab, &r, r.length());
+                }
             }
             break;
 
@@ -1128,6 +1146,16 @@ restart_m::analysis_pass_forward(
             }
             break;
         }// switch
+    }
+
+    // CS TODO -- dirty hack (continuation)
+    if (devtab) {
+        ((logrec_t*) devtab)->redo(0);
+        delete[] devtab;
+    }
+    if (bkptab) {
+        ((logrec_t*) bkptab)->redo(0);
+        delete[] bkptab;
     }
 
     // Read all the recovery logs, we should have a minimum LSN from the master checkpoint
@@ -1390,6 +1418,10 @@ restart_m::analysis_pass_backward(
 
     int num_chkpt_end_handled = 0;
 
+    // CS TODO -- dirty hack; see comments below
+    char* devtab = NULL;
+    char* bkptab = NULL;
+
     // At the beginning of the recovery from a system crash, both the transaction table
     // and buffer pool should be empty
 
@@ -1629,32 +1661,25 @@ restart_m::analysis_pass_backward(
             }
             break;
 
+        case logrec_t::t_chkpt_dev_tab:
         case logrec_t::t_chkpt_backup_tab:
             if (num_chkpt_end_handled == 1)
             {
-                // backups can simply be redone in reverse order because, for
-                // now at least, there is no delete_backup operation. If there
-                // would be one, we would have to replay them in reverse to
-                // take care of a sequence of add and delete, just like in
-                // chkpt_dev_tab and mount/dismounts.
-                r.redo(0);
-            }
-            break;
-
-        case logrec_t::t_chkpt_dev_tab:
-            if (num_chkpt_end_handled == 1)
-            {
-                // Process it only if we have seen a matching 'end checkpoint' log record
-                // meaning we are processing the last completed checkpoint
+                // Still processing the master checkpoint record.
                 // _analysis_ckpt_dev_log(r, mount);
-                r.redo(0);
 
-                // now redo the accumulated mounts and dismounts in reverse order
-                while (heapMount.NumElements() > 0) {
-                    heapMount.First()->mount_log_rec_buf->redo(0);
-                    heapMount.RemoveFirst();
-                    // CS TODO -- memory leak; copied logrec is not freed
-                    // nor is the heap entry, both allocated below
+                // CS: dirty trick to fix mounts and backups during backward
+                // log analysis, allowing them to appear in any order. This
+                // code is temporary, since a proper fix should also apply to
+                // the individual log records (see below).  CS TODO
+                // r.redo(0);
+                if (r.type() == logrec_t::t_chkpt_dev_tab) {
+                    devtab = new char[logrec_t::max_sz];
+                    memcpy(devtab, &r, r.length());
+                }
+                else {
+                    bkptab = new char[logrec_t::max_sz];
+                    memcpy(bkptab, &r, r.length());
                 }
             }
             break;
@@ -1880,6 +1905,16 @@ restart_m::analysis_pass_backward(
         if (scan_done) {
             break;
         }
+    }
+
+    // CS TODO -- dirty hack (continuation)
+    if (devtab) {
+        ((logrec_t*) devtab)->redo(0);
+        delete[] devtab;
+    }
+    if (bkptab) {
+        ((logrec_t*) bkptab)->redo(0);
+        delete[] bkptab;
     }
 
     // Finished backward log scan of all the recovery logs, we should
