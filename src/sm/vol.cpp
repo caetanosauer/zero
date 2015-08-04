@@ -196,7 +196,7 @@ rc_t vol_m::sx_dismount(const char* device, bool logit)
     --vol_cnt;
 
     if (logit) {
-        log_dismount_vol(vol->devname());
+        log_dismount_vol(device);
     }
 
     W_DO (ssx.end_sys_xct(RCOK));
