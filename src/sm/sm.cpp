@@ -719,8 +719,8 @@ void ss_m::_do_restart()
             bf->force_until_lsn(log->curr_lsn().data());
 
             // An synchronous checkpoint was taken at the end of recovery
-            // This is a asynchronous checkpoint after buffer pool flush
-            chkpt->wakeup_and_take();
+            // This is a synchronous checkpoint after buffer pool flush
+            chkpt->synch_take();
         }
 
         // Debug only

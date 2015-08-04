@@ -2104,7 +2104,7 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
         //        clear the in_doubt bit and remove the page from hash table so the page
         //        slot is available for a different page
 
-        if (r.type() == logrec_t::t_alloc_a_page || r.type() == logrec_t::t_alloc_a_page)
+        if (r.type() == logrec_t::t_alloc_a_page || r.type() == logrec_t::t_dealloc_a_page)
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
             uint64_t key = bf_key(page_of_interest.vol(), page_of_interest.page);
@@ -2612,7 +2612,7 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
         //                   non-logged operation, we don't want to re-format the page
         // De-allocation of a page (t_dealloc_a_page, t_page_set_to_be_deleted) -
         //                   clear the in_doubt bit, so the page can be evicted if needed.
-        if (r.type() == logrec_t::t_alloc_a_page || r.type() == logrec_t::t_alloc_a_page)
+        if (r.type() == logrec_t::t_alloc_a_page || r.type() == logrec_t::t_dealloc_a_page)
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
             uint64_t key = bf_key(page_of_interest.vol(), page_of_interest.page);
@@ -3963,7 +3963,7 @@ restart_m::redo_log_pass(
                             // Page allocation - taken care of as part of page format
                             // Page deallocation - no need from a recovery
                             if (r.type() != logrec_t::t_alloc_a_page
-                                    && r.type() != logrec_t::t_alloc_a_page
+                                    && r.type() != logrec_t::t_dealloc_a_page
                                     // CS TODO -- restore not supported yet
                                     && r.type() != logrec_t::t_restore_begin
                                     && r.type() != logrec_t::t_restore_segment

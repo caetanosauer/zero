@@ -1254,15 +1254,6 @@ log_storage::_open_partition(partition_number_t  __num,
         p->open_for_append(__num, end_hint);
         w_assert3(p->exists());
         w_assert3(p->is_open_for_append());
-
-        // The idea here is to checkpoint at the beginning of every
-        // new partition because it seems we aren't taking enough
-        // checkpoints; then we were making the user threads do an emergency
-        // checkpoint to scavenge log space.  Short-tx workloads should never
-        // encounter this.    Don't do this if shutting down or starting
-        // up because in those 2 cases, the chkpt_m might not exist yet/anymore
-        DBGOUT3(<< "chkpt 2");
-        if(smlevel_0::chkpt != NULL) smlevel_0::chkpt->wakeup_and_take();
     }
     return p;
 }
