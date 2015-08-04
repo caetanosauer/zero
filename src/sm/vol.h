@@ -92,8 +92,9 @@ public:
     // number of the Shore SM version which formatted the volume.
     static const uint32_t FORMAT_VERSION = 19;
 
-    volhdr_t(vid_t vid, size_t num_pages)
-        : version(FORMAT_VERSION), vid(vid), num_pages(num_pages)
+    volhdr_t(vid_t vid, size_t num_pages, lsn_t backupLSN = lsn_t::null)
+        : version(FORMAT_VERSION), vid(vid), num_pages(num_pages),
+        backupLSN(backupLSN)
     {}
 
     volhdr_t() {};
@@ -103,6 +104,7 @@ public:
     uint32_t   version;
     vid_t      vid;
     uint32_t   num_pages;
+    lsn_t      backupLSN;
 
     rc_t             write(int fd);
     rc_t             read(int fd);
@@ -217,7 +219,9 @@ public:
     /** Mark device as failed and kick off Restore */
     rc_t            mark_failed(bool evict = false, bool redo = false);
 
-    void add_backup(string path);
+    void add_backup(string path, lsn_t backupLSN);
+
+    lsn_t get_backup_lsn();
 
     /** Take a backup on the given file path. */
     rc_t take_backup(string path);
@@ -268,9 +272,11 @@ private:
 
     /** Paths to backup files, added with add_backup() */
     std::vector<string> _backups;
+    std::vector<lsn_t> _backup_lsns;
 
     /** Currently opened backup (during restore only) */
     int _backup_fd;
+    lsn_t _current_backup_lsn;
 
     /** Backup being currently taken */
     int _backup_write_fd;

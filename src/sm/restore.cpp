@@ -486,6 +486,8 @@ void RestoreMgr::restoreLoop()
                     lsn = page->lsn;
                 }
             }
+            lsn_t backupLSN = volume->get_backup_lsn();
+            if (backupLSN > lsn) { lsn = backupLSN; }
         }
 
 #if W_DEBUG_LEVEL>=1

@@ -210,29 +210,28 @@ rc_t vol_m::sx_add_backup(vid_t vid, string path, bool logit)
     vol_t* vol = get(vid);
     w_assert0(vol);
 
-    if (logit) {
-        // Make sure backup volume header matches this volume
-        volhdr_t vhdr;
-        {
-            int fd = -1;
-            int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC;
-            rc_t rc = me()->open(path.c_str(), open_flags, 0666, fd);
-            if (rc.is_error())  {
-                W_IGNORE(me()->close(fd));
-                return RC_AUGMENT(rc);
-            }
-            rc = vhdr.read(fd);
-            if (rc.is_error())  {
-                W_IGNORE(me()->close(fd));
-                return RC_AUGMENT(rc);
-            }
-
-            W_DO(me()->close(fd));
+    // Make sure backup volume header matches this volume
+    volhdr_t vhdr;
+    {
+        int fd = -1;
+        int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC;
+        rc_t rc = me()->open(path.c_str(), open_flags, 0666, fd);
+        if (rc.is_error())  {
+            W_IGNORE(me()->close(fd));
+            return RC_AUGMENT(rc);
+        }
+        rc = vhdr.read(fd);
+        if (rc.is_error())  {
+            W_IGNORE(me()->close(fd));
+            return RC_AUGMENT(rc);
         }
 
-        w_assert0(vol->vid() == vhdr.vid);
-        w_assert0(vol->num_pages() ==  vhdr.num_pages);
+        W_DO(me()->close(fd));
     }
+
+    lsn_t backupLSN = vhdr.backupLSN;
+    w_assert0(vol->vid() == vhdr.vid);
+    w_assert0(vol->num_pages() ==  vhdr.num_pages);
 
     // will change vol_t state -- start critical section
     // Multiple adds of the same backup file are weird, but not an error.
@@ -250,7 +249,7 @@ rc_t vol_m::sx_add_backup(vid_t vid, string path, bool logit)
         W_DO(ssx.end_sys_xct(RCOK));
     }
 
-    vol->add_backup(path);
+    vol->add_backup(path, backupLSN);
 
     return RCOK;
 }
@@ -323,7 +322,7 @@ vol_t::vol_t()
                _fake_disk_latency(0),
                _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL),
                _failed(false), _restore_mgr(NULL), _backup_fd(-1),
-               _backup_write_fd(-1)
+               _current_backup_lsn(lsn_t::null), _backup_write_fd(-1)
 {}
 
 vol_t::~vol_t() {
@@ -481,12 +480,20 @@ rc_t vol_t::write_metadata(int fd, vid_t vid, size_t num_pages)
 
 rc_t vol_t::open_backup()
 {
+    // mutex held by caller -- no concurrent backup being added
     string backupFile = _backups.back();
     int open_flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_SYNC;
     W_DO(me()->open(backupFile.c_str(), open_flags, 0666, _backup_fd));
     w_assert0(_backup_fd > 0);
+    _current_backup_lsn = _backup_lsns.back();
 
     return RCOK;
+}
+
+lsn_t vol_t::get_backup_lsn()
+{
+    spinlock_read_critical_section cs(&_mutex);
+    return _current_backup_lsn;
 }
 
 rc_t vol_t::mark_failed(bool evict, bool redo)
@@ -610,6 +617,7 @@ bool vol_t::check_restore_finished(bool redo)
         if (_backup_fd > 0) {
             W_COERCE(me()->close(_backup_fd));
             _backup_fd = -1;
+            _current_backup_lsn = lsn_t::null;
         }
 
         // log restore end and set failed flag to false
@@ -666,6 +674,7 @@ rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
             if (_backup_fd > 0) {
                 W_COERCE(me()->close(_backup_fd));
                 _backup_fd = -1;
+                _current_backup_lsn = lsn_t::null;
             }
             set_failed(false);
         }
@@ -689,10 +698,12 @@ unsigned vol_t::num_backups() const
     return _backups.size();
 }
 
-void vol_t::add_backup(string path)
+void vol_t::add_backup(string path, lsn_t backupLSN)
 {
     spinlock_write_critical_section cs(&_mutex);
     _backups.push_back(path);
+    _backup_lsns.push_back(backupLSN);
+    w_assert1(_backups.size() == _backup_lsns.size());
 }
 
 void vol_t::shutdown(bool abrupt)
@@ -1107,6 +1118,9 @@ rc_t vol_t::take_backup(string path)
     // No need to hold latch here -- mutual exclusion is guaranteed because
     // only one thread may set _backup_write_fd (i.e., open file) above.
 
+    // Maximum LSN which is guaranteed to be reflected in the backup
+    lsn_t backupLSN = ss_m::logArchiver->getDirectory()->getLastLSN();
+
     // Instantiate special restore manager for taking backup
     RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
             this, useBackup, true /* takeBackup */);
@@ -1117,12 +1131,12 @@ rc_t vol_t::take_backup(string path)
 
     // Write volume header and metadata to new backup
     // (must be done after restore so that alloc pages are correct)
-    volhdr_t vhdr(_vid, _num_pages);
+    volhdr_t vhdr(_vid, _num_pages, backupLSN);
     W_DO(vhdr.write(_backup_write_fd));
     W_DO(_fixed_bf->flush(true /* toBackup */));
 
     // At this point, new backup is fully written
-    add_backup(path);
+    add_backup(path, backupLSN);
     {
         // critical section to guarantee visibility of the fd update
         spinlock_write_critical_section cs(&_mutex);
@@ -1238,6 +1252,7 @@ const char* volhdr_t::prolog[] = {
     "%% SHORE VOLUME VERSION ",
     "%% volume_id         : ",
     "%% num_pages         : "
+    "%% backupLSN         : "
 };
 
 
@@ -1295,6 +1310,7 @@ rc_t volhdr_t::write(int fd)
     s << prolog[i++] << version << endl;
     s << prolog[i++] << vid << endl;
     s << prolog[i++] << num_pages << endl;
+    s << prolog[i++] << backupLSN << endl;
     if (!s)  {
         return RC(eOS);
     }
@@ -1339,6 +1355,7 @@ rc_t volhdr_t::read(int fd)
     version = temp;
     s.read(buf, strlen(prolog[i++])) >> vid;
     s.read(buf, strlen(prolog[i++])) >> num_pages;
+    s.read(buf, strlen(prolog[i++])) >> backupLSN;
 
     w_assert1(vid > 0);
     w_assert1(num_pages > 0);
