@@ -518,7 +518,8 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
      * the failed flag, because we must guarantee that no read or write
      * occurred after the failure LSN (restore_begin log record).  Finally, the
      * restore manager may only be forked once the failure LSN has been set,
-  lsn_t::null,   * which is why we cannot pass the failureLSN in the constructor.
+     * lsn_t::null, which is why we cannot pass the failureLSN in the
+     * constructor.
      */
 
     // open backup file -- may already be open due to new backup being taken
@@ -1251,7 +1252,7 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
 const char* volhdr_t::prolog[] = {
     "%% SHORE VOLUME VERSION ",
     "%% volume_id         : ",
-    "%% num_pages         : "
+    "%% num_pages         : ",
     "%% backupLSN         : "
 };
 

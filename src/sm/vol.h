@@ -90,7 +90,7 @@ class volhdr_t {
 public:
     // For compatibility checking, we record a version number
     // number of the Shore SM version which formatted the volume.
-    static const uint32_t FORMAT_VERSION = 19;
+    static const uint32_t FORMAT_VERSION = 20;
 
     volhdr_t(vid_t vid, size_t num_pages, lsn_t backupLSN = lsn_t::null)
         : version(FORMAT_VERSION), vid(vid), num_pages(num_pages),

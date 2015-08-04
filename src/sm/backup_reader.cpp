@@ -11,6 +11,7 @@ BackupOnDemandReader::BackupOnDemandReader(vol_t* volume, size_t segmentSize)
       volume(volume), segmentSize(segmentSize)
 {
     w_assert1(volume);
+    firstDataPid = volume->first_data_pageid();
     W_IFDEBUG1(fixedSegment = -1);
 }
 
@@ -19,8 +20,8 @@ char* BackupOnDemandReader::fix(unsigned segment)
     INC_TSTAT(restore_backup_reads);
     w_assert1(fixedSegment < 0);
 
-    W_COERCE(volume->read_backup(shpid_t(segment * segmentSize), segmentSize,
-                buffer));
+    shpid_t offset = shpid_t(segment * segmentSize) + firstDataPid;
+    W_COERCE(volume->read_backup(offset, segmentSize, buffer));
 
     W_IFDEBUG1(fixedSegment = segment);
 
@@ -40,6 +41,9 @@ BackupPrefetcher::BackupPrefetcher(vol_t* volume, size_t numSegments,
       segmentSizeBytes(segmentSize * sizeof(generic_page)),
       fixWaiting(false), lastEvicted(0)
 {
+    w_assert1(volume);
+    firstDataPid = volume->first_data_pageid();
+
     // initialize all slots with -1, i.e., free
     slots = new int[numSegments];
     for (size_t i = 0; i < numSegments; i++) {
@@ -192,7 +196,7 @@ void BackupPrefetcher::run()
         }
 
         // perform the read into the slot found
-        shpid_t firstPage = shpid_t(next * segmentSize);
+        shpid_t firstPage = shpid_t(next * segmentSize) + firstDataPid;
         INC_TSTAT(restore_backup_reads);
         W_COERCE(volume->read_backup(firstPage, segmentSize, readSlot));
 

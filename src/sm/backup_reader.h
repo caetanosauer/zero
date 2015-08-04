@@ -49,6 +49,7 @@ public:
 
 protected:
     char* buffer;
+    shpid_t firstDataPid;
 };
 
 /** \brief Dummy backup reader that always returns the same unmodified buffer.
