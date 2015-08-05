@@ -70,6 +70,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <vector>
 #include <algorithm>
+#include <limits>
 
 // For checkpoint to gather lock information into heap if asked
 struct comp_lock_info_t;
@@ -158,17 +159,19 @@ private:
     void             _analysis_ckpt_bf_log(logrec_t& r,  chkpt_t& new_chkpt, set<lpid_t>& written_pages);
     void             _analysis_ckpt_xct_log(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR);
     void             _analysis_ckpt_lock_log(logrec_t& r, chkpt_t& new_chkpt);
-    void             _analysis_other_log(logrec_t& r, chkpt_t& new_chkpt, uint xct_idx, set<lpid_t>& written_pages);
-    void             _analysis_process_lock(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR, uint xct_idx);
-    void             _analysis_acquire_lock_log(logrec_t& r, chkpt_t& new_chkpt, uint xct_idx);
+    void             _analysis_other_log(logrec_t& r, chkpt_t& new_chkpt, int xct_idx, set<lpid_t>& written_pages);
+    void             _analysis_process_lock(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR, int xct_idx);
+    void             _analysis_acquire_lock_log(logrec_t& r, chkpt_t& new_chkpt, int xct_idx);
     void             _analysis_process_compensation_map(tid_CLR_map& mapCLR, chkpt_t& new_chkpt);
     void             _analysis_process_txn_table(chkpt_t& new_chkpt);
 
     template<typename T>
-    size_t indexOf(vector<T> vector, T value) {
+    int indexOf(vector<T> vector, T value) {
       typename std::vector<T>::iterator it = find(vector.begin(), vector.end(), value);
       if(it != vector.end()) {
-        return std::distance(vector.begin(), it);
+        size_t r = std::distance(vector.begin(), it);
+        w_assert0(r <= INT_MAX);
+        return r;
       }
       else {
         return -1;

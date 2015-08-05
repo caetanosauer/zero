@@ -429,7 +429,7 @@ void chkpt_m::backward_scan_log(lsn_t& master_lsn,
         // multi-page logs in the code below, because multi-page log only exist
         // in system transactions
         w_assert1(!r.is_multi_page());
-        size_t xct_idx = -1;
+        int xct_idx = -1;
 
         // If log is transaction related, insert the transaction
         // into transaction table if it is not already there.
@@ -706,8 +706,8 @@ void chkpt_m::backward_scan_log(lsn_t& master_lsn,
                     // Do what we do for t_xct_end for each of the
                     // transactions in the list
                     const xct_list_t* list = (xct_list_t*) r.data();
-                    int listlen = list->count;
-                    for(int i=0; i<listlen; i++) {
+                    uint listlen = list->count;
+                    for(uint i=0; i<listlen; i++) {
                         xct_idx = indexOf(new_chkpt.tid, list->xrec[i].tid);
 
                         // If it's not there, it could have been a read-only xct?
@@ -966,7 +966,7 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt, set<lpid_t>&
         if (r.type() == logrec_t::t_alloc_a_page || r.type() == logrec_t::t_dealloc_a_page)
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
-            size_t page_idx = indexOf(new_chkpt.pid, page_of_interest);
+            int page_idx = indexOf(new_chkpt.pid, page_of_interest);
             if(page_idx!= -1)
             {
 
@@ -1003,7 +1003,7 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt, set<lpid_t>&
                     W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a system transaction log record");
 
                 if(written_pages.find(page_of_interest) == written_pages.end()) { //page was not written yet
-                    size_t page_idx = indexOf(new_chkpt.pid, page_of_interest);
+                    int page_idx = indexOf(new_chkpt.pid, page_of_interest);
                     if( page_idx != -1) {   // page is already present in buffer table
                         if(new_chkpt.rec_lsn[page_idx] > lsn) {
                             new_chkpt.rec_lsn[page_idx] = lsn;
@@ -1056,7 +1056,7 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt, set<lpid_t>&
                     }
 
                     if(written_pages.find(page2_of_interest) == written_pages.end()) { //page was not written yet
-                        size_t page_idx = indexOf(new_chkpt.pid, page2_of_interest);
+                        int page_idx = indexOf(new_chkpt.pid, page2_of_interest);
                         if( page_idx!= -1) {
                             if(new_chkpt.rec_lsn[page_idx] > lsn) {
                                 new_chkpt.rec_lsn[page_idx] = lsn;
@@ -1118,7 +1118,7 @@ void chkpt_m::_analysis_ckpt_bf_log(logrec_t& r,           // In: Log record to 
             W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a page in t_chkpt_bf_tab log record");
 
         if(written_pages.find(dp->brec[i].pid) == written_pages.end()) {
-            size_t page_idx = indexOf(new_chkpt.pid, dp->brec[i].pid);
+            int page_idx = indexOf(new_chkpt.pid, dp->brec[i].pid);
             if(page_idx != -1) {
                 if(new_chkpt.rec_lsn[page_idx] > dp->brec[i].rec_lsn.data()) {
                     new_chkpt.rec_lsn[page_idx] = dp->brec[i].rec_lsn.data();
@@ -1177,7 +1177,7 @@ void chkpt_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log re
     for (iCount = 0; iCount < iTotal; ++iCount)
     {
         w_assert1(tid_t::null != dp->xrec[iCount].tid);
-        size_t xct_idx = indexOf(new_chkpt.tid, dp->xrec[iCount].tid);
+        int xct_idx = indexOf(new_chkpt.tid, dp->xrec[iCount].tid);
 
         // We know the transaction was active when the checkpoint was taken,
         // but we do not know whether the transaction was in the middle of
@@ -1346,7 +1346,7 @@ void chkpt_m::_analysis_ckpt_lock_log(logrec_t& r,            // In: log record
 
     // If the transaction tid specified in the log record exists in transaction table and
     // it is an in-flight transaction, re-acquire locks on it
-    size_t xct_idx = indexOf(new_chkpt.tid, dp->tid);
+    int xct_idx = indexOf(new_chkpt.tid, dp->tid);
     if(xct_idx != -1) {
         // Transaction exists and in-flight
         if(new_chkpt.state[xct_idx] == xct_t::xct_active) {
@@ -1395,7 +1395,7 @@ void chkpt_m::_analysis_ckpt_lock_log(logrec_t& r,            // In: log record
  *********************************************************************/
 void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
                                   chkpt_t& new_chkpt,        // In/Out:
-                                  uint xct_idx,              // In:
+                                  int xct_idx,              // In:
                                   set<lpid_t>& written_pages)
 
 {
@@ -1460,7 +1460,7 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
         if (r.type() == logrec_t::t_alloc_a_page || r.type() == logrec_t::t_dealloc_a_page)
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
-            size_t page_idx = indexOf(new_chkpt.pid, page_of_interest);
+            int page_idx = indexOf(new_chkpt.pid, page_of_interest);
             if(page_idx!= -1)
             {
 
@@ -1492,7 +1492,7 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
                 W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a page in log record, log type = " << r.type());
 
             if(written_pages.find(page_of_interest) == written_pages.end()) {
-                size_t page_idx = indexOf(new_chkpt.pid, page_of_interest);
+                int page_idx = indexOf(new_chkpt.pid, page_of_interest);
                 if(page_idx != -1) {
                     if(new_chkpt.rec_lsn[page_idx] > lsn) {
                         new_chkpt.rec_lsn[page_idx] = lsn;
@@ -1555,7 +1555,7 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
             if (0 == page_of_interest.page)
                 W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a page in compensation log record");
 
-            size_t page_idx = indexOf(new_chkpt.pid, page_of_interest);
+            int page_idx = indexOf(new_chkpt.pid, page_of_interest);
             if(page_idx != -1) {
                 if(new_chkpt.rec_lsn[page_idx] > lsn) {
                     new_chkpt.rec_lsn[page_idx] = lsn;
@@ -1610,7 +1610,7 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
 void chkpt_m::_analysis_process_lock(logrec_t& r,            // In: Current log record
                                      chkpt_t& new_chkpt,
                                      tid_CLR_map& mapCLR,    // In/Out: Map to track undecided in-flight transactions
-                                     uint xct_idx)              // In: Associated transaction
+                                     int xct_idx)              // In: Associated transaction
 
 {
     // This is an undecided in-flight transaction and the log record
@@ -1815,7 +1815,7 @@ void chkpt_m::_analysis_process_lock(logrec_t& r,            // In: Current log 
 *********************************************************************/
 void chkpt_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log record
                                          chkpt_t& new_chkpt,
-                                         uint xct_idx)
+                                         int xct_idx)
 {
     // A special function to re-acquire non-read locks based on a log record,
     // when acquiring lock on key, it sets the intent mode on key also,
@@ -2037,7 +2037,7 @@ void chkpt_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR, chkpt_t& n
     if (true == mapCLR.empty())
         return;
 
-    uint xct_idx;
+    int xct_idx;
 
     // Loop through all elements in map
     for (tid_CLR_map::iterator it = mapCLR.begin(); it != mapCLR.end(); it++)
@@ -2048,7 +2048,7 @@ void chkpt_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR, chkpt_t& n
             // release locks and generate an 'abort' log record
             tid_t t(it->first);
             xct_idx = indexOf(new_chkpt.tid, t);
-            w_assert1(-1 != xct_idx);
+            w_assert1(xct_idx != -1);
 
             // Free all the acquired locks
             //me()->attach_xct(xd);
@@ -2084,7 +2084,7 @@ void chkpt_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR, chkpt_t& n
 
             tid_t t(it->first);
             xct_idx = indexOf(new_chkpt.tid, t);
-            w_assert1(-1 != xct_idx);
+            w_assert1(xct_idx != -1);
             w_assert1(xct_t::xct_active == new_chkpt.state[xct_idx]);
         }
     }
@@ -2160,34 +2160,17 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
                          const bool record_lock)  // In: True if need to record lock information into the heap
 {
     if (t_chkpt_async == chkpt_mode) {
-        DBGOUT3(<< "Checkpoint request: asynch");
+        DBGOUT1(<< "Checkpoint request: asynch");
     }
     else {
-        DBGOUT3(<< "Checkpoint request: synch");
+        DBGOUT1(<< "Checkpoint request: synch");
     }
 
     w_assert1(0 == lock_heap.NumElements());
 
-    /*
-     * checkpoints are fuzzy
-     * but must be serialized wrt each other.
-     *
-     * Acquire the 'write' mutex immediatelly to serialize concurrent checkpoint requests.
-     *
-     * NB: EVERYTHING BETWEEN HERE AND RELEASING THE MUTEX
-     * MUST BE W_COERCE (not W_DO).
-     *
-     * The W_COERCE is like W_DO(x), but instead of returning in the error
-     * case, it fails catastrophically.
-     * It is used in checkpoint function because
-     *   Checkpoint has no means to return error information
-     */
-    chkpt_serial_m::write_acquire();
-    DBGOUT1(<<"BEGIN chkpt_m::dcpld_take");
-
     INC_TSTAT(log_chkpt_cnt);
 
-    //Verify if checkpoint can be taken:
+    // Start the initial validation check for make sure the incoming checkpoint request is valid
     {
         if (ss_m::log && _chkpt_thread)
         {
@@ -2280,9 +2263,23 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
         }
     } //End Verify if checkpoint can be taken.
 
+    /*
+     * Checkpoints are fuzzy but must be serialized wrt each other.
+     *
+     * Acquire the 'write' mutex immediatelly to serialize concurrent checkpoint requests.
+     *
+     * NB: EVERYTHING BETWEEN HERE AND RELEASING THE MUTEX
+     * MUST BE W_COERCE (not W_DO).
+     *
+     * The W_COERCE is like W_DO(x), but instead of returning in the error
+     * case, it fails catastrophically.
+     * It is used in checkpoint function because
+     *   Checkpoint has no means to return error information
+     */
+    chkpt_serial_m::write_acquire();
+    DBGOUT1(<<"BEGIN chkpt_m::dcpld_take");
+
     w_auto_delete_t<logrec_t> logrec(new logrec_t);
-
-
 #define LOG_INSERT(constructor_call, rlsn)            \
     do {                                              \
         new (logrec) constructor_call;                \
