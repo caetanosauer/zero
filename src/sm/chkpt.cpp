@@ -2293,16 +2293,34 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
     const lsn_t curr_lsn = ss_m::log->curr_lsn();
     lsn_t begin_lsn = lsn_t::null;
 
-
+    // Insert chkpt_begin log record.
     LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
-
     w_assert1(curr_lsn.data() <= begin_lsn.data());
 
+    // Backward scan from begin_lsn to first completed chkpt (may not be master).
     lsn_t master_lsn = ss_m::log->master_lsn();
     chkpt_t new_chkpt;
     backward_scan_log(master_lsn, begin_lsn, new_chkpt, false);
 
-    //scan_log(last_chkpt, begin_lsn, new_chkpt);
+    //============================= SANITY CHECKING ============================
+    w_assert1(new_chkpt.backup_vids.size() == new_chkpt.backup_paths.size());
+
+    w_assert1(new_chkpt.pid.size() == new_chkpt.store.size() &&
+              new_chkpt.pid.size() == new_chkpt.rec_lsn.size() &&
+              new_chkpt.pid.size() == new_chkpt.page_lsn.size());
+
+    w_assert1(new_chkpt.tid.size() == new_chkpt.lock_mode.size() &&
+              new_chkpt.tid.size() == new_chkpt.lock_hash.size());
+
+    w_assert1(new_chkpt.tid.size() == new_chkpt.state.size() &&
+              new_chkpt.tid.size() == new_chkpt.last_lsn.size() &&
+              new_chkpt.tid.size() == new_chkpt.undo_nxt.size() &&
+              new_chkpt.tid.size() == new_chkpt.first_lsn.size());
+
+    if (new_chkpt.pid.size() == 0) w_assert1(new_chkpt.min_rec_lsn == lsn_t::null);
+    if (new_chkpt.tid.size() == 0) w_assert1(new_chkpt.min_xct_lsn == lsn_t::null);
+    //==========================================================================
+
 
     DBGOUT1(<<"==================== CHECKPOINT ====================");
     DBGOUT1(<<"new_chkpt.begin_lsn = " << new_chkpt.begin_lsn);
@@ -2310,13 +2328,13 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
     DBGOUT1(<<"new_chkpt.min_xct_lsn = " << new_chkpt.min_xct_lsn);
     DBGOUT1(<<"new_chkpt.next_vid = " << new_chkpt.next_vid);
     for(uint i=0; i<new_chkpt.dev_paths.size(); i++) {
-        DBGOUT1(<<"new_chkpt.dev_paths[" << i << "] = " << new_chkpt.dev_paths[i]);
+        DBGOUT1(<<"dev_paths[" << i << "] = " << new_chkpt.dev_paths[i]);
     }
-    LOG_INSERT(chkpt_dev_tab_log(new_chkpt.next_vid, new_chkpt.dev_paths), 0);
 
-
-    LOG_INSERT(chkpt_backup_tab_log(new_chkpt.backup_vids, new_chkpt.backup_paths), 0);
-    //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
+    for(uint i=0; i<new_chkpt.backup_vids.size(); i++) {
+        DBGOUT1(<<"backup_vids["<<i<<"]="<<new_chkpt.backup_vids[i]<<" , "<<
+                  "backup_paths["<<i<<"]="<<new_chkpt.backup_paths[i]);
+    }
 
     for(uint i=0; i<new_chkpt.pid.size(); i++) {
         DBGOUT1(<<"pid["<<i<<"]="<<new_chkpt.pid[i]<< " , " <<
@@ -2324,11 +2342,6 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
                   "rec_lsn["<<i<<"]="<<new_chkpt.rec_lsn[i]<< " , " <<
                   "page_lsn["<<i<<"]="<<new_chkpt.page_lsn[i]);
     }
-    LOG_INSERT(chkpt_bf_tab_log(new_chkpt.pid.size(), (const lpid_t*)(&new_chkpt.pid[0]),
-                                                      (const snum_t*)(&new_chkpt.store[0]),
-                                                      (const lsn_t*)(&new_chkpt.rec_lsn[0]),
-                                                      (const lsn_t*)(&new_chkpt.page_lsn[0])), 0);
-    //LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chunk_lock_count, lock_mode, lock_hash), 0);
 
     for(uint i=0; i<new_chkpt.tid.size(); i++) {
         DBGOUT1(<<"tid["<<i<<"]="<<new_chkpt.tid[i]<<" , " <<
@@ -2337,33 +2350,63 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
                   "undo_nxt["<<i<<"]="<<new_chkpt.undo_nxt[i]<<" , " <<
                   "first_lsn["<<i<<"]="<<new_chkpt.first_lsn[i]);
     }
-    LOG_INSERT(chkpt_xct_tab_log(new_chkpt.youngest, new_chkpt.tid.size(), (const tid_t*)(&new_chkpt.tid[0]),
-                                                                           (const smlevel_0::xct_state_t*)(&new_chkpt.state[0]),
-                                                                           (const lsn_t*)(&new_chkpt.last_lsn[0]),
-                                                                           (const lsn_t*)(&new_chkpt.undo_nxt[0]),
-                                                                           (const lsn_t*)(&new_chkpt.first_lsn[0])), 0);
     DBGOUT1(<<"====================================================");
 
 
+    //============================ WRITE LOG RECORDS ===========================
+    int chunk;
+
+    chunk = vol_m::MAX_VOLS > (int)chkpt_dev_tab_t::max
+            ? (int)chkpt_dev_tab_t::max : vol_m::MAX_VOLS;
+    for(uint i=0; i<new_chkpt.dev_paths.size(); i+=chunk) {
+        LOG_INSERT(chkpt_dev_tab_log(new_chkpt.dev_paths.size(),
+                                     new_chkpt.next_vid,
+                                     (const string*)(&new_chkpt.dev_paths[i])), 0);
+    }
+
+    chunk = vol_m::MAX_VOLS > (int)chkpt_backup_tab_t::max
+            ? (int)chkpt_backup_tab_t::max : vol_m::MAX_VOLS;
+    for(uint i=0; i<new_chkpt.backup_vids.size(); i+=chunk) {
+        LOG_INSERT(chkpt_backup_tab_log(new_chkpt.backup_vids, new_chkpt.backup_paths), 0);
+    }
+    //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
+
+    chunk = chkpt_bf_tab_t::max;
+    for(uint i=0; i<new_chkpt.pid.size(); i+=chunk) {
+        LOG_INSERT(chkpt_bf_tab_log(new_chkpt.pid.size()-i, (const lpid_t*)(&new_chkpt.pid[i]),
+                                                            (const snum_t*)(&new_chkpt.store[i]),
+                                                            (const lsn_t*)(&new_chkpt.rec_lsn[i]),
+                                                            (const lsn_t*)(&new_chkpt.page_lsn[i])), 0);
+    }
+
+    /*
+    for(uint xct=0; xct<new_chkpt.tid.size(); xct++) {
+        LOG_INSERT(chkpt_xct_lock_log(new_chkpt.tid[xct],
+                                      per_chunk_lock_count,
+                                      new_chkpt.lock_mode[xct],
+                                      new_chkpt.lock_hash[xct]), 0);
+    } */
+
+    chunk = chkpt_xct_tab_t::max;
+    for(uint i=0; i<new_chkpt.tid.size(); i+=chunk) {
+        LOG_INSERT(chkpt_xct_tab_log(new_chkpt.youngest, new_chkpt.tid.size()-i, (const tid_t*)(&new_chkpt.tid[i]),
+                                                                                 (const smlevel_0::xct_state_t*)(&new_chkpt.state[i]),
+                                                                                 (const lsn_t*)(&new_chkpt.last_lsn[i]),
+                                                                                 (const lsn_t*)(&new_chkpt.undo_nxt[i]),
+                                                                                 (const lsn_t*)(&new_chkpt.first_lsn[i])), 0);
+    }
+    //==========================================================================
+
     if (ss_m::shutting_down && !ss_m::shutdown_clean) // Dirty shutdown (simulated crash)
     {
-        /*
-        DBGOUT1(<<"chkpt_m::take ABORTED due to dirty shutdown, dirty page count = "
-                << total_page_count
-                << ", total txn count = " << total_txn_count
-                << ", total backup count = " << backup_cnt
-                << ", total vol count = " << total_dev_cnt);
-        */
+        DBGOUT1(<<"chkpt_m::take ABORTED due to dirty shutdown, "
+                << ", dirty page count = " << new_chkpt.pid.size()
+                << ", total txn count = " << new_chkpt.tid.size()
+                << ", total backup count = " << new_chkpt.backup_vids.size()
+                << ", total vol count = " << new_chkpt.dev_paths.size());
     }
     else
     {
-        if (0 == new_chkpt.pid.size())
-        {
-            // No dirty page, the begin checkpoint lsn and redo_lsn (min_rec_lsn)
-            // must be the same
-            w_assert1(new_chkpt.min_rec_lsn == lsn_t::null);
-        }
-
         LOG_INSERT(chkpt_end_log (new_chkpt.begin_lsn,
                                   new_chkpt.min_rec_lsn,
                                   new_chkpt.min_xct_lsn), 0);
