@@ -303,6 +303,8 @@ restart_m::restart(
 
     analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap,
                            commit_lsn, last_lsn, restart_with_lock, lock_heap1);
+    // LL: we guess they will always be the same
+    w_assert1(undo_lsn == commit_lsn);
 /**/
 
     struct timeval tm_after;
