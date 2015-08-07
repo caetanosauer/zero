@@ -435,7 +435,6 @@ void RestoreMgr::restoreLoop()
     restoreMetadata();
 
     LogArchiver::ArchiveScanner logScan(archive);
-    fixable_page_h fixable;
 
     W_IFDEBUG1(stopwatch_t timer);
 
@@ -490,16 +489,15 @@ void RestoreMgr::restoreLoop()
             if (backupLSN > lsn) { lsn = backupLSN; }
         }
 
-#if W_DEBUG_LEVEL>=1
-        ADD_TSTAT(restore_time_read, timer.time_ms());
-#endif
+        W_IFDEBUG1(ADD_TSTAT(restore_time_read, timer.time_us()));
 
         LogArchiver::ArchiveScanner::RunMerger* merger =
             logScan.open(start, end, lsn);
 
-#if W_DEBUG_LEVEL>=1
-        ADD_TSTAT(restore_time_openscan, timer.time_ms());
-#endif
+        DBGOUT3(<< "RunMerger opened with " << merger->heapSize() << " runs"
+                << " starting on LSN " << lsn);
+
+        W_IFDEBUG1(ADD_TSTAT(restore_time_openscan, timer.time_us()));
 
         if (!merger) {
             // segment does not need any log replay
@@ -509,90 +507,102 @@ void RestoreMgr::restoreLoop()
             continue;
         }
 
-        generic_page* page = (generic_page*) workspace;
-        shpid_t current = firstPage;
-        shpid_t prevPage = 0;
-        size_t redone = 0;
+        size_t pagesRestored = restoreSegment(workspace, merger, firstPage);
 
-        DBG(<< "Restoring segment " << segment << "(pages " << current << " - "
-                << firstPage + segmentSize << ")");
+        W_IFDEBUG1(ADD_TSTAT(restore_time_replay, timer.time_us()));
 
-        logrec_t* lr;
-        while (merger->next(lr)) {
-            DBGOUT4(<< "Would restore " << *lr);
-
-            lpid_t lrpid = lr->construct_pid();
-            w_assert1(lrpid.vol() == volume->vid());
-            w_assert1(lrpid.page >= firstPage);
-            w_assert1(lrpid.page >= prevPage);
-            w_assert1(lrpid.page < firstPage + segmentSize);
-
-            while (lrpid.page > current) {
-                current++;
-                page++;
-                DBGOUT4(<< "Restoring page " << current);
-            }
-
-            w_assert1(page->pid.page == 0 || page->pid.page == current);
-
-            if (!fixable.is_fixed() || fixable.pid().page != lrpid.page) {
-                // PID is manually set for virgin pages
-                // this guarantees correct redo of multi-page logrecs
-                if (page->pid != lrpid) {
-                    page->pid = lrpid;
-                }
-                fixable.setup_for_restore(page);
-            }
-
-            if (lr->lsn_ck() <= page->lsn) {
-                // update may already be reflected on page
-                continue;
-            }
-
-            w_assert1(lr->page_prev_lsn() == lsn_t::null ||
-                lr->page_prev_lsn() == page->lsn);
-
-            lr->redo(&fixable);
-            fixable.update_initial_and_last_lsn(lr->lsn_ck());
-            fixable.update_clsn(lr->lsn_ck());
-
-            // Restored pages are always written out with proper checksum.
-            // If restore thread is actually generating a new backup, this
-            // is a requirement.
-            page->checksum = page->calculate_checksum();
-            w_assert1(page->pid == lrpid);
-            w_assert1(page->checksum == page->calculate_checksum());
-
-            prevPage = lrpid.page;
-            redone++;
-        }
-
-        // current should point to the first not-restored page (excl. bound)
-        if (redone > 0) { // i.e., something was restored
-            current++;
-            DBGTHRD(<< "Restore applied " << redone << " logrecs in segment "
-                    << segment);
-        }
-
-#if W_DEBUG_LEVEL>=1
-        if (redone > 0) { ADD_TSTAT(restore_time_replay, timer.time_ms()); }
-        else { ADD_TSTAT(restore_time_replay_useless, timer.time_ms()); }
-#endif
-
-        // in the last segment, we may write less than the segment size
-        finishSegment(workspace, segment, current - firstPage);
+        finishSegment(workspace, segment, pagesRestored);
 
         backup->unfix(segment);
 
-#if W_DEBUG_LEVEL>=1
-        ADD_TSTAT(restore_time_write, timer.time_ms());
-#endif
+        W_IFDEBUG1(ADD_TSTAT(restore_time_write, timer.time_us()));
 
         delete merger;
     }
 
     DBG(<< "Restore thread finished! " << numRestoredPages
             << " pages restored");
+}
+
+size_t RestoreMgr::restoreSegment(char* workspace,
+        LogArchiver::ArchiveScanner::RunMerger* merger,
+        shpid_t firstPage)
+{
+    generic_page* page = (generic_page*) workspace;
+    fixable_page_h fixable;
+    shpid_t current = firstPage;
+    shpid_t prevPage = 0;
+    size_t redone = 0;
+    bool virgin = false;
+
+    DBG(<< "Restoring segment " << getSegmentForPid(firstPage)
+            << "(pages " << current << " - "
+            << firstPage + segmentSize << ")");
+
+    logrec_t* lr;
+    while (merger->next(lr)) {
+        DBGOUT4(<< "Would restore " << *lr);
+
+        lpid_t lrpid = lr->construct_pid();
+        w_assert1(lrpid.vol() == volume->vid());
+        w_assert1(lrpid.page >= firstPage);
+        w_assert1(lrpid.page >= prevPage);
+        w_assert1(lrpid.page < firstPage + segmentSize);
+
+        while (lrpid.page > current) {
+            // Done with current page -- move to next
+
+            // Restored pages are always written out with proper checksum.
+            page->checksum = page->calculate_checksum();
+            w_assert1(page->checksum == page->calculate_checksum());
+
+            current++;
+            page++;
+            virgin = !volume->is_allocated_page(current);
+
+            DBGOUT4(<< "Restoring page " << current);
+        }
+
+        if (virgin) { continue; }
+
+        w_assert1(page->pid.page == 0 || page->pid.page == current);
+
+        if (!fixable.is_fixed() || fixable.pid().page != lrpid.page) {
+            // PID is manually set for virgin pages
+            // this guarantees correct redo of multi-page logrecs
+            if (page->pid != lrpid) {
+                page->pid = lrpid;
+            }
+            fixable.setup_for_restore(page);
+        }
+
+        if (lr->lsn_ck() <= page->lsn) {
+            // update may already be reflected on page
+            continue;
+        }
+
+        w_assert1(page->pid == lrpid);
+        w_assert1(lr->page_prev_lsn() == lsn_t::null ||
+                lr->page_prev_lsn() == page->lsn);
+
+        lr->redo(&fixable);
+        fixable.update_initial_and_last_lsn(lr->lsn_ck());
+        fixable.update_clsn(lr->lsn_ck());
+
+        prevPage = lrpid.page;
+        redone++;
+
+        virgin = false;
+    }
+
+    // current should point to the first not-restored page (excl. bound)
+    if (redone > 0) { // i.e., something was restored
+        current++;
+        DBGTHRD(<< "Restore applied " << redone << " logrecs in segment "
+                << getSegmentForPid(firstPage));
+    }
+
+    return current - firstPage;
 }
 
 void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
@@ -661,6 +671,7 @@ void RestoreMgr::markSegmentRestored(char* workspace, unsigned segment, bool red
     if (!redo) {
         sys_xct_section_t ssx(true);
         log_restore_segment(volume->vid(), segment);
+        smlevel_0::log->flush(smlevel_0::log->curr_lsn());
         ssx.end_sys_xct(RCOK);
     }
 
