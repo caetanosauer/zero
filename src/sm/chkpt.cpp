@@ -458,6 +458,9 @@ void chkpt_m::backward_scan_log(lsn_t& master_lsn,
                 new_chkpt.youngest = r.tid();
             }
 
+            new_chkpt.lock_hash.push_back(vector<uint32_t>());
+            new_chkpt.lock_mode.push_back(vector<okvl_mode>());
+
             xct_idx = new_chkpt.tid.size() - 1;
         }
         else if (!r.is_single_sys_xct() && r.tid() != tid_t::null)            // Has a transaction ID
@@ -785,6 +788,9 @@ void chkpt_m::backward_scan_log(lsn_t& master_lsn,
                         new_chkpt.last_lsn.erase(new_chkpt.last_lsn.begin() + xct_idx);
                         new_chkpt.undo_nxt.erase(new_chkpt.undo_nxt.begin() + xct_idx);
                         new_chkpt.first_lsn.erase(new_chkpt.first_lsn.begin() + xct_idx);
+
+                        new_chkpt.lock_hash.erase(new_chkpt.lock_hash.begin() + xct_idx);
+                        new_chkpt.lock_mode.erase(new_chkpt.lock_mode.begin() + xct_idx);
                     }
                 }
                 break;
@@ -941,6 +947,9 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt, set<lpid_t>&
         new_chkpt.last_lsn.push_back(lsn);
         new_chkpt.undo_nxt.push_back(lsn_t::null);
         new_chkpt.first_lsn.push_back(lsn);
+
+        new_chkpt.lock_hash.push_back(vector<uint32_t>());
+        new_chkpt.lock_mode.push_back(vector<okvl_mode>());
 
         // Get the associated page
         lpid_t page_of_interest = r.construct_pid();
@@ -1236,6 +1245,9 @@ void chkpt_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log re
             new_chkpt.last_lsn.push_back(dp->xrec[iCount].last_lsn);
             new_chkpt.undo_nxt.push_back(dp->xrec[iCount].undo_nxt);
             new_chkpt.first_lsn.push_back(dp->xrec[iCount].first_lsn);
+
+            new_chkpt.lock_hash.push_back(vector<uint32_t>());
+            new_chkpt.lock_mode.push_back(vector<okvl_mode>());
 
             if (dp->xrec[iCount].tid > new_chkpt.youngest)
                 new_chkpt.youngest = dp->xrec[iCount].tid;
@@ -2053,8 +2065,8 @@ void chkpt_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR, chkpt_t& n
             // Free all the acquired locks
             //me()->attach_xct(xd);
             //xd->commit_free_locks();
-            new_chkpt.lock_mode.erase(new_chkpt.lock_mode.begin() + xct_idx);
-            new_chkpt.lock_hash.erase(new_chkpt.lock_hash.begin() + xct_idx);
+            new_chkpt.lock_mode[xct_idx].clear();
+            new_chkpt.lock_hash[xct_idx].clear();
 
             // Generate a new lock record, because we are in the middle of Log Analysis
             // log generation has been turned off, turn it on temperaury
@@ -2140,6 +2152,10 @@ void chkpt_m::_analysis_process_txn_table(chkpt_t& new_chkpt)
             new_chkpt.last_lsn.erase(new_chkpt.last_lsn.begin() + i);
             new_chkpt.undo_nxt.erase(new_chkpt.undo_nxt.begin() + i);
             new_chkpt.first_lsn.erase(new_chkpt.first_lsn.begin() + i);
+
+            new_chkpt.lock_hash.erase(new_chkpt.lock_hash.begin() + i);
+            new_chkpt.lock_mode.erase(new_chkpt.lock_mode.begin() + i);
+
             i--;
         }
         else if (xct_t::xct_active != new_chkpt.state[i])
