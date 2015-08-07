@@ -37,15 +37,9 @@ public:
         return; // default: no prefetching
     }
 
-    BackupReader(size_t bufferSize)
-    {
-        buffer = new char[bufferSize];
-    }
+    BackupReader(size_t bufferSize);
 
-    virtual ~BackupReader()
-    {
-        delete[] buffer;
-    }
+    virtual ~BackupReader();
 
 protected:
     char* buffer;

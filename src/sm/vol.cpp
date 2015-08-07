@@ -482,7 +482,9 @@ rc_t vol_t::open_backup()
 {
     // mutex held by caller -- no concurrent backup being added
     string backupFile = _backups.back();
-    int open_flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_SYNC;
+    // Using direct I/O
+    int open_flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_SYNC
+        | smthread_t::OPEN_DIRECT;
     W_DO(me()->open(backupFile.c_str(), open_flags, 0666, _backup_fd));
     w_assert0(_backup_fd > 0);
     _current_backup_lsn = _backup_lsns.back();

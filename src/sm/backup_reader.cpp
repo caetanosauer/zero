@@ -1,10 +1,28 @@
 #include "backup_reader.h"
 
 #include "vol.h"
+#include "logarchiver.h"
 
 const std::string DummyBackupReader::IMPL_NAME = "dummy";
 const std::string BackupOnDemandReader::IMPL_NAME = "ondemand";
 const std::string BackupPrefetcher::IMPL_NAME = "prefetcher";
+
+const size_t IO_ALIGN = LogArchiver::IO_ALIGN;
+
+BackupReader::BackupReader(size_t bufferSize)
+{
+    // Using direct I/O
+    w_assert1(bufferSize % IO_ALIGN == 0);
+    posix_memalign((void**) &buffer, IO_ALIGN, bufferSize);
+    // buffer = new char[bufferSize];
+}
+
+BackupReader::~BackupReader()
+{
+    // Using direct I/O
+    free(buffer);
+    // delete[] buffer;
+}
 
 BackupOnDemandReader::BackupOnDemandReader(vol_t* volume, size_t segmentSize)
     : BackupReader(segmentSize * sizeof(generic_page)),

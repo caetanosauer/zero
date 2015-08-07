@@ -22,6 +22,11 @@ const char* LogArchiver::CURR_RUN_FILE = "current_run";
 const char* LogArchiver::CURR_MERGE_FILE = "current_merge";
 const size_t LogArchiver::MAX_LOGREC_SIZE = 3 * log_storage::BLOCK_SIZE;
 
+// CS: Aligning with the Linux standard FS block size
+// We could try using 512 (typical hard drive sector) at some point,
+// but none of this is actually standardized or portable
+const size_t LogArchiver::IO_ALIGN = 512;
+
 ArchiverControl::ArchiverControl(bool* shutdownFlag)
     : endLSN(lsn_t::null), activated(false), listening(false), shutdownFlag(shutdownFlag)
 {
@@ -662,7 +667,8 @@ rc_t LogArchiver::ArchiveDirectory::openForScan(int& fd, lsn_t runBegin,
     fname << archdir << "/" << LogArchiver::RUN_PREFIX
         << runBegin << "-" << runEnd;
 
-    int flags = smthread_t::OPEN_RDONLY;
+    // Using direct I/O
+    int flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_DIRECT;
     W_DO(me()->open(fname.str().c_str(), flags, 0744, fd));
 
     return RCOK;
@@ -1072,7 +1078,9 @@ LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
 : runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
     directory(directory), fd(-1), blockCount(0)
 {
-    buffer = new char[directory->getBlockSize()];
+    // Using direct I/O
+    posix_memalign((void**) &buffer, IO_ALIGN, directory->getBlockSize());
+    // buffer = new char[directory->getBlockSize()];
     bpos = 0;
     blockEnd = 0;
 }
@@ -1083,7 +1091,9 @@ LogArchiver::ArchiveScanner::RunScanner::~RunScanner()
         W_COERCE(directory->closeScan(fd));
     }
 
-    delete[] buffer;
+    // Using direct I/O
+    free(buffer);
+    // delete[] buffer;
 }
 
 bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
@@ -1775,7 +1785,9 @@ LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize, lsn_t startLSN)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
     writeBuffer = new char[blockSize];
-    readBuffer = new char[blockSize];
+    // Using direct I/O
+    posix_memalign((void**) &readBuffer, IO_ALIGN, blockSize);
+    // readBuffer = new char[blockSize];
 
     // last run in the array is always the one being currently generated
     RunInfo r;
@@ -1787,7 +1799,10 @@ LogArchiver::ArchiveIndex::~ArchiveIndex()
 {
     DO_PTHREAD(pthread_mutex_destroy(&mutex));
     delete[] writeBuffer;
-    delete[] readBuffer;
+
+    // Using direct I/O
+    free(readBuffer);
+    // delete[] readBuffer;
 }
 
 void LogArchiver::ArchiveIndex::newBlock(lpid_t firstPID)
@@ -1865,7 +1880,8 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
 {
     // Assumption: mutex is held by caller
     int fd;
-    int flags = smthread_t::OPEN_RDONLY;
+    // Using direct I/O
+    int flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_DIRECT;
     W_DO(me()->open(fname, flags, 0744, fd));
 
     run.firstLSN = ArchiveDirectory::parseLSN(fname, false /* end */);
@@ -1937,15 +1953,27 @@ rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
     fileoff_t fsize = fs.st_size;
     w_assert1(fsize % blockSize == 0);
 
+    // skip emtpy runs
+    if (fsize == 0) {
+        if(indexBlocks) { *indexBlocks = 0; };
+        if(dataBlocks) { *dataBlocks = 0; };
+        return RCOK;
+    }
+
     // read header of last block in file -- its number is the block count
-    BlockHeader header;
-    W_DO(me()->pread(fd, &header, sizeof(BlockHeader), fsize - blockSize));
+    // Using direct I/O -- must read whole align block
+    char* buffer;
+    posix_memalign((void**) &buffer, IO_ALIGN, IO_ALIGN);
+    W_DO(me()->pread(fd, buffer, IO_ALIGN, fsize - blockSize));
+
+    BlockHeader* header = (BlockHeader*) buffer;
     if (indexBlocks) {
-        *indexBlocks = header.blockNumber + 1;
+        *indexBlocks = header->blockNumber + 1;
     }
     if (dataBlocks) {
-        *dataBlocks = (fsize / blockSize) - (header.blockNumber + 1);
+        *dataBlocks = (fsize / blockSize) - (header->blockNumber + 1);
     }
+    free(buffer);
 
     return RCOK;
 }
