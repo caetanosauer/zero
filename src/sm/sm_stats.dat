@@ -341,5 +341,8 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long la_log_slow              Log archiver activated with small window due to slow log growth
     u_long la_activations           How often log archiver was activated
     u_long la_block_reads           Number of reads performed during log archive scans
+    u_long la_block_writes          Number of blocks appended to the log archive
+    u_long la_read_time             Time spent reading blocks from log archive (usec)
+    u_long la_merge_heap_time       Time spent with log archiver merger operations (usec)
 };
 

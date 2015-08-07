@@ -11,6 +11,8 @@
 #include <sstream>
 #include <sys/stat.h>
 
+#include "stopwatch.h"
+
 // needed for skip_log
 //#include "logdef_gen.cpp"
 
@@ -548,7 +550,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
         std::vector<std::string>::const_iterator it;
         for(it=runFiles.begin(); it!=runFiles.end(); ++it) {
             std::string fname = archdir + "/" + *it;
-            archIndex->loadRunInfo(fname.c_str());
+            W_COERCE(archIndex->loadRunInfo(fname.c_str()));
         }
 
         // sort runinfo vector by lsn
@@ -655,6 +657,7 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN,
 
 rc_t LogArchiver::ArchiveDirectory::append(const char* data, size_t length)
 {
+    INC_TSTAT(la_block_writes);
     W_COERCE(me()->pwrite(appendFd, data, length, appendPos));
     appendPos += length;
     return RCOK;
@@ -679,6 +682,8 @@ rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
 {
     INC_TSTAT(la_block_reads);
 
+    stopwatch_t timer;
+
     rc_t rc = (me()->pread(fd, buf, blockSize, offset));
     if (rc.is_error()) {
         if (rc.err_num() == stSHORTIO) {
@@ -688,6 +693,8 @@ rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
         }
         return rc;
     }
+
+    ADD_TSTAT(la_read_time, timer.time_us());
 
     offset += blockSize;
     return RCOK;
@@ -1062,7 +1069,6 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
         archIndex->probeNext(runProbe, endLSN);
     }
 
-    DBGOUT3(<< "RunMerger opened with " << merger->heapSize() << " runs");
     if (merger->heapSize() == 0) {
         // all runs pruned from probe
         delete merger;
@@ -1215,6 +1221,8 @@ void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
 
 bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
 {
+    W_IFDEBUG1(stopwatch_t timer);
+
     if (heap.NumElements() == 0) {
         return false;
     }
@@ -1248,6 +1256,8 @@ bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
         }
         return false;
     }
+
+    W_IFDEBUG1(ADD_TSTAT(la_merge_heap_time, timer.time_us()));
 
     lr = heap.First().lr;
     return true;
@@ -1888,7 +1898,7 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
 
     size_t indexBlockCount = 0;
     size_t dataBlockCount = 0;
-    getBlockCounts(fd, &indexBlockCount, &dataBlockCount);
+    W_DO(getBlockCounts(fd, &indexBlockCount, &dataBlockCount));
 
     fileoff_t offset = dataBlockCount * blockSize;
 

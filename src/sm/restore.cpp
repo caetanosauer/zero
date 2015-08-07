@@ -437,7 +437,7 @@ void RestoreMgr::restoreLoop()
     LogArchiver::ArchiveScanner logScan(archive);
     fixable_page_h fixable;
 
-    W_IFDEBUG1(stopwatch_t timer;);
+    W_IFDEBUG1(stopwatch_t timer);
 
     while (numRestoredPages < numPages) {
         shpid_t requested = scheduler->next();
