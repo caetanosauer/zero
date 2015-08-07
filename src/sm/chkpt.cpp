@@ -2325,8 +2325,8 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
               new_chkpt.pid.size() == new_chkpt.rec_lsn.size() &&
               new_chkpt.pid.size() == new_chkpt.page_lsn.size());
 
-    w_assert1(new_chkpt.tid.size() == new_chkpt.lock_mode.size() &&
-              new_chkpt.tid.size() == new_chkpt.lock_hash.size());
+    w_assert1(new_chkpt.tid.size() >= new_chkpt.lock_mode.size() &&
+              new_chkpt.lock_mode.size() == new_chkpt.lock_hash.size());
 
     w_assert1(new_chkpt.tid.size() == new_chkpt.state.size() &&
               new_chkpt.tid.size() == new_chkpt.last_lsn.size() &&
