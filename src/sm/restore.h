@@ -13,6 +13,7 @@ class RestoreBitmap;
 class RestoreScheduler;
 class generic_page;
 class BackupReader;
+class SegmentWriter;
 
 /** \brief Class that controls the process of restoring a failed volume
  *
@@ -133,6 +134,11 @@ protected:
      */
     BackupReader* backup;
 
+    /** \brief Asynchronous writer for restored segments
+     * If NULL, then only synchronous writes are performed.
+     */
+    SegmentWriter* asyncWriter;
+
     /** \brief Size of a segment in pages
      *
      * The segment is the unit of restore, i.e., one segment is restored at a
@@ -222,6 +228,8 @@ protected:
 
     // Allow protected access from vol_t (for recovery)
     friend class vol_t;
+    // .. and from asynchronous writer (declared and defined on cpp file)
+    friend class SegmentWriter;
 };
 
 /** \brief Bitmap data structure that controls the progress of restore

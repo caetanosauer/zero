@@ -192,6 +192,48 @@ void RestoreScheduler::setSinglePass(bool singlePass)
     trySinglePass = singlePass;
 }
 
+/** Asynchronous writer for restored segments
+ *  CS: Placed here on cpp file because it isn't used anywhere else.
+ */
+class SegmentWriter : public smthread_t {
+public:
+    SegmentWriter(RestoreMgr* restore);
+    virtual ~SegmentWriter();
+
+    /** \brief Request async write of a segment.
+     *
+     * If there is a write going on, i.e., mutex is held, then we wait
+     * until that write is completed to place the request. This makes the
+     * request mechanism simpler, since it does not require a queue.
+     * Furthermore, we don't expect writes to the replacement device to be
+     * (much) slower than reads from the backup device, which means this
+     * situation should not occur often.
+     */
+    void requestWrite(char* workspace, unsigned segment, size_t count);
+
+    virtual void run();
+
+    void shutdown();
+
+private:
+    // These 3 fields constitute a write request
+    char* workspace;
+    unsigned segment;
+    size_t count;
+
+    // Tells writer thread that we placed a valid request
+    bool placedRequest;
+
+    // Signal to writer thread that it must exit
+    bool shutdownFlag;
+
+    // Restore manager which owns this object
+    RestoreMgr* restore;
+
+    pthread_cond_t requestCond;
+    pthread_mutex_t requestCondMutex;
+};
+
 RestoreMgr::RestoreMgr(const sm_options& options,
         LogArchiver::ArchiveDirectory* archive, vol_t* volume, bool useBackup,
         bool takeBackup)
@@ -231,6 +273,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
 
     scheduler = new RestoreScheduler(options, this);
     bitmap = new RestoreBitmap(numPages / segmentSize + 1);
+    asyncWriter = NULL;
 
     // Construct backup reader/buffer based on system options
     if (useBackup) {
@@ -244,6 +287,13 @@ RestoreMgr::RestoreMgr(const sm_options& options,
                     "sm_backup_prefetcher_segments", 3);
             w_assert0(numSegments > 0);
             backup = new BackupPrefetcher(volume, numSegments, segmentSize);
+
+            // Construct asynchronous writer object
+            // Note that this is only valid with a prefetcher reader, because
+            // otherwise only one segment can be fixed at a time
+            if (options.get_bool_option("sm_backup_async_write", true)) {
+                asyncWriter = new SegmentWriter(this);
+            }
         }
         else {
             W_FATAL_MSG(eBADOPTION,
@@ -713,4 +763,60 @@ void RestoreMgr::run()
     restoreLoop();
 
     w_assert1(bufferedRequests.size() == 0);
+}
+
+SegmentWriter::SegmentWriter(RestoreMgr* restore)
+    : smthread_t(t_regular, "SegmentWriter"),
+    placedRequest(false), shutdownFlag(false), restore(restore)
+{
+    w_assert1(restore);
+}
+
+SegmentWriter::~SegmentWriter()
+{
+}
+
+void SegmentWriter::requestWrite(char* workspace,
+        unsigned segment, size_t count)
+{
+    CRITICAL_SECTION(cs, &requestCondMutex);
+    // mutex held => writer thread waiting for us
+
+    this->workspace = workspace;
+    this->segment = segment;
+    this->count = count;
+
+    placedRequest = true;
+    pthread_cond_signal(&requestCond);
+}
+
+void SegmentWriter::run()
+{
+    while (true) {
+        CRITICAL_SECTION(cs, &requestCondMutex);
+
+        while(!placedRequest) {
+            struct timespec timeout;
+            sthread_t::timeout_to_timespec(100, timeout); // 100ms
+            int code = pthread_cond_timedwait(&requestCond, &requestCondMutex,
+                    &timeout);
+            if (code == ETIMEDOUT) {
+                if (shutdownFlag) {
+                    return;
+                }
+            }
+            DO_PTHREAD_TIMED(code);
+        }
+
+        // we now have a valid request placed and hold the mutex -- do the write
+        restore->writeSegment(workspace, segment, count);
+
+        placedRequest = false;
+    }
+}
+
+void SegmentWriter::shutdown()
+{
+    CRITICAL_SECTION(cs, &requestCondMutex);
+    shutdownFlag = true;
 }
