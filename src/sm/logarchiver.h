@@ -721,6 +721,7 @@ public:
     const static char* CURR_RUN_FILE;
     const static char* CURR_MERGE_FILE;
     const static size_t MAX_LOGREC_SIZE;
+    const static size_t IO_ALIGN;
 
 private:
     ArchiveDirectory* directory;

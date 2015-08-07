@@ -53,42 +53,54 @@ BackupPrefetcher::BackupPrefetcher(vol_t* volume, size_t numSegments,
 
     DO_PTHREAD(pthread_cond_init(&readCond, NULL));
     DO_PTHREAD(pthread_mutex_init(&readCondMutex, NULL));
+    DO_PTHREAD(pthread_cond_init(&prefetchCond, NULL));
+    DO_PTHREAD(pthread_mutex_init(&prefetchCondMutex, NULL));
 }
 
 BackupPrefetcher::~BackupPrefetcher()
 {
     DO_PTHREAD(pthread_mutex_destroy(&readCondMutex));
     DO_PTHREAD(pthread_cond_destroy(&readCond));
+    DO_PTHREAD(pthread_mutex_destroy(&prefetchCondMutex));
+    DO_PTHREAD(pthread_cond_destroy(&prefetchCond));
+
+    delete[] slots;
 }
 
 void BackupPrefetcher::prefetch(unsigned segment, int priority)
 {
-    spinlock_write_critical_section cs(&requestMutex);
-
-    // if segment was already fetched, ignore
-    for (size_t i = 0; i < numSegments; i++)
     {
-        if (slots[i] == (int) segment) {
-            return;
+        spinlock_write_critical_section cs(&requestMutex);
+
+        // if segment was already fetched, ignore
+        for (size_t i = 0; i < numSegments; i++)
+        {
+            if (slots[i] == (int) segment) {
+                return;
+            }
+        }
+
+        // if segment was already requested, ignore
+        for (std::deque<unsigned>::iterator iter = requests.begin();
+                iter != requests.end(); iter++)
+        {
+            if (*iter == segment) {
+                return;
+            }
+        }
+
+        // add request to the queue
+        if (priority > 0) {
+            requests.push_front(segment);
+        }
+        else {
+            requests.push_back(segment);
         }
     }
 
-    // if segment was already requested, ignore
-    for (std::deque<unsigned>::iterator iter = requests.begin();
-            iter != requests.end(); iter++)
-    {
-        if (*iter == segment) {
-            return;
-        }
-    }
-
-    // add request to the queue
-    if (priority > 0) {
-        requests.push_front(segment);
-    }
-    else {
-        requests.push_back(segment);
-    }
+    // wake up prefetcher
+    CRITICAL_SECTION(cs, &prefetchCondMutex);
+    DO_PTHREAD(pthread_cond_broadcast(&prefetchCond));
 }
 
 char* BackupPrefetcher::fix(unsigned segment)
@@ -104,6 +116,7 @@ char* BackupPrefetcher::fix(unsigned segment)
             for (size_t i = 0; i < numSegments; i++) {
                 if (slots[i] == (int) segment) {
                     fixWaiting = false;
+                    lintel::atomic_thread_fence(lintel::memory_order_release);
                     return buffer + (i * segmentSizeBytes);
                 }
             }
@@ -124,6 +137,7 @@ char* BackupPrefetcher::fix(unsigned segment)
             // signalize to prefetcher that we are waiting
             // (i.e., it may evict segments if necessary)
             fixWaiting = true;
+            lintel::atomic_thread_fence(lintel::memory_order_release);
         }
 
         // wait for prefetcher thread to read a segment
@@ -145,10 +159,28 @@ void BackupPrefetcher::unfix(unsigned segment)
 void BackupPrefetcher::run()
 {
     while (volume->is_failed()) {
+        {
+            // read spinlock to check if queue is empty
+            spinlock_write_critical_section cs(&requestMutex);
+
+            if (requests.size() == 0) {
+                // Wait for activation signal or timeout
+                CRITICAL_SECTION(cs, &prefetchCondMutex);
+                struct timespec timeout;
+                sthread_t::timeout_to_timespec(100, timeout); // 100ms
+                int code = pthread_cond_timedwait(&prefetchCond, &prefetchCondMutex,
+                        &timeout);
+                DO_PTHREAD_TIMED(code);
+            }
+        }
+
         char* readSlot = NULL;
         unsigned next = numSegments;
         {
             spinlock_write_critical_section cs(&requestMutex);
+
+            if (requests.size() == 0) { continue; }
+
             next = requests.front();
 
             // look if segment is already in buffer
@@ -168,6 +200,7 @@ void BackupPrefetcher::run()
             }
 
             if (!readSlot) {
+                lintel::atomic_thread_fence(lintel::memory_order_release);
                 if (!fixWaiting) {
                     // buffer full -- wait and try again
                     usleep(1000); // 1ms
@@ -201,8 +234,7 @@ void BackupPrefetcher::run()
         W_COERCE(volume->read_backup(firstPage, segmentSize, readSlot));
 
         // signalize read to waiting threads
-        DO_PTHREAD(pthread_mutex_lock(&readCondMutex));
+        CRITICAL_SECTION(cs2, &readCondMutex);
         DO_PTHREAD(pthread_cond_broadcast(&readCond));
-        DO_PTHREAD(pthread_mutex_unlock(&readCondMutex));
     }
 }

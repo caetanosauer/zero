@@ -133,7 +133,7 @@ public:
  * prefetched). However, this is not realistic in the case of complex schedules
  * such as different priorities or on-demand mixed with single-pass restore.
  *
- * The cosntructore argument numSegments determines the buffer size in number
+ * The constructor argument numSegments determines the buffer size in number
  * of segments.  Similar to a buffer pool, one of the slots is always "fixed"
  * as the one being currently used as the restore workspace.
  *
@@ -188,6 +188,10 @@ private:
     /** Condition variable to signal when prefetcher performs a read */
     pthread_cond_t readCond;
     pthread_mutex_t readCondMutex;
+
+    /** Condition variable to signal when a prefetch is requested */
+    pthread_cond_t prefetchCond;
+    pthread_mutex_t prefetchCondMutex;
 
     /** Keep track of last evicted slot */
     size_t lastEvicted;
