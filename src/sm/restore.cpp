@@ -657,10 +657,53 @@ size_t RestoreMgr::restoreSegment(char* workspace,
 
 void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
 {
-    shpid_t firstPage = getPidForSegment(segment);
+    {
+        spinlock_write_critical_section cs(&requestMutex);
 
+        /*
+         * Now that the segment is restored, copy it into the buffer pool frame
+         * of each matching request. Acquire the mutex for that to avoid race
+         * condition in which segment gets restored after caller checks but
+         * before its request is placed.
+         */
+        if (reuseRestoredBuffer && count > 0) {
+            shpid_t firstPage = getPidForSegment(segment);
+
+            for (size_t i = 0; i < count; i++) {
+                map<shpid_t, generic_page*>::iterator pos =
+                    bufferedRequests.find(firstPage + i);
+
+                if (pos != bufferedRequests.end()) {
+                    char* wpage = workspace + (sizeof(generic_page) * i);
+
+                    w_assert1(((generic_page*) wpage)->pid.page ==
+                            firstPage + i);
+                    memcpy(pos->second, wpage, sizeof(generic_page));
+                    w_assert1(pos->second->pid.page == firstPage + i);
+
+                    DBGTHRD(<< "Deleting request " << pos->first);
+                    bufferedRequests.erase(pos);
+                }
+            }
+        }
+    }
+
+    if (asyncWriter) {
+        // place write request on asynchronous writer and move on
+        // (it basically calls writeSegment from another thread)
+        asyncWriter->requestWrite(workspace, segment, count);
+    }
+    else {
+        writeSegment(workspace, segment, count);
+    }
+}
+
+void RestoreMgr::writeSegment(char* workspace, unsigned segment, size_t count)
+{
     if (count > 0) {
+        shpid_t firstPage = getPidForSegment(segment);
         w_assert0((int) count <= segmentSize);
+
         // write pages back to replacement device (or backup)
         if (takeBackup) {
             W_COERCE(volume->write_backup(firstPage, count, workspace));
@@ -673,44 +716,12 @@ void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
     }
 
     // taking a backup should not generate log records, so pass the redo flag
-    markSegmentRestored(workspace, segment, takeBackup /* redo */);
-
-    // send signal to waiting threads (acquire mutex to avoid lost signal)
-    DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
-    DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
-    DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
+    markSegmentRestored(segment, takeBackup /* redo */);
+    backup->unfix(segment);
 }
 
-void RestoreMgr::markSegmentRestored(char* workspace, unsigned segment, bool redo)
+void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
 {
-    spinlock_write_critical_section cs(&requestMutex);
-
-    /*
-     * Now that the segment is restored, copy it into the buffer pool frame of
-     * each matching request. Acquire the mutex for that to avoid race
-     * condition in which segment gets restored after caller checks but before
-     * its request is placed.
-     */
-    if (reuseRestoredBuffer && workspace && !redo) {
-        shpid_t firstPage = getPidForSegment(segment);
-
-        for (int i = 0; i < segmentSize; i++) {
-            map<shpid_t, generic_page*>::iterator pos =
-                bufferedRequests.find(firstPage + i);
-
-            if (pos != bufferedRequests.end()) {
-                char* wpage = workspace + (sizeof(generic_page) * i);
-
-                w_assert1(((generic_page*) wpage)->pid.page == firstPage + i);
-                memcpy(pos->second, wpage, sizeof(generic_page));
-                w_assert1(pos->second->pid.page == firstPage + i);
-
-                DBGTHRD(<< "Deleting request " << pos->first);
-                bufferedRequests.erase(pos);
-            }
-        }
-    }
-
     // Mark whole segment as restored, even if no page was actually replayed
     // (i.e., segment contains only unused pages)
     numRestoredPages += segmentSize;
@@ -726,6 +737,11 @@ void RestoreMgr::markSegmentRestored(char* workspace, unsigned segment, bool red
     }
 
     bitmap->set(segment);
+
+    // send signal to waiting threads (acquire mutex to avoid lost signal)
+    DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
+    DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
+    DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
 }
 
 void RestoreMgr::run()

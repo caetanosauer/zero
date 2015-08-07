@@ -653,7 +653,7 @@ inline void vol_t::check_metadata_restored() const
 void vol_t::redo_segment_restore(unsigned segment)
 {
     w_assert0(_restore_mgr && is_failed());
-    _restore_mgr->markSegmentRestored(NULL, segment, true /* redo */);
+    _restore_mgr->markSegmentRestored(segment, true /* redo */);
 }
 
 rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)

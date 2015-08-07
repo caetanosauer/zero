@@ -216,15 +216,22 @@ protected:
             LogArchiver::ArchiveScanner::RunMerger* merger,
             shpid_t firstPage);
 
-    /** \brief Concludes restore of a segment and flushes to replacement device
+    /** \brief Concludes restore of a segment
+     * Processes buffer pool requests when reuse is activated and calls
+     * writeSegment() if backup is on synchronous mode. Otherwise places
+     * a write request on the asynchronous SegmentWriter;
      */
     void finishSegment(char* workspace, unsigned segment, size_t count);
 
-    /** \brief Mark a segment as restored in the bitmap
-     * Used by finishSegment() and restore_segment_log::redo
+    /** \brief Writes a segment to the replacement device and marks it restored
+     * Used by finishSegment() and SegmentWriter
      */
-    void markSegmentRestored(char* workspace, unsigned segment,
-            bool redo = false);
+    void writeSegment(char* workspace, unsigned segment, size_t count);
+
+    /** \brief Mark a segment as restored in the bitmap
+     * Used by writeSegment() and restore_segment_log::redo
+     */
+    void markSegmentRestored(unsigned segment, bool redo = false);
 
     // Allow protected access from vol_t (for recovery)
     friend class vol_t;
