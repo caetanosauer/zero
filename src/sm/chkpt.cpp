@@ -2360,6 +2360,14 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
     }
 
     for(uint i=0; i<new_chkpt.tid.size(); i++) {
+        DBGOUT1(<<"tid["<<i<<"]="<<new_chkpt.tid[i]);
+        for(uint j=0; j<new_chkpt.lock_hash[i].size(); j++) {
+            DBGOUT1(<<"\tlock_hash["<<j<<"]="<<new_chkpt.lock_hash[i][j]<<" , "
+                    <<"lock_mode["<<j<<"]="<<new_chkpt.lock_mode[i][j]);
+        }
+    }
+
+    for(uint i=0; i<new_chkpt.tid.size(); i++) {
         DBGOUT1(<<"tid["<<i<<"]="<<new_chkpt.tid[i]<<" , " <<
                   "state["<<i<<"]="<<new_chkpt.state[i]<< " , " <<
                   "last_lsn["<<i<<"]="<<new_chkpt.last_lsn[i]<<" , " <<
