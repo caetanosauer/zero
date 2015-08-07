@@ -97,6 +97,11 @@ extern class sthread_stats SthreadStats;
 
 #include <os_interface.h>
 
+#define CHECK_ERRNO(n) \
+    if (n == -1) { \
+        W_RETURN_RC_MSG(fcOS, << "Kernel errno code: " << errno); \
+    }
+
 int    sdisk_unix_t::convert_flags(int sflags)
 {
     int    flags = 0;
@@ -122,13 +127,10 @@ int    sdisk_unix_t::convert_flags(int sflags)
         flags |= O_TRUNC;
     if (hasOption(sflags, OPEN_EXCL))
         flags |= O_EXCL;
-#ifdef O_SYNC
     if (hasOption(sflags, OPEN_SYNC))
         flags |= O_SYNC;
-#endif
     if (hasOption(sflags, OPEN_APPEND))
         flags |= O_APPEND;
-#ifdef O_DIRECT
     /*
      * From the open man page:
      *      O_DIRECT
@@ -143,9 +145,8 @@ int    sdisk_unix_t::convert_flags(int sflags)
               the file system. Under Linux 2.6 alignment must  fit  the  block
               size of the device.
     */
-    if (hasOption(sflags, OPEN_RAW))
+    if (hasOption(sflags, OPEN_DIRECT))
         flags |= O_DIRECT;
-#endif
 
 
     return flags;
@@ -188,14 +189,7 @@ w_rc_t    sdisk_unix_t::open(const char *name, int flags, int mode)
         return RC(stBADFD);    /* XXX in use */
 
     _fd = ::os_open(name, convert_flags(flags), mode);
-    if (_fd == -1) {
-        w_rc_t rc = RC(fcOS);
-        // RC_APPEND_MSG(rc, << "Offending file: " << name << ", errno=" << errno
-        //     << " (This might not mean an error. One might try opening file before create)"
-        //               << "fuller flags was " << convert_flags(flags) << " mode was " << mode << " raw flags " << flags
-        // );
-        return rc;
-    }
+    CHECK_ERRNO(_fd);
 
     return RCOK;
 }
@@ -208,8 +202,7 @@ w_rc_t    sdisk_unix_t::close()
     int    n;
 
     n = ::os_close(_fd);
-    if (n == -1)
-        return RC(fcOS);
+    CHECK_ERRNO(n);
 
     _fd = FD_NONE;
     return RCOK;
@@ -225,8 +218,7 @@ w_rc_t    sdisk_unix_t::read(void *buf, int count, int &done)
 
     int    n;
     n = ::os_read(_fd, buf, count);
-    if (n == -1)
-        return RC(fcOS);
+    CHECK_ERRNO(n);
 
     done = n;
 
@@ -241,8 +233,7 @@ w_rc_t    sdisk_unix_t::write(const void *buf, int count, int &done)
     int    n;
 
     n = ::os_write(_fd, buf, count);
-    if (n == -1)
-        return RC(fcOS);
+    CHECK_ERRNO(n);
 
 #if defined(USING_VALGRIND)
     if(RUNNING_ON_VALGRIND)
@@ -264,8 +255,7 @@ w_rc_t    sdisk_unix_t::readv(const iovec_t *iov, int iovcnt, int &done)
 
     int    n;
     n = ::os_readv(_fd, (const struct iovec *)iov, iovcnt);
-    if (n == -1)
-        return RC(fcOS);
+    CHECK_ERRNO(n);
 
     done = n;
 
@@ -280,11 +270,7 @@ w_rc_t    sdisk_unix_t::writev(const iovec_t *iov, int iovcnt, int &done)
     int    n;
 
     n = ::os_writev(_fd, (const struct iovec *)iov, iovcnt);
-    if (n == -1) {
-        int err = errno;
-        cout << "err " << err << endl;
-        return RC(fcOS);
-    }
+    CHECK_ERRNO(n);
 
 #if defined(USING_VALGRIND)
     if(RUNNING_ON_VALGRIND)
@@ -306,9 +292,7 @@ w_rc_t    sdisk_unix_t::pread(void *buf, int count, fileoff_t pos, int &done)
 
     int    n;
     n = ::os_pread(_fd, buf, count, pos);
-
-    if (n == -1)
-        return RC(fcOS);
+    CHECK_ERRNO(n);
 
     done = n;
 
@@ -325,8 +309,8 @@ w_rc_t    sdisk_unix_t::pwrite(const void *buf, int count, fileoff_t pos,
     int    n;
 
     n = ::os_pwrite(_fd, buf, count, pos);
-    if (n == -1)
-        return RC(fcOS);
+    CHECK_ERRNO(n);
+
 #if defined(USING_VALGRIND)
     if(RUNNING_ON_VALGRIND)
     {
@@ -358,8 +342,7 @@ w_rc_t    sdisk_unix_t::seek(fileoff_t pos, int origin, fileoff_t &newpos)
 
     fileoff_t    l=0;
     l = ::os_lseek(_fd, pos, origin);
-    if (l == -1)
-        return RC(fcOS);
+    CHECK_ERRNO(l);
 
     newpos = l;
 
@@ -369,9 +352,7 @@ w_rc_t    sdisk_unix_t::seek(fileoff_t pos, int origin, fileoff_t &newpos)
 w_rc_t    sdisk_unix_t::rename(const char* oldname, const char* newname)
 {
     int n = ::os_rename(oldname, newname);
-
-    if (n == -1)
-        return RC(fcOS);
+    CHECK_ERRNO(n);
 
     return RCOK;
 }
@@ -381,7 +362,9 @@ w_rc_t    sdisk_unix_t::truncate(fileoff_t size)
     if (_fd == FD_NONE)
         return RC(stBADFD);
     int    n = ::os_ftruncate(_fd, size);
-    return (n == -1) ? RC(fcOS) : RCOK;
+    CHECK_ERRNO(n);
+
+    return RCOK;
 }
 
 w_rc_t    sdisk_unix_t::sync()
@@ -395,7 +378,9 @@ w_rc_t    sdisk_unix_t::sync()
     if (n == -1 && (errno == EBADF || errno == EINVAL))
         n = 0;
 
-    return (n == -1) ? RC(fcOS) : RCOK;
+    CHECK_ERRNO(n);
+
+    return RCOK;
 }
 
 
@@ -406,8 +391,7 @@ w_rc_t    sdisk_unix_t::stat(filestat_t &st)
 
     os_stat_t    sys;
     int n = os_fstat(_fd, &sys);
-    if (n == -1)
-        return RC(fcOS);
+    CHECK_ERRNO(n);
 
     st.st_size = sys.st_size;
 #ifdef HAVE_STRUCT_STAT_ST_BLKSIZE

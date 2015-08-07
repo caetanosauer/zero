@@ -101,13 +101,13 @@ void io_thread_t::run()
 
         f << "./sthread." << getpid() << '.' << idx << ends;
         const char *fname = f.c_str();
-    
+
         int fd;
         w_rc_t rc;
         int flags = OPEN_RDWR | OPEN_CREATE;
-        
+
         if (raw_io)
-                flags |= OPEN_RAW;
+                flags |= OPEN_DIRECT;
         if (sync_io)
                 flags |= OPEN_SYNC;
 

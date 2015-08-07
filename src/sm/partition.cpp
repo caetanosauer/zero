@@ -1070,7 +1070,7 @@ partition_t::open_for_read(
                 << "open_for_read OPEN " << fname);
 
 #ifdef LOG_DIRECT_IO
-        int flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_RAW;
+        int flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_DIRECT;
         //int flags = smthread_t::OPEN_RDONLY;
 #else
         int flags = smthread_t::OPEN_RDONLY;
@@ -1266,7 +1266,7 @@ partition_t::peek(
 
     // first create it if necessary.
 #ifdef LOG_DIRECT_IO
-    int flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC | smthread_t::OPEN_CREATE | smthread_t::OPEN_RAW;
+    int flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC | smthread_t::OPEN_CREATE | smthread_t::OPEN_DIRECT;
 #else
     int flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC | smthread_t::OPEN_CREATE;
 #endif // LOG_DIRECT_IO

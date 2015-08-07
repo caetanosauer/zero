@@ -192,7 +192,7 @@ public:
     OPEN_CREATE = sdisk_base_t::OPEN_CREATE,
     OPEN_EXCL = sdisk_base_t::OPEN_EXCL,
     OPEN_APPEND = sdisk_base_t::OPEN_APPEND,
-    OPEN_RAW = sdisk_base_t::OPEN_RAW
+    OPEN_DIRECT = sdisk_base_t::OPEN_DIRECT
     };
     enum {
     SEEK_AT_SET = sdisk_base_t::SEEK_AT_SET,

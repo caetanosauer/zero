@@ -120,7 +120,7 @@ public:
         OPEN_CREATE=0x40,
         OPEN_SYNC=0x80,
         OPEN_APPEND=0x100,
-        OPEN_RAW=0x200,
+        OPEN_DIRECT=0x200,
         OPTION_FLAGS=0x3f0    // internal
     };
 
