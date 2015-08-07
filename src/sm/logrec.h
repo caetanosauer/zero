@@ -503,27 +503,6 @@ struct chkpt_xct_lock_t {
     int             size() const;
 };
 
-struct chkpt_dev_tab_t
-{
-    uint16_t count;
-    uint32_t data_size;
-    char     data[logrec_t::max_data_sz];
-
-    enum {
-        max = (logrec_t::max_data_sz - 3 * sizeof(uint16_t))
-                / smlevel_0::max_devname
-    };
-
-
-    chkpt_dev_tab_t(const std::vector<string>& devices);
-
-    int size() const {
-        return data_size + 3 * sizeof(uint16_t);
-    }
-
-    void read_devnames(std::vector<string>& devnames);
-};
-
 struct chkpt_backup_tab_t
 {
     uint32_t count;
@@ -537,6 +516,8 @@ struct chkpt_backup_tab_t
 
     chkpt_backup_tab_t(
         const std::vector<string>& paths);
+
+    chkpt_backup_tab_t(int cnt, const vid_t* vids, const string* paths);
 
     int size() const {
         return data_size + sizeof(uint32_t) * 2;

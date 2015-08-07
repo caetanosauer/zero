@@ -586,8 +586,10 @@ chkpt_xct_lock_log::chkpt_xct_lock_log(
 }
 
 chkpt_backup_tab_t::chkpt_backup_tab_t(
-        const std::vector<string>& paths)
-    : count(paths.size())
+        int cnt,
+        const vid_t* vids,
+        const string* paths)
+    : count(cnt)
 {
     std::stringstream ss;
     for (uint i = 0; i < count; i++) {
@@ -611,10 +613,10 @@ void chkpt_backup_tab_t::read(
     }
 }
 
-chkpt_backup_tab_log::chkpt_backup_tab_log(
-        const std::vector<string>& paths)
+chkpt_backup_tab_log::chkpt_backup_tab_log(int cnt,
+                                           const string* paths)
 {
-    fill((PageID) 0, (new (_data) chkpt_backup_tab_t(paths))->size());
+    fill(0, (new (_data) chkpt_backup_tab_t(cnt, paths))->size());
 }
 
 void chkpt_backup_tab_log::redo(fixable_page_h*)

@@ -2355,19 +2355,11 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
 
     //============================ WRITE LOG RECORDS ===========================
     int chunk;
-
-    chunk = vol_m::MAX_VOLS > (int)chkpt_dev_tab_t::max
-            ? (int)chkpt_dev_tab_t::max : vol_m::MAX_VOLS;
-    for(uint i=0; i<new_chkpt.dev_paths.size(); i+=chunk) {
-        LOG_INSERT(chkpt_dev_tab_log(new_chkpt.dev_paths.size(),
-                                     new_chkpt.next_vid,
-                                     (const string*)(&new_chkpt.dev_paths[i])), 0);
-    }
-
-    chunk = vol_m::MAX_VOLS > (int)chkpt_backup_tab_t::max
-            ? (int)chkpt_backup_tab_t::max : vol_m::MAX_VOLS;
+    chunk = (int)chkpt_backup_tab_t::max;
     for(uint i=0; i<new_chkpt.backup_vids.size(); i+=chunk) {
-        LOG_INSERT(chkpt_backup_tab_log(new_chkpt.backup_vids, new_chkpt.backup_paths), 0);
+        LOG_INSERT(chkpt_backup_tab_log(new_chkpt.backup_vids.size()-i,
+                                        (const vid_t*)(&new_chkpt.backup_vids[i]),
+                                        (const string*)(&new_chkpt.backup_paths[i])), 0);
     }
     //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
 
@@ -2799,7 +2791,8 @@ try
             if (paths.size() > 0)
             {
                 // Write a Checkpoint Device Table Log
-                LOG_INSERT(chkpt_backup_tab_log(paths), 0);
+                LOG_INSERT(chkpt_backup_tab_log(paths.size(),
+                                                (const string*)(&paths[0])), 0);
             }
             backup_cnt = paths.size();
         }

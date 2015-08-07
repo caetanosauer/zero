@@ -111,8 +111,8 @@ chkpt_xct_tab      0000000 0.0 (const tid_t& youngest,
                             const lsn_t* last_lsn, const lsn_t* undo_nxt, const lsn_t* first_lsn);               
 # per active transaction granted lock log
 chkpt_xct_lock      0000000 0.0 (const tid_t& tid, int cnt, const okvl_mode* lock_mode, const uint32_t* lock_hash);
-chkpt_backup_tab   0010000 0.0 (const std::vector<string>& paths);
 chkpt_restore_tab  0010000 0.0 ();
+chkpt_backup_tab   0010000 0.0 (int cnt, const string* paths);
 chkpt_end          0000000 0.0 (const lsn_t& master, const lsn_t& min_rec_lsn, const lsn_t& min_xct_lsn);
 add_backup         1110000 0.0 (const char* dev_name);
 #########################################################################
