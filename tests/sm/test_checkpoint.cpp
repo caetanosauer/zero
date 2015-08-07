@@ -4,6 +4,7 @@
 #include "sm_base.h"
 #include "log_core.h"
 #include "vol.h"
+#include "backup.h"
 #include "chkpt.h"
 
 btree_test_env *test_env;
@@ -94,6 +95,32 @@ TEST (CheckpointTest, deviceTable) {
     options.set_bool_option("sm_testenv_init_vol", false);
     EXPECT_EQ(test_env->runBtreeTest(deviceTable, options), 0);
 }
+
+/*
+w_rc_t backupTable(ss_m* ssm, test_volume_t *test_volume) {
+    BackupManager *bk = ssm->bk;
+    vid_t vid = test_volume->_vid;
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+
+    W_DO(x_take_backup(ssm, test_volume));
+    EXPECT_TRUE(bk->volume_exists(vid));
+
+    W_DO(ss_m::checkpoint_sync());
+
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+    return RCOK;
+}
+
+TEST (CheckpointTest, backupTable) {
+    test_env->empty_logdata_dir();
+    sm_options options;
+    options.set_bool_option("sm_testenv_init_vol", true);
+    EXPECT_EQ(test_env->runBtreeTest(backupTable, options), 0);
+}
+*/
+
 
 rc_t bufferTable(ss_m* ssm, test_volume_t* test_vol)
 {
