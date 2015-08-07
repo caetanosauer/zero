@@ -160,17 +160,13 @@ private:
     /** Size of a segment in Bytes **/
     size_t segmentSizeBytes;
 
-    /** Array to keep track of fetched segments. Negative value indicates a
-     * free slot
-     */
+    /** Array to keep track of fetched segments. */
     int* slots;
 
-    /** A slot is fixed when it is being used by restore. Thus, it cannot be
-     * evicted. Only one fixed slot is allowed at a time, i.e., restore is
-     * sequential. If no slot is fixed, its value is negative.
-     */
-    int fixedSegment;
+    /** Array to keep track of /free status of each segment */
+    int* status;
 
+    /** True if a fix didn't find the segment -- prefetcher should hurry */
     bool fixWaiting;
 
     /** Queue of received requests */
@@ -189,6 +185,10 @@ private:
 
     /** Keep track of last evicted slot */
     size_t lastEvicted;
+
+    static const int SLOT_FREE = 0;
+    static const int SLOT_UNFIXED = 1;
+    static const int SLOT_FIXED = 2;
 
 public:
     static const std::string IMPL_NAME;

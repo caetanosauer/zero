@@ -64,10 +64,10 @@ BackupPrefetcher::BackupPrefetcher(vol_t* volume, size_t numSegments,
 
     // initialize all slots with -1, i.e., free
     slots = new int[numSegments];
+    status = new int[numSegments];
     for (size_t i = 0; i < numSegments; i++) {
-        slots[i] = -1;
+        status[i] = SLOT_FREE;
     }
-    fixedSegment = -1;
 
     DO_PTHREAD(pthread_cond_init(&readCond, NULL));
     DO_PTHREAD(pthread_mutex_init(&readCondMutex, NULL));
@@ -93,7 +93,7 @@ void BackupPrefetcher::prefetch(unsigned segment, int priority)
         // if segment was already fetched, ignore
         for (size_t i = 0; i < numSegments; i++)
         {
-            if (slots[i] == (int) segment) {
+            if (slots[i] == (int) segment && status[i] != SLOT_FREE) {
                 return;
             }
         }
@@ -127,17 +127,18 @@ char* BackupPrefetcher::fix(unsigned segment)
         {
             spinlock_write_critical_section cs(&requestMutex);
 
-            // only one fixed segment at a time (i.e., sequential restore)
-            w_assert0(fixedSegment < 0);
-
             // look for segment in buffer -- majority of calls should end here
+            // on the first try, otherwise prefetch was not effective
             for (size_t i = 0; i < numSegments; i++) {
-                if (slots[i] == (int) segment) {
+                if (slots[i] == (int) segment && status[i] != SLOT_FREE) {
+                    w_assert0(status[i] == SLOT_UNFIXED);
                     fixWaiting = false;
                     lintel::atomic_thread_fence(lintel::memory_order_release);
                     return buffer + (i * segmentSizeBytes);
                 }
             }
+
+            INC_TSTAT(backup_not_prefetched);
 
             // segment not in buffer -- move request to the front and wait
             // for prefetch to catch up
@@ -170,12 +171,25 @@ char* BackupPrefetcher::fix(unsigned segment)
 
 void BackupPrefetcher::unfix(unsigned segment)
 {
-    w_assert0((int) segment == fixedSegment);
-    fixedSegment = -1;
+    spinlock_write_critical_section cs(&requestMutex);
+    for (size_t i = 0; i < numSegments; i++) {
+        if (slots[i] == (int) segment) {
+            w_assert1(status[i] != SLOT_FREE);
+            // since each segment is used only once, it goes directly to
+            // free instead of unfixed
+            status[i] = SLOT_FREE;
+            return;
+        }
+    }
+
+    // Segment not found -- error!
+    W_FATAL_MSG(fcINTERNAL,
+            << "Attempt to unfix segment which was not fixed: " << segment);
 }
 
 void BackupPrefetcher::run()
 {
+    bool sleep = false;
     while (volume->is_failed()) {
         {
             // read spinlock to check if queue is empty
@@ -193,7 +207,13 @@ void BackupPrefetcher::run()
         }
 
         char* readSlot = NULL;
-        unsigned next = numSegments;
+        unsigned next = numSegments; // invalid value
+
+        if (sleep) {
+            usleep(1000); // 1ms
+            sleep = false;
+        }
+
         {
             spinlock_write_critical_section cs(&requestMutex);
 
@@ -203,7 +223,7 @@ void BackupPrefetcher::run()
 
             // look if segment is already in buffer
             for (size_t i = 0; i < numSegments; i++) {
-                if (slots[i] == (int) next) {
+                if (slots[i] == (int) next && status[i] != SLOT_FREE) {
                     requests.pop_front();
                     continue;
                 }
@@ -211,34 +231,37 @@ void BackupPrefetcher::run()
 
             // segment not in buffer, look for a free slot for reading into
             for (size_t i = 0; i < numSegments; i++) {
-                if (slots[i] < 0) {
+                if (status[i] == SLOT_FREE) {
                     readSlot = buffer + (i * segmentSizeBytes);
                     slots[i] = next;
+                    status[i] = SLOT_UNFIXED;
                 }
             }
 
             if (!readSlot) {
-                lintel::atomic_thread_fence(lintel::memory_order_release);
+                lintel::atomic_thread_fence(lintel::memory_order_consume);
                 if (!fixWaiting) {
-                    // buffer full -- wait and try again
-                    usleep(1000); // 1ms
+                    sleep = true;
                     continue;
                 }
 
                 // A fix is waiting and the buffer is full -- must evict.
-                // If buffer is size 1 and a segment is already fixed,
-                // we have a bug.
-                w_assert0(numSegments > 1 || fixedSegment > 0);
+                // Do one round and start over if no segment can be evicted
+                size_t start = lastEvicted;
                 do {
-                    if (lastEvicted == 0) {
-                        lastEvicted = numSegments - 1;
+                    if (lastEvicted == 0) { lastEvicted = numSegments - 1; }
+                    else { lastEvicted--; }
+
+                    if (lastEvicted == start) {
+                        sleep = true;
+                        break;
                     }
-                    else {
-                        lastEvicted--;
-                    }
-                } while (slots[lastEvicted] == fixedSegment);
+                } while (status[lastEvicted] == SLOT_FIXED);
+
+                if (sleep) { continue; }
 
                 slots[lastEvicted] = next;
+                status[lastEvicted] = SLOT_UNFIXED;
                 readSlot = buffer + (lastEvicted * segmentSizeBytes);
             }
 
