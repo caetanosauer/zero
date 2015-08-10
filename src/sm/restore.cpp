@@ -287,12 +287,14 @@ RestoreMgr::RestoreMgr(const sm_options& options,
                     "sm_backup_prefetcher_segments", 3);
             w_assert0(numSegments > 0);
             backup = new BackupPrefetcher(volume, numSegments, segmentSize);
+            dynamic_cast<BackupPrefetcher*>(backup)->fork();
 
             // Construct asynchronous writer object
             // Note that this is only valid with a prefetcher reader, because
             // otherwise only one segment can be fixed at a time
             if (options.get_bool_option("sm_backup_async_write", true)) {
                 asyncWriter = new SegmentWriter(this);
+                asyncWriter->fork();
             }
         }
         else {
