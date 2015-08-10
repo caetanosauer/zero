@@ -37,6 +37,11 @@ public:
         return; // default: no prefetching
     }
 
+    /** Invoked to finish reader if it's an asynchronous thread */
+    virtual void finish()
+    {
+    }
+
     BackupReader(size_t bufferSize);
 
     virtual ~BackupReader();
@@ -147,6 +152,7 @@ public:
     virtual void unfix(unsigned segment);
 
     virtual void run();
+    virtual void finish();
 
 private:
     vol_t* volume;
@@ -169,26 +175,22 @@ private:
     /** True if a fix didn't find the segment -- prefetcher should hurry */
     bool fixWaiting;
 
+    /** Tells prefetcher thread to exit */
+    bool shutdownFlag;
+
     /** Queue of received requests */
     std::deque<unsigned> requests;
 
-    /** Protect concurrent access to slot array and request queue */
-    srwlock_t requestMutex;
-
-    /** Condition variable to signal when prefetcher performs a read */
-    pthread_cond_t readCond;
-    pthread_mutex_t readCondMutex;
-
-    /** Condition variable to signal when a prefetch is requested */
-    pthread_cond_t prefetchCond;
-    pthread_mutex_t prefetchCondMutex;
+    /** Mutex to protect access to request queue and slot array */
+    pthread_mutex_t mutex;
 
     /** Keep track of last evicted slot */
     size_t lastEvicted;
 
     static const int SLOT_FREE = 0;
-    static const int SLOT_UNFIXED = 1;
-    static const int SLOT_FIXED = 2;
+    static const int SLOT_READING = 1;
+    static const int SLOT_UNFIXED = 2;
+    static const int SLOT_FIXED = 3;
 
 public:
     static const std::string IMPL_NAME;

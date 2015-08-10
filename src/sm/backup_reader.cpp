@@ -9,6 +9,9 @@ const std::string BackupPrefetcher::IMPL_NAME = "prefetcher";
 
 const size_t IO_ALIGN = LogArchiver::IO_ALIGN;
 
+// Time (in usec) for which to wait until a segment is requested/prefetched
+const unsigned WAIT_TIME = 500;
+
 BackupReader::BackupReader(size_t bufferSize)
 {
     // Using direct I/O
@@ -54,127 +57,126 @@ void BackupOnDemandReader::unfix(unsigned segment)
 
 BackupPrefetcher::BackupPrefetcher(vol_t* volume, size_t numSegments,
         size_t segmentSize)
-    : BackupReader(segmentSize * sizeof(generic_page)),
+    : BackupReader(segmentSize * sizeof(generic_page) * numSegments),
       volume(volume), numSegments(numSegments), segmentSize(segmentSize),
       segmentSizeBytes(segmentSize * sizeof(generic_page)),
-      fixWaiting(false), lastEvicted(0)
+      fixWaiting(false), shutdownFlag(false), lastEvicted(0)
 {
     w_assert1(volume);
     firstDataPid = volume->first_data_pageid();
 
-    // initialize all slots with -1, i.e., free
+    // initialize all slots as free
     slots = new int[numSegments];
     status = new int[numSegments];
     for (size_t i = 0; i < numSegments; i++) {
         status[i] = SLOT_FREE;
     }
 
-    DO_PTHREAD(pthread_cond_init(&readCond, NULL));
-    DO_PTHREAD(pthread_mutex_init(&readCondMutex, NULL));
-    DO_PTHREAD(pthread_cond_init(&prefetchCond, NULL));
-    DO_PTHREAD(pthread_mutex_init(&prefetchCondMutex, NULL));
+    DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
 }
 
 BackupPrefetcher::~BackupPrefetcher()
 {
-    DO_PTHREAD(pthread_mutex_destroy(&readCondMutex));
-    DO_PTHREAD(pthread_cond_destroy(&readCond));
-    DO_PTHREAD(pthread_mutex_destroy(&prefetchCondMutex));
-    DO_PTHREAD(pthread_cond_destroy(&prefetchCond));
+    DO_PTHREAD(pthread_mutex_destroy(&mutex));
 
     delete[] slots;
 }
 
 void BackupPrefetcher::prefetch(unsigned segment, int priority)
 {
+    CRITICAL_SECTION(cs, &mutex);
+
+    // if segment was already fetched, ignore
+    for (size_t i = 0; i < numSegments; i++)
     {
-        spinlock_write_critical_section cs(&requestMutex);
-
-        // if segment was already fetched, ignore
-        for (size_t i = 0; i < numSegments; i++)
-        {
-            if (slots[i] == (int) segment && status[i] != SLOT_FREE) {
-                return;
-            }
-        }
-
-        // if segment was already requested, ignore
-        for (std::deque<unsigned>::iterator iter = requests.begin();
-                iter != requests.end(); iter++)
-        {
-            if (*iter == segment) {
-                return;
-            }
-        }
-
-        // add request to the queue
-        if (priority > 0) {
-            requests.push_front(segment);
-        }
-        else {
-            requests.push_back(segment);
+        if (slots[i] == (int) segment && status[i] != SLOT_FREE) {
+            return;
         }
     }
 
-    // wake up prefetcher
-    CRITICAL_SECTION(cs, &prefetchCondMutex);
-    DO_PTHREAD(pthread_cond_broadcast(&prefetchCond));
+    // if segment was already requested, ignore
+    for (std::deque<unsigned>::iterator iter = requests.begin();
+            iter != requests.end(); iter++)
+    {
+        if (*iter == segment) { return; }
+    }
+
+    // add request to the queue
+    if (priority > 0) {
+        requests.push_front(segment);
+    }
+    else {
+        requests.push_back(segment);
+    }
 }
 
 char* BackupPrefetcher::fix(unsigned segment)
 {
+    bool wait = false;
+    bool statIncremented = false;
     while (true) {
-        {
-            spinlock_write_critical_section cs(&requestMutex);
 
-            // look for segment in buffer -- majority of calls should end here
-            // on the first try, otherwise prefetch was not effective
-            for (size_t i = 0; i < numSegments; i++) {
-                if (slots[i] == (int) segment && status[i] != SLOT_FREE) {
-                    w_assert0(status[i] == SLOT_UNFIXED);
-                    fixWaiting = false;
-                    lintel::atomic_thread_fence(lintel::memory_order_release);
-                    return buffer + (i * segmentSizeBytes);
-                }
-            }
-
-            INC_TSTAT(backup_not_prefetched);
-
-            // segment not in buffer -- move request to the front and wait
-            // for prefetch to catch up
-            if (requests.front() != segment) {
-                for (std::deque<unsigned>::iterator iter = requests.begin();
-                        iter != requests.end(); iter++)
-                {
-                    if (*iter == segment) {
-                        requests.erase(iter);
-                    }
-                }
-                requests.push_front(segment);
-            }
-
-            // signalize to prefetcher that we are waiting
-            // (i.e., it may evict segments if necessary)
-            fixWaiting = true;
-            lintel::atomic_thread_fence(lintel::memory_order_release);
+        if (wait) {
+            usleep(WAIT_TIME);
+            wait = false;
         }
 
-        // wait for prefetcher thread to read a segment
-        DO_PTHREAD(pthread_mutex_lock(&readCondMutex));
-        DO_PTHREAD(pthread_cond_wait(&readCond, &readCondMutex));
-        DO_PTHREAD(pthread_mutex_unlock(&readCondMutex));
+        CRITICAL_SECTION(cs, &mutex);
+
+        // look for segment in buffer -- majority of calls should end here
+        // on the first try, otherwise prefetch was not effective
+        for (size_t i = 0; i < numSegments; i++) {
+            if (slots[i] == (int) segment && status[i] != SLOT_FREE) {
+                if (status[i] == SLOT_READING) {
+                    // Segment is curretly being read -- let's just wait
+                    DBGOUT3(<< "Segment fix: not in buffer but reading. "
+                            << "Waiting... ");
+                    wait = true;
+                    break;
+                }
+                w_assert0(status[i] == SLOT_UNFIXED);
+                status[i] = SLOT_FIXED;
+                fixWaiting = false;
+                return buffer + (i * segmentSizeBytes);
+            }
+        }
+
+        if (!statIncremented) {
+            INC_TSTAT(backup_not_prefetched);
+            statIncremented = true;
+        }
+
+        if (wait) { continue; }
+
+        // segment not in buffer -- move request to the front and wait
+        // for prefetch to catch up
+        if (requests.front() != segment) {
+            for (std::deque<unsigned>::iterator iter = requests.begin();
+                    iter != requests.end(); iter++)
+            {
+                if (*iter == segment) {
+                    requests.erase(iter);
+                }
+            }
+            requests.push_front(segment);
+        }
+
+        DBGOUT(<< "Segment fix: not found. Waking up prefetcher");
+        fixWaiting = true;
     }
 
     // should never reach this
-    return NULL;
+    W_FATAL_MSG(fcINTERNAL,
+            << "Invalid state in backup prefetcher");
 }
 
 void BackupPrefetcher::unfix(unsigned segment)
 {
-    spinlock_write_critical_section cs(&requestMutex);
+    CRITICAL_SECTION(cs, &mutex);
+
     for (size_t i = 0; i < numSegments; i++) {
-        if (slots[i] == (int) segment) {
-            w_assert1(status[i] != SLOT_FREE);
+        if (slots[i] == (int) segment && status[i] != SLOT_FREE) {
+            w_assert1(status[i] == SLOT_FIXED);
             // since each segment is used only once, it goes directly to
             // free instead of unfixed
             status[i] = SLOT_FREE;
@@ -189,59 +191,54 @@ void BackupPrefetcher::unfix(unsigned segment)
 
 void BackupPrefetcher::run()
 {
-    bool sleep = false;
-    while (volume->is_failed()) {
-        {
-            // read spinlock to check if queue is empty
-            spinlock_write_critical_section cs(&requestMutex);
-
-            if (requests.size() == 0) {
-                // Wait for activation signal or timeout
-                CRITICAL_SECTION(cs, &prefetchCondMutex);
-                struct timespec timeout;
-                sthread_t::timeout_to_timespec(100, timeout); // 100ms
-                int code = pthread_cond_timedwait(&prefetchCond, &prefetchCondMutex,
-                        &timeout);
-                DO_PTHREAD_TIMED(code);
-            }
-        }
-
+    bool wait = false;
+    while (true) {
+        size_t slotIdx = 0;
         char* readSlot = NULL;
         unsigned next = numSegments; // invalid value
 
-        if (sleep) {
-            usleep(1000); // 1ms
-            sleep = false;
+        if (wait) {
+            usleep(WAIT_TIME);
+            wait = false;
         }
 
         {
-            spinlock_write_critical_section cs(&requestMutex);
+            CRITICAL_SECTION(cs, &mutex);
 
-            if (requests.size() == 0) { continue; }
+            if (shutdownFlag) { return; }
+
+            if (requests.size() == 0) {
+                wait = true;
+                continue;
+            }
 
             next = requests.front();
 
+            bool alreadyFetched = false;
             // look if segment is already in buffer
             for (size_t i = 0; i < numSegments; i++) {
                 if (slots[i] == (int) next && status[i] != SLOT_FREE) {
+                    alreadyFetched = true;
                     requests.pop_front();
-                    continue;
+                    break;
                 }
             }
+            if (alreadyFetched) { continue; }
 
+            bool freeFound = false;
             // segment not in buffer, look for a free slot for reading into
             for (size_t i = 0; i < numSegments; i++) {
                 if (status[i] == SLOT_FREE) {
-                    readSlot = buffer + (i * segmentSizeBytes);
-                    slots[i] = next;
-                    status[i] = SLOT_UNFIXED;
+                    slotIdx = i;
+                    freeFound = true;
+                    break;
                 }
             }
 
-            if (!readSlot) {
-                lintel::atomic_thread_fence(lintel::memory_order_consume);
+            if (!freeFound) {
                 if (!fixWaiting) {
-                    sleep = true;
+                    // We're not in a hurry, so let's not evict prematurely
+                    wait = true;
                     continue;
                 }
 
@@ -253,29 +250,51 @@ void BackupPrefetcher::run()
                     else { lastEvicted--; }
 
                     if (lastEvicted == start) {
-                        sleep = true;
+                        // no evictable segments found -- wait some more
+                        wait = true;
+                        INC_TSTAT(backup_eviction_stuck);
                         break;
                     }
-                } while (status[lastEvicted] == SLOT_FIXED);
+                } while (status[lastEvicted] == SLOT_FIXED ||
+                        status[lastEvicted] == SLOT_READING);
 
-                if (sleep) { continue; }
+                if (wait) { continue; }
 
-                slots[lastEvicted] = next;
-                status[lastEvicted] = SLOT_UNFIXED;
-                readSlot = buffer + (lastEvicted * segmentSizeBytes);
+                slotIdx = lastEvicted;
+                INC_TSTAT(backup_evict_segment);
             }
+
+            // Found a slot to read into!
+            slots[slotIdx] = next;
+            status[slotIdx] = SLOT_READING;
+            readSlot = buffer + (slotIdx * segmentSizeBytes);
 
             w_assert0(readSlot);
             requests.pop_front();
-        }
 
+        } // end of critical section
+
+        DBGOUT3(<< "Prefetching segment " << next);
         // perform the read into the slot found
         shpid_t firstPage = shpid_t(next * segmentSize) + firstDataPid;
         INC_TSTAT(restore_backup_reads);
         W_COERCE(volume->read_backup(firstPage, segmentSize, readSlot));
 
-        // signalize read to waiting threads
-        CRITICAL_SECTION(cs2, &readCondMutex);
-        DO_PTHREAD(pthread_cond_broadcast(&readCond));
+        {
+            // Re-acquire mutex to mark slot as read, i.e., unfixed
+            CRITICAL_SECTION(cs, &mutex);
+            status[slotIdx] = SLOT_UNFIXED;
+        }
+
+        DBGOUT3(<< "Segment " << next << " read finished");
     }
+}
+
+void BackupPrefetcher::finish()
+{
+    {
+        CRITICAL_SECTION(cs, &mutex);
+        shutdownFlag = true;
+    }
+    join();
 }
