@@ -71,13 +71,15 @@ ENABLE_TESTING() # we use CTest all over the project. run "make test" after cmak
 
 # compiler options. ported from Makefile.generic of original ShoreMT.
 # W_DEBUG_LEVEL enables various check logics and asserts. higher is more verbose.
-SET(CMAKE_CXX_FLAGS_TRACE  "-Og -g -DDEBUG -DW_DEBUG_LEVEL=5 ${LINK_GOOGLEPROFILER}")
-SET(CMAKE_CXX_FLAGS_DEBUG  "-O0 -g -DDEBUG -DW_DEBUG_LEVEL=3 ${LINK_GOOGLEPROFILER}")
-##  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=1 ${LINK_GOOGLEPROFILER}")
+SET(CMAKE_CXX_FLAGS_DEBUG5  "-Og -g -DDEBUG -DW_DEBUG_LEVEL=5 ${LINK_GOOGLEPROFILER}")
+SET(CMAKE_CXX_FLAGS_DEBUG3  "-Og -g -DDEBUG -DW_DEBUG_LEVEL=3 ${LINK_GOOGLEPROFILER}")
+SET(CMAKE_CXX_FLAGS_DEBUG1  "-O0 -g -DDEBUG -DW_DEBUG_LEVEL=1 ${LINK_GOOGLEPROFILER}")
+SET(CMAKE_CXX_FLAGS_DEBUG  ${CMAKE_CXX_FLAGS_DEBUG1})
 ## Below is better for performance analysis; above is better for debugging
-SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=0 -DNDEBUG -fPIC ${LINK_GOOGLEPROFILER} ${COMPILE_MUTRACE}")
-#  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O0 -g -DW_DEBUG_LEVEL=3 -DDEBUG ${LINK_GOOGLEPROFILER}")
-SET(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fexpensive-optimizations -finline-functions -DW_DEBUG_LEVEL=0 ${LINK_GOOGLEPROFILER}")
+SET(CMAKE_CXX_FLAGS_PROFILE "-O3 -g -pg -DW_DEBUG_LEVEL=0 -DNDEBUG -fPIC ${LINK_GOOGLEPROFILER} ${COMPILE_MUTRACE}")
+## Release build with most aggressive optimization
+## (leave debug symbols since they don't affect performance at all=
+SET(CMAKE_CXX_FLAGS_RELEASE "-O3 -g -DNDEBUG -fexpensive-optimizations -finline-functions -DW_DEBUG_LEVEL=0 ${LINK_GOOGLEPROFILER}")
 
 ## _REENTRANT and _POSIX_PTHREAD_SEMANTICS are needed on Solaris to ensure
 # that the posix-compliant clib interfaces are there (e.g., ctime_r)
