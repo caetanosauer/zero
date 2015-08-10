@@ -120,6 +120,7 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
         trySinglePass = true;
     }
 
+    unsigned firstSegment = 0;
     if (randomOrder) {
         // create list of segments in random order
         size_t numSegments = numPages / restore->getSegmentSize() + 1;
@@ -129,6 +130,12 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
         }
         std::random_shuffle(randomSegments.begin(), randomSegments.end());
         currentRandomSegment = 0;
+        firstSegment = randomSegments[0];
+    }
+
+    if (!onDemand) {
+        // prefetch first segment
+        restore->getBackup()->prefetch(firstSegment, 0 /* priority */);
     }
 }
 
@@ -153,10 +160,21 @@ shpid_t RestoreScheduler::next()
         INC_TSTAT(restore_sched_queued);
     }
     else if (trySinglePass) {
+        BackupReader* backup = restore->getBackup();
+        size_t prefetchWindow = 2; // TODO make option for this
+
         if (randomOrder) {
             next = randomSegments[currentRandomSegment]
                 * restore->getSegmentSize();
             currentRandomSegment++;
+
+            // prefetch segments
+            if (currentRandomSegment % prefetchWindow == 0) {
+                for (size_t i = 0; i < prefetchWindow; i++) {
+                    backup->prefetch(randomSegments[currentRandomSegment + i],
+                            0 /* priority */);
+                }
+            }
         }
         else {
             // if queue is empty, find the first not-yet-restored PID
@@ -164,7 +182,15 @@ shpid_t RestoreScheduler::next()
                 // if next pid is already restored, then the whole segment is
                 next = next + restore->getSegmentSize();
             }
-            firstNotRestored = next;
+            firstNotRestored = next + restore->getSegmentSize();
+
+            // prefetch segments
+            unsigned seg = restore->getSegmentForPid(firstNotRestored);
+            if (seg % prefetchWindow == 0) {
+                for (size_t i = 0; i < prefetchWindow; i++) {
+                    backup->prefetch(seg + i, 0 /* priority */);
+                }
+            }
         }
         INC_TSTAT(restore_sched_seq);
     }
@@ -278,7 +304,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     // Construct backup reader/buffer based on system options
     if (useBackup) {
         string backupImpl = options.get_string_option("sm_backup_kind",
-                BackupOnDemandReader::IMPL_NAME);
+                BackupPrefetcher::IMPL_NAME);
         if (backupImpl == BackupOnDemandReader::IMPL_NAME) {
             backup = new BackupOnDemandReader(volume, segmentSize);
         }
@@ -314,34 +340,17 @@ RestoreMgr::RestoreMgr(const sm_options& options,
 
 RestoreMgr::~RestoreMgr()
 {
+    if (asyncWriter) {
+        asyncWriter->shutdown();
+        asyncWriter->join();
+        delete asyncWriter;
+    }
+
+    backup->finish();
+    delete backup;
+
     delete bitmap;
     delete scheduler;
-    delete backup;
-}
-
-inline unsigned RestoreMgr::getSegmentForPid(const shpid_t& pid)
-{
-    return (unsigned) std::max(pid, firstDataPid) / segmentSize;
-}
-
-inline shpid_t RestoreMgr::getPidForSegment(unsigned segment)
-{
-    return shpid_t(segment * segmentSize) + firstDataPid;
-}
-
-inline bool RestoreMgr::isRestored(const shpid_t& pid)
-{
-    if (!instantRestore) {
-        return false;
-    }
-
-    if (pid < firstDataPid) {
-        // first pages are metadata
-        return metadataRestored;
-    }
-
-    unsigned seg = getSegmentForPid(pid);
-    return bitmap->get(seg);
 }
 
 bool RestoreMgr::waitUntilRestored(const shpid_t& pid, size_t timeout_in_ms)
@@ -384,6 +393,8 @@ bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
 
     DBGTHRD(<< "Requesting restore of page " << pid);
     scheduler->enqueue(pid);
+
+    backup->prefetch(getSegmentForPid(pid), 1 /* priority */);
 
     if (addr && reuseRestoredBuffer) {
         spinlock_write_critical_section cs(&requestMutex);
@@ -553,19 +564,18 @@ void RestoreMgr::restoreLoop()
 
         if (!merger) {
             // segment does not need any log replay
+            // CS TODO BUG -- this may be the last seg, so short I/O happens
             finishSegment(workspace, segment, segmentSize);
-            backup->unfix(segment);
             INC_TSTAT(restore_skipped_segs);
             continue;
         }
 
         size_t pagesRestored = restoreSegment(workspace, merger, firstPage);
 
-        W_IFDEBUG1(ADD_TSTAT(restore_time_replay, timer.time_us()));
+        ADD_TSTAT(restore_time_replay, timer.time_us());
 
         finishSegment(workspace, segment, pagesRestored);
 
-        backup->unfix(segment);
 
         W_IFDEBUG1(ADD_TSTAT(restore_time_write, timer.time_us()));
 

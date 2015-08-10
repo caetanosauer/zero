@@ -86,6 +86,14 @@ public:
      */
     void setFailureLSN(lsn_t l) { failureLSN = l; }
 
+    /** \brief Gives the segment number of a certain page ID.
+     */
+    unsigned getSegmentForPid(const shpid_t& pid);
+
+    /** \brief Gives the first page ID of a given segment number.
+     */
+    shpid_t getPidForSegment(unsigned segment);
+
     /** \brief True if all segments have been restored
      *
      * CS TODO -- concurrency control?
@@ -98,6 +106,7 @@ public:
     shpid_t getFirstDataPid() { return firstDataPid; }
     shpid_t getLastUsedPid() { return lastUsedPid; }
     RestoreBitmap* getBitmap() { return bitmap; }
+    BackupReader* getBackup() { return backup; }
 
     virtual void run();
 
@@ -174,14 +183,6 @@ protected:
      * is made available in the archiver to avoid lost updates.
      */
     lsn_t failureLSN;
-
-    /** \brief Gives the segment number of a certain page ID.
-     */
-    unsigned getSegmentForPid(const shpid_t& pid);
-
-    /** \brief Gives the first page ID of a given segment number.
-     */
-    shpid_t getPidForSegment(unsigned segment);
 
     /** \brief Restores metadata by replaying store operation log records
      *
@@ -316,5 +317,30 @@ protected:
     std::vector<unsigned> randomSegments;
     size_t currentRandomSegment;
 };
+
+inline unsigned RestoreMgr::getSegmentForPid(const shpid_t& pid)
+{
+    return (unsigned) std::max(pid, firstDataPid) / segmentSize;
+}
+
+inline shpid_t RestoreMgr::getPidForSegment(unsigned segment)
+{
+    return shpid_t(segment * segmentSize) + firstDataPid;
+}
+
+inline bool RestoreMgr::isRestored(const shpid_t& pid)
+{
+    if (!instantRestore) {
+        return false;
+    }
+
+    if (pid < firstDataPid) {
+        // first pages are metadata
+        return metadataRestored;
+    }
+
+    unsigned seg = getSegmentForPid(pid);
+    return bitmap->get(seg);
+}
 
 #endif
