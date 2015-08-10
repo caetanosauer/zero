@@ -499,7 +499,7 @@ void RestoreMgr::restoreLoop()
 
     LogArchiver::ArchiveScanner logScan(archive);
 
-    W_IFDEBUG1(stopwatch_t timer);
+    stopwatch_t timer;
 
     while (numRestoredPages < numPages) {
         shpid_t requested = scheduler->next();
@@ -513,7 +513,7 @@ void RestoreMgr::restoreLoop()
         }
         w_assert0(requested >= firstDataPid);
 
-        W_IFDEBUG1(timer.reset(););
+        timer.reset();
 
         unsigned segment = getSegmentForPid(requested);
         shpid_t firstPage = getPidForSegment(segment);
@@ -552,7 +552,7 @@ void RestoreMgr::restoreLoop()
             if (backupLSN > lsn) { lsn = backupLSN; }
         }
 
-        W_IFDEBUG1(ADD_TSTAT(restore_time_read, timer.time_us()));
+        ADD_TSTAT(restore_time_read, timer.time_us());
 
         LogArchiver::ArchiveScanner::RunMerger* merger =
             logScan.open(start, end, lsn);
@@ -560,7 +560,7 @@ void RestoreMgr::restoreLoop()
         DBGOUT3(<< "RunMerger opened with " << merger->heapSize() << " runs"
                 << " starting on LSN " << lsn);
 
-        W_IFDEBUG1(ADD_TSTAT(restore_time_openscan, timer.time_us()));
+        ADD_TSTAT(restore_time_openscan, timer.time_us());
 
         if (!merger) {
             // segment does not need any log replay
@@ -576,8 +576,7 @@ void RestoreMgr::restoreLoop()
 
         finishSegment(workspace, segment, pagesRestored);
 
-
-        W_IFDEBUG1(ADD_TSTAT(restore_time_write, timer.time_us()));
+        ADD_TSTAT(restore_time_write, timer.time_us());
 
         delete merger;
     }
