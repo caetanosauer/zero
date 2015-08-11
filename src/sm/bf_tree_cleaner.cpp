@@ -116,6 +116,7 @@ w_rc_t bf_tree_cleaner::_wakeup_a_cleaner(unsigned id)
     DBGOUT3(<<"bf_tree_cleaner: waking up cleaner " << id);
     w_assert1(id < _slave_threads_size);
     w_assert1(_slave_threads[id] != NULL);
+    lintel::atomic_thread_fence(lintel::memory_order_consume);
     if (!_slave_threads[id]->_running) {
         DBGOUT1(<<"bf_tree_cleaner: cleaner " << id << " has already shut down. didn't wake it up");
         return RCOK;
@@ -136,6 +137,7 @@ w_rc_t bf_tree_cleaner::request_stop_cleaners()
     for (unsigned id = 0; id < _slave_threads_size; ++id) {
         _slave_threads[id]->_stop_requested = true;
         lintel::atomic_thread_fence(lintel::memory_order_release);
+        lintel::atomic_thread_fence(lintel::memory_order_consume);
         if (_slave_threads[id]->_running) {
             W_DO(_wakeup_a_cleaner (id));
         }
@@ -178,9 +180,9 @@ w_rc_t bf_tree_cleaner::force_all()
     W_DO (smlevel_0::vol->force_fixed_buffers());
     ::memset(_requested_volumes, 1, sizeof(bool) * vol_m::MAX_VOLS);
     lintel::atomic_thread_fence(lintel::memory_order_release);
-    W_DO(wakeup_cleaners());
     uint32_t interval = FORCE_SLEEP_MS_MIN;
     while (!_dirty_shutdown_happening() && !_error_happened) {
+        W_DO(wakeup_cleaners());
         DBGOUT2(<< "waiting in force_all...");
         g_me()->sleep(interval);
         interval *= 2;
@@ -342,40 +344,18 @@ bool bf_tree_cleaner_slave_thread_t::_cond_timedwait (uint64_t timeout_microsec)
     ts.tv_sec += ts.tv_nsec / 1000000000;
     ts.tv_nsec = ts.tv_nsec % 1000000000;
 
-#if W_DEBUG_LEVEL>=2
-    timespec   ts_init;
-    ::clock_gettime(CLOCK_REALTIME, &ts_init);
-    DBGOUT2(<< "bf_tree_cleaner_slave_thread_t: waiting for " << timeout_microsec << " us..");
-#endif // W_DEBUG_LEVEL>=2
-
     bool timeouted = false;
     lintel::atomic_thread_fence(lintel::memory_order_consume);
     while (!_wakeup_requested) {
         int rc_wait =
             ::pthread_cond_timedwait(&_interval_cond, &_interval_mutex, &ts);
 
-#if W_DEBUG_LEVEL>=2
-    timespec   ts_end;
-    ::clock_gettime(CLOCK_REALTIME, &ts_end);
-    double ts_diff = (ts_end.tv_sec - ts_init.tv_sec) * 1000000 + (ts_end.tv_nsec - ts_init.tv_nsec) / 1000.0;
-    DBGOUT2(<< "bf_tree_cleaner_slave_thread_t: waked up after " << ts_diff << " usec. wait-ret="
-        << rc_wait << (rc_wait == ETIMEDOUT ? "(ETIMEDOUT)" : ""));
-#endif // W_DEBUG_LEVEL>=2
-
         if (rc_wait == ETIMEDOUT) {
-#if W_DEBUG_LEVEL>=2
-            timespec   ts_now;
-            ::clock_gettime(CLOCK_REALTIME, &ts_now);
-            if (ts_now.tv_sec > ts.tv_sec || (ts_now.tv_sec == ts.tv_sec && ts_now.tv_nsec >= ts.tv_nsec)) {
-            } else {
-                DBGOUT2(<< "Seems a fake ETIMEDOUT?? Trying again");
-                // ah, CLOCK_MONOTONIC caused this. CLOCK_REALTIME doesn't have this issue.
-            }
-#endif // W_DEBUG_LEVEL>=2
             DBGOUT2(<<"timeouted");
             timeouted = true;
             break;
         }
+        lintel::atomic_thread_fence(lintel::memory_order_consume);
     }
 
     int rc_mutex_unlock = ::pthread_mutex_unlock (&_interval_mutex);
@@ -387,10 +367,11 @@ bool bf_tree_cleaner_slave_thread_t::_cond_timedwait (uint64_t timeout_microsec)
 
 void bf_tree_cleaner_slave_thread_t::wakeup()
 {
-    _wakeup_requested = true;
-    lintel::atomic_thread_fence(lintel::memory_order_release);
     int rc_mutex_lock = ::pthread_mutex_lock (&_interval_mutex);
     w_assert1(rc_mutex_lock == 0);
+
+    _wakeup_requested = true;
+    lintel::atomic_thread_fence(lintel::memory_order_release);
 
     int rc_broadcast = ::pthread_cond_broadcast(&_interval_cond);
     w_assert1(rc_broadcast == 0);
@@ -405,6 +386,7 @@ void bf_tree_cleaner_slave_thread_t::run()
     lintel::atomic_thread_fence(lintel::memory_order_consume);
     while (!_start_requested) {
         _take_interval();
+        lintel::atomic_thread_fence(lintel::memory_order_consume);
     }
 
     DBGOUT1(<<"bf_tree_cleaner_slave_thread_t: cleaner- " << _id << " starts up");
@@ -420,8 +402,10 @@ void bf_tree_cleaner_slave_thread_t::run()
             _parent->_error_happened = true;
             break;
         }
+        lintel::atomic_thread_fence(lintel::memory_order_consume);
         if (!_stop_requested && !_exists_requested_work() && !_parent->_error_happened) {
             _take_interval();
+            lintel::atomic_thread_fence(lintel::memory_order_consume);
         }
     }
 
@@ -817,6 +801,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         _completed_lsn = requested_lsn;
         DBGOUT1(<<"_do_work(cleaner=" << _id << "): flushed until lsn=" << lsn_t(requested_lsn));
     }
+    // CS: bugfix! Volume 0 is invalid, so its position should always be false
+    _parent->_requested_volumes[0] = false;
     for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
         if (_parent->get_cleaner_for_vol(vol) == _id && requested_volumes[vol]) {
             _parent->_requested_volumes[vol] = false;
