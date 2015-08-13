@@ -241,14 +241,18 @@ public:
 
     void shutdown();
 
-private:
-    // These 3 fields constitute a write request
-    char* workspace;
-    unsigned segment;
-    size_t count;
+    struct Request {
+        char* workspace;
+        unsigned segment;
+        size_t count;
 
-    // Tells writer thread that we placed a valid request
-    bool placedRequest;
+        Request(char* w, unsigned s, size_t c)
+            : workspace(w), segment(s), count(c) {}
+    };
+
+private:
+    // Queue of requests
+    std::queue<Request> requests;
 
     // Signal to writer thread that it must exit
     bool shutdownFlag;
@@ -257,7 +261,7 @@ private:
     RestoreMgr* restore;
 
     pthread_cond_t requestCond;
-    pthread_mutex_t requestCondMutex;
+    pthread_mutex_t requestMutex;
 };
 
 RestoreMgr::RestoreMgr(const sm_options& options,
@@ -794,7 +798,7 @@ void RestoreMgr::run()
 
 SegmentWriter::SegmentWriter(RestoreMgr* restore)
     : smthread_t(t_regular, "SegmentWriter"),
-    placedRequest(false), shutdownFlag(false), restore(restore)
+    shutdownFlag(false), restore(restore)
 {
     w_assert1(restore);
 }
@@ -806,44 +810,50 @@ SegmentWriter::~SegmentWriter()
 void SegmentWriter::requestWrite(char* workspace,
         unsigned segment, size_t count)
 {
-    CRITICAL_SECTION(cs, &requestCondMutex);
-    // mutex held => writer thread waiting for us
+    while (true) {
+        CRITICAL_SECTION(cs, &requestMutex);
+        // mutex held => writer thread waiting for us
 
-    this->workspace = workspace;
-    this->segment = segment;
-    this->count = count;
+        Request req(workspace, segment, count);
+        requests.push(req);
 
-    placedRequest = true;
-    pthread_cond_signal(&requestCond);
+        pthread_cond_signal(&requestCond);
+        break;
+    }
 }
 
 void SegmentWriter::run()
 {
     while (true) {
-        CRITICAL_SECTION(cs, &requestCondMutex);
+        DO_PTHREAD(pthread_mutex_lock(&requestMutex));
 
-        while(!placedRequest) {
+        while(requests.size() == 0) {
             struct timespec timeout;
             sthread_t::timeout_to_timespec(100, timeout); // 100ms
-            int code = pthread_cond_timedwait(&requestCond, &requestCondMutex,
+            int code = pthread_cond_timedwait(&requestCond, &requestMutex,
                     &timeout);
             if (code == ETIMEDOUT) {
-                if (shutdownFlag) {
-                    return;
-                }
+                if (shutdownFlag) { return; }
             }
             DO_PTHREAD_TIMED(code);
         }
 
-        // we now have a valid request placed and hold the mutex -- do the write
-        restore->writeSegment(workspace, segment, count);
+        // copy values to perform write without holding mutex
+        Request req = requests.front();
+        requests.pop();
 
-        placedRequest = false;
+        DO_PTHREAD(pthread_mutex_unlock(&requestMutex));
+
+        stopwatch_t timer;
+
+        restore->writeSegment(req.workspace, req.segment, req.count);
+
+        ADD_TSTAT(restore_async_write_time, timer.time_us());
     }
 }
 
 void SegmentWriter::shutdown()
 {
-    CRITICAL_SECTION(cs, &requestCondMutex);
+    CRITICAL_SECTION(cs, &requestMutex);
     shutdownFlag = true;
 }
