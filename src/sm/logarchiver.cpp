@@ -1834,10 +1834,13 @@ rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
 
     w_assert0(lastLSN == first);
 
-    lastFinished++;
+    // check if it isn't and empty run (from truncation)
+    if (lastFinished < runs.size()) {
+        lastFinished++;
+        runs[lastFinished].firstLSN = first;
+        W_DO(serializeRunInfo(runs[lastFinished], fd, offset));
+    }
 
-    runs[lastFinished].firstLSN = first;
-    W_DO(serializeRunInfo(runs[lastFinished], fd, offset));
     lastLSN = last;
 
     return RCOK;
