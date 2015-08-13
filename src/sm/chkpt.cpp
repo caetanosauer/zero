@@ -2395,13 +2395,15 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
                                                             (const lsn_t*)(&new_chkpt.page_lsn[i])), 0);
     }
 
-    /*
-    for(uint xct=0; xct<new_chkpt.tid.size(); xct++) {
-        LOG_INSERT(chkpt_xct_lock_log(new_chkpt.tid[xct],
-                                      per_chunk_lock_count,
-                                      new_chkpt.lock_mode[xct],
-                                      new_chkpt.lock_hash[xct]), 0);
-    } */
+    chunk = chkpt_xct_lock_t::max;
+    for(uint i=0; i<new_chkpt.tid.size(); i++) {
+        for(uint j=0; j<new_chkpt.lock_hash[i].size(); j+=chunk) {
+            LOG_INSERT(chkpt_xct_lock_log(new_chkpt.tid[i],
+                                      new_chkpt.lock_mode[i].size()-j,
+                                      (const okvl_mode*)(&new_chkpt.lock_mode[i][j]),
+                                      (const uint32_t*)(&new_chkpt.lock_hash[i][j])), 0);
+        }
+    }
 
     chunk = chkpt_xct_tab_t::max;
     for(uint i=0; i<new_chkpt.tid.size(); i+=chunk) {
