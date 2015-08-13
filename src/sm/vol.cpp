@@ -1093,7 +1093,7 @@ rc_t vol_t::read_backup(shpid_t first, size_t count, void* buf)
     return RCOK;
 }
 
-rc_t vol_t::take_backup(string path)
+rc_t vol_t::take_backup(string path, bool flushArchive)
 {
     // Open old backup file, if available
     bool useBackup = false;
@@ -1120,6 +1120,24 @@ rc_t vol_t::take_backup(string path)
 
     // No need to hold latch here -- mutual exclusion is guaranteed because
     // only one thread may set _backup_write_fd (i.e., open file) above.
+
+    if (flushArchive) {
+        LogArchiver* la = smlevel_0::logArchiver;
+        lsn_t currLSN = smlevel_0::log->durable_lsn();
+        // wait for log record to be consumed
+        while (la->getNextConsumedLSN() < currLSN) {
+            ::usleep(10000); // 10ms
+        }
+
+        // Time to wait until requesting a log archive flush (msec). If we're
+        // lucky, log is archiving very fast and a flush request is not needed.
+        int waitBeforeFlush = 5000; // 5 sec
+        ::usleep(waitBeforeFlush * 1000);
+
+        if (la->getDirectory()->getLastLSN() < currLSN) {
+            la->requestFlushSync(currLSN);
+        }
+    }
 
     // Maximum LSN which is guaranteed to be reflected in the backup
     lsn_t backupLSN = ss_m::logArchiver->getDirectory()->getLastLSN();

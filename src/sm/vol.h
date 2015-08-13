@@ -224,7 +224,7 @@ public:
     lsn_t get_backup_lsn();
 
     /** Take a backup on the given file path. */
-    rc_t take_backup(string path);
+    rc_t take_backup(string path, bool forceArchive = false);
 
     bool is_failed() const
     {
