@@ -54,7 +54,9 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads
     // responsible for a volume. E.g.: (TODO)
     // cleaner_id_for_vol = vol_id % _slave_threads_size;
 
-    ::memset (_requested_volumes, 0, sizeof(bool) * vol_m::MAX_VOLS);
+    for (int i = 0; i < vol_m::MAX_VOLS; i++) {
+        _requested_volumes[i] = false;
+    }
 
     for (unsigned id = 0; id < _slave_threads_size; ++id) {
         _slave_threads[id] = new bf_tree_cleaner_slave_thread_t (this, id);
@@ -174,24 +176,54 @@ w_rc_t bf_tree_cleaner::kill_cleaners()
 const uint32_t FORCE_SLEEP_MS_MIN = 10;
 const uint32_t FORCE_SLEEP_MS_MAX = 1000;
 
+#if 0
+w_rc_t bf_tree_cleaner::force_all()
+{
+    for (int i = 0; i < vol_m::MAX_VOLS; i++) {
+        _requested_volumes[i] = true;
+    }
+    lintel::atomic_thread_fence(lintel::memory_order_seq_cst);
+
+    W_DO(wakeup_cleaners());
+    while (true) {
+        usleep(10000); // 10 ms
+
+        bool remains = false;
+        for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
+            lintel::atomic_thread_fence(lintel::memory_order_seq_cst);
+            cout << _requested_volumes[vol] << endl;
+            if (_requested_volumes[vol]) {
+                remains = true;
+                break;
+            }
+        }
+        if (!remains) {
+            break;
+        }
+    }
+
+    return RCOK;
+}
+#endif
 
 w_rc_t bf_tree_cleaner::force_all()
 {
     W_DO (smlevel_0::vol->force_fixed_buffers());
-    ::memset(_requested_volumes, 1, sizeof(bool) * vol_m::MAX_VOLS);
-    lintel::atomic_thread_fence(lintel::memory_order_release);
+    for (int i = 0; i < vol_m::MAX_VOLS; i++) {
+        _requested_volumes[i] = true;
+    }
+
     uint32_t interval = FORCE_SLEEP_MS_MIN;
     while (!_dirty_shutdown_happening() && !_error_happened) {
         W_DO(wakeup_cleaners());
         DBGOUT2(<< "waiting in force_all...");
-        g_me()->sleep(interval);
+        usleep(interval * 1000);
         interval *= 2;
         if (interval >= FORCE_SLEEP_MS_MAX) {
             interval = FORCE_SLEEP_MS_MAX;
         }
         bool remains = false;
-        for (vid_t vol = 1; vol <= vol_m::MAX_VOLS; ++vol) {
-            lintel::atomic_thread_fence(lintel::memory_order_consume);
+        for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
             if (_requested_volumes[vol]) {
                 remains = true;
                 break;
@@ -234,7 +266,7 @@ w_rc_t bf_tree_cleaner::force_until_lsn(lsndata_t lsn)
             // make it sure because a concurrent thread might have overwritten it
             lsn = _requested_lsn;
         }
-        g_me()->sleep(interval);
+        usleep(interval * 1000);
         interval *= 2;
         if (interval >= FORCE_SLEEP_MS_MAX) {
             interval = FORCE_SLEEP_MS_MAX;
@@ -264,7 +296,7 @@ w_rc_t bf_tree_cleaner::force_volume(vid_t vol)
     uint32_t interval = FORCE_SLEEP_MS_MIN;
     while (_requested_volumes[vol] && !_dirty_shutdown_happening() && !_error_happened) {
         DBGOUT2(<< "waiting in force_volume...");
-        g_me()->sleep(interval);
+        usleep(interval * 1000);
         interval *= 2;
         if (interval >= FORCE_SLEEP_MS_MAX) {
             interval = FORCE_SLEEP_MS_MAX;
@@ -371,7 +403,6 @@ void bf_tree_cleaner_slave_thread_t::wakeup()
     w_assert1(rc_mutex_lock == 0);
 
     _wakeup_requested = true;
-    lintel::atomic_thread_fence(lintel::memory_order_release);
 
     int rc_broadcast = ::pthread_cond_broadcast(&_interval_cond);
     w_assert1(rc_broadcast == 0);
@@ -635,7 +666,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                     ERROUT(<<"FATAL! some dirty page keeps EX latch for long time! failed to flush out the bufferpool");
                     return RC(eINTERNAL);
                 }
-                g_me()->sleep(rounds > 5 ? 100 : 20);
+                usleep(rounds > 5 ? 100000 : 20000);
             }
         }
         else {
@@ -720,7 +751,9 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
     }
     bool requested_volumes[vol_m::MAX_VOLS];
     lintel::atomic_thread_fence(lintel::memory_order_consume);
-    ::memcpy (requested_volumes, _parent->_requested_volumes, sizeof(bool) * vol_m::MAX_VOLS); // this does NOT have to be atomic.
+    for (int i = 0; i < vol_m::MAX_VOLS; i++) {
+        requested_volumes[i] = _parent->_requested_volumes[i];
+    }
     DBGOUT1(<<"_do_work(cleaner=" << _id << "): requested_lsn=" << lsn_t(requested_lsn));
 
     for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
@@ -801,8 +834,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         _completed_lsn = requested_lsn;
         DBGOUT1(<<"_do_work(cleaner=" << _id << "): flushed until lsn=" << lsn_t(requested_lsn));
     }
-    // CS: bugfix! Volume 0 is invalid, so its position should always be false
-    _parent->_requested_volumes[0] = false;
     for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
         if (_parent->get_cleaner_for_vol(vol) == _id && requested_volumes[vol]) {
             _parent->_requested_volumes[vol] = false;

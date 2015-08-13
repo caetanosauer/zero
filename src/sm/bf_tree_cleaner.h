@@ -108,7 +108,7 @@ private:
      * When the corresponding worker observes this flag and completes
      * flushing all dirty pages in the volume, the worker turns off the flag.
      */
-    bool                        _requested_volumes[vol_m::MAX_VOLS];
+    volatile bool               _requested_volumes[vol_m::MAX_VOLS];
 
     /** whether any unexpected error happened in some cleaner. */
     bool                        _error_happened;
