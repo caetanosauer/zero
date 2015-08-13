@@ -1957,7 +1957,7 @@ ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
         _stats = x.steal_stats();
         _stats->compute();
     }
-    W_IFDEBUG3(bool was_sys_xct = x.is_sys_xct());
+    bool was_sys_xct = x.is_sys_xct();
     delete xp;
     w_assert3(was_sys_xct || xct() == 0);
 
