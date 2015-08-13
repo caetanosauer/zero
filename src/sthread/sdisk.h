@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -77,7 +77,7 @@ public:
         void    *iov_base;
         size_t    iov_len;
 
-        iovec_t(void *base = 0, int len = 0) 
+        iovec_t(void *base = 0, int len = 0)
             : iov_base(base), iov_len(len) { }
     };
 
@@ -101,7 +101,7 @@ public:
 
         filestat_t() : st_size(0),
             st_file_id(0), st_device_id(0), st_block_size(0),
-            is_file(false), is_dir(false), 
+            is_file(false), is_dir(false),
             is_device(false)
         { }
     };
@@ -128,7 +128,7 @@ public:
     enum {
         SEEK_AT_SET=0,        // absolute
         SEEK_AT_CUR=1,        // from current position
-        SEEK_AT_END=2        // from end-of-file 
+        SEEK_AT_END=2        // from end-of-file
     };
 
     /* utility functions */
@@ -136,7 +136,7 @@ public:
 };
 
 
-/* sdisk is an interface class which isn't useful by itself */ 
+/* sdisk is an interface class which isn't useful by itself */
 
 class sdisk_t : public sdisk_base_t {
 protected:

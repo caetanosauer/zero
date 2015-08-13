@@ -42,18 +42,18 @@ public:
         uint32_t cleaner_interval_millisec_max,
         uint32_t cleaner_write_buffer_pages,
         bool initially_wakeup_workers);
-    
+
     /**
      * Destructs this object. This merely de-allocates arrays and objects.
      * Use request_stop_cleaners() or kill_cleaners() to stop cleaner threads.
      */
     ~bf_tree_cleaner();
-    
+
     /**
      * Starts up the cleaners. Sort of initialization of this object.
      */
     w_rc_t start_cleaners();
-    
+
     /**
      * Wakes up all cleaner threads, starting them if not started yet.
      */
@@ -83,7 +83,7 @@ public:
 
     /** Immediately writes out all dirty pages in the given volume.*/
     w_rc_t force_volume (vid_t vol);
-    
+
     /** Immediately writes out all dirty pages.*/
     w_rc_t force_all ();
 
@@ -153,7 +153,7 @@ private:
  * Each worker thread is assigned to an arbitrary number of volumes.
  * On the other hand, every volume is assigned to a single cleaner worker
  * so that it can efficiently write out contiguous dirty pages.
- * 
+ *
  * No volume (thus no page) is assigned to more than one cleaner to simplify synchronization,
  * which causes no harm because more than one thread for a single physical disk
  * are useless anyway. This also means that it's useless to have more cleaner threads
@@ -164,9 +164,9 @@ class bf_tree_cleaner_slave_thread_t : public smthread_t {
 public:
     bf_tree_cleaner_slave_thread_t (bf_tree_cleaner* parent, unsigned id);
     ~bf_tree_cleaner_slave_thread_t ();
-    
+
     void run();
-    
+
     /** wakes up this thread if it's currently sleeping. */
     void wakeup ();
 
@@ -196,15 +196,15 @@ private:
     lintel::Atomic<bool> _stop_requested;
     /** whether this thread has been requested to wakeup. */
     lintel::Atomic<bool> _wakeup_requested;
-    
+
     /**
      * milliseconds to sleep when finding no dirty pages.
-     * this value starts from CLEANER_INTERVAL_MILLISEC_MIN and exponentially grows up to CLEANER_INTERVAL_MILLISEC_MAX. 
+     * this value starts from CLEANER_INTERVAL_MILLISEC_MIN and exponentially grows up to CLEANER_INTERVAL_MILLISEC_MAX.
      */
     uint32_t                    _interval_millisec;
     pthread_mutex_t             _interval_mutex;
     pthread_cond_t              _interval_cond;
-    
+
     /**
      * The LSN up to which this thread has flushed out all dirty pages.
      * Used while checkpointing.

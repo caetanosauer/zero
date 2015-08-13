@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -62,8 +62,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * of the SHORE threads layer remains in the synchronization variables
  * in the sthread_t API.
  *
- * To the extent that any NewThreads code remains here, 
- * the following copyright applies: 
+ * To the extent that any NewThreads code remains here,
+ * the following copyright applies:
  *
  *   NewThreads is Copyright 1992, 1993, 1994, 1995, 1996, 1997 by:
  *
@@ -149,11 +149,11 @@ public:
      * WAIT_SPECIFIED_BY_THREAD: pick up a timeout_in_ms from the smthread.
      * WAIT_SPECIFIED_BY_XCT: pick up a timeout_in_ms from the transaction.
      * Anything else: not legitimate.
-     * 
+     *
      * \sa timeout_in_ms
      */
     enum timeout_t {
-    WAIT_IMMEDIATE     = 0, 
+    WAIT_IMMEDIATE     = 0,
     WAIT_FOREVER     = -1,
     WAIT_SPECIFIED_BY_THREAD     = -4, // used by lock manager
     WAIT_SPECIFIED_BY_XCT = -5, // used by lock manager
@@ -223,7 +223,7 @@ public:
     const char*            n2 = 0,
     const char*            n3 = 0);
     NORET            ~sthread_named_base_t();
-    
+
     void            rename(
     const char*            n1,
     const char*            n2 = 0,
@@ -289,13 +289,13 @@ class sthread_main_t;
  * server can spawn any number of threads, regardless of the number
  * of hardware contexts available; threads will block as necessary.
  *
- * When the storage manager is configured with 
+ * When the storage manager is configured with
  * --disable-pthread-mutex, this lock uses an MCS (\ref MCS1) queue-based
  * lock for the lock.
  * In this case, it is a true queue-based lock.
  * By configuring with MCS locks implementing this class, if the
  * server spawn many more threads than hardware contexts, time can be wasted
- * spinning; threads will not block until the operating system (or underlying 
+ * spinning; threads will not block until the operating system (or underlying
  * thread scheduler) determines to block the thread.
  *
  * The idiom for using these locks is
@@ -311,7 +311,7 @@ class sthread_main_t;
  *  See also: \ref REFSYNC
  *
  */
-struct w_pthread_lock_t 
+struct w_pthread_lock_t
 {
     /**\cond skip */
     struct ext_qnode {
@@ -331,7 +331,7 @@ private:
 public:
     w_pthread_lock_t() :_holder(0) { pthread_mutex_init(&_mutex, 0); }
 
-    ~w_pthread_lock_t() 
+    ~w_pthread_lock_t()
     {
 ////////////////////////////////////////
 // TODO(Restart)... comment out the assertion in debug mode for 'instant restart' testing purpose
@@ -343,12 +343,12 @@ public:
 //                    For now, comment out the assertion, although we might miss other
 //                    bugs by comment out the assertion
 ////////////////////////////////////////
-   
+
 //        w_assert1(!_holder);
 
         pthread_mutex_destroy(&_mutex);
     }
-    
+
     /// Returns true if success.
     bool attempt(ext_qnode* me) {
         if(attempt( *me)) {
@@ -363,7 +363,7 @@ private:
     /// Returns true if success. Helper for attempt(ext_qnode *).
     bool attempt(ext_qnode & me) {
         w_assert1(!is_mine(&me));
-        w_assert0( me._held == 0 );  // had better not 
+        w_assert0( me._held == 0 );  // had better not
         // be using this qnode for another lock!
         return pthread_mutex_trylock(&_mutex) == 0;
     }
@@ -372,7 +372,7 @@ public:
     /// Acquire the lock and set the qnode to refer to this lock.
     void* acquire(ext_qnode* me) {
         w_assert1(!is_mine(me));
-        w_assert1( me->_held == 0 );  // had better not 
+        w_assert1( me->_held == 0 );  // had better not
         // be using this qnode for another lock!
         pthread_mutex_lock(&_mutex);
         me->_held = this;
@@ -390,13 +390,13 @@ public:
     void release(ext_qnode &me) { release(&me); }
 
     /// Release the lock and clear the qnode.
-    void release(ext_qnode_ptr me) { 
+    void release(ext_qnode_ptr me) {
         // assert is_mine:
-        w_assert1( _holder == me->_held ); 
-        w_assert1(me->_held == this); 
-         me->_held = 0; 
+        w_assert1( _holder == me->_held );
+        w_assert1(me->_held == this);
+         me->_held = 0;
         _holder = 0;
-        pthread_mutex_unlock(&_mutex); 
+        pthread_mutex_unlock(&_mutex);
 #if W_DEBUG_LEVEL > 10
         // This is racy since the containing structure could
         // have been freed by the time we do this check.  Thus,
@@ -415,16 +415,16 @@ public:
      *
      * This method doesn't actually check for this pthread
      * holding the lock, but it checks that the qnode reference
-     * is to this lock.  
+     * is to this lock.
      * The idiom for using these locks is
      * that the qnode is on a threads's stack, so the qnode
      * implicitly identifies the owning thread.
      */
-    
-    bool is_mine(ext_qnode* me) const { 
+
+    bool is_mine(ext_qnode* me) const {
        if( me->_held == this ) {
-           // only valid if is_mine 
-          w_assert1( _holder == me->_held ); 
+           // only valid if is_mine
+          w_assert1( _holder == me->_held );
           return true;
        }
        return false;
@@ -444,14 +444,14 @@ public:
  */
 
 /**\defgroup SYNCPRIM Synchronization Primitives
- *\ingroup UNUSED 
+ *\ingroup UNUSED
  *
- * sthread/sthread.h: As distributed, a queue-based lock 
+ * sthread/sthread.h: As distributed, a queue-based lock
  * is a w_pthread_lock_t,
  * which is a wrapper around a pthread lock to give it a queue-based-lock API.
  * True queue-based locks are not used, nor are time-published
  * locks.
- * Code for these implementations is included for future 
+ * Code for these implementations is included for future
  * experimentation, along with typedefs that should allow
  * easy substitution, as they all should have the same API.
  *
@@ -492,7 +492,7 @@ typedef mcs_lock queue_based_lock_t;
  *
  * Use this to protect data structures that get hammered by
  *  reads and where updates are very rare.
- * It is used in the storage manager by the histograms (histo.cpp), 
+ * It is used in the storage manager by the histograms (histo.cpp),
  * and in place of some mutexen, where strict exclusion isn't required.
  *
  * This lock is used in the storage manager by the checkpoint thread
@@ -552,7 +552,7 @@ typedef w_list_t<sthread_t, queue_based_lock_t>        sthread_list_t;
 
 
 /**\brief Thread class for all threads that use the Shore Storage Manager.
- *  
+ *
  *  All threads that perform \b any work on behalf of the storage
  *  manager or call any storage manager API \b must be an sthread_t or
  *  a class derived from sthread_t.
@@ -565,9 +565,9 @@ typedef w_list_t<sthread_t, queue_based_lock_t>        sthread_list_t;
  *  calls (open, read, write, close, etc.) used by the storage manager.
  *
  *  This class is a fairly thin layer over pthreads.  Client threads
- *  may use pthread synchronization primitives. 
+ *  may use pthread synchronization primitives.
  */
-class sthread_t : public sthread_named_base_t  
+class sthread_t : public sthread_named_base_t
 {
     friend class sthread_init_t;
     friend class sthread_main_t;
@@ -581,9 +581,9 @@ public:
 
     enum status_t {
         t_defunct,    // thread has terminated
-        t_virgin,    // thread hasn't started yet    
+        t_virgin,    // thread hasn't started yet
         t_ready,    // thread is ready to run
-        t_running,    // when me() is this thread 
+        t_running,    // when me() is this thread
         t_blocked,      // thread is blocked on something
         t_boot        // system boot
     };
@@ -603,7 +603,7 @@ public:
     /*
      *  Class member variables
      */
-    void*             user;    // user can use this 
+    void*             user;    // user can use this
     const id_t        id;
 
     // max_os_file_size is used by the sm and set in
@@ -619,7 +619,7 @@ private:
                             const void *           id = 0);
 
     static w_error_codes        _block(
-                            pthread_mutex_t        *lock, 
+                            pthread_mutex_t        *lock,
                             timeout_in_ms          timeout = WAIT_FOREVER,
                             sthread_list_t*        list = 0,
                             const char* const      caller = 0,
@@ -628,7 +628,7 @@ private:
     w_rc_t               _unblock(w_error_codes e);
 
 public:
-    static void          timeout_to_timespec(timeout_in_ms timeout, 
+    static void          timeout_to_timespec(timeout_in_ms timeout,
                                              struct timespec &when);
     w_rc_t               unblock(w_error_codes e);
     static w_rc_t        block(
@@ -660,7 +660,7 @@ public:
     /// Collect an entire table, one row per thread that the sthreads package
     /// knows about. If attr_names_too is true, the first row will be
     /// attribute names.
-    static int        collect(vtable_t&v, bool attr_names_too=true); 
+    static int        collect(vtable_t&v, bool attr_names_too=true);
                         // in vtable_sthread.cpp
 
     static void      find_stack(void *address);
@@ -682,7 +682,7 @@ private:
 
 // WITHOUT_MMAP is controlled by configure
 #ifdef WITHOUT_MMAP
-    static w_rc_t     set_bufsize_memalign(size_t size, 
+    static w_rc_t     set_bufsize_memalign(size_t size,
                         char *&buf_start /* in/out*/, long system_page_size);
 #endif
 #ifdef HAVE_HUGETLBFS
@@ -690,10 +690,10 @@ public:
     // Must be called if we are configured with  hugetlbfs
     static w_rc_t     set_hugetlbfs_path(const char *path);
 private:
-    static w_rc_t     set_bufsize_huge(size_t size, 
+    static w_rc_t     set_bufsize_huge(size_t size,
                         char *&buf_start /* in/out*/, long system_page_size);
 #endif
-    static w_rc_t     set_bufsize_normal(size_t size, 
+    static w_rc_t     set_bufsize_normal(size_t size,
                         char *&buf_start /* in/out*/, long system_page_size);
     static void       align_bufsize(size_t size, long system_page_size,
                                                 long max_page_size);
@@ -701,7 +701,7 @@ private:
     static void       align_for_sm(size_t requested_size);
 
 public:
-    static int          do_unmap(); 
+    static int          do_unmap();
     /*
      *  Concurrent I/O ops
      */
@@ -720,11 +720,11 @@ public:
                             void*                 buf,
                             int                 n);
     static w_rc_t        write(
-                            int                 fd, 
-                            const void*             buf, 
+                            int                 fd,
+                            const void*             buf,
                             int                 n);
     static w_rc_t        readv(
-                            int                 fd, 
+                            int                 fd,
                             const iovec_t*             iov,
                             size_t                iovcnt);
     static w_rc_t        writev(
@@ -760,7 +760,7 @@ public:
 private:
     // NOTE: this returns a REFERENCE to a pointer
     /* #\fn static sthread_t*& sthread_t::me_lval()
-     ** \brief Returns a (writable) reference to the a 
+     ** \brief Returns a (writable) reference to the a
      * pointer to the running sthread_t.
      * \ingroup TLS
      */
@@ -776,7 +776,7 @@ public:
     // NOTE: this returns a POINTER
     static sthread_t*    me() { return me_lval(); }
                          // for debugging:
-    pthread_t            myself(); // pthread_t associated with this 
+    pthread_t            myself(); // pthread_t associated with this
     static int           rand(); // returns an int in [0, 2**31)
     static double        drand(); // returns a double in [0.0, 1)
     static int           randn(int max); // returns an int in [0, max)
@@ -839,7 +839,7 @@ private:
     volatile bool               _unblock_flag; // used internally by _block()
 
     fill4                       _dummy4valgrind;
-    
+
     sthread_core_t *            _core;        // registers, stack, etc
     volatile status_t           _status;    // thread status
     priority_t                  _priority;     // thread priority
@@ -861,7 +861,7 @@ private:
     static    unsigned       open_max;
     static    unsigned       open_count;
 
-    /* in-thread startup and shutdown */ 
+    /* in-thread startup and shutdown */
     static void            __start(void *arg_thread);
     void                   _start();
 
@@ -870,7 +870,7 @@ private:
     static w_rc_t        cold_startup();
     static w_rc_t        shutdown();
     static stime_t        boot_time;
-    static sthread_t*    _main_thread; 
+    static sthread_t*    _main_thread;
     static uint32_t        _next_id;    // unique id generator
 
 private:
@@ -888,16 +888,16 @@ void print_timeout(ostream& o, const sthread_base_t::timeout_in_ms timeout);
 
 
 /**\cond skip */
-/**\brief The main thread. 
+/**\brief The main thread.
 *
 * Called from sthread_t::cold_startup(), which is
-* called from sthread_init_t::do_init(), which is 
-* called from sthread_t::initialize_sthreads_package(), which is called 
+* called from sthread_init_t::do_init(), which is
+* called from sthread_t::initialize_sthreads_package(), which is called
 * when the storage manager sets up options, among other places.
 */
 class sthread_main_t : public sthread_t  {
     friend class sthread_t;
-    
+
 protected:
     NORET            sthread_main_t();
     virtual void        run();
@@ -918,21 +918,21 @@ protected:
 // tatas_lock doesn't have is_mine, but I changed its release()
 // to Release and through compiling saw everywhere that uses release,
 // and fixed those places
-SPECIALIZE_CS(tatas_lock, int _dummy, (_dummy=0), 
+SPECIALIZE_CS(tatas_lock, int _dummy, (_dummy=0),
     _mutex->acquire(), _mutex->release());
 
 // queue_based_lock_t asserts is_mine() in release()
-SPECIALIZE_CS(w_pthread_lock_t, w_pthread_lock_t::ext_qnode _me, (_me._held=0), 
+SPECIALIZE_CS(w_pthread_lock_t, w_pthread_lock_t::ext_qnode _me, (_me._held=0),
     _mutex->acquire(&_me), _mutex->release(&_me));
 #ifndef USE_PTHREAD_MUTEX
-SPECIALIZE_CS(mcs_lock, mcs_lock::ext_qnode _me, (_me._held=0), 
+SPECIALIZE_CS(mcs_lock, mcs_lock::ext_qnode _me, (_me._held=0),
     _mutex->acquire(&_me), _mutex->release(&_me));
 #endif
 
-SPECIALIZE_CS(occ_rwlock::occ_rlock, int _dummy, (_dummy=0), 
+SPECIALIZE_CS(occ_rwlock::occ_rlock, int _dummy, (_dummy=0),
     _mutex->acquire(), _mutex->release());
 
-SPECIALIZE_CS(occ_rwlock::occ_wlock, int _dummy, (_dummy=0), 
+SPECIALIZE_CS(occ_rwlock::occ_wlock, int _dummy, (_dummy=0),
     _mutex->acquire(), _mutex->release());
 
 inline sthread_t::priority_t
@@ -948,7 +948,7 @@ sthread_t::status() const
 }
 
 #include <w_strstream.h>
-// Need string.h to get strerror_r 
+// Need string.h to get strerror_r
 #include <string.h>
 /**\endcond skip */
 

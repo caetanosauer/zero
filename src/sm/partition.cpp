@@ -188,8 +188,8 @@ partition_t::clear()
     _fhdl_app = invalid_fhdl;
 }
 
-void              
-partition_t::init(log_storage *owner) 
+void
+partition_t::init(log_storage *owner)
 {
     _owner = owner;
     _eop = owner->limit(); // always
@@ -277,7 +277,7 @@ partition_t::flush(
     else {
         if (start2 != end2) {
             // case 2: wrapped, flush both start1 to end1 and start2 to end2
-            w_assert1(start2 == 0); 
+            w_assert1(start2 == 0);
             w_assert1(end1 % log_storage::BLOCK_SIZE == 0); // already aligned
 
             // adjust down to the nearest full block
@@ -360,11 +360,11 @@ partition_t::flush(
         temp_end += offset;
 
         // copy the skip record to the temp write buffer
-        memcpy(writebuf+temp_end, (char*)s, s->length()); 
+        memcpy(writebuf+temp_end, (char*)s, s->length());
         temp_end += s->length();
 
-        // pad zero to make the real end 
-        memcpy(writebuf+temp_end, block_of_zeros(), zeros); 
+        // pad zero to make the real end
+        memcpy(writebuf+temp_end, block_of_zeros(), zeros);
         temp_end += zeros;
     }
     else {
@@ -380,11 +380,11 @@ partition_t::flush(
         temp_end += offset;
 
         // copy the skip record to the temp write buffer
-        memcpy(writebuf+temp_end, (char*)s, s->length()); 
+        memcpy(writebuf+temp_end, (char*)s, s->length());
         temp_end += s->length();
 
-        // pad zero to make the real end 
-        memcpy(writebuf+temp_end, block_of_zeros(), zeros); 
+        // pad zero to make the real end
+        memcpy(writebuf+temp_end, block_of_zeros(), zeros);
         temp_end += zeros;
     }
 
@@ -395,7 +395,7 @@ partition_t::flush(
 
         iovec_t iov[] = {
             iovec_t((char*)buf+start1,                end1-start1),
-            iovec_t((char*)buf+start2,                end2-start2), 
+            iovec_t((char*)buf+start2,                end2-start2),
             iovec_t((char*)writebuf, temp_end),
         };
 
@@ -414,9 +414,9 @@ partition_t::flush(
             smlevel_0::errlog->clog << fatal_prio
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
-                                    << " xfersize=" 
+                                    << " xfersize="
                                     << log_storage::BLOCK_SIZE
-                                    << " vec parts: " 
+                                    << " vec parts: "
                                     << " " << iov[0].iov_len
                                     << " " << iov[1].iov_len
                                     << " " << iov[2].iov_len
@@ -428,7 +428,7 @@ partition_t::flush(
                 << " fd=" << fd
                 << " xfersize=" << log_storage::BLOCK_SIZE
                 << log_storage::BLOCK_SIZE
-                << " vec parts: " 
+                << " vec parts: "
                 << " " << iov[0].iov_len
                 << " " << iov[1].iov_len
                 << " " << iov[2].iov_len
@@ -551,9 +551,9 @@ partition_t::flush(
             smlevel_0::errlog->clog << fatal_prio
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
-                                << " xfersize=" 
+                                << " xfersize="
                                 << log_storage::BLOCK_SIZE
-                                << " vec parts: " 
+                                << " vec parts: "
                                 << " " << iov[0].iov_len
                                 << " " << iov[1].iov_len
                                 << " " << iov[2].iov_len
@@ -566,7 +566,7 @@ partition_t::flush(
                                     << " fd=" << fd
                                     << " xfersize=" << log_storage::BLOCK_SIZE
                                 << log_storage::BLOCK_SIZE
-                                << " vec parts: " 
+                                << " vec parts: "
                                 << " " << iov[0].iov_len
                                 << " " << iov[1].iov_len
                                 << " " << iov[2].iov_len
@@ -873,14 +873,14 @@ partition_t::_skip(const lsn_t &ll, int fd)
 
 #ifdef LOG_DIRECT_IO
     char * _skipbuf = NULL;
-    posix_memalign((void**)&_skipbuf, LOG_DIO_ALIGN, log_storage::BLOCK_SIZE*2);    
+    posix_memalign((void**)&_skipbuf, LOG_DIO_ALIGN, log_storage::BLOCK_SIZE*2);
 #else
     char* _skipbuf = new char[log_storage::BLOCK_SIZE*2];
 #endif
     // FRJ: We always need to prime() partition ops (peek, open, etc)
     // always use a different buffer than log inserts.
     long offset = _owner->prime(_skipbuf, ll, log_storage::BLOCK_SIZE);
-    
+
     // Make sure that flush writes a skip record
     this->flush(
 #ifdef LOG_DIRECT_IO
@@ -1010,7 +1010,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
                     *prev_lsn = *((lsn_t*) (readbuf + off - sizeof(lsn_t)));
                 }
                 else {
-                    // we were unlucky -- extra IO required to fetch prev_lsn                   
+                    // we were unlucky -- extra IO required to fetch prev_lsn
                     int prev_offset = lower + b - XFERSIZE - sizeof(lsn_t);
                     if (prev_offset < 0) {
                         *prev_lsn = lsn_t::null;
@@ -1257,7 +1257,7 @@ partition_t::peek(
     char *fname = new char[smlevel_0::max_devname];
     if (!fname)
         W_FATAL(fcOUTOFMEMORY);
-    w_auto_delete_array_t<char> ad_fname(fname);        
+    w_auto_delete_array_t<char> ad_fname(fname);
     _owner->make_log_name(__num, fname, smlevel_0::max_devname);
 
     smlevel_0::fileoff_t part_size = fileoff_t(0);
@@ -1444,7 +1444,7 @@ partition_t::close_for_read()
 void
 partition_t::flush(
                 char* writebuf,
-                   int fd, // IN: the file descriptor of the current log partition 
+                   int fd, // IN: the file descriptor of the current log partition
                    lsn_t lsn, // IN: the lsn of the first log record we want to flush
                    int64_t size, // IN: the total size of log records
                    int64_t write_size,  // IN: the aligned total size
@@ -1517,11 +1517,11 @@ partition_t::flush(
     temp_end += offset;
 
     // copy the skip record to the temp write buffer
-    memcpy(writebuf+temp_end, (char*)s, s->length()); 
+    memcpy(writebuf+temp_end, (char*)s, s->length());
     temp_end += s->length();
 
     // pad zero to make the real end aligned to blocksize
-    memcpy(writebuf+temp_end, block_of_zeros(), zeros); 
+    memcpy(writebuf+temp_end, block_of_zeros(), zeros);
     temp_end += zeros;
 
     typedef sdisk_base_t::iovec_t iovec_t;
@@ -1539,7 +1539,7 @@ partition_t::flush(
             smlevel_0::errlog->clog << fatal_prio
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
-                                << " xfersize=" 
+                                << " xfersize="
                                 << log_storage::BLOCK_SIZE
                                     << ":" << endl
                                     << e
@@ -1678,7 +1678,7 @@ partition_t::flush(int fd, lsn_t lsn, int64_t size, int64_t write_size,
             smlevel_0::errlog->clog << fatal_prio
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
-                                << " xfersize=" 
+                                << " xfersize="
                                 << log_storage::BLOCK_SIZE
                                     << ":" << endl
                                     << e

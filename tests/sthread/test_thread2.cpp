@@ -51,7 +51,7 @@ bool    histograms = false;
 bool    verbose = false;
 
 /* build an i/o vector for an I/O operation, to test write buffer. */
-int make_vec(char *buf, int size, int vec_size, 
+int make_vec(char *buf, int size, int vec_size,
                 sthread_t::iovec_t *vec, const int iovec_max)
 {
         int     slot = 0;
@@ -93,7 +93,7 @@ io_thread_t::io_thread_t(int i, char *bf)
 
 void io_thread_t::run()
 {
-        cout << name() << ": started: " 
+        cout << name() << ": started: "
                 << NumIOs << " I/Os "
                 << endl;
 
@@ -115,7 +115,7 @@ void io_thread_t::run()
         EXPECT_FALSE(rc.is_error())
             << "open " << fname << ":" << endl << rc;
 
-        int i; 
+        int i;
         for (i = 0; i < NumIOs; i++)  {
                 sthread_t::iovec_t      vec[iovec_max]; /*XXX magic number */
                 int     cnt;
@@ -135,7 +135,7 @@ void io_thread_t::run()
         rc = sthread_t::lseek(fd, 0, SEEK_AT_SET);
         EXPECT_FALSE(rc.is_error())
                 << "lseek:" << endl << rc;
-    
+
         // cout << name() << ": finished seeking" << endl;
         for (i = 0; i < NumIOs; i++) {
                 rc = sthread_t::read(fd, buf, BufSize);
@@ -150,7 +150,7 @@ void io_thread_t::run()
                 }
         }
         // cout << "'" << name() << "': finished reading" << endl;
-        
+
         EXPECT_FALSE( sthread_t::fsync(fd).is_error() );
 
         EXPECT_FALSE( sthread_t::close(fd).is_error() );
