@@ -672,33 +672,31 @@ size_t RestoreMgr::restoreSegment(char* workspace,
 
 void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
 {
-    {
+    /*
+     * Now that the segment is restored, copy it into the buffer pool frame
+     * of each matching request. Acquire the mutex for that to avoid race
+     * condition in which segment gets restored after caller checks but
+     * before its request is placed.
+     */
+    if (reuseRestoredBuffer && count > 0) {
         spinlock_write_critical_section cs(&requestMutex);
 
-        /*
-         * Now that the segment is restored, copy it into the buffer pool frame
-         * of each matching request. Acquire the mutex for that to avoid race
-         * condition in which segment gets restored after caller checks but
-         * before its request is placed.
-         */
-        if (reuseRestoredBuffer && count > 0) {
-            shpid_t firstPage = getPidForSegment(segment);
+        shpid_t firstPage = getPidForSegment(segment);
 
-            for (size_t i = 0; i < count; i++) {
-                map<shpid_t, generic_page*>::iterator pos =
-                    bufferedRequests.find(firstPage + i);
+        for (size_t i = 0; i < count; i++) {
+            map<shpid_t, generic_page*>::iterator pos =
+                bufferedRequests.find(firstPage + i);
 
-                if (pos != bufferedRequests.end()) {
-                    char* wpage = workspace + (sizeof(generic_page) * i);
+            if (pos != bufferedRequests.end()) {
+                char* wpage = workspace + (sizeof(generic_page) * i);
 
-                    w_assert1(((generic_page*) wpage)->pid.page ==
-                            firstPage + i);
-                    memcpy(pos->second, wpage, sizeof(generic_page));
-                    w_assert1(pos->second->pid.page == firstPage + i);
+                w_assert1(((generic_page*) wpage)->pid.page ==
+                        firstPage + i);
+                memcpy(pos->second, wpage, sizeof(generic_page));
+                w_assert1(pos->second->pid.page == firstPage + i);
 
-                    DBGTHRD(<< "Deleting request " << pos->first);
-                    bufferedRequests.erase(pos);
-                }
+                DBGTHRD(<< "Deleting request " << pos->first);
+                bufferedRequests.erase(pos);
             }
         }
     }
