@@ -529,7 +529,7 @@ struct chkpt_dev_tab_t
 
 struct chkpt_backup_tab_t
 {
-    uint16_t count;
+    uint32_t count;
     uint32_t data_size;
     char     data[logrec_t::max_data_sz];
 
@@ -545,7 +545,7 @@ struct chkpt_backup_tab_t
         const std::vector<string>& paths);
 
     int size() const {
-        return data_size + sizeof(uint32_t) + sizeof(uint16_t);
+        return data_size + sizeof(uint32_t) * 2;
     }
 
     void read(std::vector<vid_t>& vids, std::vector<string>& paths);

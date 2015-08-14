@@ -655,8 +655,8 @@ chkpt_backup_tab_t::chkpt_backup_tab_t(
     w_assert0(vids.size() == paths.size());
     std::stringstream ss;
     for (uint i = 0; i < count; i++) {
-        ss << vids[i];
-        ss << paths[i];
+        ss << vids[i] << endl;
+        ss << paths[i] << endl;
     }
     data_size = ss.tellp();
     w_assert0(data_size <= logrec_t::max_data_sz);
@@ -696,8 +696,8 @@ void chkpt_backup_tab_log::redo(fixable_page_h*)
     w_assert0(tab->count == vids.size());
     w_assert0(tab->count == paths.size());
 
-    for (int i = 0; i < tab->count; i++) {
-        smlevel_0::vol->sx_add_backup(vids[i], paths[i], false /* log */);
+    for (size_t i = 0; i < tab->count; i++) {
+        W_COERCE(smlevel_0::vol->sx_add_backup(vids[i], paths[i], false /* log */));
     }
 }
 
