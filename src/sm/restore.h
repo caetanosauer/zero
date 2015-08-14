@@ -208,6 +208,17 @@ protected:
      */
     void restoreLoop();
 
+    /** \brief Single-pass version of the restore loop
+     *
+     * Performs a single scan over the log archive, restoring segments as it
+     * goes.  This is the true single-pass restore, since it guarantees only
+     * one pass over the log archive, whereas instant restore may fetch
+     * individual log archive block multiple times for different segments.
+     *
+     * This method should deliver the maximum possible restore bandwitdh.
+     */
+    void singlePassLoop();
+
     /** \brief Performs restore of a single segment; invoked from restoreLoop()
      *
      * Returns the number of pages that were restored in the segment. It may be

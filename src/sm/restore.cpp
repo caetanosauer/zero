@@ -492,15 +492,101 @@ void RestoreMgr::restoreMetadata()
     delete merger;
 }
 
-void RestoreMgr::restoreLoop()
+void RestoreMgr::singlePassLoop()
 {
-    // wait until volume is actually marked as failed
-    while(!takeBackup && !volume->is_failed()) {
-        usleep(1000); // 1 ms
+    stopwatch_t timer;
+
+    lsn_t startLSN = useBackup ? volume->get_backup_lsn() : lsn_t(1,0);
+
+    lpid_t startPid = lpid_t(volume->vid(), firstDataPid);
+    lpid_t endPid = lpid_t(volume->vid(), volume->num_pages());
+    LogArchiver::ArchiveScanner logScan(archive);
+    LogArchiver::ArchiveScanner::RunMerger* merger =
+        logScan.open(startPid, endPid, startLSN);
+    if (!merger) {
+        // nothing to replay
+        return;
     }
 
-    restoreMetadata();
+    logrec_t* lr = new logrec_t();
+    unsigned segment = 0;
+    lpid_t pid = lpid_t::null;
+    shpid_t prevPage = shpid_t(0);
 
+    char* workspace = backup->fix(segment);
+    size_t pagesInSegment = 0;
+    bool virgin;
+
+    generic_page* page = (generic_page*) workspace;
+    fixable_page_h fixable;
+
+    while (merger->next(lr)) {
+        DBGOUT4(<< "Would restore " << *lr);
+        pid = lr->pid();
+        timer.reset();
+
+        if (getSegmentForPid(pid.page) != segment) {
+            w_assert1((int) pagesInSegment == segmentSize);
+            finishSegment(workspace, segment, segmentSize);
+            ADD_TSTAT(restore_time_write, timer.time_us());
+
+            char* workspace = backup->fix(segment);
+            ADD_TSTAT(restore_time_read, timer.time_us());
+
+            page = (generic_page*) workspace;
+            segment = getSegmentForPid(pid.page);
+            pagesInSegment = 0;
+        }
+
+        if (pid.page != prevPage) {
+            // Done with current page -- move to next
+            virgin = !volume->is_allocated_page(pid.page);
+            if (!virgin) {
+                // Restored pages are always written out with proper checksum.
+                page->checksum = page->calculate_checksum();
+            }
+            if (prevPage > 0) {
+                page += pid.page - prevPage;
+            }
+            prevPage = pid.page;
+            pagesInSegment++;
+        }
+
+        if (virgin) { continue; }
+
+        if (!fixable.is_fixed() || fixable.pid().page != pid.page) {
+            // PID is manually set for virgin pages
+            // this guarantees correct redo of multi-page logrecs
+            if (page->pid != pid) {
+                page->pid = pid;
+            }
+            fixable.setup_for_restore(page);
+        }
+
+        if (lr->lsn_ck() <= page->lsn) {
+            // update may already be reflected on page
+            continue;
+        }
+
+        w_assert1(page->pid == pid);
+        w_assert1(lr->page_prev_lsn() == lsn_t::null ||
+                lr->page_prev_lsn() == page->lsn);
+
+        lr->redo(&fixable);
+        fixable.update_initial_and_last_lsn(lr->lsn_ck());
+        fixable.update_clsn(lr->lsn_ck());
+
+        ADD_TSTAT(restore_time_replay, timer.time_us());
+    }
+
+    if (pagesInSegment > 0) {
+        finishSegment(workspace, segment, segmentSize);
+        ADD_TSTAT(restore_time_write, timer.time_us());
+    }
+}
+
+void RestoreMgr::restoreLoop()
+{
     LogArchiver::ArchiveScanner logScan(archive);
 
     stopwatch_t timer;
@@ -616,16 +702,14 @@ size_t RestoreMgr::restoreSegment(char* workspace,
 
         while (lrpid.page > current) {
             // Done with current page -- move to next
-
-            // Restored pages are always written out with proper checksum.
-            page->checksum = page->calculate_checksum();
-            w_assert1(page->checksum == page->calculate_checksum());
+            virgin = !volume->is_allocated_page(current);
+            if (!virgin) {
+                // Restored pages are always written out with proper checksum.
+                page->checksum = page->calculate_checksum();
+            }
 
             current++;
             page++;
-            virgin = !volume->is_allocated_page(current);
-
-            DBGOUT4(<< "Restoring page " << current);
         }
 
         if (virgin) { continue; }
@@ -789,7 +873,19 @@ void RestoreMgr::run()
         }
     }
 
-    restoreLoop();
+    // wait until volume is actually marked as failed
+    while(!takeBackup && !volume->is_failed()) {
+        usleep(1000); // 1 ms
+    }
+
+    restoreMetadata();
+
+    if (instantRestore) {
+        restoreLoop();
+    }
+    else {
+        singlePassLoop();
+    }
 
     w_assert1(bufferedRequests.size() == 0);
 }
