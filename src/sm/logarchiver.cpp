@@ -1787,9 +1787,6 @@ tryagain:
     return true;
 }
 
-/*
- * TODO initialize from existing runs at startup
- */
 LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize, lsn_t startLSN)
     : blockSize(blockSize), lastLSN(startLSN), lastFinished(-1)
 {
@@ -1835,7 +1832,7 @@ rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
     w_assert0(lastLSN == first);
 
     // check if it isn't and empty run (from truncation)
-    if (lastFinished < runs.size()) {
+    if (lastFinished < (int) runs.size()) {
         lastFinished++;
         runs[lastFinished].firstLSN = first;
         W_DO(serializeRunInfo(runs[lastFinished], fd, offset));
@@ -2003,6 +2000,7 @@ size_t LogArchiver::ArchiveIndex::findRun(lpid_t endPID, lsn_t lsn)
      * CS: requests are more likely to access the last runs, so
      * we do a linear search instead of binary search.
      */
+    w_assert1(lastFinished >= 0);
     int result = lastFinished;
     while (result > 0 && runs[result].firstLSN >= lsn) {
         result--;
