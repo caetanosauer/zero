@@ -331,7 +331,8 @@ protected:
 
 inline unsigned RestoreMgr::getSegmentForPid(const shpid_t& pid)
 {
-    return (unsigned) std::max(pid, firstDataPid) / segmentSize;
+    return (unsigned) (std::max(pid, firstDataPid) - firstDataPid)
+        / segmentSize;
 }
 
 inline shpid_t RestoreMgr::getPidForSegment(unsigned segment)
