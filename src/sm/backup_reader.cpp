@@ -150,7 +150,7 @@ char* BackupPrefetcher::fix(unsigned segment)
 
         // segment not in buffer -- move request to the front and wait
         // for prefetch to catch up
-        if (requests.front() != segment) {
+        if (requests.size() == 0 || requests.front() != segment) {
             for (std::deque<unsigned>::iterator iter = requests.begin();
                     iter != requests.end(); iter++)
             {
@@ -163,6 +163,7 @@ char* BackupPrefetcher::fix(unsigned segment)
 
         DBGOUT(<< "Segment fix: not found. Waking up prefetcher");
         fixWaiting = true;
+        wait = true;
     }
 
     // should never reach this

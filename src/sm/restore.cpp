@@ -515,7 +515,7 @@ void RestoreMgr::singlePassLoop()
 
     char* workspace = backup->fix(segment);
     size_t pagesInSegment = 0;
-    bool virgin;
+    bool virgin = false;
 
     generic_page* page = (generic_page*) workspace;
     fixable_page_h fixable;
