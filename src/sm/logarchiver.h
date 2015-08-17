@@ -359,13 +359,8 @@ public:
         uint8_t currentRun;
         lsn_t maxLSNInRun;
 
-        rc_t openNewRun();
-
     public:
-
         virtual void run();
-
-        static const logrec_t* SKIP_LOGREC;
 
         ArchiveDirectory* getDirectory() { return directory; }
 
@@ -433,7 +428,7 @@ public:
         lpid_t firstPID;
         // lpid_t lastPID;
         lsn_t maxLSNInBlock;
-        int lastLength;
+        int maxLSNLength;
         int lastRun;
     public:
         struct BlockHeader {
@@ -593,7 +588,7 @@ public:
         ArchiverHeap(size_t workspaceSize);
         virtual ~ArchiverHeap();
 
-        bool push(logrec_t* lr);
+        bool push(logrec_t* lr, bool duplicate);
         logrec_t* top();
         void pop();
 
@@ -603,6 +598,8 @@ public:
         uint8_t currentRun;
         bool filledFirst;
         mem_mgmt_t* workspace;
+
+        mem_mgmt_t::slot_t allocate(size_t length);
 
         struct HeapEntry {
             uint8_t run;
@@ -740,7 +737,7 @@ private:
 
     void replacement();
     bool selection();
-    void pushIntoHeap(logrec_t*);
+    void pushIntoHeap(logrec_t*, bool duplicate);
     bool waitForActivation();
     bool processFlushRequest();
     bool isLogTooSlow();

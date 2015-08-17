@@ -304,6 +304,7 @@ void LogArchiver::WriterThread::run()
              */
             W_COERCE(directory->closeCurrentRun(maxLSNInRun));
             W_COERCE(directory->openNewRun());
+            w_assert1(directory->getLastLSN() == maxLSNInRun);
             currentRun = run;
             maxLSNInRun = lsn_t::null;
             DBGTHRD(<< "Opening file for new run " << run
@@ -374,6 +375,7 @@ void LogArchiver::initLogScanner(LogScanner* logScanner)
     logScanner->setIgnore(logrec_t::t_chkpt_bf_tab);
     logScanner->setIgnore(logrec_t::t_chkpt_xct_tab);
     logScanner->setIgnore(logrec_t::t_chkpt_dev_tab);
+    logScanner->setIgnore(logrec_t::t_chkpt_backup_tab);
     logScanner->setIgnore(logrec_t::t_chkpt_end);
     logScanner->setIgnore(logrec_t::t_mount_vol);
     logScanner->setIgnore(logrec_t::t_dismount_vol);
@@ -894,7 +896,7 @@ bool LogArchiver::selection()
 }
 
 LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
-    : dest(NULL), maxLSNInBlock(lsn_t::null), lastLength(0),
+    : dest(NULL), maxLSNInBlock(lsn_t::null), maxLSNLength(0),
     lastRun(-1)
 {
     archIndex = directory->getIndex();
@@ -965,11 +967,10 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
     if (firstPID == lpid_t::null) {
         firstPID = lr->construct_pid();
     }
-    // lastPID = lr->construct_pid();
 
     if (maxLSNInBlock < lr->lsn_ck()) {
         maxLSNInBlock = lr->lsn_ck();
-        lastLength = lr->length();
+        maxLSNLength = lr->length();
     }
 
     memcpy(dest + pos, lr, lr->length());
@@ -1012,7 +1013,7 @@ void LogArchiver::BlockAssembly::finish(int run)
      * if it is a skip log record, since the property that must be respected is
      * simply that run boundaries must match (i.e., endLSN(n) == beginLSN(n+1)
      */
-    h->lsn = maxLSNInBlock.advance(lastLength);
+    h->lsn = maxLSNInBlock.advance(maxLSNLength);
 
 #if W_DEBUG_LEVEL>=3
     // verify that all log records are within end boundary
@@ -1279,10 +1280,10 @@ LogArchiver::ArchiverHeap::~ArchiverHeap()
     delete workspace;
 }
 
-bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
+slot_t LogArchiver::ArchiverHeap::allocate(size_t length)
 {
     slot_t dest(NULL, 0);
-    W_COERCE(workspace->allocate(lr->length(), dest));
+    W_COERCE(workspace->allocate(length, dest));
 
     if (!dest.address) {
         // workspace full -> do selection until space available
@@ -1293,16 +1294,53 @@ bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
             filledFirst = true;
             DBGTHRD(<< "Heap full for the first time; start run 1");
         }
-        return false;
     }
+
+    return dest;
+}
+
+bool LogArchiver::ArchiverHeap::push(logrec_t* lr, bool duplicate)
+{
+    slot_t dest = allocate(lr->length());
+    if (!dest.address) { return false; }
+
+    lpid_t pid = lr->pid();
+    lsn_t lsn = lr->lsn();
     memcpy(dest.address, lr, lr->length());
 
-    // if all records of the current run are gone, start new run
-    if (filledFirst &&
-            (size() == 0 || w_heap.First().run == currentRun)) {
-        currentRun++;
-        DBGTHRD(<< "Replacement starting new run " << (int) currentRun
-                << " on LSN " << lr->lsn_ck());
+    // CS: Multi-page log records are replicated so that each page can be
+    // recovered from the log archive independently.  Note that this is not
+    // required for Restart or Single-page recovery because following the
+    // per-page log chain of both pages eventually lands on the same multi-page
+    // log record. For restore, it must be duplicated because log records are
+    // sorted and there is no chain.
+    if (duplicate) {
+        // If we have to duplciate the log record, make sure there is room by
+        // calling recursively without duplication. Note that the original
+        // contents were already saved with the memcpy operation above.
+        lr->set_pid(lr->construct_pid2());
+        lr->set_page_prev_lsn(lr->page2_prev_lsn());
+        if (!push(lr, false)) {
+            // If duplicated did not fit, then insertion of the original must
+            // also fail. We have to (1) restore the original contents of
+            // the log record for the next attempt; and (2) free its memory
+            // from the workspace. Since nothing was added to the heap yet, it
+            // stays untouched.
+            memcpy(lr, dest.address, lr->length());
+            W_COERCE(workspace->free(dest));
+            return false;
+        }
+    }
+    else {
+        // If all records of the current run are gone, start new run. But only
+        // if we are not duplicating a log record -- otherwise two new runs
+        // would be created.
+        if (filledFirst &&
+                (size() == 0 || w_heap.First().run == currentRun)) {
+            currentRun++;
+            DBGTHRD(<< "Replacement starting new run " << (int) currentRun
+                    << " on LSN " << lr->lsn_ck());
+        }
     }
 
     //DBGTHRD(<< "Processing logrec " << lr->lsn_ck() << ", type " <<
@@ -1310,7 +1348,7 @@ bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
     //        lr->length() << " into run " << (int) currentRun);
 
     // insert key and pointer into w_heap
-    HeapEntry k(currentRun, lr->construct_pid(), lr->lsn_ck(), dest);
+    HeapEntry k(currentRun, pid, lsn, dest);
 
     // CS: caution: AddElementDontHeapify does NOT work!!!
     w_heap.AddElement(k);
@@ -1388,35 +1426,24 @@ void LogArchiver::replacement()
             return;
         }
 
-        pushIntoHeap(lr);
-
-        if (lr->is_multi_page()) {
-            // CS: Multi-page log records are replicated so that each page can
-            // be recovered from the log archive independently.  Note that this
-            // is not required for Restart or Single-page recovery because
-            // following the per-page log chain of both pages eventually lands
-            // on the same multi-page log record. For restore, it must be
-            // duplicated because log records are sorted and there is no chain.
-            lr->set_pid(lr->construct_pid2());
-            lr->set_page_prev_lsn(lr->page2_prev_lsn());
-            pushIntoHeap(lr);
-        }
+        pushIntoHeap(lr, lr->is_multi_page());
     }
 }
 
-void LogArchiver::pushIntoHeap(logrec_t* lr)
+void LogArchiver::pushIntoHeap(logrec_t* lr, bool duplicate)
 {
-    while (!heap->push(lr)) {
+    while (!heap->push(lr, duplicate)) {
         // heap full -- invoke selection and try again
+        if (heap->size() == 0) {
+            W_FATAL_MSG(fcINTERNAL,
+                    << "Heap empty but push not possible!");
+        }
+
         DBGTHRD(<< "Heap full! Invoking selection");
         bool success = selection();
 
         w_assert0(success || heap->size() == 0);
 
-        if (heap->size() == 0) {
-            W_FATAL_MSG(fcINTERNAL,
-                    << "Heap empty but push not possible!");
-        }
     }
 }
 
@@ -2206,8 +2233,6 @@ void ArchiveMerger::run()
                 DBGTHRD(<< "Writing LAST block of current merge output");
                 W_COERCE(me()->pwrite(fd, lrbuf, pos, fpos));
                 fpos += pos;
-                // Append skip log record
-                //W_COERCE(me()->pwrite(fd, FAKE_SKIP_LOGREC, 3, fpos));
             }
             delete[] lrbuf;
 
