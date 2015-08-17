@@ -1515,11 +1515,16 @@ bool LogArchiver::processFlushRequest()
         else {
             // consume whole heap
             while (selection()) {}
-            // Heap empty: Wait for writer thread to consume all blocks
+            // Heap empty: Wait for all blocks to be consumed and writen out
             w_assert0(heap->size() == 0);
             while (blkAssemb->hasPendingBlocks()) {
                 ::usleep(10000); // 10ms
             }
+
+            // Forcibly close current run to guarantee that LSN is persisted
+            W_COERCE(directory->closeCurrentRun(flushReqLSN));
+            W_COERCE(directory->openNewRun());
+            blkAssemb->resetWriter();
 
             /* Now we know that the requested LSN has been processed by the
              * heap and all archiver temporary memory has been flushed. Thus,
@@ -1563,6 +1568,10 @@ bool LogArchiver::isLogTooSlow()
 
 bool LogArchiver::shouldActivate(bool logTooSlow)
 {
+    if (flushReqLSN == control.endLSN) {
+        return control.endLSN > nextActLSN;
+    }
+
     if (logTooSlow && control.endLSN == smlevel_0::log->durable_lsn()) {
         // Special case: log is not only groing too slow, but it has actually
         // halted. This means the application/experiment probably already
@@ -1607,7 +1616,9 @@ void LogArchiver::run()
         }
         bool logTooSlow = isLogTooSlow();
 
-        processFlushRequest();
+        if (processFlushRequest()) {
+            continue;
+        }
 
         if (!shouldActivate(logTooSlow)) {
             continue;
@@ -1672,13 +1683,17 @@ bool LogArchiver::requestFlushAsync(lsn_t reqLSN)
 
 void LogArchiver::requestFlushSync(lsn_t reqLSN)
 {
+    DBGTHRD(<< "Requesting flush until LSN " << reqLSN);
     if (!eager) {
         activate(reqLSN);
     }
-    while (!requestFlushAsync(reqLSN))
-    {}
-    // when log archiver is done processing the flush request, it will set
-    // flushReqLSN back to null
+    while (!requestFlushAsync(reqLSN)) {
+        usleep(1000); // 1ms
+    }
+    // When log archiver is done processing the flush request, it will set
+    // flushReqLSN back to null. This method only guarantees that the flush
+    // request was processed. The caller must still wait for the desired run to
+    // be persisted -- if it so wishes.
     while(true) {
         lintel::atomic_thread_fence(lintel::memory_order_acquire);
         if (flushReqLSN == lsn_t::null) {

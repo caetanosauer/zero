@@ -364,6 +364,15 @@ public:
 
         ArchiveDirectory* getDirectory() { return directory; }
 
+        /*
+         * Called by processFlushRequest to forcibly start a new run
+         */
+        void resetCurrentRun()
+        {
+            currentRun++;
+            maxLSNInRun = lsn_t::null;
+        }
+
         WriterThread(AsyncRingBuffer* writebuf, ArchiveDirectory* directory)
             :
               BaseThread(writebuf, "LogArchiver_WriterThread"),
@@ -413,6 +422,11 @@ public:
         void finish(int run);
         void shutdown();
         bool hasPendingBlocks();
+
+        void resetWriter()
+        {
+            writer->resetCurrentRun();
+        }
 
         // methods that abstract block metadata
         static int getRunFromBlock(const char* b);

@@ -1123,7 +1123,8 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
 
     if (flushArchive) {
         LogArchiver* la = smlevel_0::logArchiver;
-        lsn_t currLSN = smlevel_0::log->durable_lsn();
+        W_DO(smlevel_0::log->flush_all());
+        lsn_t currLSN = smlevel_0::log->curr_lsn();
         // wait for log record to be consumed
         while (la->getNextConsumedLSN() < currLSN) {
             ::usleep(10000); // 10ms
@@ -1133,6 +1134,8 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
         // lucky, log is archiving very fast and a flush request is not needed.
         int waitBeforeFlush = 5000; // 5 sec
         ::usleep(waitBeforeFlush * 1000);
+
+        DBGTHRD(<< "Taking sharp backup until " << currLSN);
 
         if (la->getDirectory()->getLastLSN() < currLSN) {
             la->requestFlushSync(currLSN);

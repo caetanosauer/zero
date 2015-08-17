@@ -878,7 +878,6 @@ ss_m::_destruct_once()
     // log flush daemon is running, it won't just try to re-activate it.
     shutting_down = true;
 
-
     _finish_recovery();
 
     // now it's safe to do the clean_up
@@ -908,6 +907,8 @@ ss_m::_destruct_once()
         chkpt->synch_take();
         chkpt->retire_chkpt_thread();
 
+        delete chkpt; chkpt = 0;
+
         if (_options.get_bool_option("sm_truncate_log", false)) {
             W_COERCE(_truncate_log());
         }
@@ -915,6 +916,8 @@ ss_m::_destruct_once()
     else {
         DBGTHRD(<< "SM performing dirty shutdown");
         chkpt->retire_chkpt_thread();
+
+        delete chkpt; chkpt = 0;
     }
 
 
@@ -929,12 +932,6 @@ ss_m::_destruct_once()
     w_assert1(xct_t::num_active_xcts() == 0);
 
     lm->assert_empty(); // no locks should be left
-
-    /*
-     *  Level 3
-     */
-    delete chkpt; chkpt = 0; // NOTE : not level 3 now, but
-    // has been retired
 
     /*
      *  Level 2
