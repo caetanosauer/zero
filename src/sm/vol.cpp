@@ -112,8 +112,7 @@ rc_t vol_m::sx_format(
 
     DBG( << "formating volume " << devname << ">" );
     int flags = smthread_t::OPEN_CREATE | smthread_t::OPEN_RDWR
-        | smthread_t::OPEN_EXCL | smthread_t::OPEN_TRUNC
-        | smthread_t::OPEN_SYNC;
+        | smthread_t::OPEN_TRUNC | smthread_t::OPEN_SYNC;
     int fd;
     W_DO(me()->open(devname, flags, 0666, fd));
     W_DO(vol_t::write_metadata(fd, vid, num_pages));
@@ -1105,9 +1104,8 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
         }
 
         _backup_write_path = path;
-        int flags = smthread_t::OPEN_EXCL | smthread_t::OPEN_SYNC |
-            smthread_t::OPEN_WRONLY | smthread_t::OPEN_TRUNC |
-            smthread_t::OPEN_CREATE;
+        int flags = smthread_t::OPEN_SYNC | smthread_t::OPEN_WRONLY
+            | smthread_t::OPEN_TRUNC | smthread_t::OPEN_CREATE;
         W_DO(me()->open(path.c_str(), flags, 0666, _backup_write_fd));
 
         useBackup = _backups.size() > 0;
