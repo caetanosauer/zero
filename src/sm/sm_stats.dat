@@ -336,6 +336,7 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long restore_skipped_segs     Number of segments on which no log replay was performed
     u_long restore_backup_reads     Number of segment reads on backup file
     u_long restore_async_write_time Time spend writing segments in async writer
+    u_long restore_log_volume       Amount of log replayed during restore (bytes)
 
     // Log archiver stats
     u_long la_log_slow              Log archiver activated with small window due to slow log growth

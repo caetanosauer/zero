@@ -700,6 +700,8 @@ size_t RestoreMgr::restoreSegment(char* workspace,
         w_assert1(lrpid.page >= prevPage);
         w_assert1(lrpid.page < firstPage + segmentSize);
 
+        ADD_TSAT(restore_log_volume, lr->length());
+
         while (lrpid.page > current) {
             // Done with current page -- move to next
             virgin = !volume->is_allocated_page(current);

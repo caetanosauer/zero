@@ -856,16 +856,20 @@ void restore_end_log::redo(fixable_page_h*)
 
 restore_segment_log::restore_segment_log(vid_t vid, uint32_t segment)
 {
-    memcpy(_data, &vid, sizeof(vid_t));
-    memcpy(_data + sizeof(vid_t), &segment, sizeof(uint32_t));
+    char* pos = _data;
+    memcpy(pos, &vid, sizeof(vid_t));
+    pos += sizeof(vid_t);
+
+    memcpy(pos, &segment, sizeof(uint32_t));
+    pos += sizeof(uint32_t);
+
 #ifdef TIMED_LOG_RECORDS
     unsigned long tstamp = sysevent_timer::timestamp();
-    memcpy(_data + sizeof(vid_t) + sizeof(uint32_t),
-            &tstamp, sizeof(unsigned long));
-    fill(0, sizeof(vid_t) + sizeof(uint32_t) + sizeof(unsigned long));
-#else
-    fill(0, sizeof(vid_t) + sizeof(uint32_t));
+    memcpy(pos, &tstamp, sizeof(unsigned long));
+    pos += sizeof(unsigned long);
 #endif
+
+    fill(0, pos - _data);
 }
 
 void restore_segment_log::redo(fixable_page_h*)
