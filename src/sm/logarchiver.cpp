@@ -1554,6 +1554,11 @@ void LogArchiver::replacement()
 void LogArchiver::pushIntoHeap(logrec_t* lr, bool duplicate)
 {
     while (!heap->push(lr, duplicate)) {
+        if (heap->size() == 0) {
+            W_FATAL_MSG(fcINTERNAL,
+                    << "Heap empty but push not possible!");
+        }
+
         // heap full -- invoke selection and try again
         if (heap->size() == 0) {
             // CS TODO this happens sometimes for very large page_img_format
@@ -1567,7 +1572,6 @@ void LogArchiver::pushIntoHeap(logrec_t* lr, bool duplicate)
         bool success = selection();
 
         w_assert0(success || heap->size() == 0);
-
     }
 }
 
