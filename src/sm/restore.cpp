@@ -355,6 +355,9 @@ RestoreMgr::~RestoreMgr()
 
     delete bitmap;
     delete scheduler;
+
+    DO_PTHREAD(pthread_mutex_destroy(&restoreCondMutex));
+    DO_PTHREAD(pthread_cond_destroy(&restoreCond));
 }
 
 bool RestoreMgr::waitUntilRestored(const shpid_t& pid, size_t timeout_in_ms)
@@ -897,25 +900,26 @@ SegmentWriter::SegmentWriter(RestoreMgr* restore)
     shutdownFlag(false), restore(restore)
 {
     w_assert1(restore);
+    DO_PTHREAD(pthread_mutex_init(&requestMutex, NULL));
+    DO_PTHREAD(pthread_cond_init(&requestCond, NULL));
 }
 
 SegmentWriter::~SegmentWriter()
 {
+    DO_PTHREAD(pthread_cond_destroy(&requestCond));
+    DO_PTHREAD(pthread_mutex_destroy(&requestMutex));
 }
 
 void SegmentWriter::requestWrite(char* workspace,
         unsigned segment, size_t count)
 {
-    while (true) {
-        CRITICAL_SECTION(cs, &requestMutex);
-        // mutex held => writer thread waiting for us
+    CRITICAL_SECTION(cs, &requestMutex);
+    // mutex held => writer thread waiting for us
 
-        Request req(workspace, segment, count);
-        requests.push(req);
+    Request req(workspace, segment, count);
+    requests.push(req);
 
-        pthread_cond_signal(&requestCond);
-        break;
-    }
+    pthread_cond_signal(&requestCond);
 }
 
 void SegmentWriter::run()
@@ -929,7 +933,10 @@ void SegmentWriter::run()
             int code = pthread_cond_timedwait(&requestCond, &requestMutex,
                     &timeout);
             if (code == ETIMEDOUT) {
-                if (shutdownFlag) { return; }
+                if (shutdownFlag) {
+                    DO_PTHREAD(pthread_mutex_unlock(&requestMutex));
+                    return;
+                }
             }
             DO_PTHREAD_TIMED(code);
         }
