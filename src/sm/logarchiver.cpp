@@ -265,7 +265,7 @@ void LogArchiver::ReaderThread::run()
 void LogArchiver::WriterThread::run()
 {
     DBGTHRD(<< "Writer thread activated");
-    directory->openNewRun();
+    W_COERCE(directory->openNewRun());
 
     while(true) {
         char const* src = buf->consumerRequest();
@@ -282,9 +282,7 @@ void LogArchiver::WriterThread::run()
              * that all pending blocks are written out before shutdown.
              */
             DBGTHRD(<< "Finished flag set on writer thread");
-            if (maxLSNInRun != lsn_t::null) {
-                W_COERCE(directory->closeCurrentRun(maxLSNInRun));
-            }
+            W_COERCE(directory->closeCurrentRun(maxLSNInRun));
             return; // finished is set on buf
         }
 
@@ -557,8 +555,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
 
         // sort runinfo vector by lsn
         if (runFiles.size() > 0) {
-            archIndex->sortRunVector();
-            archIndex->setLastFinished(runFiles.size() - 1);
+            archIndex->init();
         }
     }
     else {
@@ -636,21 +633,24 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN,
     }
     w_assert1(runEndLSN != lsn_t::null);
 
-    std::stringstream fname;
-    fname << archdir << "/" << LogArchiver::RUN_PREFIX
-        << lastLSN << "-" << runEndLSN;
+    if (lastLSN != runEndLSN) {
+        std::stringstream fname;
+        fname << archdir << "/" << LogArchiver::RUN_PREFIX
+            << lastLSN << "-" << runEndLSN;
 
-    std::string currentFName = archdir + "/" + CURR_RUN_FILE;
-    W_DO(me()->frename(appendFd, currentFName.c_str(), fname.str().c_str()));
+        std::string currentFName = archdir + "/" + CURR_RUN_FILE;
+        W_DO(me()->frename(appendFd, currentFName.c_str(), fname.str().c_str()));
 
-    // register index information and write it on end of file
-    if (archIndex) {
-        archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
+        // register index information and write it on end of file
+        if (archIndex) {
+            archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
+        }
+
+        DBGTHRD(<< "Closing current output run: " << fname.str());
     }
 
     W_DO(me()->close(appendFd));
     appendFd = -1;
-    DBGTHRD(<< "Closed current output run: " << fname.str());
 
     lastLSN = runEndLSN;
 
@@ -810,7 +810,7 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
     }
 
     if (!scanned && stopReading) {
-        DBGTHRD(<< "Replacement reached end LSN on " << nextLSN);
+        DBGTHRD(<< "Consumer reached end LSN on " << nextLSN);
         /*
          * nextLogrec returns false if it is about to read the LSN given in the
          * last argument (endLSN). This means we should stop and not read any
@@ -831,7 +831,7 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
          * nextLogrec returning false with nextLSN != endLSN means that we are
          * suppose to read another block and call the method again.
          */
-        if (lr->type() == logrec_t::t_skip) {
+        if (scanned && lr->type() == logrec_t::t_skip) {
             // Try again if reached skip -- next block should be from next file
             nextLSN = lsn_t(nextLSN.hi() + 1, 0);
             pos = 0;
@@ -1222,7 +1222,7 @@ void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
 
 bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
 {
-    W_IFDEBUG1(stopwatch_t timer);
+    stopwatch_t timer;
 
     if (heap.NumElements() == 0) {
         return false;
@@ -1258,7 +1258,7 @@ bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
         return false;
     }
 
-    W_IFDEBUG1(ADD_TSTAT(la_merge_heap_time, timer.time_us()));
+    ADD_TSTAT(la_merge_heap_time, timer.time_us());
 
     lr = heap.First().lr;
     return true;
@@ -1522,7 +1522,8 @@ bool LogArchiver::processFlushRequest()
             }
 
             // Forcibly close current run to guarantee that LSN is persisted
-            W_COERCE(directory->closeCurrentRun(flushReqLSN));
+            W_COERCE(directory->closeCurrentRun(flushReqLSN,
+                        true /* allowEmpty */));
             W_COERCE(directory->openNewRun());
             blkAssemb->resetWriter();
 
@@ -1666,6 +1667,9 @@ void LogArchiver::run()
 
 bool LogArchiver::requestFlushAsync(lsn_t reqLSN)
 {
+    if (reqLSN == lsn_t::null) {
+        return false;
+    }
     lintel::atomic_thread_fence(lintel::memory_order_acquire);
     if (flushReqLSN != lsn_t::null) {
         return false;
@@ -1873,8 +1877,8 @@ rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
 
     w_assert0(lastLSN == first);
 
-    // check if it isn't and empty run (from truncation)
-    if (lastFinished < (int) runs.size()) {
+    // check if it isn't an empty run (from truncation)
+    if (offset > 0 && lastFinished < (int) runs.size()) {
         lastFinished++;
         runs[lastFinished].firstLSN = first;
         W_DO(serializeRunInfo(runs[lastFinished], fd, offset));
@@ -1971,9 +1975,10 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
     return RCOK;
 }
 
-void LogArchiver::ArchiveIndex::sortRunVector()
+void LogArchiver::ArchiveIndex::init()
 {
     std::sort(runs.begin(), runs.end());
+    lastFinished = runs.size() - 1;
 }
 
 void LogArchiver::ArchiveIndex::appendNewEntry()
@@ -1992,6 +1997,7 @@ rc_t LogArchiver::ArchiveIndex::loadRunInfo(const char* fname)
 {
     RunInfo r;
     W_DO(deserializeRunInfo(r, fname));
+
     runs.push_back(r);
 
     return RCOK;
@@ -2048,11 +2054,13 @@ size_t LogArchiver::ArchiveIndex::findRun(lpid_t endPID, lsn_t lsn)
         result--;
     }
 
+    /*
     if (result == 0 && runs[result].firstLSN > lsn) {
         // looking for an LSN which is not contained in the archive
         // (can only happen if old runs were recycled)
         result = -1;
     }
+    */
 
     if (result >= 0 && endPID != lpid_t::null) {
         // Now go forward pruning with the given pid.  For old segments probing
@@ -2136,7 +2144,8 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result)
     // Assmuptions: mutex is held; run index and pid are set in given result
     size_t index = result->runIndex;
     result->runBegin = runs[index].firstLSN;
-    if ((int) index < lastFinished) { // unfinished runs are unavailable for probes
+    // We already checked that index <= lastFinished in probeFirst/Next
+    if (index < runs.size() - 1) {
         result->runEnd = runs[index + 1].firstLSN;
     }
     else {
@@ -2156,6 +2165,13 @@ ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t startPID,
     if ((int) index > lastFinished) {
         // runs beyond lastFinished are unavailable for probing
         return NULL;
+    }
+
+    while (runs[index].entries.size() == 0) {
+        index++;
+        if ((int) index > lastFinished) {
+            return NULL;
+        }
     }
 
     ProbeResult* result = new ProbeResult();

@@ -226,6 +226,7 @@ public:
             size_t runIndex; // used internally for probeNext
         };
 
+        void init();
 
         void newBlock(lpid_t firstPID);
         rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
@@ -234,7 +235,6 @@ public:
 
         rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
         rc_t loadRunInfo(const char* fname);
-        void sortRunVector();
         void appendNewEntry(/*lpid_t lastPID*/);
 
         void setLastFinished(int f) { lastFinished = f; }
