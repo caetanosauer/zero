@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -76,12 +76,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 *  This is a set of macros for use with C or C++. They give various
 *  levels of debugging printing when compiled with --enable-trace.
 *  With tracing, message printing is under the control of an environment
-*  variable DEBUG_FLAGS (see debug.cpp).  
-*  If that variable is set, its value must 
-*  be  a string.  The string is searched for __FILE__ and the function name 
+*  variable DEBUG_FLAGS (see debug.cpp).
+*  If that variable is set, its value must
+*  be  a string.  The string is searched for __FILE__ and the function name
 *  in which the debugging message occurs.  If either one appears in the
 *  string (value of the env variable), or if the string contains the
-*  word "all", the message is printed.  
+*  word "all", the message is printed.
 *
 *
 **** FUNC(fname)  dumps the function name.
@@ -163,7 +163,7 @@ typedef    ios::fmtflags    w_dbg_fmtflags;
             _w_debug.clog  << __LINE__ << " " << _strip_filename(__FILE__) << ":" ; \
             _w_debug.clog.setf(old, ios::basefield); \
             _w_debug.clog << "return from " << __func__ << flushl; } } while(0); \
-            return 
+            return
 
 #else /* -UW_TRACE */
 #    define FUNC(fn)
@@ -173,8 +173,8 @@ typedef    ios::fmtflags    w_dbg_fmtflags;
 
 /* ************************************************************************  */
 
-/* ************************************************************************  
- * 
+/* ************************************************************************
+ *
  * Class w_debug, macros DBG, DBG_NONL, DBG1, DBG1_NONL:
  */
 
@@ -331,7 +331,7 @@ extern w_debug _w_debug;
         w_dbg_fmtflags old = _w_debug.clog.setf(ios::dec, ios::basefield); \
         _w_debug.clog  << _strip_filename(file) << ":" << line << ":" ; \
         _w_debug.clog.setf(old, ios::basefield); \
-        _w_debug.clog  a    << flushl; 
+        _w_debug.clog  a    << flushl;
 
 #    define DBG1(a) do {\
     if(_w_debug.flag_on(__func__,__FILE__)) {                \
@@ -341,7 +341,7 @@ extern w_debug _w_debug;
 #    define DBG(a) DBG1(a)
 
 #else
-#    define DBG(a) 
+#    define DBG(a)
 #endif *//* defined(W_TRACE) */
 /* ************************************************************************  */
 
