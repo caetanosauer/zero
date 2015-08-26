@@ -514,7 +514,7 @@ void RestoreMgr::singlePassLoop()
     logrec_t* lr = new logrec_t();
     unsigned segment = 0;
     lpid_t pid = lpid_t::null;
-    shpid_t prevPage = shpid_t(0);
+    shpid_t current = firstDataPid;
 
     char* workspace = backup->fix(segment);
     size_t pagesInSegment = 0;
@@ -529,29 +529,28 @@ void RestoreMgr::singlePassLoop()
         timer.reset();
 
         if (getSegmentForPid(pid.page) != segment) {
-            w_assert1((int) pagesInSegment == segmentSize);
             finishSegment(workspace, segment, segmentSize);
             ADD_TSTAT(restore_time_write, timer.time_us());
 
-            char* workspace = backup->fix(segment);
+            segment = getSegmentForPid(pid.page);
+            workspace = backup->fix(segment);
             ADD_TSTAT(restore_time_read, timer.time_us());
 
-            page = (generic_page*) workspace;
-            segment = getSegmentForPid(pid.page);
             pagesInSegment = 0;
+            page = (generic_page*) workspace;
+            current = getPidForSegment(segment);
         }
 
-        if (pid.page != prevPage) {
+        w_assert1(pid.page >= current);
+        while (pid.page > current) {
             // Done with current page -- move to next
             virgin = !volume->is_allocated_page(pid.page);
             if (!virgin) {
                 // Restored pages are always written out with proper checksum.
                 page->checksum = page->calculate_checksum();
             }
-            if (prevPage > 0) {
-                page += pid.page - prevPage;
-            }
-            prevPage = pid.page;
+            page++;
+            current++;
             pagesInSegment++;
         }
 
@@ -586,6 +585,9 @@ void RestoreMgr::singlePassLoop()
         finishSegment(workspace, segment, segmentSize);
         ADD_TSTAT(restore_time_write, timer.time_us());
     }
+
+    // signalize that we're done
+    numRestoredPages = numPages;
 }
 
 void RestoreMgr::restoreLoop()
