@@ -304,7 +304,11 @@ extern w_debug _w_debug;
 #define DBGOUT9(a)
 #endif
 
-#else 
+#define DBG1(a) DBGOUT1(a)
+#define DBG3(a) DBGOUT3(a)
+#define DBG5(a) DBGOUT5(a)
+
+#else
 
 #define DBGOUT1(a)
 #define DBGOUT2(a)

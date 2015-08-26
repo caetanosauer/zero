@@ -990,6 +990,17 @@ operator<<(ostream& o, const logrec_t& l)
     }
 
     switch(l.type()) {
+        case t_chkpt_xct_tab:
+            {
+                chkpt_xct_tab_t* dp = (chkpt_xct_tab_t*) l.data();
+                o << " xct_count: " << dp->count;
+                break;
+            }
+        case t_chkpt_bf_tab:
+            {
+                chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) l.data();
+                o << " dirty_page_count: " << dp->count;
+            }
         case t_comment :
                 {
                     o << (const char *)l._data;
