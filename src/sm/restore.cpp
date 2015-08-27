@@ -590,6 +590,102 @@ void RestoreMgr::singlePassLoop()
     numRestoredPages = numPages;
 }
 
+void RestoreMgr::restoreSegment(char* workspace,
+        LogArchiver::ArchiveScanner::RunMerger* merger, shpid_t firstPage)
+{
+    stopwatch_t timer;
+
+    generic_page* page = (generic_page*) workspace;
+    fixable_page_h fixable;
+    shpid_t current = firstPage;
+    shpid_t prevPage = 0;
+    size_t redone = 0;
+    bool virgin = false;
+    unsigned segment = getSegmentForPid(firstPage);
+
+    logrec_t* lr;
+    while (merger->next(lr)) {
+        DBGOUT4(<< "Would restore " << *lr);
+
+        lpid_t lrpid = lr->construct_pid();
+        w_assert1(lrpid.vol() == volume->vid());
+        w_assert1(lrpid.page >= firstPage);
+        w_assert1(lrpid.page >= prevPage);
+
+        ADD_TSTAT(restore_log_volume, lr->length());
+
+        while (lrpid.page > current) {
+            // Done with current page -- move to next
+            virgin = !volume->is_allocated_page(current);
+            if (!virgin) {
+                // Restored pages are always written out with proper checksum.
+                page->checksum = page->calculate_checksum();
+            }
+            current++;
+            page++;
+
+            if (getSegmentForPid(current) != segment) {
+                // Time to move to a new segment (multiple-segment restore)
+                ADD_TSTAT(restore_time_replay, timer.time_us());
+
+                finishSegment(workspace, segment, current - firstPage);
+                ADD_TSTAT(restore_time_write, timer.time_us());
+
+                segment = getSegmentForPid(lrpid.page);
+                workspace = backup->fix(segment);
+                ADD_TSTAT(restore_time_read, timer.time_us());
+
+                page = (generic_page*) workspace;
+                current = getPidForSegment(segment);
+                firstPage = current;
+            }
+        }
+
+        w_assert1(lrpid.page < firstPage + segmentSize);
+
+        if (virgin) { continue; }
+
+        w_assert1(page->pid.page == 0 || page->pid.page == current);
+
+        if (!fixable.is_fixed() || fixable.pid().page != lrpid.page) {
+            // PID is manually set for virgin pages
+            // this guarantees correct redo of multi-page logrecs
+            if (page->pid != lrpid) {
+                page->pid = lrpid;
+            }
+            fixable.setup_for_restore(page);
+        }
+
+        if (lr->lsn_ck() <= page->lsn) {
+            // update may already be reflected on page
+            continue;
+        }
+
+        w_assert1(page->pid == lrpid);
+        w_assert1(lr->page_prev_lsn() == lsn_t::null ||
+                lr->page_prev_lsn() == page->lsn);
+
+        lr->redo(&fixable);
+        fixable.update_initial_and_last_lsn(lr->lsn_ck());
+        fixable.update_clsn(lr->lsn_ck());
+
+        prevPage = lrpid.page;
+        redone++;
+
+        virgin = false;
+    }
+
+    // current should point to the first not-restored page (excl. bound)
+    if (redone > 0) { // i.e., something was restored
+        current++;
+    }
+
+    ADD_TSTAT(restore_time_replay, timer.time_us());
+
+    finishSegment(workspace, segment, current - firstPage);
+    ADD_TSTAT(restore_time_write, timer.time_us());
+}
+
 void RestoreMgr::restoreLoop()
 {
     LogArchiver::ArchiveScanner logScan(archive);
@@ -610,8 +706,10 @@ void RestoreMgr::restoreLoop()
 
         timer.reset();
 
+        // FOR EACH SEGMENT
         unsigned segment = getSegmentForPid(requested);
         shpid_t firstPage = getPidForSegment(segment);
+        size_t segmentCount = 1;
 
         if (firstPage > lastUsedPid) {
             DBG(<< "Restored finished on last used page ID " << lastUsedPid);
@@ -621,41 +719,100 @@ void RestoreMgr::restoreLoop()
 
         lpid_t start = lpid_t(volume->vid(), firstPage);
         lpid_t end = lpid_t(volume->vid(), firstPage + segmentSize);
+        lsn_t backupLSN = volume->get_backup_lsn();
 
-        lsn_t lsn = lsn_t::null;
-        char* workspace = backup->fix(segment);
-
-        if (useBackup) {
-            // Log archiver is queried with lowest the LSN in the segment, to
-            // guarantee that all required log records will be retrieved in one
-            // query. If one page is particularly old (an outlier), then the
-            // query will fetch too many log records which won't be replayed.
-            // We need to think of optimizations for this scenario, e.g.,
-            // performing multiple queries for subsets of pages of the same
-            // segment.
+        /* CS TODO:
+         * This optimization is incompatible with our current scheme of
+         * restoring multiple segments, because the LSN must be determined when
+         * opening the scan, but only after opening the scan do we know if we
+         * are restoring multiple segments or not; so there is a cyclic
+         * dependence. We could just fetch the first segment and use it to
+         * determine the minLN, but if it turns out we can restore multiple
+         * segments, we have to potentially re-fetch an earlier segment. Leave
+         * the optimization out for now and think of a better solution later.
+         */
+#if 0
+        {
+            /*
+             * minLSN is the highest LSN which guarantees that all logs required to
+             * correclty replay updates on the given segment have a higher LSN. It
+             * is used to determine where the log scan should begin. In this "if"
+             * block, we try to increase minLSN by looking at each pageLSN in the
+             * segment. If this is a fairly recent segment, chances are we can
+             * start the scan much later than the given (pessimistic) minLSN.
+             */
+            lsn_t minPageLSN = lsn_t::null;
             generic_page* page = (generic_page*) workspace;
-            for (int i = 0; i < segmentSize; i++, page++) {
+            shpid_t p = firstPage;
+            for (size_t i = 0; i < numPages; i++, page++, p++) {
                 // If page ID does not match, we consider it a virgin page
-                if (page->pid.page != firstPage + i) {
+                if (!volume->is_allocated_page(p)) {
                     continue;
                 }
-                if (lsn == lsn_t::null || page->lsn < lsn) {
-                    lsn = page->lsn;
+                if (minPageLSN == lsn_t::null || page->lsn < minPageLSN) {
+                    minPageLSN = page->lsn;
                 }
             }
-            lsn_t backupLSN = volume->get_backup_lsn();
-            if (backupLSN > lsn) { lsn = backupLSN; }
+            if (minPageLSN > backupLSN) {
+                backupLSN = minPageLSN;
+            }
         }
-
-        ADD_TSTAT(restore_time_read, timer.time_us());
+#endif
 
         LogArchiver::ArchiveScanner::RunMerger* merger =
-            logScan.open(start, end, lsn);
+            logScan.open(start, end, backupLSN);
+
+        if (merger) {
+            // Adjust start and finish points of log archiver scan, in the
+            // hope that we can restore multiple segments with a single block
+            // from each run.
+            // CS TODO: this trick only works if we assume all log records
+            // belong to the same volume! Otherwise we have to adjust the
+            // PID retriever methods in merger to consider only a given vid.
+
+            // largest of the first (sometimes second) PIDs found in each block
+            lpid_t maxStartPID = merger->getHighestFirstPID();
+            lpid_t minLastPID = merger->getLowestLastPID();
+
+            // We must start on the segment border which comes after the given
+            // PID or exactly at it
+            unsigned segmentsBegin = getSegmentForPid(maxStartPID.page);
+            if (getPidForSegment(segmentsBegin) < maxStartPID.page) {
+                segmentsBegin++;
+            }
+            unsigned segmentsEnd = getSegmentForPid(minLastPID.page);
+
+            if (minLastPID.vol() == maxStartPID.vol() &&
+                    segmentsEnd > segmentsBegin + 1)
+            {
+                // optimization is worth -- we can restore more than one segment
+                vid_t vid = minLastPID.vol();
+                shpid_t pidBegin = getPidForSegment(segmentsBegin);
+                shpid_t pidEnd = getPidForSegment(segmentsEnd);
+
+                merger->advanceToPID(lpid_t(vid, pidBegin));
+                merger->setEndPID(lpid_t(vid, pidEnd));
+
+                segmentCount = segmentsEnd - segmentsBegin;
+                segment = segmentsBegin;
+                firstPage = pidBegin;
+
+                INC_TSTAT(restore_multiple_segments);
+            }
+            else {
+                merger->advanceToPID(start);
+            }
+        }
 
         DBGOUT3(<< "RunMerger opened with " << merger->heapSize() << " runs"
-                << " starting on LSN " << lsn);
+                << " for " << segmentCount << " segments starting on LSN "
+                << backupLSN);
 
         ADD_TSTAT(restore_time_openscan, timer.time_us());
+
+        char* workspace = backup->fix(segment);
+
+        ADD_TSTAT(restore_time_read, timer.time_us());
 
         if (!merger) {
             // segment does not need any log replay
@@ -665,13 +822,11 @@ void RestoreMgr::restoreLoop()
             continue;
         }
 
-        size_t pagesRestored = restoreSegment(workspace, merger, firstPage);
+        DBG(<< "Restoring segment " << getSegmentForPid(firstPage)
+                << "(pages " << firstPage << " - "
+                << firstPage + segmentSize << ")");
 
-        ADD_TSTAT(restore_time_replay, timer.time_us());
-
-        finishSegment(workspace, segment, pagesRestored);
-
-        ADD_TSTAT(restore_time_write, timer.time_us());
+        restoreSegment(workspace, merger, firstPage);
 
         delete merger;
     }
@@ -680,6 +835,7 @@ void RestoreMgr::restoreLoop()
             << " pages restored");
 }
 
+#if 0
 size_t RestoreMgr::restoreSegment(char* workspace,
         LogArchiver::ArchiveScanner::RunMerger* merger,
         shpid_t firstPage)
@@ -760,6 +916,7 @@ size_t RestoreMgr::restoreSegment(char* workspace,
 
     return current - firstPage;
 }
+#endif
 
 void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
 {

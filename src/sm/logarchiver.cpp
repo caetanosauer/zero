@@ -1148,7 +1148,7 @@ bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
     }
 
     lr = (logrec_t*) (buffer + bpos);
-    w_assert1(lr->valid_header(lr->lsn_ck()));
+    w_assert1(lr->valid_header());
 
     if (lastPID != lpid_t::null && lr->pid() >= lastPID) {
         // end of scan
@@ -1172,29 +1172,27 @@ LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
     lpid_t startPID = runScan->firstPID;
     // bring scanner up to starting point
     logrec_t* next = NULL;
-    bool hasNext = false;
-    bool matches = false;
-    do {
-        hasNext = runScan->next(next);
-        if (hasNext) {
-            matches = next->construct_pid() >= startPID;
+    if (runScan->next(next)) {
+        lr = next;
+        lsn = lr->lsn();
+        pid = lr->pid();
+        active = true;
+
+        // Advance to second PID to guarantee that all log records of the
+        // retrieved PID are on this block (and maybe after)
+        if (pid != startPID) {
+            bool hasNext = true;
+            while (hasNext && lr->pid() == pid) {
+                hasNext = runScan->next(lr);
+            }
+            if (hasNext) {
+                pid = lr->pid();
+                lsn = lr->lsn();
+            }
+            else { active = false; }
         }
-    } while (!matches && hasNext);
-
-    // if all PIDs are lower than search criterion, run is not needed
-    if (!hasNext)
-    {
-        active = false;
-        return;
     }
-
-    lr = next;
-    lsn = lr->lsn_ck();
-    pid = lr->construct_pid();
-
-    w_assert1(lr->valid_header());
-    w_assert1(!active || startPID <= pid);
-    w_assert1(!active || startPID == lpid_t::null || startPID.vol() == pid.vol());
+    else { active = false; }
 }
 
 void LogArchiver::ArchiveScanner::MergeHeapEntry::moveToNext()
@@ -1208,15 +1206,68 @@ void LogArchiver::ArchiveScanner::MergeHeapEntry::moveToNext()
     }
 }
 
+lpid_t LogArchiver::ArchiveScanner::MergeHeapEntry::lastPIDinBlock()
+{
+    logrec_t* tmp = lr;
+    logrec_t* prev = lr;
+    while ((char*) tmp < runScan->buffer + runScan->blockEnd) {
+        prev = tmp;
+        w_assert0(tmp->length() > 0);
+        tmp = (logrec_t*) (((char*) tmp) + tmp->length());
+    }
+    return prev->pid();
+}
+
+void LogArchiver::ArchiveScanner::RunMerger::setEndPID(lpid_t endPID)
+{
+    for (int i = 0; i < heap.NumElements(); i++) {
+        MergeHeapEntry& entry = heap.Value(i);
+        entry.runScan->lastPID = endPID;
+    }
+}
+
 void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
 {
     w_assert0(!started);
     MergeHeapEntry entry(r);
-    if (entry.active) {
-        heap.AddElementDontHeapify(entry);
+    heap.AddElementDontHeapify(entry);
+}
+
+lpid_t LogArchiver::ArchiveScanner::RunMerger::getHighestFirstPID()
+{
+    lpid_t highestPID = lpid_t::null;
+    for (int i = 0; i < heap.NumElements(); i++) {
+        MergeHeapEntry& entry = heap.Value(i);
+        if (entry.pid > highestPID) {
+            highestPID = entry.pid;
+        }
     }
-    else {
-        delete entry.runScan;
+
+    return highestPID;
+}
+
+lpid_t LogArchiver::ArchiveScanner::RunMerger::getLowestLastPID()
+{
+    lpid_t lowestPID = lpid_t::null;
+    for (int i = 0; i < heap.NumElements(); i++) {
+        MergeHeapEntry& entry = heap.Value(i);
+        if (!entry.active) { continue; }
+
+        lpid_t pid = entry.lastPIDinBlock();
+        if (pid < lowestPID || lowestPID.is_null()) {
+            lowestPID = pid;
+        }
+    }
+    return lowestPID;
+}
+
+void LogArchiver::ArchiveScanner::RunMerger::advanceToPID(lpid_t pid)
+{
+    for (int i = 0; i < heap.NumElements(); i++) {
+        MergeHeapEntry& entry = heap.Value(i);
+        while (entry.pid < pid && entry.active) {
+            entry.moveToNext();
+        }
     }
 }
 
@@ -1880,6 +1931,7 @@ rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
     // check if it isn't an empty run (from truncation)
     if (offset > 0 && lastFinished < (int) runs.size()) {
         lastFinished++;
+        w_assert1(lastFinished < (int) runs.size());
         runs[lastFinished].firstLSN = first;
         W_DO(serializeRunInfo(runs[lastFinished], fd, offset));
     }
@@ -1945,11 +1997,14 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
     size_t indexBlockCount = 0;
     size_t dataBlockCount = 0;
     W_DO(getBlockCounts(fd, &indexBlockCount, &dataBlockCount));
+    w_assert1(dataBlockCount == 0 || dataBlockCount > indexBlockCount);
 
     fileoff_t offset = dataBlockCount * blockSize;
+    w_assert1(dataBlockCount == 0 || offset > 0);
+    fileoff_t lastOffset = 0;
 
     while (indexBlockCount > 0) {
-        W_DO(me()->pread(fd, readBuffer, blockSize, offset));
+        W_COERCE(me()->pread(fd, readBuffer, blockSize, offset));
         BlockHeader* h = (BlockHeader*) readBuffer;
 
         unsigned j = 0;
@@ -1957,8 +2012,10 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
         while(j < h->entries)
         {
             BlockEntry* e = (BlockEntry*)(readBuffer + bpos);
+            w_assert1(lastOffset == 0 || e->offset > lastOffset);
             run.entries.push_back(*e);
 
+            lastOffset = e->offset;
             bpos += sizeof(BlockEntry);
             j++;
         }
@@ -1978,7 +2035,7 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
 void LogArchiver::ArchiveIndex::init()
 {
     std::sort(runs.begin(), runs.end());
-    lastFinished = runs.size() - 1;
+    lastFinished = runs.size() - 2;
 }
 
 void LogArchiver::ArchiveIndex::appendNewEntry()
@@ -2062,9 +2119,10 @@ size_t LogArchiver::ArchiveIndex::findRun(lpid_t endPID, lsn_t lsn)
     }
     */
 
+    /*
     if (result >= 0 && endPID != lpid_t::null) {
         // Now go forward pruning with the given pid.  For old segments probing
-        // against new runs, endPID of segmend will likely be less than the
+        // against new runs, endPID of segment will likely be less than the
         // first PID in the runs, meaning the run can be pruned.
         while (result <= lastFinished &&
                 endPID < runs[result].entries[0].pid)
@@ -2075,6 +2133,8 @@ size_t LogArchiver::ArchiveIndex::findRun(lpid_t endPID, lsn_t lsn)
             result = -1;
         }
     }
+    */
+    (void) endPID;
 
     // caller must check if returned index is valid
     return result >= 0 ? result : runs.size();
@@ -2151,6 +2211,9 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result)
     else {
         result->runEnd = lastLSN;
     }
+    // Here, instead of doing a binary search for the given pid, we have to
+    // retrieve the lowest PID in the block which allows full restore from
+    // then given LSN
     result->offset = findEntry(&runs[index], result->pid);
 }
 

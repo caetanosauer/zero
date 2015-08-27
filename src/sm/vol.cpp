@@ -1143,6 +1143,8 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     // Maximum LSN which is guaranteed to be reflected in the backup
     lsn_t backupLSN = ss_m::logArchiver->getDirectory()->getLastLSN();
 
+    DBG1(<< "Taking backup until LSN " << backupLSN);
+
     // Instantiate special restore manager for taking backup
     RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
             this, useBackup, true /* takeBackup */);
@@ -1165,6 +1167,8 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
         W_DO(me()->close(_backup_write_fd));
         _backup_write_fd = -1;
     }
+
+    DBG1(<< "Finished taking backup");
 
     return RCOK;
 }

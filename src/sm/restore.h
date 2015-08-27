@@ -224,7 +224,7 @@ protected:
      * Returns the number of pages that were restored in the segment. It may be
      * less than the segment size when the last segment is restored.
      */
-    size_t restoreSegment(char* workspace,
+    void restoreSegment(char* workspace,
             LogArchiver::ArchiveScanner::RunMerger* merger,
             shpid_t firstPage);
 
