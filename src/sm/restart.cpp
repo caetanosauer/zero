@@ -300,12 +300,22 @@ restart_m::restart(
         // Using locks - M3 - M5
         restart_with_lock = true;
     }
+    
+    //analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap,
+    //                       commit_lsn, last_lsn, restart_with_lock, lock_heap1);
+    
 
-    analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap,
-                           commit_lsn, last_lsn, restart_with_lock, lock_heap1);
+    log_analysis(master, restart_with_lock, redo_lsn, undo_lsn, commit_lsn, last_lsn, in_doubt_count, loser_heap, lock_heap1);
+    /*
+    redo_lsn = cp.min_rec_lsn;
+    undo_lsn = cp.min_xct_lsn;
+    w_assert0(in_doubt_count == cp.pid.size());
+    w_assert0(loser_heap.NumElements() == cp.tid.size());
+    w_assert0(redo_lsn == cp.min_rec_lsn);
+    w_assert0(undo_lsn == cp.min_xct_lsn);
+    */
     // LL: we guess they will always be the same
-    w_assert1(undo_lsn == commit_lsn);
-/**/
+    //w_assert1(undo_lsn == commit_lsn);
 
     struct timeval tm_after;
     gettimeofday( &tm_after, NULL );
@@ -550,6 +560,104 @@ restart_m::restart(
         // responsible of changing the 'operating_mode' to 'smlevel_0::t_forward_processing',
         // because caller is doing some mounting/dismounting devices, we change
         // the 'operating_mode' only after the device mounting operations are done.
+    }
+}
+
+void restart_m::log_analysis(
+    const lsn_t         master,
+    bool                restart_with_lock,
+    lsn_t&              redo_lsn,
+    lsn_t&              undo_lsn,
+    lsn_t&              commit_lsn,
+    lsn_t&              last_lsn,
+    uint32_t&           in_doubt_count,
+    XctPtrHeap&         loser_heap, 
+    XctLockHeap&        lock_heap)
+{
+    FUNC(restart_m::log_analysis);
+    
+    AutoTurnOffLogging turnedOnWhenDestroyed;
+    smlevel_0::operating_mode = smlevel_0::t_in_analysis;
+
+    last_lsn = log->curr_lsn();
+    chkpt_t v_chkpt;    // virtual checkpoint (not going to be written to log)
+
+    /* Scan the log backward, from the most current lsn (last_lsn) until 
+     * master lsn or first completed checkpoint (might not be the same).
+     * Returns a chkpt_t object with all required information to initialize
+     * the other data structures. */
+    smlevel_0::chkpt->backward_scan_log(master, last_lsn, v_chkpt, restart_with_lock);
+
+    redo_lsn = v_chkpt.min_rec_lsn;
+    undo_lsn = v_chkpt.min_xct_lsn;
+    if(v_chkpt.min_xct_lsn == master) {
+        commit_lsn = lsn_t::null;
+    }
+    else{
+        commit_lsn = v_chkpt.min_xct_lsn; // or master?
+    }
+
+    //Re-load buffer
+    for (uint i=0; i<v_chkpt.pid.size(); i++) {
+        bf_idx idx = 0;
+        w_rc_t rc = RCOK;
+
+        rc = smlevel_0::bf->register_and_mark(idx, v_chkpt.pid[i],
+                                                v_chkpt.store[i],
+                                                v_chkpt.rec_lsn[i].data() /*first_lsn*/,
+                                                v_chkpt.page_lsn[i].data() /*last_lsn*/,
+                                                in_doubt_count);
+        
+        if (rc.is_error()) {
+            // Not able to get a free block in buffer pool without evict, cannot continue
+            W_FATAL_MSG(fcINTERNAL, << "Failed to record an in_doubt page in t_chkpt_bf_tab during Log Analysis" << rc);
+        }
+        w_assert1(0 != idx);
+    }
+
+    //Re-create transactions
+    xct_t::update_youngest_tid(v_chkpt.youngest);
+    for(uint i=0; i<v_chkpt.tid.size(); i++) {
+        xct_t* xd = new xct_t(NULL,               // stats
+                        WAIT_SPECIFIED_BY_THREAD, // default timeout value
+                        false,                    // sys_xct
+                        false,                    // single_log_sys_xct
+                        v_chkpt.tid[i],
+                        v_chkpt.last_lsn[i],      // last_LSN
+                        v_chkpt.undo_nxt[i],      // next_undo
+                        true);                    // loser_xct, set to true for recovery
+
+        xd->set_first_lsn(v_chkpt.first_lsn[i]); // Set the first LSN of the in-flight transaction
+        xd->set_last_lsn(v_chkpt.last_lsn[i]);   // Set the last lsn in the transaction
+
+        // Loser transaction
+        if (true == use_serial_restart())
+            loser_heap.AddElementDontHeapify(xd);
+    }
+    if (true == use_serial_restart()) {
+        loser_heap.Heapify();
+    }
+
+    //Re-acquire locks
+    if(restart_with_lock) {
+        for(uint i=0; i<v_chkpt.tid.size(); i++) {
+            xct_t* xd = xct_t::look_up(v_chkpt.tid[i]);
+            for(uint j=0; j<v_chkpt.lock_hash[i].size(); j++) {
+                _re_acquire_lock(lock_heap, v_chkpt.lock_mode[i][j], v_chkpt.lock_hash[i][j], xd);
+            }
+        }
+    }
+
+    //Re-mount devices
+    smlevel_0::vol->set_next_vid(v_chkpt.next_vid);
+    for (uint i=0; i<v_chkpt.dev_paths.size(); i++) {
+        smlevel_0::vol->sx_mount(v_chkpt.dev_paths[i].c_str(), false /* log */);
+    }
+
+    //Re-add backups
+    for (uint i=0; i<v_chkpt.backup_vids.size(); i++) {
+        smlevel_0::vol->sx_add_backup(v_chkpt.backup_vids[i],
+                                      v_chkpt.backup_paths[i], false /* log */);
     }
 }
 
