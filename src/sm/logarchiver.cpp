@@ -1265,11 +1265,14 @@ lpid_t LogArchiver::ArchiveScanner::RunMerger::getLowestLastPID()
 
 void LogArchiver::ArchiveScanner::RunMerger::advanceToPID(lpid_t pid)
 {
+    w_assert0(!started);
     for (int i = 0; i < heap.NumElements(); i++) {
         MergeHeapEntry& entry = heap.Value(i);
         while (entry.pid < pid && entry.active) {
             entry.moveToNext();
         }
+        DBG3(<< "Heap entry advanced to pid " << entry.pid
+                << " with LSN " << entry.lsn);
     }
 }
 

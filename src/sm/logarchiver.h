@@ -527,7 +527,8 @@ public:
                     const MergeHeapEntry& e)
             {
                 os << "[run " << *(e.runScan) << ", " << e.pid << ", " << e.lsn <<
-                    ", logrec :" << *(e.lr) << ")]";
+                    " active= " << e.active <<
+                    ", logrec: " << *(e.lr) << ")]";
                 return os;
             }
         };
