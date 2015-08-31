@@ -511,80 +511,9 @@ void RestoreMgr::singlePassLoop()
         return;
     }
 
-    logrec_t* lr = new logrec_t();
     unsigned segment = 0;
-    lpid_t pid = lpid_t::null;
-    shpid_t current = firstDataPid;
-
     char* workspace = backup->fix(segment);
-    size_t pagesInSegment = 0;
-    bool virgin = false;
-
-    generic_page* page = (generic_page*) workspace;
-    fixable_page_h fixable;
-
-    while (merger->next(lr)) {
-        DBGOUT4(<< "Would restore " << *lr);
-        pid = lr->pid();
-        timer.reset();
-
-        if (getSegmentForPid(pid.page) != segment) {
-            finishSegment(workspace, segment, segmentSize);
-            ADD_TSTAT(restore_time_write, timer.time_us());
-
-            segment = getSegmentForPid(pid.page);
-            workspace = backup->fix(segment);
-            ADD_TSTAT(restore_time_read, timer.time_us());
-
-            pagesInSegment = 0;
-            page = (generic_page*) workspace;
-            current = getPidForSegment(segment);
-        }
-
-        w_assert1(pid.page >= current);
-        while (pid.page > current) {
-            // Done with current page -- move to next
-            virgin = !volume->is_allocated_page(pid.page);
-            if (!virgin) {
-                // Restored pages are always written out with proper checksum.
-                page->checksum = page->calculate_checksum();
-            }
-            page++;
-            current++;
-            pagesInSegment++;
-        }
-
-        if (virgin) { continue; }
-
-        if (!fixable.is_fixed() || fixable.pid().page != pid.page) {
-            // PID is manually set for virgin pages
-            // this guarantees correct redo of multi-page logrecs
-            if (page->pid != pid) {
-                page->pid = pid;
-            }
-            fixable.setup_for_restore(page);
-        }
-
-        if (lr->lsn_ck() <= page->lsn) {
-            // update may already be reflected on page
-            continue;
-        }
-
-        w_assert1(page->pid == pid);
-        w_assert1(lr->page_prev_lsn() == lsn_t::null ||
-                lr->page_prev_lsn() == page->lsn);
-
-        lr->redo(&fixable);
-        fixable.update_initial_and_last_lsn(lr->lsn_ck());
-        fixable.update_clsn(lr->lsn_ck());
-
-        ADD_TSTAT(restore_time_replay, timer.time_us());
-    }
-
-    if (pagesInSegment > 0) {
-        finishSegment(workspace, segment, segmentSize);
-        ADD_TSTAT(restore_time_write, timer.time_us());
-    }
+    restoreSegment(workspace, merger, firstDataPid);
 
     // signalize that we're done
     numRestoredPages = numPages;
