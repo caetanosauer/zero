@@ -2179,11 +2179,30 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
         DBGOUT1(<< "Checkpoint request: synch");
     }
 
-    w_assert1(0 == lock_heap.NumElements());
+    if (!ss_m::log) {
+        return; // recovery facilities disabled ... do nothing
+    }
+
+    /*
+     * Checkpoints are fuzzy but must be serialized wrt each other.
+     *
+     * Acquire the 'write' mutex immediatelly to serialize concurrent checkpoint requests.
+     *
+     * NB: EVERYTHING BETWEEN HERE AND RELEASING THE MUTEX
+     * MUST BE W_COERCE (not W_DO).
+     *
+     * The W_COERCE is like W_DO(x), but instead of returning in the error
+     * case, it fails catastrophically.
+     * It is used in checkpoint function because
+     *   Checkpoint has no means to return error information
+     */
+    chkpt_serial_m::write_acquire();
+    DBGOUT1(<<"BEGIN chkpt_m::dcpld_take");
 
     INC_TSTAT(log_chkpt_cnt);
 
     // Start the initial validation check for make sure the incoming checkpoint request is valid
+    bool valid_chkpt = true;
     {
         if (ss_m::log && _chkpt_thread)
         {
@@ -2192,14 +2211,14 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
             if (true == _chkpt_thread->is_retired())
             {
                 DBGOUT1(<<"END chkpt_m::take - detected retire, skip checkpoint");
-                return;
+                valid_chkpt = false;
             }
         }
         else if ((ss_m::shutting_down) && (t_chkpt_async == chkpt_mode))
         {
             // No asynch checkpoint if we are shutting down
             DBGOUT1(<<"END chkpt_m::take - detected shutdown, skip asynch checkpoint");
-            return;
+            valid_chkpt = false;
         }
         else if ((ss_m::shutting_down) && (t_chkpt_sync == chkpt_mode))
         {
@@ -2212,7 +2231,7 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
             if (ss_m::before_recovery())
             {
                 DBGOUT1(<<"END chkpt_m::take - before system startup/recovery, skip checkpoint");
-                return;
+                valid_chkpt = false;
             }
             else if (ss_m::ss_m::in_recovery() && (t_chkpt_sync != chkpt_mode))
             {
@@ -2222,13 +2241,13 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
                     // System opened after Log Analysis phase, allow asynch checkpoint
                     // after Log Analysis phase
                     if (ss_m::ss_m::in_recovery_analysis())
-                        return;
+                        valid_chkpt = false;
                 }
                 else
                 {
                     // System is not opened during recovery
                     DBGOUT1(<<"END chkpt_m::take - system in recovery, skip asynch checkpoint");
-                    return;
+                    valid_chkpt = false;
                 }
             }
             else if (ss_m::in_recovery() && (t_chkpt_sync == chkpt_mode))
@@ -2249,7 +2268,7 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
                     else
                     {
                         DBGOUT1(<<"END chkpt_m::take - system in REDO phase, disallow checkpoint");
-                        return;
+                        valid_chkpt = false;
                     }
                 }
             }
@@ -2259,7 +2278,7 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
                 if (true == ss_m::in_recovery())
                 {
                     DBGOUT1(<<"END chkpt_m::take - system should not be in Recovery, exist checkpoint");
-                    return;
+                    valid_chkpt = false;
                 }
                 else
                 {
@@ -2274,25 +2293,19 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
                 }
             }
         }
-    } //End Verify if checkpoint can be taken.
+    }
 
-    /*
-     * Checkpoints are fuzzy but must be serialized wrt each other.
-     *
-     * Acquire the 'write' mutex immediatelly to serialize concurrent checkpoint requests.
-     *
-     * NB: EVERYTHING BETWEEN HERE AND RELEASING THE MUTEX
-     * MUST BE W_COERCE (not W_DO).
-     *
-     * The W_COERCE is like W_DO(x), but instead of returning in the error
-     * case, it fails catastrophically.
-     * It is used in checkpoint function because
-     *   Checkpoint has no means to return error information
-     */
-    chkpt_serial_m::write_acquire();
-    DBGOUT1(<<"BEGIN chkpt_m::dcpld_take");
+     // Done with the checkpoint validation, should we continue?
+    if (!valid_chkpt) {
+        // Failed the checkpoint validation, release the 'write' mutex and exist
+        chkpt_serial_m::write_release();
+        return;
+    }
 
+
+    // Allocate a buffer for storing log records
     w_auto_delete_t<logrec_t> logrec(new logrec_t);
+
 #define LOG_INSERT(constructor_call, rlsn)            \
     do {                                              \
         new (logrec) constructor_call;                \
