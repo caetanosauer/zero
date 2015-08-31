@@ -350,9 +350,9 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
     w_assert0(begin_lsn >= master_lsn);
 
     new_chkpt.begin_lsn = begin_lsn;
-    new_chkpt.min_xct_lsn = lsn_t::null;
-    new_chkpt.min_rec_lsn = lsn_t::null;
-    new_chkpt.next_vid = 0;
+    new_chkpt.min_xct_lsn = begin_lsn;
+    new_chkpt.min_rec_lsn = begin_lsn;
+    new_chkpt.next_vid = 1;
 
     if (master_lsn == lsn_t::null) {
         // The only possibility that we have a NULL as master lsn is due to a brand new
@@ -874,18 +874,14 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
 
     // Calculate min_rec_lsn. It is the smallest lsn from all dirty pages.
     for(uint i=0; i<new_chkpt.rec_lsn.size(); i++) {
-        if(new_chkpt.min_rec_lsn == lsn_t::null ||
-            new_chkpt.min_rec_lsn > new_chkpt.rec_lsn[i])
-        {
+        if(new_chkpt.min_rec_lsn > new_chkpt.rec_lsn[i]) {
             new_chkpt.min_rec_lsn = new_chkpt.rec_lsn[i];
         }
     }
 
     // Calculate min_xct_lsn. It is the smallest lsn from loser transactions.
     for(uint i=0; i<new_chkpt.first_lsn.size(); i++) {
-        if(new_chkpt.min_xct_lsn == lsn_t::null ||
-            new_chkpt.min_xct_lsn > new_chkpt.first_lsn[i])
-        {
+        if(new_chkpt.min_xct_lsn > new_chkpt.first_lsn[i]) {
             new_chkpt.min_xct_lsn = new_chkpt.first_lsn[i];
         }
     }
@@ -2331,8 +2327,8 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
               new_chkpt.tid.size() == new_chkpt.undo_nxt.size() &&
               new_chkpt.tid.size() == new_chkpt.first_lsn.size());
 
-    if (new_chkpt.pid.size() == 0) w_assert1(new_chkpt.min_rec_lsn == lsn_t::null);
-    if (new_chkpt.tid.size() == 0) w_assert1(new_chkpt.min_xct_lsn == lsn_t::null);
+    //if (new_chkpt.pid.size() == 0) w_assert1(new_chkpt.min_rec_lsn == begin_lsn);
+    //if (new_chkpt.tid.size() == 0) w_assert1(new_chkpt.min_xct_lsn == begin_lsn);
     //==========================================================================
 
 
