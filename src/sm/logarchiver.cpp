@@ -440,10 +440,12 @@ lsn_t LogArchiver::ArchiveDirectory::parseLSN(const char* str, bool end)
     const char* lpos = strchr(hpos, '.') + 1;
 
     char* hstr = new char[11]; // the highest 32-bit integer has 10 digits
+    memset(hstr, 0, 11);
     strncpy(hstr, hpos, lpos - hpos - 1);
     char* lstr = (char*) lpos;
     if (!end) {
         lstr = new char[11];
+        memset(lstr, 0, 11);
         const char* lend = strchr(lpos, '-');
         strncpy(lstr, lpos, lend - lpos);
     }
