@@ -177,7 +177,7 @@ private:
     char _logrec_buf[128];
 
     rc_t mount(const char* devname, bool truncate = false);
-    rc_t dismount(bool bf_uninstall = true, bool abrupt = false);
+    rc_t dismount(bool abrupt = false);
 
     /** Methods to create and destroy _alloc_cache and _stnode_cache */
     void clear_caches();

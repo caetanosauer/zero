@@ -303,7 +303,7 @@ void vol_t::redo_segment_restore(unsigned segment)
     _restore_mgr->markSegmentRestored(segment, true /* redo */);
 }
 
-rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
+rc_t vol_t::dismount(bool abrupt)
 {
     spinlock_write_critical_section cs(&_mutex);
 
@@ -312,7 +312,7 @@ rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
     INC_TSTAT(vol_cache_clears);
 
     w_assert1(_unix_fd >= 0);
-    if (bf_uninstall && smlevel_0::bf) { // might have shut down already
+    if (smlevel_0::bf) { // might have shut down already
         W_DO(smlevel_0::bf->uninstall_volume(!abrupt /* clear_cb */));
     }
 
@@ -402,7 +402,7 @@ rc_t vol_t::sx_add_backup(string path, bool redo)
 void vol_t::shutdown(bool abrupt)
 {
     // bf_uninstall causes a force on the volume through the bf_cleaner
-    W_COERCE(dismount(!abrupt /* uninstall */, abrupt));
+    W_COERCE(dismount(abrupt));
 }
 
 rc_t vol_t::alloc_a_page(PageID& shpid, bool redo)
