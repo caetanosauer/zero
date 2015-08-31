@@ -307,9 +307,9 @@ void chkpt_m::synch_take()
         CmpXctLockTids   lock_cmp;
         XctLockHeap      dummy_heap(lock_cmp);
 
-        //take(t_chkpt_sync, dummy_heap);
-        dcpld_take(t_chkpt_sync, dummy_heap);
+        take(t_chkpt_sync, dummy_heap);
         w_assert1(0 == dummy_heap.NumElements());
+        //dcpld_take(t_chkpt_sync);
     }
     return;
 }
@@ -342,8 +342,8 @@ void chkpt_m::synch_take(XctLockHeap& lock_heap)
 *  corresponding to the latest completed checkpoint.
 *
 *********************************************************************/
-void chkpt_m::backward_scan_log(lsn_t& master_lsn,
-                                lsn_t& begin_lsn,
+void chkpt_m::backward_scan_log(const lsn_t master_lsn,
+                                const lsn_t begin_lsn,
                                 chkpt_t& new_chkpt,
                                 const bool restart_with_lock)
 {
@@ -2171,9 +2171,7 @@ void chkpt_m::_analysis_process_txn_table(chkpt_t& new_chkpt)
     return;
 }
 
-void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
-                         XctLockHeap& lock_heap,  // In: special heap to hold lock information
-                         const bool record_lock)  // In: True if need to record lock information into the heap
+void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
 {
     if (t_chkpt_async == chkpt_mode) {
         DBGOUT1(<< "Checkpoint request: asynch");
@@ -3472,9 +3470,9 @@ chkpt_thread_t::run()
 
         // No need to acquire checkpoint mutex before calling the checkpoint operation
         // Asynch checkpoint should never record lock information
-        ss_m::chkpt->dcpld_take(chkpt_m::t_chkpt_async, dummy_heap);
-        //ss_m::chkpt->take(chkpt_m::t_chkpt_async, dummy_heap);
+        ss_m::chkpt->take(chkpt_m::t_chkpt_async, dummy_heap);
         w_assert1(0 == dummy_heap.NumElements());
+        //ss_m::chkpt->dcpld_take(chkpt_m::t_chkpt_async);
     }
 }
 
