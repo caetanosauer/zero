@@ -450,6 +450,17 @@ public:
 private:
 
     // Shared by all restart modes
+    static void                 log_analysis(
+        const lsn_t             master,
+        bool                    restart_with_lock,
+        lsn_t&                  redo_lsn,
+        lsn_t&                  undo_lsn,
+        lsn_t&                  commit_lsn,
+        lsn_t&                  last_lsn,
+        uint32_t&               in_doubt_count,
+        XctPtrHeap&             loser_heap, 
+        XctLockHeap&            lock_heap
+    );
 
     // Forward log scan without lock acquisition and use commit_lsn (M2)
     // Warning: currently this forward scan Log Analysis is NOT beging used,

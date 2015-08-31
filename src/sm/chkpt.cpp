@@ -1591,6 +1591,9 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
     {
         // Store operation, such as create or delete a store, set store parameters, etc.
         // Transaction should not be created for this log because there is no tid
+        if(lsn < new_chkpt.min_rec_lsn) {
+            new_chkpt.min_rec_lsn = lsn;
+        }
     }
 
     if ((r.tid() != tid_t::null) && (xct_idx != -1))
