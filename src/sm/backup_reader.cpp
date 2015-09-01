@@ -278,6 +278,10 @@ void BackupPrefetcher::run()
         DBGOUT3(<< "Prefetching segment " << next);
         // perform the read into the slot found
         shpid_t firstPage = shpid_t(next * segmentSize) + firstDataPid;
+        if (firstPage >= volume->num_pages()) {
+            return;
+        }
+
         INC_TSTAT(restore_backup_reads);
         W_COERCE(volume->read_backup(firstPage, segmentSize, readSlot));
 

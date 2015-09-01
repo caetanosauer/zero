@@ -114,6 +114,8 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
         options.get_bool_option("sm_restore_sched_ondemand", true);
     randomOrder =
         options.get_bool_option("sm_restore_sched_random", false);
+    prefetchWindow =
+        options.get_int_option("sm_restore_prefetcher_window", 3);
 
     if (!onDemand) {
         // override single-pass option
@@ -134,8 +136,10 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
     }
 
     if (!onDemand) {
-        // prefetch first segment
-        restore->getBackup()->prefetch(firstSegment, 0 /* priority */);
+        // prefetch first segments
+        for (size_t i = 0; i < prefetchWindow; i++) {
+            restore->getBackup()->prefetch(firstSegment + i, 0 /* priority */);
+        }
     }
 }
 
@@ -161,7 +165,6 @@ shpid_t RestoreScheduler::next()
     }
     else if (trySinglePass) {
         BackupReader* backup = restore->getBackup();
-        size_t prefetchWindow = 2; // TODO make option for this
 
         if (randomOrder) {
             next = randomSegments[currentRandomSegment]
@@ -314,7 +317,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
         }
         else if (backupImpl == BackupPrefetcher::IMPL_NAME) {
             int numSegments = options.get_int_option(
-                    "sm_backup_prefetcher_segments", 3);
+                    "sm_backup_prefetcher_segments", 10);
             w_assert0(numSegments > 0);
             backup = new BackupPrefetcher(volume, numSegments, segmentSize);
             dynamic_cast<BackupPrefetcher*>(backup)->fork();
@@ -567,6 +570,14 @@ void RestoreMgr::restoreSegment(char* workspace,
                 page = (generic_page*) workspace;
                 current = getPidForSegment(segment);
                 firstPage = current;
+
+                // if doing offline restore, prefetch manually
+                if (!scheduler->isOnDemand()) {
+                    for (size_t i = 0; i < scheduler->getPrefetchWindow(); i++)
+                    {
+                        backup->prefetch(segment + i + 1, 0);
+                    }
+                }
             }
         }
 

@@ -304,6 +304,8 @@ public:
 
     bool isOnDemand() { return onDemand; }
 
+    unsigned getPrefetchWindow() { return prefetchWindow; }
+
 protected:
     RestoreMgr* restore;
 
@@ -316,6 +318,8 @@ protected:
     bool onDemand;
     /// Perform single-pass scheduling in random order instead of sequential
     bool randomOrder;
+    /// Number of segments to prefetch with sequential scheduling
+    unsigned prefetchWindow;
 
     size_t numPages;
 
