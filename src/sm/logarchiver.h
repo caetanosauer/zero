@@ -215,20 +215,23 @@ public:
      */
     class ArchiveIndex {
     public:
-        ArchiveIndex(size_t blockSize, lsn_t startLSN);
+        ArchiveIndex(size_t blockSize, lsn_t startLSN, size_t bucketSize = 0);
         virtual ~ArchiveIndex();
 
         struct ProbeResult {
             lpid_t pid;
             lsn_t runBegin;
             lsn_t runEnd;
-            fileoff_t offset;
+            size_t offset;
+            size_t stopOffset;
             size_t runIndex; // used internally for probeNext
         };
 
         void init();
 
         void newBlock(lpid_t firstPID);
+        void newBlock(vector<pair<lpid_t, size_t> > buckets);
+
         rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
         ProbeResult* probeFirst(lpid_t startPID, lpid_t endPID, lsn_t lsn);
         void probeNext(ProbeResult*& prev, lsn_t endLSN = lsn_t::null);
@@ -238,10 +241,13 @@ public:
         void appendNewEntry(/*lpid_t lastPID*/);
 
         void setLastFinished(int f) { lastFinished = f; }
+        size_t getBucketSize() { return bucketSize; }
+
+        void dumpIndex(ostream& out);
 
     private:
         struct BlockEntry {
-            fileoff_t offset;
+            size_t offset;
             lpid_t pid;
         };
         struct BlockHeader {
@@ -274,6 +280,18 @@ public:
         char* writeBuffer;
         char* readBuffer;
         int lastFinished;
+
+        /** Whether this index uses variable-sized buckets, i.e., entries in
+         * the index refer to fixed ranges of page ID for which the amount of
+         * log records is variable. The number gives the size of a bucket in
+         * terms of number of page ID's (or segment size in the restore case).
+         * If this is zero, then the index behaves like a B-tree, in which a
+         * bucket corresponds to a block, therefore having fixed sizes (but
+         * variable number of log records, obviously).
+         */
+        size_t bucketSize;
+        // number of blocks in current run (used by variable buckets only)
+        size_t blocksInCurrentRun;
 
         size_t findRun(lpid_t endPID, lsn_t lsn);
         void probeInRun(ProbeResult*);
@@ -309,7 +327,7 @@ public:
     class ArchiveDirectory {
     public:
         ArchiveDirectory(std::string archdir, size_t blockSize,
-                bool createIndex = true);
+                size_t bucketSize = 0);
         virtual ~ArchiveDirectory();
 
         lsn_t getStartLSN() { return startLSN; }
@@ -325,7 +343,7 @@ public:
 
         // run scanning methods
         rc_t openForScan(int& fd, lsn_t runBegin, lsn_t runEnd);
-        rc_t readBlock(int fd, char* buf, fileoff_t& offset);
+        rc_t readBlock(int fd, char* buf, size_t& offset, size_t readSize = 0);
         rc_t closeScan(int& fd);
 
         rc_t listFiles(std::vector<std::string>* list);
@@ -439,11 +457,20 @@ public:
         ArchiveIndex* archIndex;
         size_t blockSize;
         size_t pos;
+
         lpid_t firstPID;
         // lpid_t lastPID;
         lsn_t maxLSNInBlock;
         int maxLSNLength;
         int lastRun;
+
+        // if using a variable-bucket index, this is the number of page IDs
+        // that will be stored within a bucket (aka restore's segment)
+        size_t bucketSize;
+        // list of buckets beginning in the current block
+        vector<pair<lpid_t, size_t> > buckets;
+        // number of the nex bucket to be indexed
+        size_t nextBucket;
     public:
         struct BlockHeader {
             uint8_t run;
@@ -480,8 +507,9 @@ public:
             const lsn_t runEnd;
             lpid_t firstPID;
             lpid_t lastPID;
+            size_t stopOffset;
 
-            fileoff_t offset;
+            size_t offset;
             char* buffer;
             size_t bpos;
             size_t blockEnd;
@@ -489,11 +517,17 @@ public:
             int fd;
             size_t blockCount;
 
+            size_t bucketSize;
+
             RunScanner(lsn_t b, lsn_t e, lpid_t f, lpid_t l, fileoff_t o,
                     ArchiveDirectory* directory);
             virtual ~RunScanner();
 
             bool next(logrec_t*& lr);
+
+            void setStopOffset(size_t offset) {
+                stopOffset = offset;
+            }
 
             friend std::ostream& operator<< (ostream& os, const RunScanner& m);
 

@@ -289,7 +289,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     reuseRestoredBuffer =
         options.get_bool_option("sm_restore_reuse_buffer", false);
     tryMultipleSegments =
-        options.get_bool_option("sm_restore_multiple_segments", true);
+        options.get_bool_option("sm_restore_multiple_segments", false);
 
     DO_PTHREAD(pthread_mutex_init(&restoreCondMutex, NULL));
     DO_PTHREAD(pthread_cond_init(&restoreCond, NULL));
@@ -482,7 +482,7 @@ void RestoreMgr::restoreMetadata()
     logrec_t* lr;
     while (merger->next(lr)) {
         lpid_t lrpid = lr->construct_pid();
-        w_assert1(lrpid.vol() == volume->vid());
+        // w_assert1(lrpid.vol() == volume->vid());
         w_assert1(lrpid.page < firstDataPid);
         lr->redo(NULL);
     }
