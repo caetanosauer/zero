@@ -288,6 +288,8 @@ RestoreMgr::RestoreMgr(const sm_options& options,
 
     reuseRestoredBuffer =
         options.get_bool_option("sm_restore_reuse_buffer", false);
+    tryMultipleSegments =
+        options.get_bool_option("sm_restore_multiple_segments", true);
 
     DO_PTHREAD(pthread_mutex_init(&restoreCondMutex, NULL));
     DO_PTHREAD(pthread_cond_init(&restoreCond, NULL));
@@ -703,56 +705,62 @@ void RestoreMgr::restoreLoop()
             logScan.open(start, end, backupLSN);
 
         if (merger) {
-            DBG3(<< "Attempting multiple-segment restore on segment "
-                    << segment << " (pids " << start << "-" << end << ")");
-            // Adjust start and finish points of log archiver scan, in the
-            // hope that we can restore multiple segments with a single block
-            // from each run.
-            // CS TODO: this trick only works if we assume all log records
-            // belong to the same volume! Otherwise we have to adjust the
-            // PID retriever methods in merger to consider only a given vid.
+            if (tryMultipleSegments) {
+                DBG3(<< "Attempting multiple-segment restore on segment "
+                        << segment << " (pids " << start << "-" << end << ")");
+                // Adjust start and finish points of log archiver scan, in the
+                // hope that we can restore multiple segments with a single
+                // block
+                // from each run.
+                // CS TODO: this trick only works if we assume all log records
+                // belong to the same volume! Otherwise we have to adjust the
+                // PID retriever methods in merger to consider only a given vid
 
-            // largest of the first (sometimes second) PIDs found in each block
-            lpid_t maxStartPID = merger->getHighestFirstPID();
-            lpid_t minLastPID = merger->getLowestLastPID();
+                // largest of the first (sometimes 2nd) PIDs found in each block
+                lpid_t maxStartPID = merger->getHighestFirstPID();
+                lpid_t minLastPID = merger->getLowestLastPID();
 
-            DBG3(<< "Maximum start PID on opened LA blocks is " << maxStartPID);
-            DBG3(<< "Minimum end PID on opened LA blocks is " << minLastPID);
+                DBG3(<< "Maximum start PID on opened LA blocks is "
+                        << maxStartPID);
+                DBG3(<< "Minimum end PID on opened LA blocks is "
+                        << minLastPID);
 
-            // We must start on the segment border which comes after the given
-            // PID or exactly at it
-            unsigned segmentsBegin = getSegmentForPid(maxStartPID.page);
-            if (getPidForSegment(segmentsBegin) < maxStartPID.page) {
-                segmentsBegin++;
-            }
-            unsigned segmentsEnd = getSegmentForPid(minLastPID.page);
+                // We must start on the segment border which comes after the given
+                // PID or exactly at it
+                unsigned segmentsBegin = getSegmentForPid(maxStartPID.page);
+                if (getPidForSegment(segmentsBegin) < maxStartPID.page) {
+                    segmentsBegin++;
+                }
+                unsigned segmentsEnd = getSegmentForPid(minLastPID.page);
 
-            if (minLastPID.vol() == maxStartPID.vol() &&
-                    segmentsEnd > segmentsBegin + 1)
-            {
-                // optimization is worth -- we can restore more than one segment
-                // with a single block form each run
-                vid_t vid = minLastPID.vol();
-                shpid_t pidBegin = getPidForSegment(segmentsBegin);
-                shpid_t pidEnd = getPidForSegment(segmentsEnd);
-                segmentCount = segmentsEnd - segmentsBegin;
+                if (minLastPID.vol() == maxStartPID.vol() &&
+                        segmentsEnd > segmentsBegin + 1)
+                {
+                    // optimization is worth -- we can restore more than one
+                    // segment with a single block form each run
+                    vid_t vid = minLastPID.vol();
+                    shpid_t pidBegin = getPidForSegment(segmentsBegin);
+                    shpid_t pidEnd = getPidForSegment(segmentsEnd);
+                    segmentCount = segmentsEnd - segmentsBegin;
 
-                DBG3(<< "Applying multiple-segment restore for " << segmentCount
-                        << " segments starting on " << segment
-                        << " (pids " << pidBegin << "-" << pidEnd << ")");
+                    DBG3(<< "Applying multiple-segment restore for "
+                            << segmentCount << " segments starting on "
+                            << segment << " (pids " << pidBegin << "-" << pidEnd
+                            << ")");
 
-                // pidEnd is the first PID of the segment which cannot be
-                // restored because part of it is beyond the first block (i.e.,
-                // "to the right"), so it's where the scan should stop
-                // (exclusive boundary). It must be set before advancing to the
-                // first PID.
-                merger->setEndPID(lpid_t(vid, pidEnd));
-                merger->advanceToPID(lpid_t(vid, pidBegin));
+                    // pidEnd is the first PID of the segment which cannot be
+                    // restored because part of it is beyond the first block
+                    // (i.e., "to the right"), so it's where the scan should
+                    // stop (exclusive boundary). It must be set before
+                    // advancing to the first PID.
+                    merger->setEndPID(lpid_t(vid, pidEnd));
+                    merger->advanceToPID(lpid_t(vid, pidBegin));
 
-                segment = segmentsBegin;
-                firstPage = pidBegin;
+                    segment = segmentsBegin;
+                    firstPage = pidBegin;
 
-                INC_TSTAT(restore_multiple_segments);
+                    INC_TSTAT(restore_multiple_segments);
+                }
             }
             else {
                 merger->advanceToPID(start);

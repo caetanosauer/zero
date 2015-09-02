@@ -178,6 +178,12 @@ protected:
      */
     bool instantRestore;
 
+    /** \brief Whether to try restore of multiple segments with a single log
+     * archive scan. This should be beneficial for cases where a single log
+     * archiver log spans a large PID range
+     */
+    bool tryMultipleSegments;
+
     /** \brief LSN of restore_begin log record, indicating at which LSN the
      * volume failure was detected. At startup, we must wait until this LSN
      * is made available in the archiver to avoid lost updates.
