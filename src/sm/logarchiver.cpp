@@ -2275,8 +2275,9 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
 
     if (from > to) {
         if (from == 0) {
-            // Queried pid lower than first in run. Just return first entry.
-            return run->entries[0].offset;
+            // Queried pid lower than first in run. Just return begin of file.
+            // return run->entries[0].offset;
+            return 0;
         }
         // Queried pid is greater than last in run.  This should not happen
         // because probes must not consider this run if that's the case
@@ -2337,10 +2338,14 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result)
     else {
         result->runEnd = lastLSN;
     }
-    // Here, instead of doing a binary search for the given pid, we have to
-    // retrieve the lowest PID in the block which allows full restore from
-    // then given LSN
-    result->offset = findEntry(&runs[index], result->pid);
+
+    if (result->pid.is_null()) {
+        // scan form beginning
+        result->offset = 0;
+    }
+    else {
+        result->offset = findEntry(&runs[index], result->pid);
+    }
 }
 
 ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t startPID,
