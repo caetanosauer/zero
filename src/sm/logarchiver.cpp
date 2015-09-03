@@ -681,8 +681,6 @@ rc_t LogArchiver::ArchiveDirectory::openForScan(int& fd, lsn_t runBegin,
 rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
         size_t& offset, size_t readSize)
 {
-    INC_TSTAT(la_block_reads);
-
     stopwatch_t timer;
 
     if (readSize == 0) { readSize = blockSize; }
@@ -713,6 +711,7 @@ rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
     }
 
     ADD_TSTAT(la_read_time, timer.time_us());
+    ADD_TSTAT(la_read_volume, readSize);
 
     offset += readSize;
     return RCOK;
