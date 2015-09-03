@@ -193,8 +193,11 @@ bool
 logrec_t::valid_header(const lsn_t & lsn) const
 {
     if (header._len < (is_single_sys_xct() ? hdr_single_sys_xct_sz : hdr_non_ssx_sz)
-        || header._type > 100 || cat() == t_bad_cat ||
-        (lsn != lsn_t::null && lsn != *_lsn_ck())) {
+        || header._type >= logrec_t::t_max_logrec
+        || cat() == t_bad_cat
+        || header._len > sizeof(logrec_t)
+        || (lsn != lsn_t::null && lsn != *_lsn_ck()))
+    {
         return false;
     }
     return true;
