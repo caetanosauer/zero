@@ -97,7 +97,6 @@ class log_m;
 class log_core;
 class lock_m;
 class LogArchiver;
-class ArchiveMerger;
 class ticker_thread_t;
 
 class tid_t;
@@ -577,7 +576,6 @@ public:
     static log_m* log;
     static log_core* clog;
     static LogArchiver* logArchiver;
-    static ArchiveMerger* archiveMerger;
 
     static ticker_thread_t* _ticker;
 

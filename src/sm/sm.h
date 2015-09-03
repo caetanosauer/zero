@@ -1780,7 +1780,6 @@ public:
     static restart_phase_t in_UNDO();
 
     static rc_t            activate_archiver();
-    static rc_t            activate_merger();
 
     static const sm_options& get_options() { return _options; }
 

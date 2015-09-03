@@ -156,7 +156,6 @@ bf_tree_m* smlevel_0::bf = 0;
 log_m* smlevel_0::log = 0;
 log_core* smlevel_0::clog = 0;
 LogArchiver* smlevel_0::logArchiver = 0;
-ArchiveMerger* smlevel_0::archiveMerger = 0;
 
 lock_m* smlevel_0::lm = 0;
 
@@ -466,13 +465,6 @@ ss_m::_construct_once()
         if (archiving) {
             logArchiver = new LogArchiver(_options);
             logArchiver->fork();
-
-            bool merging = _options.get_bool_option("sm_async_merging", false);
-            if (merging)
-            {
-                archiveMerger = new ArchiveMerger(_options);
-                archiveMerger->fork();
-            }
         }
     } else {
         /* Run without logging at your own risk. */
@@ -1510,16 +1502,6 @@ ss_m::activate_archiver()
     }
     return RCOK;
 }
-
-rc_t
-ss_m::activate_merger()
-{
-    if (archiveMerger) {
-        archiveMerger->activate(false);
-    }
-    return RCOK;
-}
-
 
 rc_t ss_m::force_buffers() {
     return bf->force_all();
