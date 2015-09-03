@@ -709,6 +709,9 @@ rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
     if (diff > 0) {
         memmove(buf, buf + diff, readSize);
     }
+    if (readSize < blockSize) {
+        memset(buf + readSize, 0, blockSize - readSize);
+    }
 
     ADD_TSTAT(la_read_time, timer.time_us());
     ADD_TSTAT(la_read_volume, readSize);
