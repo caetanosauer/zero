@@ -125,6 +125,8 @@ public:
         { _resv->release_space(howmuch); }
     virtual rc_t                wait_for_space(fileoff_t &amt, int32_t timeout)
         { return _resv->wait_for_space(amt, timeout); }
+    virtual bool           verify_chkpt_reservation()
+        { return _resv->verify_chkpt_reservation(); }
     virtual fileoff_t           consume_chkpt_reservation(fileoff_t howmuch)
         { return _resv->consume_chkpt_reservation(howmuch); }
     virtual void                activate_reservations()

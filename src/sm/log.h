@@ -250,6 +250,7 @@ public:
     virtual fileoff_t           reserve_space(fileoff_t howmuch) = 0;
     virtual void                release_space(fileoff_t howmuch) = 0;
     virtual rc_t                wait_for_space(fileoff_t &amt, int32_t timeout) = 0;
+    virtual bool                verify_chkpt_reservation() = 0;
     virtual fileoff_t           consume_chkpt_reservation(fileoff_t howmuch) = 0;
     virtual void                activate_reservations()  = 0;
 

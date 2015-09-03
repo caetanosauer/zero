@@ -2302,6 +2302,12 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
         return;
     }
 
+    // Verifies if there is enough space to insert the maximum lenght of a chkpt
+    // in the log.
+    if(!ss_m::log->verify_chkpt_reservation()) {
+        chkpt_serial_m::write_release();
+        W_FATAL(eOUTOFLOGSPACE);
+    }
 
     // Allocate a buffer for storing log records
     w_auto_delete_t<logrec_t> logrec(new logrec_t);
@@ -2668,6 +2674,13 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
         // Failed the checkpoint validation, release the 'write' mutex and exist
         chkpt_serial_m::write_release();
         return;
+    }
+
+    // Verifies if there is enough space to insert the maximum lenght of a chkpt
+    // in the log.
+    if(!ss_m::log->verify_chkpt_reservation()) {
+        chkpt_serial_m::write_release();
+        W_FATAL(eOUTOFLOGSPACE);
     }
 
     // We are okay to proceed with the checkpoint process
