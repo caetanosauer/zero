@@ -1167,16 +1167,16 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
         if (directory->getIndex()) {
             directory->getIndex()->getBlockCounts(fd, NULL, &blockCount);
         }
-        w_assert1(offset / blockSize < blockCount);
     }
 
     // do not read past data blocks into index blocks
-    if (blockCount > 0 &&
-            (offset / blockSize) >= blockCount)
+    if (blockCount == 0 || (offset / blockSize) >= blockCount)
     {
         W_COERCE(directory->closeScan(fd));
         return false;
     }
+
+    w_assert1(offset / blockSize < blockCount);
 
     /* In the variable-bucket index, offsets are not necessarily multiples
      * of the block size, so we always have to adjust the read size. We
@@ -2212,6 +2212,7 @@ rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
     }
     if (dataBlocks) {
         *dataBlocks = (fsize / blockSize) - (header->blockNumber + 1);
+        w_assert1(*dataBlocks > 0);
     }
     free(buffer);
 
@@ -2232,7 +2233,7 @@ size_t LogArchiver::ArchiveIndex::findRun(lpid_t endPID, lsn_t lsn)
      */
     w_assert1(lastFinished >= 0);
     int result = lastFinished;
-    while (result > 0 && runs[result].firstLSN >= lsn) {
+    while (result > 0 && runs[result].firstLSN > lsn) {
         result--;
     }
 
