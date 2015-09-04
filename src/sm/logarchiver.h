@@ -512,7 +512,6 @@ public:
             size_t offset;
             char* buffer;
             size_t bpos;
-            size_t blockEnd;
             ArchiveDirectory* directory;
             int fd;
             size_t blockCount;

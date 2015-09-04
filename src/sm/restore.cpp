@@ -619,6 +619,7 @@ void RestoreMgr::restoreSegment(char* workspace,
 
     // current should point to the first not-restored page (excl. bound)
     if (redone > 0) { // i.e., something was restored
+        DBG(<< "Replayed " << redone << " log records");
         current++;
     }
 
@@ -654,7 +655,7 @@ void RestoreMgr::restoreLoop()
         size_t segmentCount = 1;
 
         if (firstPage > lastUsedPid) {
-            DBG(<< "Restored finished on last used page ID " << lastUsedPid);
+            DBG(<< "Restore finished on last used page ID " << lastUsedPid);
             numRestoredPages = numPages;
             break;
         }
@@ -1005,7 +1006,8 @@ void RestoreMgr::run()
         usleep(1000); // 1 ms
     }
 
-    restoreMetadata();
+    // restoreMetadata();
+    metadataRestored = true;
 
     if (instantRestore) {
         restoreLoop();

@@ -2120,7 +2120,7 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
 void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t* stores,
                              lsn_t *rec_lsn, lsn_t *page_lsn, lsn_t &min_rec_lsn,
                              const lsn_t master, const lsn_t current_lsn,
-                             lsn_t last_mount_lsn)
+                             lsn_t /*last_mount_lsn*/)
 {
     // Only used by checkpoint to gather dirty page information
     // Caller is the checkpoint operation which is holding a 'write' mutex',

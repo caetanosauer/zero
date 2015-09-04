@@ -13,9 +13,6 @@
 
 #include "stopwatch.h"
 
-// needed for skip_log
-//#include "logdef_gen.cpp"
-
 typedef mem_mgmt_t::slot_t slot_t;
 
 // definition of static members
@@ -28,6 +25,9 @@ const size_t LogArchiver::MAX_LOGREC_SIZE = 3 * log_storage::BLOCK_SIZE;
 // We could try using 512 (typical hard drive sector) at some point,
 // but none of this is actually standardized or portable
 const size_t LogArchiver::IO_ALIGN = 512;
+
+#include "logdef_gen.cpp"
+baseLogHeader SKIP_LOGREC;
 
 ArchiverControl::ArchiverControl(bool* shutdownFlag)
     : endLSN(lsn_t::null), activated(false), listening(false), shutdownFlag(shutdownFlag)
@@ -560,6 +560,12 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
     if (runFiles.size() > 0) {
         archIndex->init();
     }
+
+    // CS TODO this should be initialized statically, but whatever...
+    memset(&SKIP_LOGREC, 0, sizeof(baseLogHeader));
+    SKIP_LOGREC._len = sizeof(baseLogHeader);
+    SKIP_LOGREC._type = logrec_t::t_skip;
+    SKIP_LOGREC._cat = 1; // t_status is protected...
 }
 
 LogArchiver::ArchiveDirectory::~ArchiveDirectory()
@@ -709,9 +715,9 @@ rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
     if (diff > 0) {
         memmove(buf, buf + diff, readSize);
     }
-    if (readSize < blockSize) {
-        memset(buf + readSize, 0, blockSize - readSize);
-    }
+    // if (readSize < blockSize) {
+    //     memset(buf + readSize, 0, blockSize - readSize);
+    // }
 
     ADD_TSTAT(la_read_time, timer.time_us());
     ADD_TSTAT(la_read_volume, readSize);
@@ -986,7 +992,8 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
 {
     w_assert0(dest);
 
-    if (lr->length() > blockSize - pos) {
+    size_t available = blockSize - (sizeof(baseLogHeader) + pos);
+    if (lr->length() > available) {
         return false;
     }
 
@@ -1059,9 +1066,8 @@ void LogArchiver::BlockAssembly::finish(int run)
      */
     h->lsn = maxLSNInBlock.advance(maxLSNLength);
 
-    // required for variable buckets to know where block ends
-    // CS TODO -- use skip logrec and remove blockEnd
-    memset(dest + pos, 0, blockSize - pos);
+    w_assert1(blockSize - pos >= sizeof(baseLogHeader));
+    memcpy(dest + pos, &SKIP_LOGREC, sizeof(baseLogHeader));
 
 #if W_DEBUG_LEVEL>=3
     // verify that all log records are within end boundary
@@ -1137,7 +1143,6 @@ LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
     posix_memalign((void**) &buffer, IO_ALIGN, directory->getBlockSize());
     // buffer = new char[directory->getBlockSize()];
     bpos = 0;
-    blockEnd = 0;
 
     if (directory->getIndex()) {
         bucketSize = directory->getIndex()->getBucketSize();
@@ -1146,6 +1151,9 @@ LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
         bucketSize = 0;
     }
     stopOffset = 0;
+
+    // skip tells first next invocation to read first block
+    memcpy(buffer, &SKIP_LOGREC, sizeof(baseLogHeader));
 }
 
 LogArchiver::ArchiveScanner::RunScanner::~RunScanner()
@@ -1199,7 +1207,6 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
         }
 
         bpos = (offset % blockSize == 0) ? blockSize : 0;
-        blockEnd = blockSize;
     }
 
     // offset is updated by readBlock
@@ -1213,9 +1220,6 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
 
     if (bucketSize == 0 || bpos == blockSize) {
         bpos = sizeof(BlockAssembly::BlockHeader);
-        blockEnd = BlockAssembly::getEndOfBlock(buffer);
-        w_assert1(blockEnd > bpos);
-        w_assert1(blockEnd <= blockSize);
     }
 
     return true;
@@ -1223,28 +1227,13 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
 
 bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
 {
-    if (bpos >= blockEnd) {
-        if (!nextBlock()) {
-            return false;
-        }
-    }
-
     lr = (logrec_t*) (buffer + bpos);
-
-    // Trick to deal with variable-bucket scans
-    // CS TODO - use skip logrec
-    if (bucketSize > 0 &&
-            // if there is no space for a minimal log record
-            (bpos >= directory->getBlockSize() - sizeof(baseLogHeader)
-             // or if contents are zero
-              || lr->length() == 0))
-    {
+    while (lr->type() == logrec_t::t_skip) {
         if (!nextBlock()) {
             return false;
         }
         lr = (logrec_t*) (buffer + bpos);
     }
-
 
     w_assert1(lr->valid_header());
 
@@ -1308,7 +1297,7 @@ lpid_t LogArchiver::ArchiveScanner::MergeHeapEntry::lastPIDinBlock()
 {
     logrec_t* tmp = lr;
     logrec_t* prev = lr;
-    while ((char*) tmp < runScan->buffer + runScan->blockEnd) {
+    while (tmp->type() != logrec_t::t_skip) {
         prev = tmp;
         w_assert0(tmp->length() > 0);
         tmp = (logrec_t*) (((char*) tmp) + tmp->length());
