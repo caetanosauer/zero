@@ -223,6 +223,13 @@ public:
 
     lsn_t get_backup_lsn();
 
+    /** Turn on write elision (i.e., ignore all writes from now on) */
+    void set_readonly(bool r)
+    {
+        spinlock_write_critical_section cs(&_mutex);
+        _readonly = r;
+    }
+
     /** Take a backup on the given file path. */
     rc_t take_backup(string path, bool forceArchive = false);
 
@@ -266,6 +273,14 @@ private:
 
     /** Set to simulate a failed device for Restore **/
     bool             _failed;
+
+    /** Writes are ignored and old page versions are kept.  This means that
+     * clean status on buffer pool is invalid, and thus single-page recovery is
+     * required when reading page back.  Due to a current bug on the page
+     * cleaner, this is already the case anyway. I.e., write elision is already
+     * taking place due to the bug. If readonly is set, all writes are elided.
+     */
+    bool             _readonly;
 
     /** Restore Manager is activated when volume has failed */
     RestoreMgr*      _restore_mgr;

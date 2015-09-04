@@ -320,7 +320,8 @@ vol_t::vol_t()
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
                _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL),
-               _failed(false), _restore_mgr(NULL), _backup_fd(-1),
+               _failed(false), _readonly(false),
+               _restore_mgr(NULL), _backup_fd(-1),
                _current_backup_lsn(lsn_t::null), _backup_write_fd(-1)
 {}
 
@@ -1212,6 +1213,11 @@ inline rc_t vol_t::write_page(shpid_t pnum, generic_page& page)
 rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt,
         bool ignoreRestore)
 {
+    if (_readonly) {
+        // Write elision!
+        return RCOK;
+    }
+
     /** CS: If volume has failed, writes are suspended until the area being
      * written to is fully restored. This is required to avoid newer versions
      * of a page (which are written from the buffer pool with this method call)
