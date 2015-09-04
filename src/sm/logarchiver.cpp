@@ -29,6 +29,8 @@ const size_t LogArchiver::IO_ALIGN = 512;
 #include "logdef_gen.cpp"
 baseLogHeader SKIP_LOGREC;
 
+typedef LogArchiver::ArchiveIndex::ProbeResult ProbeResult;
+
 ArchiverControl::ArchiverControl(bool* shutdownFlag)
     : endLSN(lsn_t::null), activated(false), listening(false), shutdownFlag(shutdownFlag)
 {
@@ -1091,8 +1093,9 @@ void LogArchiver::BlockAssembly::shutdown()
     writer->join();
 }
 
-LogArchiver::ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory)
-    : directory(directory), archIndex(directory->getIndex())
+LogArchiver::ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory,
+        size_t ioUnit)
+    : directory(directory), archIndex(directory->getIndex()), ioUnit(ioUnit)
 {
     if (!archIndex) {
         W_FATAL_MSG(fcINTERNAL,
@@ -1105,23 +1108,30 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
         lsn_t startLSN, lsn_t endLSN)
 {
     RunMerger* merger = new RunMerger();
+    vector<ProbeResult> probes;
 
     // probe for runs
     ArchiveIndex::ProbeResult* runProbe =
         archIndex->probeFirst(startPID, endPID, startLSN);
 
     while (runProbe) {
+        probes.push_back(*runProbe);
+        archIndex->probeNext(runProbe, endLSN);
+    }
+
+    delete runProbe;
+
+    for (size_t i = 0; i < probes.size(); i++) {
         RunScanner* runScanner = new RunScanner(
-                runProbe->runBegin,
-                runProbe->runEnd,
+                probes[i].runBegin,
+                probes[i].runEnd,
                 startPID,
                 endPID,
-                runProbe->offset,
+                probes[i].offsetBegin,
                 directory
         );
 
         merger->addInput(runScanner);
-        archIndex->probeNext(runProbe, endLSN);
     }
 
     if (merger->heapSize() == 0) {
@@ -2257,17 +2267,14 @@ size_t LogArchiver::ArchiveIndex::findRun(lpid_t endPID, lsn_t lsn)
     return result >= 0 ? result : runs.size();
 }
 
-smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
+size_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
         lpid_t pid, int from, int to)
 {
     // Assumption: mutex is held by caller
 
-    // binary search for page ID within run
-
     if (from > to) {
         if (from == 0) {
-            // Queried pid lower than first in run. Just return begin of file.
-            // return run->entries[0].offset;
+            // Queried pid lower than first in run
             return 0;
         }
         // Queried pid is greater than last in run.  This should not happen
@@ -2276,14 +2283,14 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
                 << " PID = " << pid << " run = " << run->firstLSN);
     }
 
+    // negative value indicates first invocation
+    if (to < 0) { to = run->entries.size() - 1; }
+    if (from < 0) { from = 0; }
+
     w_assert1(run);
     w_assert1(run->entries.size() > 0);
 
-    if (to < 0) { // negative value indicates first invocation
-        from = 0;
-        to = run->entries.size() - 1;
-    }
-
+    // binary search for page ID within run
     size_t i;
     if (from == to) {
         i = from;
@@ -2303,7 +2310,7 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
         {
             i--;
         }
-        return run->entries[i].offset;
+        return i;
     }
 
     // not found: recurse down
@@ -2315,12 +2322,13 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
     }
 }
 
-typedef LogArchiver::ArchiveIndex::ProbeResult ProbeResult;
-
 void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result)
 {
     // Assmuptions: mutex is held; run index and pid are set in given result
     size_t index = result->runIndex;
+    RunInfo* run = &runs[index];
+
+    // Step 1) Determine run LSN boundaries (which gives file name)
     result->runBegin = runs[index].firstLSN;
     // We already checked that index <= lastFinished in probeFirst/Next
     if (index < runs.size() - 1) {
@@ -2330,12 +2338,32 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result)
         result->runEnd = lastLSN;
     }
 
-    if (result->pid.is_null()) {
-        // scan form beginning
-        result->offset = 0;
+    // Step 2) Determine begin and end offsets within the file
+    size_t entryBegin = 0;
+    if (result->pidBegin.is_null()) {
+        result->offsetBegin = 0;
     }
     else {
-        result->offset = findEntry(&runs[index], result->pid);
+        entryBegin = findEntry(run, result->pidBegin);
+        // decide if we mean offset zero or entry zero
+        if (entryBegin == 0 && run->entries[0].pid >= result->pidBegin)
+        {
+            result->offsetBegin = 0;
+        }
+        else {
+            result->offsetBegin = run->entries[entryBegin].offset;
+        }
+    }
+
+    // restrict binary search based on previous search
+    size_t entryEnd = findEntry(run, result->pidEnd, entryBegin,
+            run->entries.size() - 1);
+    if (result->pidEnd.is_null() || entryEnd >= run->entries.size() - 1) {
+        result->offsetEnd = 0; // zero indicates read until EOF
+    }
+    else {
+        // end offset must be exclusive (thus +1)
+        result->offsetEnd = run->entries[entryEnd+1].offset;
     }
 }
 
@@ -2360,7 +2388,8 @@ ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t startPID,
     }
 
     ProbeResult* result = new ProbeResult();
-    result->pid = startPID;
+    result->pidBegin = startPID;
+    result->pidEnd = endPID;
     result->runIndex = index;
     probeInRun(result);
 

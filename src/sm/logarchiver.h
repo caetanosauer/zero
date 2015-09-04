@@ -219,12 +219,13 @@ public:
         virtual ~ArchiveIndex();
 
         struct ProbeResult {
-            lpid_t pid;
+            lpid_t pidBegin;
+            lpid_t pidEnd;
             lsn_t runBegin;
             lsn_t runEnd;
-            size_t offset;
-            size_t stopOffset;
-            size_t runIndex; // used internally for probeNext
+            size_t offsetBegin;
+            size_t offsetEnd;
+            size_t runIndex;
         };
 
         void init();
@@ -257,14 +258,9 @@ public:
         struct RunInfo {
             lsn_t firstLSN;
 
-            // CS: disabled filters. If we ever enable it again, it must be
-            // properly serialized and deserialized!
-            // std::vector<bool> filter;
-
-            // Simpler min-max filter
+            // Simple min-max filter for page IDs (min is in 1st entry)
             lpid_t lastPID;
 
-            // one entry reserved for last pid with offset = block size
             std::vector<BlockEntry> entries;
 
             bool operator<(const RunInfo& other) const
@@ -296,7 +292,7 @@ public:
         size_t findRun(lpid_t endPID, lsn_t lsn);
         void probeInRun(ProbeResult*);
         // binary search
-        fileoff_t findEntry(RunInfo* run, lpid_t pid,
+        size_t findEntry(RunInfo* run, lpid_t pid,
                 int from = -1, int to = -1);
         rc_t serializeRunInfo(RunInfo&, int fd, fileoff_t);
         rc_t deserializeRunInfo(RunInfo&, const char* fname);
@@ -489,7 +485,7 @@ public:
      */
     class ArchiveScanner {
     public:
-        ArchiveScanner(ArchiveDirectory*);
+        ArchiveScanner(ArchiveDirectory*, size_t ioUnit = 2048 * 1024);
         virtual ~ArchiveScanner() {};
 
         struct RunMerger;
@@ -537,6 +533,7 @@ public:
     private:
         ArchiveDirectory* directory;
         ArchiveIndex* archIndex;
+        size_t ioUnit; // not used yet (CS TODO)
 
         struct MergeHeapEntry {
             // store pid and lsn here to speed up comparisons
