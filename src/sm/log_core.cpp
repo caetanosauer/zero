@@ -435,7 +435,7 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     }
 
     DBGTHRD(<<"fetch at lsn " << ll  << " returns " << *rp
-            << " with next " << *nxt);
+            << " with next " << nxt ? *nxt : lsn_t::null);
 
 #if W_DEBUG_LEVEL > 2
     // CS: see comment above
