@@ -32,15 +32,15 @@ void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const ls
         << ", MasterLSN=" << master << "..." << std::endl;
 
     log_i           scan(*log, master);
-    logrec_t*       buf;
+    logrec_t        buf;
     lsn_t           lsn;
     // Scan all log entries until EMLSN
-    while (scan.xct_next(lsn, buf) && buf->lsn_ck() <= max_lsn) {
-        if (buf->type() == logrec_t::t_chkpt_begin) {
-            o << "  CHECKPT: " << *buf << std::endl;
+    while (scan.xct_next(lsn, buf) && buf.lsn_ck() <= max_lsn) {
+        if (buf.type() == logrec_t::t_chkpt_begin) {
+            o << "  CHECKPT: " << buf << std::endl;
             continue;
         }
-        if (buf->null_pid()) {
+        if (buf.null_pid()) {
             continue;
         }
 
@@ -55,9 +55,9 @@ void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const ls
             continue;
         }
 
-        o << "  LOG: " << *buf << ", P_PREV=" << buf->page_prev_lsn();
-        if (buf->is_multi_page()) {
-            o << ", P2_PREV=" << buf->data_ssx_multi()->_page2_prv << std::endl;
+        o << "  LOG: " << buf << ", P_PREV=" << buf.page_prev_lsn();
+        if (buf.is_multi_page()) {
+            o << ", P2_PREV=" << buf.data_ssx_multi()->_page2_prv << std::endl;
         }
         o << std::endl;
     }

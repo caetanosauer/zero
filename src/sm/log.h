@@ -302,6 +302,7 @@ public:
 
     /// Get the next log record for transaction, put its sequence number in argument \a lsn
     bool                         xct_next(lsn_t& lsn, logrec_t*& r);
+    bool                         xct_next(lsn_t& lsn, logrec_t& r);
 
     /// Get the return code from the last next() call.
     w_rc_t&                      get_last_rc();

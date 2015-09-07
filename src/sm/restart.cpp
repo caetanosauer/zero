@@ -300,10 +300,10 @@ restart_m::restart(
         // Using locks - M3 - M5
         restart_with_lock = true;
     }
-    
+
     //analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap,
     //                       commit_lsn, last_lsn, restart_with_lock, lock_heap1);
-    
+
 
     log_analysis(master, restart_with_lock, redo_lsn, undo_lsn, commit_lsn, last_lsn, in_doubt_count, loser_heap, lock_heap1);
     /*
@@ -571,18 +571,18 @@ void restart_m::log_analysis(
     lsn_t&              commit_lsn,
     lsn_t&              last_lsn,
     uint32_t&           in_doubt_count,
-    XctPtrHeap&         loser_heap, 
+    XctPtrHeap&         loser_heap,
     XctLockHeap&        lock_heap)
 {
     FUNC(restart_m::log_analysis);
-    
+
     AutoTurnOffLogging turnedOnWhenDestroyed;
     smlevel_0::operating_mode = smlevel_0::t_in_analysis;
 
     last_lsn = log->curr_lsn();
     chkpt_t v_chkpt;    // virtual checkpoint (not going to be written to log)
 
-    /* Scan the log backward, from the most current lsn (last_lsn) until 
+    /* Scan the log backward, from the most current lsn (last_lsn) until
      * master lsn or first completed checkpoint (might not be the same).
      * Returns a chkpt_t object with all required information to initialize
      * the other data structures. */
@@ -607,7 +607,7 @@ void restart_m::log_analysis(
                                                 v_chkpt.rec_lsn[i].data() /*first_lsn*/,
                                                 v_chkpt.page_lsn[i].data() /*last_lsn*/,
                                                 in_doubt_count);
-        
+
         if (rc.is_error()) {
             // Not able to get a free block in buffer pool without evict, cannot continue
             W_FATAL_MSG(fcINTERNAL, << "Failed to record an in_doubt page in t_chkpt_bf_tab during Log Analysis" << rc);
@@ -746,7 +746,7 @@ restart_m::analysis_pass_forward(
     // Open a forward scan starting from master (the begin checkpoint LSN from the
     // last completed checkpoint
     log_i         scan(*log, master);
-    logrec_t*     log_rec_buf;
+    logrec_t      r;
     lsn_t         lsn;
 
     lsn_t         theLastMountLSNBeforeChkpt;
@@ -754,11 +754,10 @@ restart_m::analysis_pass_forward(
     // Assert first record is Checkpoint Begin Log
     // and get last mount/dismount lsn from it
     {
-        if (! scan.xct_next(lsn, log_rec_buf))
+        if (! scan.xct_next(lsn, r))
         {
             W_COERCE(scan.get_last_rc());
         }
-        logrec_t&        r = *log_rec_buf;
 
         // The first record must be a 'begin checkpoint', otherwise we don't want to continue, error out
         if (r.type() != logrec_t::t_chkpt_begin)
@@ -805,10 +804,8 @@ restart_m::analysis_pass_forward(
     // A mutex (partition lock) is being held during fetch of log record, there is
     // no concurrency among fetch requests so it is safe and simple to use a local buffer
     // in the log buffer implementation
-    while (scan.xct_next(lsn, log_rec_buf))
+    while (scan.xct_next(lsn, r))
     {
-        logrec_t& r = *log_rec_buf;
-
         // Scan next record
         DBGOUT3( << setiosflags(ios::right) << lsn
                   << resetiosflags(ios::right) << " A: " << r );
@@ -1495,7 +1492,7 @@ restart_m::analysis_pass_backward(
     // We are using lsn from curr_lsn() which is the next available lsn, therefore
     // the fetch returns the very last log record in the log file
     log_i         scan(*log, last_lsn, false /*forward scan*/);
-    logrec_t*     log_rec_buf;
+    logrec_t      r;
     lsn_t         lsn;   // LSN of the retrieved log record
 
     // theLastMountLSNBeforeChkpt is retrieved from the 'begin checkpoint' log record
@@ -1538,12 +1535,10 @@ restart_m::analysis_pass_backward(
     // The buffer 'log_rec_buf' for log record was not allocated in caller, therefore it is
     // using a local buffer in the log buffer.  Do not nest the log scan iternator because it
     // would overwrite the data in log_rec_buf
-    while (scan.xct_next(lsn, log_rec_buf))
+    while (scan.xct_next(lsn, r))
     {
         // New log record, reset the flag
         acquire_lock = true;
-
-        logrec_t& r = *log_rec_buf;
 
         // Scan next record
         DBGOUT3( << setiosflags(ios::right) << lsn
@@ -3881,13 +3876,13 @@ restart_m::redo_log_pass(
         DBGOUT3( << "LSN " << " A/R/I(pass): " << "LOGREC(TID, TYPE, FLAGS:F/U(fwd/rolling-back) PAGE <INFO>");
 
         // Allocate a (temporary) log record buffer for reading
-        logrec_t* log_rec_buf=0;
+        logrec_t r;
 
         lsn_t lsn;
         lsn_t expected_lsn = redo_lsn;
         bool redone = false;
         bool serial_recovery = use_serial_restart();
-        while (scan.xct_next(lsn, log_rec_buf))
+        while (scan.xct_next(lsn, r))
         {
             // The difference between serial and concurrent modes with
             // log scan driven REDO:
@@ -3901,8 +3896,6 @@ restart_m::redo_log_pass(
 
             DBGOUT3(<<"redo scan returned lsn " << lsn
                     << " expected " << expected_lsn);
-
-            logrec_t& r = *log_rec_buf;
 
             // For each log record ...
             if (!r.valid_header(lsn))
@@ -4486,7 +4479,7 @@ void restart_m::_redo_log_with_pid(
                 // The 'used' flag of the page should be set
                 // w_assert1(true == smlevel_0::bf->is_used(idx));
             }
-            else if (r.type() == logrec_t::t_alloc_page)
+            else if (r.type() == logrec_t::t_dealloc_page)
             {
                 // The idx should not be in hashtable
                 if (cb.latch().held_by_me())

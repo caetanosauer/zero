@@ -369,7 +369,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
     DBGOUT1(<<"backward_scan_log("<<begin_lsn<<", "<<master_lsn<<")");
 
     log_i         scan(*log, begin_lsn, false); // false == backward scan
-    logrec_t*     log_rec_buf;
+    logrec_t      r;
     lsn_t         lsn;   // LSN of the retrieved log record
 
     lsn_t         theLastMountLSNBeforeChkpt = lsn_t::null;
@@ -388,14 +388,9 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
     vector<string> dismounted_devs;
     set<lpid_t> written_pages;
 
-    // The buffer 'log_rec_buf' for log record was not allocated in caller, therefore it is
-    // using a local buffer in the log buffer.  Do not nest the log scan iternator because it
-    // would overwrite the data in log_rec_buf
-    while (scan.xct_next(lsn, log_rec_buf) && !scan_done)
+    while (scan.xct_next(lsn, r) && !scan_done)
     {
         acquire_lock = true; // New log record, reset the flag
-
-        logrec_t& r = *log_rec_buf;
 
         DBGOUT3( << setiosflags(ios::right) << lsn
                   << resetiosflags(ios::right) << " A: " << r );

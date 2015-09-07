@@ -104,7 +104,7 @@ public:
         sleep(5);
 
         log_i scan(*(smlevel_0::log), lsn_t(1,0), true);
-        logrec_t *log_rec_buf;
+        logrec_t log_rec_buf;
         lsn_t lsn;
 
         //std::cout << "START " << std::endl;
@@ -150,7 +150,7 @@ public:
         sleep(5);
 
         log_i scan(*(smlevel_0::log), lsn_t(1,0), true);
-        logrec_t *log_rec_buf;
+        logrec_t log_rec_buf;
         lsn_t lsn;
 
         //std::cout << "START " << std::endl;
@@ -231,7 +231,7 @@ public:
         sleep(5);
 
         log_i scan(*(smlevel_0::log), log_buffer->_to_insert_lsn, false);
-        logrec_t *log_rec_buf;
+        logrec_t log_rec_buf;
         lsn_t lsn;
 
         //std::cout << "START " << std::endl;
@@ -282,7 +282,7 @@ public:
         sleep(5);
 
         log_i scan(*(smlevel_0::log), log_buffer->_to_insert_lsn, false);
-        logrec_t *log_rec_buf;
+        logrec_t log_rec_buf;
         lsn_t lsn;
 
         //std::cout << "START " << std::endl;
@@ -334,7 +334,7 @@ public:
         sleep(5);
 
         log_i scan(*(smlevel_0::log), log_buffer->_to_insert_lsn, false);
-        logrec_t *log_rec_buf;
+        logrec_t log_rec_buf;
         lsn_t lsn;
 
         //std::cout << "START " << std::endl;

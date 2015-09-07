@@ -111,7 +111,7 @@ struct test_sys_xct_single : public restart_test_base
         {
             log_i iter(*smlevel_0::clog, lsn_t(1,0), true /* forward */);
             lsn_t lsn = lsn_t::null;
-            logrec_t* lr = NULL;
+            logrec_t lr;
             int count = 0;
             while (iter.xct_next(lsn, lr)) {
                 if (lr->type() == logrec_t::t_alloc_a_page) {
@@ -147,7 +147,7 @@ struct test_sys_xct_multi : public restart_test_base
         {
             log_i iter(*smlevel_0::clog, lsn_t(1,0), true /* forward */);
             lsn_t lsn = lsn_t::null;
-            logrec_t* lr = NULL;
+            logrec_t lr;
             int count = 0;
             int total = 0;
             while (iter.xct_next(lsn, lr)) {
@@ -197,7 +197,7 @@ struct test_sys_xct_nested_abort : public restart_test_base
         {
             log_i iter(*smlevel_0::clog, lsn_t(1,0), true /* forward */);
             lsn_t lsn = lsn_t::null;
-            logrec_t* lr = NULL;
+            logrec_t lr;
             int count = 0;
             while (iter.xct_next(lsn, lr)) {
                 DBGOUT3(<< "Scanned: " << *lr << endl);
@@ -239,7 +239,7 @@ struct test_sys_xct_nested_abort_implicit : public restart_test_base
         {
             log_i iter(*smlevel_0::clog, lsn_t(1,0), true /* forward */);
             lsn_t lsn = lsn_t::null;
-            logrec_t* lr = NULL;
+            logrec_t lr;
             int count = 0;
             while (iter.xct_next(lsn, lr)) {
                 DBGOUT3(<< "Scanned: " << *lr << endl);
@@ -278,7 +278,7 @@ struct test_clog_abort : public restart_test_base
         // since xct did not commit, its logrecs should not be in the clog
         log_i iter(*smlevel_0::clog, lsn_t(1,0), true /* forward */);
         lsn_t lsn = lsn_t::null;
-        logrec_t* lr = NULL;
+        logrec_t lr;
         while (iter.xct_next(lsn, lr)) {
             // no btree inserts should be found since population aborted
             EXPECT_TRUE(lr->type() != logrec_t::t_btree_insert);
@@ -306,7 +306,7 @@ struct test_clog_commit : public restart_test_base
         // xct committed so its logecs should be found in clog
         log_i iter(*smlevel_0::clog, lsn_t(1,0), true /* forward */);
         lsn_t lsn = lsn_t::null;
-        logrec_t* lr = NULL;
+        logrec_t lr;
         tid_t found_tid = tid_t::null;
         int count = 0;
         int insert_count = 0;
@@ -342,7 +342,7 @@ struct test_clog_commit : public restart_test_base
 rc_t find_pages_in_log(std::vector<lpid_t>& pages, log_m* log)
 {
     log_i iter(*log, lsn_t(1,0), true /* forward */);
-    logrec_t* lr = NULL;
+    logrec_t lr;
     lsn_t lsn = lsn_t::null;
     while (iter.xct_next(lsn, lr)) {
         if (!lr->null_pid()) {
@@ -360,7 +360,7 @@ rc_t find_pages_in_log(std::vector<lpid_t>& pages, log_m* log)
 rc_t find_last_update(log_m* log, const lpid_t& pid, lsn_t& ret)
 {
     log_i iter(*log, log->curr_lsn(), false /* forward */);
-    logrec_t* lr = NULL;
+    logrec_t lr;
     lsn_t lsn = lsn_t::null;
     while (iter.xct_next(lsn, lr)) {
         if (lr->construct_pid() == pid) {

@@ -88,7 +88,7 @@ typedef smlevel_0::fileoff_t fileoff_t;
  *  Return false if EOF reached. true otherwise.
  *
  *********************************************************************/
-bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)  
+bool log_i::xct_next(lsn_t& lsn, logrec_t& r)  
 {
     // Initially (before the first xct_next call, 
     // 'cursor' is set to the starting point of the scan
@@ -101,8 +101,10 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)
 
     if (! eof) {
         lsn = cursor;
-        rc_t rc = log.fetch(lsn, r, &cursor, forward_scan);  // Either forward or backward scan
-        
+        logrec_t* b;
+        rc_t rc = log.fetch(lsn, b, &cursor, forward_scan);  // Either forward or backward scan
+
+        memcpy(&r, b, sizeof(logrec_t));
         // release right away, since this is only
         // used in recovery.
         log.release();
