@@ -608,7 +608,9 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                             new_chkpt.dev_paths.push_back(dnames[i]);
                         }
                     }
-                    new_chkpt.next_vid += tab->next_vid;
+
+                    //-1 because next_vid already starts at 1
+                    new_chkpt.next_vid += (tab->next_vid - 1);
                 }
                 break;
 
