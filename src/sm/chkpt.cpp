@@ -1558,21 +1558,23 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
             if (0 == page_of_interest.page)
                 W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a page in compensation log record");
 
-            int page_idx = indexOf(new_chkpt.pid, page_of_interest);
-            if(page_idx != -1) {
-                if(new_chkpt.rec_lsn[page_idx] > lsn) {
-                    new_chkpt.rec_lsn[page_idx] = lsn;
-                }
+            if(written_pages.find(page_of_interest) == written_pages.end()) {
+                int page_idx = indexOf(new_chkpt.pid, page_of_interest);
+                if(page_idx != -1) {
+                    if(new_chkpt.rec_lsn[page_idx] > lsn) {
+                        new_chkpt.rec_lsn[page_idx] = lsn;
+                    }
 
-                if(new_chkpt.page_lsn[page_idx] < lsn) {
-                    new_chkpt.page_lsn[page_idx] = lsn;
+                    if(new_chkpt.page_lsn[page_idx] < lsn) {
+                        new_chkpt.page_lsn[page_idx] = lsn;
+                    }
                 }
-            }
-            else {
-                new_chkpt.pid.push_back(page_of_interest);
-                new_chkpt.store.push_back(r.snum());
-                new_chkpt.rec_lsn.push_back(lsn);
-                new_chkpt.page_lsn.push_back(lsn);
+                else {
+                    new_chkpt.pid.push_back(page_of_interest);
+                    new_chkpt.store.push_back(r.snum());
+                    new_chkpt.rec_lsn.push_back(lsn);
+                    new_chkpt.page_lsn.push_back(lsn);
+                }
             }
         }
     }
