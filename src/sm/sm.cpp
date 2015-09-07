@@ -1563,7 +1563,6 @@ void ss_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &
     restart_m::dump_page_lsn_chain(o, pid, max_lsn);
 }
 
-
 rc_t ss_m::verify_volume(
     int hash_bits, verify_volume_result &result)
 {
