@@ -307,9 +307,9 @@ void chkpt_m::synch_take()
         CmpXctLockTids   lock_cmp;
         XctLockHeap      dummy_heap(lock_cmp);
 
-        take(t_chkpt_sync, dummy_heap);
-        w_assert1(0 == dummy_heap.NumElements());
-        //dcpld_take(t_chkpt_sync);
+        //take(t_chkpt_sync, dummy_heap);
+        //w_assert1(0 == dummy_heap.NumElements());
+        dcpld_take(t_chkpt_sync);
     }
     return;
 }
@@ -3492,9 +3492,9 @@ chkpt_thread_t::run()
 
         // No need to acquire checkpoint mutex before calling the checkpoint operation
         // Asynch checkpoint should never record lock information
-        ss_m::chkpt->take(chkpt_m::t_chkpt_async, dummy_heap);
-        w_assert1(0 == dummy_heap.NumElements());
-        //ss_m::chkpt->dcpld_take(chkpt_m::t_chkpt_async);
+        //ss_m::chkpt->take(chkpt_m::t_chkpt_async, dummy_heap);
+        //w_assert1(0 == dummy_heap.NumElements());
+        ss_m::chkpt->dcpld_take(chkpt_m::t_chkpt_async);
     }
 }
 
