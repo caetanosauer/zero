@@ -3,6 +3,8 @@
 #include "vol.h"
 #include "logarchiver.h"
 
+#include <algorithm>
+
 const std::string DummyBackupReader::IMPL_NAME = "dummy";
 const std::string BackupOnDemandReader::IMPL_NAME = "ondemand";
 const std::string BackupPrefetcher::IMPL_NAME = "prefetcher";
@@ -41,7 +43,9 @@ char* BackupOnDemandReader::fix(unsigned segment)
     INC_TSTAT(restore_backup_reads);
     w_assert1(fixedSegment < 0);
 
-    shpid_t offset = shpid_t(segment * segmentSize) + firstDataPid;
+    // CS: TODO call getPidForSegment
+    // shpid_t offset = shpid_t(segment * segmentSize) + firstDataPid;
+    shpid_t offset = shpid_t(segment * segmentSize);
     W_COERCE(volume->read_backup(offset, segmentSize, buffer));
 
     W_IFDEBUG1(fixedSegment = segment);
@@ -150,16 +154,12 @@ char* BackupPrefetcher::fix(unsigned segment)
 
         // segment not in buffer -- move request to the front and wait
         // for prefetch to catch up
-        if (requests.size() == 0 || requests.front() != segment) {
-            for (std::deque<unsigned>::iterator iter = requests.begin();
-                    iter != requests.end(); iter++)
-            {
-                if (*iter == segment) {
-                    requests.erase(iter);
-                }
-            }
-            requests.push_front(segment);
+        std::deque<unsigned>::iterator iter
+            = std::find(requests.begin(), requests.end(), segment);
+        if (iter != requests.end()) {
+            requests.erase(iter);
         }
+        requests.push_front(segment);
 
         DBGOUT(<< "Segment fix: not found. Waking up prefetcher");
         fixWaiting = true;
@@ -277,7 +277,8 @@ void BackupPrefetcher::run()
 
         DBGOUT3(<< "Prefetching segment " << next);
         // perform the read into the slot found
-        shpid_t firstPage = shpid_t(next * segmentSize) + firstDataPid;
+        // shpid_t firstPage = shpid_t(next * segmentSize) + firstDataPid;
+        shpid_t firstPage = shpid_t(next * segmentSize);
         if (firstPage >= volume->num_pages()) {
             return;
         }

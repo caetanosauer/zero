@@ -306,8 +306,6 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     firstDataPid = volume->first_data_pageid();
     lastUsedPid = volume->last_used_pageid();
 
-    scheduler = new RestoreScheduler(options, this);
-    bitmap = new RestoreBitmap(numPages / segmentSize + 1);
     asyncWriter = NULL;
 
     // Construct backup reader/buffer based on system options
@@ -345,6 +343,9 @@ RestoreMgr::RestoreMgr(const sm_options& options,
          */
         backup = new DummyBackupReader(segmentSize);
     }
+
+    scheduler = new RestoreScheduler(options, this);
+    bitmap = new RestoreBitmap(numPages / segmentSize + 1);
 }
 
 RestoreMgr::~RestoreMgr()
@@ -518,7 +519,7 @@ void RestoreMgr::singlePassLoop()
 
     unsigned segment = 0;
     char* workspace = backup->fix(segment);
-    restoreSegment(workspace, merger, firstDataPid);
+    restoreSegment(workspace, merger, getPidForSegment(segment));
 
     // signalize that we're done
     numRestoredPages = numPages;
