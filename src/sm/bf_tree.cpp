@@ -773,8 +773,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 if (false == force_load)
                     _add_free_block(idx);
 
-                ERROUT(<<"bf_tree_m: unlucky! not able to acquire cb on a force load page "
-                        << shpid << ". Discard my own work and try again.");
+                // ERROUT(<<"bf_tree_m: unlucky! not able to acquire cb on a force load page "
+                //         << shpid << ". Discard my own work and try again."
+                //         << " force_load = " << force_load);
 
                 force_load = false;
                 // Sleep a while to give the other process time to finish its work and then retry
@@ -1676,37 +1677,6 @@ inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* poi
 
 inline bool bf_tree_m::_are_there_many_swizzled_pages() const {
     return _swizzled_page_count_approximate >= (int) (_block_cnt * 2 / 10);
-}
-
-void bf_tree_m::_lookup_buf_imprecise(btree_page_h &parent, uint32_t slot,
-                                      bf_idx& idx, bool& swizzled) const {
-    vid_t vol = parent.vol();
-    shpid_t shpid = *parent.child_slot_address(slot);
-    if ((shpid & SWIZZLED_PID_BIT) == 0) {
-        idx = _hashtable->lookup_imprecise(bf_key(vol, shpid));
-        swizzled = false;
-        if (idx == 0) {
-#if W_DEBUG_LEVEL>=3
-            for (bf_idx i = 1; i < _block_cnt; ++i) {
-                bf_tree_cb_t &cb = get_cb(i);
-                if (cb._used && cb._pid_shpid == shpid && cb._pid_vol == vol) {
-                    ERROUT(<<"Dubious cache miss. Is it really because of concurrent updates?"
-                        "vol=" << vol << ", shpid=" << shpid << ", idx=" << i);
-                }
-            }
-#endif // W_DEBUG_LEVEL>=3
-            return;
-        }
-        bf_tree_cb_t &cb = get_cb(idx);
-        if (!_is_active_idx(idx) || cb._pid_shpid != shpid || cb._pid_vol != vol) {
-            ERROUT(<<"Dubious false negative. Is it really because of concurrent updates?"
-                "vol=" << vol << ", shpid=" << shpid << ", idx=" << idx);
-            idx = 0;
-        }
-    } else {
-        idx = shpid ^ SWIZZLED_PID_BIT;
-        swizzled = true;
-    }
 }
 
 bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {

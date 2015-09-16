@@ -172,8 +172,11 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict) {
             CRITICAL_SECTION(cs, &_freelist_lock);
             if (_freelist_len > 0) { // here, we do the real check
                 bf_idx idx = FREELIST_HEAD;
+                DBGTHRD(<< "Grabbing idx " << idx);
                 w_assert1(_is_valid_idx(idx));
                 w_assert1 (!get_cb(idx)._used);
+                ret = idx;
+
                 --_freelist_len;
                 if (_freelist_len == 0) {
                     FREELIST_HEAD = 0;
@@ -181,7 +184,8 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict) {
                     FREELIST_HEAD = _freelist[idx];
                     w_assert1 (FREELIST_HEAD > 0 && FREELIST_HEAD < _block_cnt);
                 }
-                ret = idx;
+                DBGTHRD(<< "New head " << FREELIST_HEAD);
+                w_assert1(ret != FREELIST_HEAD);
                 return RCOK;
             }
         } // exit the scope to do the following out of the critical section
@@ -364,13 +368,18 @@ bool bf_tree_m::_try_evict_block_update_emlsn(
     return true;
 }
 
-void bf_tree_m::_add_free_block(bf_idx idx) {
+void bf_tree_m::_add_free_block(bf_idx idx)
+{
     CRITICAL_SECTION(cs, &_freelist_lock);
+    // CS TODO: Eviction is apparently broken, since I'm seeing the same
+    // frame being freed twice by two different threads.
+    w_assert1(idx != FREELIST_HEAD);
     ++_freelist_len;
     _freelist[idx] = FREELIST_HEAD;
     FREELIST_HEAD = idx;
 #ifdef BP_MAINTAIN_PARENT_PTR
-    // if the following fails, you might have forgot to remove it from the LRU before calling this method
+    // if the following fails, you might have forgot to remove it from the LRU
+    // before calling this method
     w_assert1(SWIZZLED_LRU_NEXT(idx) == 0);
     w_assert1(SWIZZLED_LRU_PREV(idx) == 0);
 #endif // BP_MAINTAIN_PARENT_PTR
@@ -411,6 +420,48 @@ void bf_tree_m::_dump_evict_clockhand(const EvictionContext &context) const {
     }
 }
 
+void bf_tree_m::_lookup_buf_imprecise(btree_page_h &parent, uint32_t slot,
+                                      bf_idx& idx, bool& swizzled) const {
+    vid_t vol = parent.vol();
+    shpid_t shpid = *parent.child_slot_address(slot);
+    if ((shpid & SWIZZLED_PID_BIT) == 0) {
+        idx = _hashtable->lookup_imprecise(bf_key(vol, shpid));
+        swizzled = false;
+        if (idx == 0) {
+#if W_DEBUG_LEVEL>=3
+            // CS TODO: page not found in the hash table but found it in some
+            // other control block. Seems OK to me, since we are doing an
+            // "imprecise" lookup.  I don't understand why this check is being
+            // performed and the message printed.  Under high pressure (lots of
+            // threads and small buffer), it is probably better to do a precise
+            // lookup directly. However, this method is used only by eviction,
+            // so we might be fine with it for now.
+            /*
+            for (bf_idx i = 1; i < _block_cnt; ++i) {
+                bf_tree_cb_t &cb = get_cb(i);
+                if (cb._used && cb._pid_shpid == shpid && cb._pid_vol == vol) {
+                    ERROUT(<<"Dubious cache miss. Is it really because of concurrent updates?"
+                        "vol=" << vol << ", shpid=" << shpid << ", idx=" << i);
+                }
+            }
+            */
+#endif // W_DEBUG_LEVEL>=3
+            return;
+        }
+        bf_tree_cb_t &cb = get_cb(idx);
+        // CS TODO: is latch-free access to CB safe here? It seems weird to me...
+        if (!_is_active_idx(idx) || cb._pid_shpid != shpid || cb._pid_vol != vol) {
+            // CS TODO: why is it "dubious"? The lookup was imprecise...
+            // ERROUT(<<"Dubious false negative. Is it really because of concurrent updates?"
+            //     "vol=" << vol << ", shpid=" << shpid << ", idx=" << idx);
+            idx = 0;
+        }
+    } else {
+        idx = shpid ^ SWIZZLED_PID_BIT;
+        swizzled = true;
+    }
+}
+
 w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count, uint32_t& unswizzled_count,
                                evict_urgency_t urgency, uint32_t preferred_count)
 {
@@ -419,19 +470,45 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count, uint32_t& unswizzled_cou
     context.preferred_count = preferred_count;
     ::memset(context.bufidx_pathway, 0, sizeof(bf_idx) * MAX_CLOCKHAND_DEPTH);
     ::memset(context.swizzled_pathway, 0, sizeof(bool) * MAX_CLOCKHAND_DEPTH);
+
+    /*
+     * CS: Adapted code to have only one thread scanning buffer at a time.
+     * There is in principle no reason to have multiple threads evicting at the
+     * same time -- it's just a waste of CPU. A single-threaded eviction is
+     * much more effective -- we just need to adapt it to increase the urgency
+     * depending on the number of waiting threads. It would actually be much
+     * better to quantify the urgency exactly as the number of waiting threads.
+     *
+     * For now, simply holding the mutex throughout the eviction process and
+     * checking for free blocks after acquiring it should be enough.
+     * Eventually, the whole code should be adapted for the single-thread
+     * approach.
+     */
+
     // copy-from the shared clockhand_pathway with latch
     {
         CRITICAL_SECTION(cs, &_clockhand_copy_lock);
+
+        // CS once mutex is finally acquired, check if we still need to evict
+        // CS TODO: using an arbitrary number as the target free count. This
+        // should probably be something like the number of threads plus some
+        // factor
+        if (_freelist_len > 30) {
+            evicted_count = 0;
+            unswizzled_count = 0;
+            return RCOK;
+        }
+
         context.clockhand_current_depth = _clockhand_current_depth;
         ::memcpy(context.clockhand_pathway, _clockhand_pathway,
                  sizeof(uint32_t) * MAX_CLOCKHAND_DEPTH);
-    }
+    // }
 
     W_DO(_evict_blocks(context));
 
     // copy-back to the shared clockhand_pathway with latch
-    {
-        CRITICAL_SECTION(cs, &_clockhand_copy_lock);
+    // {
+    //     CRITICAL_SECTION(cs, &_clockhand_copy_lock);
         _clockhand_current_depth = context.clockhand_current_depth;
         ::memcpy(_clockhand_pathway, context.clockhand_pathway,
                  sizeof(uint32_t) * MAX_CLOCKHAND_DEPTH);
@@ -679,6 +756,7 @@ w_rc_t bf_tree_m::_evict_page(EvictionContext& context, btree_page_h& p) {
 
     // do we want to evict this page?
     if (_try_evict_block(parent_idx, idx)) {
+        DBGTHRD(<< "Freeing frame " << idx);
         _add_free_block(idx);
         ++context.evicted_count;
     }
