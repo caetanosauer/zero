@@ -654,11 +654,11 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
     bf_tree_cb_t &cb = get_cb(idx);
 #ifdef BP_MAINTAIN_PARENT_PTR
     bf_idx parent_idx = 0;
-    if (is_swizzling_enabled()) {
+    // if (is_swizzling_enabled()) {
         parent_idx = parent - _buffer;
         w_assert1 (_is_active_idx(parent_idx));
         cb._parent = parent_idx;
-    }
+    // }
 #endif // BP_MAINTAIN_PARENT_PTR
     if (virgin_page) {
         cb._rec_lsn = 0;
@@ -707,7 +707,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
 #ifdef BP_MAINTAIN_PARENT_PTR
-    w_assert1(!is_swizzling_enabled() || parent != NULL);
+    // w_assert1(!is_swizzling_enabled() || parent != NULL);
 #endif
     bf_tree_vol_t *volume = _volumes[vol];
     w_assert1(volume != NULL);
@@ -918,11 +918,11 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             cb._dependency_lsn = 0;
 #ifdef BP_MAINTAIN_PARENT_PTR
             bf_idx parent_idx = 0;
-            if (is_swizzling_enabled()) {
+            // if (is_swizzling_enabled()) {
                 parent_idx = parent - _buffer;
                 w_assert1 (_is_active_idx(parent_idx));
                 cb._parent = parent_idx;
-            }
+            // }
 #endif // BP_MAINTAIN_PARENT_PTR
             if (!virgin_page)
             {
@@ -984,9 +984,12 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
             // okay, all done
 #ifdef BP_MAINTAIN_PARENT_PTR
-            if (is_swizzling_enabled()) {
-                lintel::unsafe::atomic_fetch_add((uint32_t*) &(_control_blocks[parent_idx]._pin_cnt), 1); // we installed a new child of the parent      to this bufferpool. add parent's count
-            }
+            // if (is_swizzling_enabled()) {
+                lintel::unsafe::atomic_fetch_add((uint32_t*)
+                        &(get_cb(parent_idx)._pin_cnt), 1);
+                // we installed a new child of the parent      to this
+                // bufferpool. add parent's count
+            // }
 #endif // BP_MAINTAIN_PARENT_PTR
             page = &(_buffer[idx]);
 
@@ -1138,7 +1141,20 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 if (cb._pid_shpid != shpid) {
                     DBGOUT1(<<"cb._pid_shpid = " << cb._pid_shpid << ", shpid = " << shpid);
                 }
-                w_assert1(cb._pid_shpid == shpid);
+                // CS: this can happen if the following race condition occurs
+                // 1. Thread 1: pin count is retrieved as 0
+                // 2. Thread 2: evicts the frame and sets the pin count to -1
+                // 3. Thread 2: loads new page and resets pin count to 0
+                // 4. Thread 1: increments pin count successfully and latches
+                //    the page, but it is a different page, so the assertion
+                //    fails
+                // In essence, the whole "pin count" mechanism is broken. For
+                // every concurrent object, there should be only one
+                // concurrency control mechanism to protect it. In the case of
+                // pages, it is the latch. Introducing additional mechanisms,
+                // like an atomic pin count, is only error-prone and does not
+                // really bring any significant performance improvement.
+                w_assert0(cb._pid_shpid == shpid);
 #ifndef NO_PINCNT_INCDEC
                 lintel::unsafe::atomic_fetch_sub((uint32_t*)(&cb._pin_cnt), 1);
 #endif
@@ -1539,9 +1555,9 @@ bool bf_tree_m::_check_dependency_still_active(bf_tree_cb_t& cb) {
 #ifdef BP_MAINTAIN_PARENT_PTR
 void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
 {
-    if (!is_swizzling_enabled()) {
-        return;
-    }
+    // if (!is_swizzling_enabled()) {
+    //     return;
+    // }
     bf_idx idx = page - _buffer;
     w_assert1(false == get_cb(idx)._in_doubt);
     w_assert1(_is_active_idx(idx));

@@ -326,10 +326,10 @@ bool bf_tree_m::_try_evict_block_pinned(
     w_assert1(removed);
 #ifdef BP_MAINTAIN_PARENT_PTR
     // w_assert1(!_is_in_swizzled_lru(idx));
-    if (is_swizzling_enabled()) {
+    // if (is_swizzling_enabled()) {
         w_assert1(cb._parent != 0);
         _decrement_pin_cnt_assume_positive(cb._parent);
-    }
+    // }
 #endif // BP_MAINTAIN_PARENT_PTR
     cb.clear();
     return true; // success
@@ -403,9 +403,9 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     w_assert1(removed);
 #ifdef BP_MAINTAIN_PARENT_PTR
     // w_assert1(!_is_in_swizzled_lru(idx));
-    if (is_swizzling_enabled()) {
+    // if (is_swizzling_enabled()) {
         _decrement_pin_cnt_assume_positive(cb._parent);
-    }
+    // }
 #endif // BP_MAINTAIN_PARENT_PTR
 
     // after all, give back this block to the freelist. other threads can see this block from now on
