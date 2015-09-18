@@ -158,6 +158,9 @@
 /* enable-pthread-mutex ? */
 #cmakedefine USE_PTHREAD_MUTEX
 
+/* maintain parent pointer among control blocks */
+#cmakedefine BP_MAINTAIN_PARENT_PTR ${BP_MAINTAIN_PARENT_PTR}
+
 
 /****************** OS/architecture. **************************/
 

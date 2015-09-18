@@ -193,9 +193,9 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
 #ifdef BP_MAINTAIN_PARENT_PTR
         ++cb._counter_approximate;
         // infrequently update LRU.
-        if (cb._counter_approximate % SWIZZLED_LRU_UPDATE_INTERVAL == 0) {
-            _update_swizzled_lru(idx);
-        }
+        // if (cb._counter_approximate % SWIZZLED_LRU_UPDATE_INTERVAL == 0) {
+        //     _update_swizzled_lru(idx);
+        // }
 #endif // BP_MAINTAIN_PARENT_PTR
     }
     return RCOK;
@@ -234,8 +234,8 @@ inline w_rc_t bf_tree_m::fix_unsafely_nonroot(generic_page*& page, shpid_t shpid
         // Cannot call _update_swizzled_lru without S or X latch
         // because page might not still be a swizzled page so disable!
         // [JIRA issue ZERO-175]
-        BOOST_STATIC_ASSERT(false);
-        _update_swizzled_lru(idx);
+        // BOOST_STATIC_ASSERT(false);
+        // _update_swizzled_lru(idx);
     }
 #endif // BP_MAINTAIN_PARENT_PTR
 
@@ -711,10 +711,10 @@ void print_latch_holders(latch_t* latch);
 
 ///////////////////////////////////   LRU/Freelist BEGIN ///////////////////////////////////
 #ifdef BP_MAINTAIN_PARENT_PTR
-inline bool bf_tree_m::_is_in_swizzled_lru (bf_idx idx) const {
-    w_assert1 (_is_active_idx(idx));
-    return SWIZZLED_LRU_NEXT(idx) != 0 || SWIZZLED_LRU_PREV(idx) != 0 || SWIZZLED_LRU_HEAD == idx;
-}
+// inline bool bf_tree_m::_is_in_swizzled_lru (bf_idx idx) const {
+//     w_assert1 (_is_active_idx(idx));
+//     return SWIZZLED_LRU_NEXT(idx) != 0 || SWIZZLED_LRU_PREV(idx) != 0 || SWIZZLED_LRU_HEAD == idx;
+// }
 #endif // BP_MAINTAIN_PARENT_PTR
 inline bool bf_tree_m::is_swizzled(const generic_page* page) const
 {

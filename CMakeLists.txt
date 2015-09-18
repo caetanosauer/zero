@@ -195,6 +195,7 @@ SET (SM_DREADLOCK_FINGERS 3)
 
 SET (W_USE_COMPAT_STRSTREAM "true")
 SET (USE_PTHREAD_MUTEX "true")
+SET (BP_MAINTAIN_PARENT_PTR "true")
 
 ####################   OS/architecture #####################
 SET (ARCH_LP64  "true") # so far, always assume 64 bits

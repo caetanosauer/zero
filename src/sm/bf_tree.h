@@ -726,20 +726,20 @@ private:
      * Newly adds the speficied block to the head of swizzled-pages LRU.
      * This page must be a swizzled page that can be unswizzled.
      */
-    void   _add_to_swizzled_lru (bf_idx idx);
+    // void   _add_to_swizzled_lru (bf_idx idx);
     /**
      * Eliminates the speficied block from swizzled-pages LRU.
      */
-    void   _remove_from_swizzled_lru (bf_idx idx);
+    // void   _remove_from_swizzled_lru (bf_idx idx);
     /** Tells if the block is contained in swizzled-pages LRU. */
-    bool   _is_in_swizzled_lru (bf_idx idx) const;
+    // bool   _is_in_swizzled_lru (bf_idx idx) const;
 
     /**
      * Brings the speficied block to the head of swizzled-pages LRU, assuming the block is already on the LRU.
      * This is costly because of locks, so call this only once in 100 or 1000 times.
      * If the page is worth swizzling, even once in 100 would be very frequent.
      */
-    void   _update_swizzled_lru (bf_idx idx);
+    // void   _update_swizzled_lru (bf_idx idx);
 #endif // BP_MAINTAIN_PARENT_PTR
 
     /** finds a free block and returns its index. if free list is empty and 'evict' = true, it evicts some page. */
@@ -921,11 +921,12 @@ private:
      * This logically belongs to _control_blocks, but is an array by itself for efficiency.
      * [0] and [1] are special, meaning list head and tail.
      */
-    bf_idx*              _swizzled_lru;
+    // CS: commented out (new eviction)
+    // bf_idx*              _swizzled_lru;
     /** count of swizzled pages that can be unswizzled. */
-    uint32_t _swizzled_lru_len;
+    // uint32_t _swizzled_lru_len;
     /** spin lock to protect swizzled page LRU list. */
-    tatas_lock           _swizzled_lru_lock;
+    // tatas_lock           _swizzled_lru_lock;
 #endif // BP_MAINTAIN_PARENT_PTR
 
     /**
@@ -1039,10 +1040,10 @@ private:
 
 // tiny macro to help swizzled-LRU and freelist access
 #define FREELIST_HEAD _freelist[0]
-#define SWIZZLED_LRU_HEAD _swizzled_lru[0]
-#define SWIZZLED_LRU_TAIL _swizzled_lru[1]
-#define SWIZZLED_LRU_PREV(x) _swizzled_lru[x * 2]
-#define SWIZZLED_LRU_NEXT(x) _swizzled_lru[x * 2 + 1]
+// #define SWIZZLED_LRU_HEAD _swizzled_lru[0]
+// #define SWIZZLED_LRU_TAIL _swizzled_lru[1]
+// #define SWIZZLED_LRU_PREV(x) _swizzled_lru[x * 2]
+// #define SWIZZLED_LRU_NEXT(x) _swizzled_lru[x * 2 + 1]
 
 
 #endif // BF_TREE_H

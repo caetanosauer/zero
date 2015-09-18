@@ -59,6 +59,7 @@ struct EvictionContext {
 };
 
 #ifdef BP_MAINTAIN_PARENT_PTR
+#if 0
 void bf_tree_m::_add_to_swizzled_lru(bf_idx idx) {
     w_assert1 (is_swizzling_enabled());
     w_assert1 (_is_active_idx(idx));
@@ -153,6 +154,7 @@ void bf_tree_m::_remove_from_swizzled_lru(bf_idx idx) {
         SWIZZLED_LRU_PREV (old_next) = old_prev;
     }
 }
+#endif
 #endif // BP_MAINTAIN_PARENT_PTR
 
 w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict) {
@@ -323,7 +325,7 @@ bool bf_tree_m::_try_evict_block_pinned(
     bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
     w_assert1(removed);
 #ifdef BP_MAINTAIN_PARENT_PTR
-    w_assert1(!_is_in_swizzled_lru(idx));
+    // w_assert1(!_is_in_swizzled_lru(idx));
     if (is_swizzling_enabled()) {
         w_assert1(cb._parent != 0);
         _decrement_pin_cnt_assume_positive(cb._parent);
@@ -380,8 +382,8 @@ void bf_tree_m::_add_free_block(bf_idx idx)
 #ifdef BP_MAINTAIN_PARENT_PTR
     // if the following fails, you might have forgot to remove it from the LRU
     // before calling this method
-    w_assert1(SWIZZLED_LRU_NEXT(idx) == 0);
-    w_assert1(SWIZZLED_LRU_PREV(idx) == 0);
+    // w_assert1(SWIZZLED_LRU_NEXT(idx) == 0);
+    // w_assert1(SWIZZLED_LRU_PREV(idx) == 0);
 #endif // BP_MAINTAIN_PARENT_PTR
 }
 
@@ -400,7 +402,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
     w_assert1(removed);
 #ifdef BP_MAINTAIN_PARENT_PTR
-    w_assert1(!_is_in_swizzled_lru(idx));
+    // w_assert1(!_is_in_swizzled_lru(idx));
     if (is_swizzling_enabled()) {
         _decrement_pin_cnt_assume_positive(cb._parent);
     }

@@ -174,10 +174,10 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
 #ifdef BP_MAINTAIN_PARENT_PTR
     // swizzled-LRU is initially empty
-    _swizzled_lru = new bf_idx[nbufpages * 2];
-    w_assert0(_swizzled_lru != NULL);
-    ::memset (_swizzled_lru, 0, sizeof(bf_idx) * nbufpages * 2);
-    _swizzled_lru_len = 0;
+    // _swizzled_lru = new bf_idx[nbufpages * 2];
+    // w_assert0(_swizzled_lru != NULL);
+    // ::memset (_swizzled_lru, 0, sizeof(bf_idx) * nbufpages * 2);
+    // _swizzled_lru_len = 0;
 #endif // BP_MAINTAIN_PARENT_PTR
 
     // initially, all blocks are free
@@ -222,10 +222,10 @@ bf_tree_m::~bf_tree_m() {
         _control_blocks = NULL;
     }
 #ifdef BP_MAINTAIN_PARENT_PTR
-    if (_swizzled_lru != NULL) {
-        delete[] _swizzled_lru;
-        _swizzled_lru = NULL;
-    }
+    // if (_swizzled_lru != NULL) {
+    //     delete[] _swizzled_lru;
+    //     _swizzled_lru = NULL;
+    // }
 #endif // BP_MAINTAIN_PARENT_PTR
     if (_freelist != NULL) {
         delete[] _freelist;
@@ -598,9 +598,9 @@ w_rc_t bf_tree_m::uninstall_volume(vid_t vid,
             }
 #ifdef BP_MAINTAIN_PARENT_PTR
             // if swizzled, remove from the swizzled-page LRU too
-            if (_is_in_swizzled_lru(idx)) {
-                _remove_from_swizzled_lru(idx);
-            }
+            // if (_is_in_swizzled_lru(idx)) {
+            //     _remove_from_swizzled_lru(idx);
+            // }
 #endif // BP_MAINTAIN_PARENT_PTR
             _hashtable->remove(bf_key(vid, cb._pid_shpid));
             if (cb._swizzled)
@@ -1542,8 +1542,8 @@ void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
     if (!is_swizzling_enabled()) {
         return;
     }
-    w_assert1(false == get_cb(idx)._in_doubt);
     bf_idx idx = page - _buffer;
+    w_assert1(false == get_cb(idx)._in_doubt);
     w_assert1(_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
 
@@ -1668,9 +1668,9 @@ inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* poi
 #endif
     ++_swizzled_page_count_approximate;
 #ifdef BP_MAINTAIN_PARENT_PTR
-    w_assert1(!_is_in_swizzled_lru(idx));
-    _add_to_swizzled_lru(idx);
-    w_assert1(_is_in_swizzled_lru(idx));
+    // w_assert1(!_is_in_swizzled_lru(idx));
+    // _add_to_swizzled_lru(idx);
+    // w_assert1(_is_in_swizzled_lru(idx));
 #endif // BP_MAINTAIN_PARENT_PTR
     get_cb(idx)._concurrent_swizzling = false;
 }
@@ -1931,7 +1931,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
     o << "dumping the bufferpool contents. _block_cnt=" << _block_cnt << "\n";
     o << "  _freelist_len=" << _freelist_len << ", HEAD=" << FREELIST_HEAD << "\n";
 #ifdef BP_MAINTAIN_PARENT_PTR
-    o << "  _swizzled_lru_len=" << _swizzled_lru_len << ", HEAD=" << SWIZZLED_LRU_HEAD << ", TAIL=" << SWIZZLED_LRU_TAIL << std::endl;
+    // o << "  _swizzled_lru_len=" << _swizzled_lru_len << ", HEAD=" << SWIZZLED_LRU_HEAD << ", TAIL=" << SWIZZLED_LRU_TAIL << std::endl;
 #endif // BP_MAINTAIN_PARENT_PTR
 
     for (vid_t vid = 1; vid < vol_m::MAX_VOLS; ++vid) {
@@ -1969,9 +1969,9 @@ void bf_tree_m::debug_dump(std::ostream &o) const
             o << ", _refbit_approximate=" << cb._refbit_approximate;
 #ifdef BP_MAINTAIN_PARENT_PTR
             o << ", _counter_approximate=" << cb._counter_approximate;
-            if (_is_in_swizzled_lru(idx)) {
-                o << ", swizzled_lru.prev=" << SWIZZLED_LRU_PREV(idx) << ".next=" << SWIZZLED_LRU_NEXT(idx);
-            }
+            // if (_is_in_swizzled_lru(idx)) {
+            //     o << ", swizzled_lru.prev=" << SWIZZLED_LRU_PREV(idx) << ".next=" << SWIZZLED_LRU_NEXT(idx);
+            // }
 #endif // BP_MAINTAIN_PARENT_PTR
             o << ", ";
             cb.latch().print(o);
@@ -2055,8 +2055,8 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
         cb.clear();
     }
 #ifdef BP_MAINTAIN_PARENT_PTR
-    ::memset (_swizzled_lru, 0, sizeof(bf_idx) * _block_cnt * 2);
-    _swizzled_lru_len = 0;
+    // ::memset (_swizzled_lru, 0, sizeof(bf_idx) * _block_cnt * 2);
+    // _swizzled_lru_len = 0;
 #endif // BP_MAINTAIN_PARENT_PTR
     _freelist[0] = 1;
     for (bf_idx i = 1; i < _block_cnt - 1; ++i) {
