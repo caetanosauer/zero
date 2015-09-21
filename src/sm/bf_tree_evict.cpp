@@ -3,7 +3,7 @@
 #include "bf_tree.h"
 #include "btree_page_h.h"
 
-// template definitions
+// Template definitions
 #include "bf_hashtable.cpp"
 
 /** Context object that is passed around during eviction. */
@@ -430,7 +430,12 @@ void bf_tree_m::_lookup_buf_imprecise(btree_page_h &parent, uint32_t slot,
     vid_t vol = parent.vol();
     shpid_t shpid = *parent.child_slot_address(slot);
     if ((shpid & SWIZZLED_PID_BIT) == 0) {
-        idx = _hashtable->lookup_imprecise(bf_key(vol, shpid));
+        bf_idx_pair p;
+        if (_hashtable->lookup_imprecise(bf_key(vol, shpid), p)) {
+            idx = p.first;
+        }
+        else { idx = 0; }
+
         swizzled = false;
         if (idx == 0) {
 #if W_DEBUG_LEVEL>=3

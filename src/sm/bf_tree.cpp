@@ -36,7 +36,7 @@
 
 #include "restart.h"
 
-// template definitions
+// Template definitions
 #include "bf_hashtable.cpp"
 
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////
@@ -195,7 +195,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     //initialize hashtable
     int buckets = w_findprime(1024 + (nbufpages / 4)); // maximum load factor is 25%. this is lower than original shore-mt because we have swizzling
-    _hashtable = new bf_hashtable<bf_idx>(buckets);
+    _hashtable = new bf_hashtable<bf_idx_pair>(buckets);
     w_assert0(_hashtable != NULL);
 
     ::memset (_volumes, 0, sizeof(bf_tree_vol_t*) * vol_m::MAX_VOLS);
@@ -310,7 +310,12 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
         w_assert1(shpid > 0);
 
         uint64_t key = bf_key(vid, shpid);
-        bf_idx idx = _hashtable->lookup(key);
+        bf_idx idx = 0;
+        bf_idx_pair p;
+        if (_hashtable->lookup_imprecise(key, p)) {
+            idx = p.first;
+        }
+
         preload_rc = RCOK;
         if (0 != idx)
         {
@@ -496,7 +501,9 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     cb._recovery_access = false;
     cb._used = true; // turn on _used at last
     cb._dependency_lsn = 0;
-    bool inserted = _hashtable->insert_if_not_exists(bf_key(vid, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
+    // for some type of caller (e.g., redo) we still need hashtable entry for root
+    bool inserted = _hashtable->insert_if_not_exists(bf_key(vid, shpid),
+            bf_idx_pair(idx, 0));
     if (!inserted)
     {
         if (smlevel_0::in_recovery())
@@ -749,7 +756,11 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             DBGOUT1(<<"keep trying to fix.. " << shpid << ". current retry count=" << retry_count);
         }
 #endif
-        bf_idx idx = _hashtable->lookup(key);
+        bf_idx_pair p;
+        bf_idx idx = 0;
+        if (_hashtable->lookup(key, p)) {
+            idx = p.first;
+        }
         if ((idx == 0) || (true == force_load))
         {
             // 1. page is not registered in hash table therefore it is not an in_doubt page either
@@ -925,14 +936,12 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             cb._pid_vol = vol;
             cb._pid_shpid = shpid;
             cb._dependency_lsn = 0;
-#ifdef BP_MAINTAIN_PARENT_PTR
             bf_idx parent_idx = 0;
             // if (is_swizzling_enabled()) {
                 parent_idx = parent - _buffer;
                 w_assert1 (_is_active_idx(parent_idx));
                 cb._parent = parent_idx;
             // }
-#endif // BP_MAINTAIN_PARENT_PTR
             if (!virgin_page)
             {
                 // if the page is read from disk, at least it's sure that
@@ -957,7 +966,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 #endif
 
             // finally, register the page to the hashtable.
-            bool registered = _hashtable->insert_if_not_exists(key, idx);
+            bool registered = _hashtable->insert_if_not_exists(key,
+                    bf_idx_pair(idx, parent_idx));
             if (!registered)
             {
                 if (false == force_load)
@@ -1679,7 +1689,11 @@ inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* poi
     shpid_t child_shpid = *pointer_addr;
     //w_assert1((child_shpid & SWIZZLED_PID_BIT) == 0);
     uint64_t key = bf_key (parent->pid.vol(), child_shpid);
-    bf_idx idx = _hashtable->lookup(key);
+    bf_idx_pair p;
+    bf_idx idx = 0;
+    if (_hashtable->lookup(key, p)) {
+        idx = p.first;
+    }
     // so far, we don't swizzle a child page if it's not in bufferpool yet.
     if (idx == 0) {
         DBGOUT1(<< "Unexpected! the child page " << child_shpid << " isn't in bufferpool yet. gave up swizzling it");
@@ -1830,7 +1844,9 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         cb._dependency_lsn = last_lsn.data();
 
         // Register the constructed 'key' into hash table so we can find this page cb later
-        bool inserted = _hashtable->insert_if_not_exists(key, idx);
+        // CS TODO: parent idx must be set later after redo is triggered
+        bool inserted = _hashtable->insert_if_not_exists(key,
+                bf_idx_pair(idx, 0));
         if (false == inserted)
         {
             ERROUT(<<"failed to register a page as in_doubt in hashtable during Log Analysis phase");
@@ -1947,7 +1963,9 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     // w_assert1(_buffer[child_idx].btree_level == 1);
     w_assert1(child_cb._pid_vol == parent_cb._pid_vol);
     w_assert1(child_cb.pin_cnt() >= 1); // because it's swizzled
-    w_assert1(child_idx == _hashtable->lookup(bf_key (child_cb._pid_vol, child_cb._pid_shpid)));
+    bf_idx_pair p;
+    w_assert1(_hashtable->lookup(bf_key (child_cb._pid_vol, child_cb._pid_shpid), p));
+    w_assert1(child_idx == p.first);
     child_cb._swizzled = false;
 #ifdef BP_TRACK_SWIZZLED_PTR_CNT
     if (parent_cb._swizzled_ptr_cnt_hint > 0) {
@@ -2113,7 +2131,7 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     //re-create hashtable
     delete _hashtable;
     int buckets = w_findprime(1024 + (_block_cnt / 4));
-    _hashtable = new bf_hashtable<bf_idx>(buckets);
+    _hashtable = new bf_hashtable<bf_idx_pair>(buckets);
     w_assert0(_hashtable != NULL);
     ::memset (_volumes, 0, sizeof(bf_tree_vol_t*) * vol_m::MAX_VOLS);
     _dirty_page_count_approximate = 0;

@@ -77,8 +77,8 @@ public:
     bf_hashbucket_chunk<T>         _chunk;
     uint32_t _used_count;
 
-    T find (uint64_t key);
-    T find_imprecise (uint64_t key);
+    bool find (uint64_t key, T& value);
+    bool find_imprecise (uint64_t key, T& value);
     bool append_if_not_exists (uint64_t key, T value);
     bool update (uint64_t key, T value);
     bool remove (uint64_t key);
@@ -87,13 +87,14 @@ private:
 };
 
 template<class T>
-T bf_hashbucket<T>::find(uint64_t key) {
+bool bf_hashbucket<T>::find(uint64_t key, T& value) {
     spinlock_read_critical_section cs(&_lock);
 
     //first, take a look at initial chunk
     for (uint32_t i = 0; i < _used_count && i < HASHBUCKET_INITIAL_CHUNK_SIZE; ++i) {
         if (_chunk.keys[i] == key) {
-            return _chunk.values[i];
+            value = _chunk.values[i];
+            return true;
         }
     }
 
@@ -107,23 +108,25 @@ T bf_hashbucket<T>::find(uint64_t key) {
         for (uint32_t i = 0; i < cur_chunk->size && cur_count < _used_count;
                 ++i, ++cur_count) {
             if (cur_chunk->keys[i] == key) {
-                return cur_chunk->values[i];
+                value = cur_chunk->values[i];
+                return true;
             }
         }
     }
 
-    return 0; // not found
+    return false; // not found
 }
 
 template<class T>
-T bf_hashbucket<T>::find_imprecise(uint64_t key) {
+bool bf_hashbucket<T>::find_imprecise(uint64_t key, T& value) {
     // same as find(), but this doesn't take locks. So, we might get false positives/negatives.
     // we have to make sure we don't crash because of concurrent updates (cf. robust search).
     // note that _chunk has always size of HASHBUCKET_INITIAL_CHUNK_SIZE.
     const uint32_t used_count = *&_used_count;
     for (uint32_t i = 0; i < used_count && i < HASHBUCKET_INITIAL_CHUNK_SIZE; ++i) {
         if (_chunk.keys[i] == key) {
-            return _chunk.values[i];
+            value = _chunk.values[i];
+            return true;
         }
     }
     uint32_t cur_count = HASHBUCKET_INITIAL_CHUNK_SIZE;
@@ -134,11 +137,12 @@ T bf_hashbucket<T>::find_imprecise(uint64_t key) {
         }
         for (uint32_t i = 0; i < cur_chunk->size && cur_count < used_count; ++i, ++cur_count) {
             if (cur_chunk->keys[i] == key) {
-                return cur_chunk->values[i];
+                value = cur_chunk->values[i];
+                return true;
             }
         }
     }
-    return 0; // not found
+    return false; // not found
 }
 
 template<class T>
@@ -158,6 +162,7 @@ bool bf_hashbucket<T>::update (uint64_t key, T value) {
         for (uint32_t i = 0; i < cur_chunk->size && cur_count < _used_count; ++i, ++cur_count) {
             if (cur_chunk->keys[i] == key) {
                 cur_chunk->values[i] = value;
+                return true;
             }
         }
     }
@@ -290,15 +295,15 @@ bool bf_hashtable<T>::insert_if_not_exists(uint64_t key, T value) {
 }
 
 template<class T>
-T bf_hashtable<T>::lookup(uint64_t key) const {
+bool bf_hashtable<T>::lookup(uint64_t key, T& value) const {
     uint32_t hash = bf_hash(key);
-    return _table[hash % _size].find(key);
+    return _table[hash % _size].find(key, value);
 }
 
 template<class T>
-T bf_hashtable<T>::lookup_imprecise(uint64_t key) const {
+bool bf_hashtable<T>::lookup_imprecise(uint64_t key, T& value) const {
     uint32_t hash = bf_hash(key);
-    return _table[hash % _size].find_imprecise(key);
+    return _table[hash % _size].find_imprecise(key, value);
 }
 
 template<class T>

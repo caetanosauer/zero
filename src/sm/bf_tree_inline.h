@@ -288,7 +288,9 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, stid_t store, shp
     get_cb(idx)._uncommitted_cnt = 0;
     ++_dirty_page_count_approximate;
     get_cb(idx)._swizzled = true;
-    bool inserted = _hashtable->insert_if_not_exists(bf_key(store.vol, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
+    // for some type of caller (e.g., redo) we still need hashtable entry for root
+    bool inserted = _hashtable->insert_if_not_exists(bf_key(store.vol, shpid),
+            bf_idx_pair(idx, 0));
     if (!inserted) {
         ERROUT (<<"failed to insert a virgin root page to hashtable. this must not have happened because there shouldn't be any race. wtf");
         return RC(eINTERNAL);
@@ -385,10 +387,14 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
      * Verify when swizzling off & non-main memory DB that lookup table handles this page correctly:
      */
 #ifdef SIMULATE_NO_SWIZZLING
-    w_assert1(idx == _hashtable->lookup(bf_key(vol, get_cb(volume->_root_pages[store])._pid_shpid)));
+    bf_idx_pair p;
+    w_assert1(_hashtable->lookup(bf_key(vol, get_cb(volume->_root_pages[store])._pid_shpid), p));
+    w_assert1(idx == p.first);
 #else // SIMULATE_NO_SWIZZLING
     if (!is_swizzling_enabled()) {
-        w_assert1(idx == _hashtable->lookup(bf_key(store.vol, get_cb(volume->_root_pages[store.store])._pid_shpid)));
+        bf_idx_pair p;
+        w_assert1(_hashtable->lookup(bf_key(store.vol, get_cb(volume->_root_pages[store.store])._pid_shpid), p));
+        w_assert1(idx == p.first);
     }
 #endif // SIMULATE_NO_SWIZZLING
 #endif // SIMULATE_MAINMEMORYDB
@@ -629,7 +635,11 @@ inline bf_idx bf_tree_m::lookup_in_doubt(const int64_t key) const
     // note that the actual page (_buffer) may or may not in the buffer pool
     // use this function with caution
 
-    return _hashtable->lookup(key);
+    bf_idx_pair p;
+    if (_hashtable->lookup(key, p)) {
+        return p.first;
+    }
+    return 0;
 }
 
 inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
@@ -645,11 +655,10 @@ inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
     // it is later than the new_lsn, we want the earliest lsn in _rec_lsn
 
     uint64_t key = bf_key(pid.vol(), pid.page);
-    bf_idx idx = _hashtable->lookup(key);
-    if (0 != idx)
-    {
+    bf_idx_pair p;
+    if (_hashtable->lookup(key, p)) {
         // Page exists in buffer pool hash table
-        bf_tree_cb_t &cb = smlevel_0::bf->get_cb(idx);
+        bf_tree_cb_t &cb = smlevel_0::bf->get_cb(p.first);
 
         lsn_t lsn = new_lsn;
         if (0 == new_lsn.data())

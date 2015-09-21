@@ -7,9 +7,12 @@
 
 #include "w_defines.h"
 #include "bf_idx.h"
+#include <utility>
 
 template<class T>
 class bf_hashbucket;
+
+typedef pair<bf_idx, bf_idx> bf_idx_pair;
 
 /**
  * \Brief Hash table for the buffer pool manager.
@@ -50,7 +53,7 @@ public:
      * Returns the bf_idx linked to the given key (volume and page ID, see bf_key() in bf_tree.cpp).
      * If the key doesn't exist in this bufferpool, returns 0 (invalid bf_idx).
      */
-    T      lookup(uint64_t key) const;
+    bool      lookup(uint64_t key, T& value) const;
 
     /**
      * Imprecise-but-fast version of lookup().
@@ -58,7 +61,7 @@ public:
      * are possible. The caller must make sure false-positives/negatives won't cause an issue.
      * This is so far used from eviction routine, which doesn't have to be precise.
      */
-    T      lookup_imprecise(uint64_t key) const;
+    bool      lookup_imprecise(uint64_t key, T& value) const;
 
     /**
     * Insert the key in the _table and link it with the given bf_idx.
