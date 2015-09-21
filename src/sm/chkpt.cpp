@@ -386,8 +386,6 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
     lsn_t chkpt_begin = master_lsn;
 
     vector<string> dismounted_devs;
-    set<lpid_t> written_pages;
-
     while (scan.xct_next(lsn, r) && !scan_done)
     {
         acquire_lock = true; // New log record, reset the flag
@@ -409,7 +407,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
         if (r.is_single_sys_xct() && !r.null_pid())
         {
             // We have a system transaction log record
-            if (true == _analysis_system_log(r, new_chkpt, written_pages))
+            if (true == _analysis_system_log(r, new_chkpt))
             {
                 // Go to next log record
                 continue;
@@ -523,7 +521,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                 {
                     // Process it only if we have seen a matching 'end checkpoint' log record
                     // meaning we are processing the last completed checkpoint
-                    _analysis_ckpt_bf_log(r, new_chkpt, written_pages);
+                    _analysis_ckpt_bf_log(r, new_chkpt);
                 }
                 else
                 {
@@ -755,7 +753,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                 // we need to take care of both buffer pool and lock acquisition if needed
                 {
                     // Take care of common stuff among forward and backward log scan first
-                    _analysis_other_log(r, new_chkpt, xct_idx, written_pages);
+                    _analysis_other_log(r, new_chkpt, xct_idx);
 
                     if ((true == acquire_lock) && (true == restart_with_lock))
                     {
@@ -811,7 +809,24 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                     for(uint i=0; i<*count; i++) {
                         lpid_t pid = *pid_begin;
                         pid.page += i;
-                        written_pages.insert(pid);
+
+                        int page;
+                        if( (page = indexOf(new_chkpt.pid, pid)) != -1) {
+                            // Page exists in bf_table, we mark it as !dirty
+                            if(new_chkpt.page_lsn[page] < lsn) {
+                                new_chkpt.page_lsn[page] = lsn;
+                                new_chkpt.dirty[page] = false;
+                            }
+                        }
+                        else {
+                            // Page does not exist in bf_table, we add it with
+                            // dummy values and mark as !dirty
+                            new_chkpt.pid.push_back(pid);
+                            new_chkpt.store.push_back(0);
+                            new_chkpt.rec_lsn.push_back(lsn_t::null);
+                            new_chkpt.page_lsn.push_back(lsn);
+                            new_chkpt.dirty.push_back(false);
+                        }
                     }
                 }
                 break;
@@ -862,12 +877,37 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
     // Done with backward log scan, check the compensation list
     _analysis_process_compensation_map(mapCLR, new_chkpt);
 
+    // Remove non-dirty pages
+    for(uint i=0; i<new_chkpt.pid.size(); i++){
+        if(new_chkpt.dirty[i] == false) {
+            new_chkpt.pid.erase(new_chkpt.pid.begin() + i);
+            new_chkpt.store.erase(new_chkpt.store.begin() + i);
+            new_chkpt.rec_lsn.erase(new_chkpt.rec_lsn.begin() + i);
+            new_chkpt.page_lsn.erase(new_chkpt.page_lsn.begin() + i);
+            new_chkpt.dirty.erase(new_chkpt.dirty.begin() + i);
+            i--;
+        }
+    }
+
     // We are done with Log Analysis, at this point each transactions in the transaction
     // table is either loser (active) or winner (ended); non-read-locks have been acquired
-    // on all loser transactions.
+    // on all loser transactions. Remove finished transactions.
+    for(uint i=0; i<new_chkpt.tid.size(); i++) {
+        if (xct_t::xct_ended == new_chkpt.state[i]) {
+            // Then erase the ended transaction
+            new_chkpt.tid.erase(new_chkpt.tid.begin() + i);
+            new_chkpt.state.erase(new_chkpt.state.begin() + i);
+            new_chkpt.last_lsn.erase(new_chkpt.last_lsn.begin() + i);
+            new_chkpt.undo_nxt.erase(new_chkpt.undo_nxt.begin() + i);
+            new_chkpt.first_lsn.erase(new_chkpt.first_lsn.begin() + i);
 
-    // Final process of the entries in transaction table
-    _analysis_process_txn_table(new_chkpt);
+            // And erase its locks
+            new_chkpt.lock_hash.erase(new_chkpt.lock_hash.begin() + i);
+            new_chkpt.lock_mode.erase(new_chkpt.lock_mode.begin() + i);
+
+            i--;
+        }
+    }
 
     // Calculate min_rec_lsn. It is the smallest lsn from all dirty pages.
     for(uint i=0; i<new_chkpt.rec_lsn.size(); i++) {
@@ -913,7 +953,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt, set<lpid_t>& written_pages) // In: Log record to process
+bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt) // In: Log record to process
 {
     // Only system transaction log record should come in here
     w_assert1(r.is_single_sys_xct());
@@ -976,6 +1016,7 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt, set<lpid_t>&
                 new_chkpt.store.erase(new_chkpt.store.begin() + page_idx);
                 new_chkpt.rec_lsn.erase(new_chkpt.rec_lsn.begin() + page_idx);
                 new_chkpt.page_lsn.erase(new_chkpt.page_lsn.begin() + page_idx);
+                new_chkpt.dirty.erase(new_chkpt.dirty.begin() + page_idx);
 
                 // CHECK THIS LATER:
                 // Page cb is in buffer pool, clear the 'in_doubt' and 'used' flags
@@ -1004,23 +1045,25 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt, set<lpid_t>&
                 if (0 == page_of_interest.page)
                     W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a system transaction log record");
 
-                if(written_pages.find(page_of_interest) == written_pages.end()) { //page was not written yet
-                    int page_idx = indexOf(new_chkpt.pid, page_of_interest);
-                    if( page_idx != -1) {   // page is already present in buffer table
-                        if(new_chkpt.rec_lsn[page_idx] > lsn) {
-                            new_chkpt.rec_lsn[page_idx] = lsn;
-                        }
+                int page_idx = indexOf(new_chkpt.pid, page_of_interest);
+                if( page_idx != -1) {   // page is already in bf_table
+                    if(new_chkpt.rec_lsn[page_idx] > lsn) {
+                        new_chkpt.rec_lsn[page_idx] = lsn;
+                    }
 
-                        if(new_chkpt.page_lsn[page_idx] < lsn) {
-                            new_chkpt.page_lsn[page_idx] = lsn;
-                        }
+                    if(new_chkpt.page_lsn[page_idx] < lsn) {
+                        new_chkpt.page_lsn[page_idx] = lsn;
+                        new_chkpt.dirty[page_idx] = true;
                     }
-                    else {  // page is not present in buffer table
-                        new_chkpt.pid.push_back(page_of_interest);
-                        new_chkpt.store.push_back(r.snum());
-                        new_chkpt.rec_lsn.push_back(lsn);
-                        new_chkpt.page_lsn.push_back(lsn);
-                    }
+
+                    new_chkpt.store[page_idx] = r.snum();
+                }
+                else {  // page is not present in buffer table
+                    new_chkpt.pid.push_back(page_of_interest);
+                    new_chkpt.store.push_back(r.snum());
+                    new_chkpt.rec_lsn.push_back(lsn);
+                    new_chkpt.page_lsn.push_back(lsn);
+                    new_chkpt.dirty.push_back(true);
                 }
 
                 // If we get here, we have registed a new page with the 'in_doubt' and 'used' flags
@@ -1057,23 +1100,25 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt, set<lpid_t>&
                         }
                     }
 
-                    if(written_pages.find(page2_of_interest) == written_pages.end()) { //page was not written yet
-                        int page_idx = indexOf(new_chkpt.pid, page2_of_interest);
-                        if( page_idx!= -1) {
-                            if(new_chkpt.rec_lsn[page_idx] > lsn) {
-                                new_chkpt.rec_lsn[page_idx] = lsn;
-                            }
+                    int page_idx = indexOf(new_chkpt.pid, page2_of_interest);
+                    if( page_idx!= -1) {
+                        if(new_chkpt.rec_lsn[page_idx] > lsn) {
+                            new_chkpt.rec_lsn[page_idx] = lsn;
+                        }
 
-                            if(new_chkpt.page_lsn[page_idx] < lsn) {
-                                new_chkpt.page_lsn[page_idx] = lsn;
-                            }
+                        if(new_chkpt.page_lsn[page_idx] < lsn) {
+                            new_chkpt.page_lsn[page_idx] = lsn;
+                            new_chkpt.dirty[page_idx] = true;
                         }
-                        else {
-                            new_chkpt.pid.push_back(page2_of_interest);
-                            new_chkpt.store.push_back(r.snum());
-                            new_chkpt.rec_lsn.push_back(lsn);
-                            new_chkpt.page_lsn.push_back(lsn);
-                        }
+
+                        new_chkpt.store[page_idx] = r.snum();
+                    }
+                    else {
+                        new_chkpt.pid.push_back(page2_of_interest);
+                        new_chkpt.store.push_back(r.snum());
+                        new_chkpt.rec_lsn.push_back(lsn);
+                        new_chkpt.page_lsn.push_back(lsn);
+                        new_chkpt.dirty.push_back(true);
                     }
                 }
             }
@@ -1104,11 +1149,9 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt, set<lpid_t>&
  *
  *********************************************************************/
 void chkpt_m::_analysis_ckpt_bf_log(logrec_t& r,           // In: Log record to process
-                                    chkpt_t& new_chkpt,    // In/Out:
-                                    set<lpid_t>& written_pages)
+                                    chkpt_t& new_chkpt)    // In/Out:
 {
     const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
-    //DBGOUT3(<<"t_chkpt_bf_tab, entries: " << dp->count);
 
     for (uint i = 0; i < dp->count; i++)
     {
@@ -1119,25 +1162,28 @@ void chkpt_m::_analysis_ckpt_bf_log(logrec_t& r,           // In: Log record to 
         if (0 == dp->brec[i].pid.page)
             W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a page in t_chkpt_bf_tab log record");
 
-        if(written_pages.find(dp->brec[i].pid) == written_pages.end()) {
-            int page_idx = indexOf(new_chkpt.pid, dp->brec[i].pid);
-            if(page_idx != -1) {
-                if(new_chkpt.rec_lsn[page_idx] > dp->brec[i].rec_lsn.data()) {
-                    new_chkpt.rec_lsn[page_idx] = dp->brec[i].rec_lsn.data();
-                }
+        int page_idx = indexOf(new_chkpt.pid, dp->brec[i].pid);
+        if(page_idx != -1) {
 
-                if(new_chkpt.page_lsn[page_idx] < dp->brec[i].page_lsn.data()) {
-                    new_chkpt.page_lsn[page_idx] = dp->brec[i].page_lsn.data();
-                }
-            }
-            else {
-                new_chkpt.pid.push_back(dp->brec[i].pid);
-                new_chkpt.store.push_back(dp->brec[i].store);
-                new_chkpt.rec_lsn.push_back(dp->brec[i].rec_lsn.data());
-                new_chkpt.page_lsn.push_back(dp->brec[i].page_lsn.data());
+            // This page is already in the bf_table but marked as !dirty,
+            // meaning there was a more recent t_page_write log record referring
+            // to it. We ignore the information from the chkpt_bf_tab
+            if(new_chkpt.dirty[page_idx] == false) continue;
+
+            if(new_chkpt.rec_lsn[page_idx] > dp->brec[i].rec_lsn.data()) {
+                new_chkpt.rec_lsn[page_idx] = dp->brec[i].rec_lsn.data();
             }
 
-            //DBGOUT3(<< "Page marked in_doubt in the buffer pool: " << dp->brec[i].pid);
+            if(new_chkpt.page_lsn[page_idx] < dp->brec[i].page_lsn.data()) {
+                new_chkpt.page_lsn[page_idx] = dp->brec[i].page_lsn.data();
+            }
+        }
+        else {
+            new_chkpt.pid.push_back(dp->brec[i].pid);
+            new_chkpt.store.push_back(dp->brec[i].store);
+            new_chkpt.rec_lsn.push_back(dp->brec[i].rec_lsn.data());
+            new_chkpt.page_lsn.push_back(dp->brec[i].page_lsn.data());
+            new_chkpt.dirty.push_back(true);
         }
     }
     return;
@@ -1400,8 +1446,7 @@ void chkpt_m::_analysis_ckpt_lock_log(logrec_t& r,            // In: log record
  *********************************************************************/
 void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
                                   chkpt_t& new_chkpt,        // In/Out:
-                                  int xct_idx,              // In:
-                                  set<lpid_t>& written_pages)
+                                  int xct_idx)              // In:
 
 {
     lsn_t lsn = r.get_lsn_ck();
@@ -1473,6 +1518,7 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
                 new_chkpt.store.erase(new_chkpt.store.begin() + page_idx);
                 new_chkpt.rec_lsn.erase(new_chkpt.rec_lsn.begin() + page_idx);
                 new_chkpt.page_lsn.erase(new_chkpt.page_lsn.begin() + page_idx);
+                new_chkpt.dirty.erase(new_chkpt.dirty.begin() + page_idx);
 
                 in_doubt_count--;
 
@@ -1496,23 +1542,25 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
             if (0 == page_of_interest.page)
                 W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a page in log record, log type = " << r.type());
 
-            if(written_pages.find(page_of_interest) == written_pages.end()) {
-                int page_idx = indexOf(new_chkpt.pid, page_of_interest);
-                if(page_idx != -1) {
-                    if(new_chkpt.rec_lsn[page_idx] > lsn) {
-                        new_chkpt.rec_lsn[page_idx] = lsn;
-                    }
+            int page_idx = indexOf(new_chkpt.pid, page_of_interest);
+            if(page_idx != -1) {
+                if(new_chkpt.rec_lsn[page_idx] > lsn) {
+                    new_chkpt.rec_lsn[page_idx] = lsn;
+                }
 
-                    if(new_chkpt.page_lsn[page_idx] < lsn) {
-                        new_chkpt.page_lsn[page_idx] = lsn;
-                    }
+                if(new_chkpt.page_lsn[page_idx] < lsn) {
+                    new_chkpt.page_lsn[page_idx] = lsn;
+                    new_chkpt.dirty[page_idx] = true;
                 }
-                else {
-                    new_chkpt.pid.push_back(page_of_interest);
-                    new_chkpt.store.push_back(r.snum());
-                    new_chkpt.rec_lsn.push_back(lsn);
-                    new_chkpt.page_lsn.push_back(lsn);
-                }
+
+                new_chkpt.store[page_idx] = r.snum();
+            }
+            else {
+                new_chkpt.pid.push_back(page_of_interest);
+                new_chkpt.store.push_back(r.snum());
+                new_chkpt.rec_lsn.push_back(lsn);
+                new_chkpt.page_lsn.push_back(lsn);
+                new_chkpt.dirty.push_back(true);
             }
         }
     }
@@ -1560,23 +1608,25 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
             if (0 == page_of_interest.page)
                 W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a page in compensation log record");
 
-            if(written_pages.find(page_of_interest) == written_pages.end()) {
-                int page_idx = indexOf(new_chkpt.pid, page_of_interest);
-                if(page_idx != -1) {
-                    if(new_chkpt.rec_lsn[page_idx] > lsn) {
-                        new_chkpt.rec_lsn[page_idx] = lsn;
-                    }
+            int page_idx = indexOf(new_chkpt.pid, page_of_interest);
+            if(page_idx != -1) {
+                if(new_chkpt.rec_lsn[page_idx] > lsn) {
+                    new_chkpt.rec_lsn[page_idx] = lsn;
+                }
 
-                    if(new_chkpt.page_lsn[page_idx] < lsn) {
-                        new_chkpt.page_lsn[page_idx] = lsn;
-                    }
+                if(new_chkpt.page_lsn[page_idx] < lsn) {
+                    new_chkpt.page_lsn[page_idx] = lsn;
+                    new_chkpt.dirty[page_idx] = true;
                 }
-                else {
-                    new_chkpt.pid.push_back(page_of_interest);
-                    new_chkpt.store.push_back(r.snum());
-                    new_chkpt.rec_lsn.push_back(lsn);
-                    new_chkpt.page_lsn.push_back(lsn);
-                }
+
+                new_chkpt.store[page_idx] = r.snum();
+            }
+            else {
+                new_chkpt.pid.push_back(page_of_interest);
+                new_chkpt.store.push_back(r.snum());
+                new_chkpt.rec_lsn.push_back(lsn);
+                new_chkpt.page_lsn.push_back(lsn);
+                new_chkpt.dirty.push_back(true);
             }
         }
     }

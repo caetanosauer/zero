@@ -95,6 +95,7 @@ struct chkpt_t{
   vector<snum_t> store;     // page lpid
   vector<lsn_t> rec_lsn;   // initial dirty lsn
   vector<lsn_t> page_lsn;  // last write lsn
+  vector<bool> dirty;      //this flag is only used to filter non-dirty pages
 
   //Lock Table (one vector per transaction)
   vector<vector<okvl_mode> > lock_mode;  // lock mode
@@ -154,12 +155,13 @@ private:
     chkpt_thread_t*  _chkpt_thread;
     long             _chkpt_count;
     lsn_t            _chkpt_last;
+    LogArchiver::LogConsumer* cons;
 
-    bool             _analysis_system_log(logrec_t& r, chkpt_t& new_chkpt, set<lpid_t>& written_pages);
-    void             _analysis_ckpt_bf_log(logrec_t& r,  chkpt_t& new_chkpt, set<lpid_t>& written_pages);
+    bool             _analysis_system_log(logrec_t& r, chkpt_t& new_chkpt);
+    void             _analysis_ckpt_bf_log(logrec_t& r,  chkpt_t& new_chkpt);
     void             _analysis_ckpt_xct_log(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR);
     void             _analysis_ckpt_lock_log(logrec_t& r, chkpt_t& new_chkpt);
-    void             _analysis_other_log(logrec_t& r, chkpt_t& new_chkpt, int xct_idx, set<lpid_t>& written_pages);
+    void             _analysis_other_log(logrec_t& r, chkpt_t& new_chkpt, int xct_idx);
     void             _analysis_process_lock(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR, int xct_idx);
     void             _analysis_acquire_lock_log(logrec_t& r, chkpt_t& new_chkpt, int xct_idx);
     void             _analysis_process_compensation_map(tid_CLR_map& mapCLR, chkpt_t& new_chkpt);
