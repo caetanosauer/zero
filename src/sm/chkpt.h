@@ -85,6 +85,8 @@ struct chkpt_t{
   //Volume Table
   vid_t next_vid;
   vector<string> dev_paths;
+  vector<bool> dev_mounted;
+  vector<lsn_t> dev_lsn;
 
   //Backup Table
   vector<vid_t> backup_vids;

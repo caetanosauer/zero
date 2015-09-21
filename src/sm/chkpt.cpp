@@ -385,7 +385,6 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
     bool scan_done = false;
     lsn_t chkpt_begin = master_lsn;
 
-    vector<string> dismounted_devs;
     while (scan.xct_next(lsn, r) && !scan_done)
     {
         acquire_lock = true; // New log record, reset the flag
@@ -594,16 +593,18 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                     tab->read_devnames(dnames);
                     w_assert0(tab->count == dnames.size());
                     for (int i = 0; i < tab->count; i++) {
-                        vector<string>::iterator it = find(dismounted_devs.begin(), dismounted_devs.end(), dnames[i]);
-                        if(it != dismounted_devs.end()) {
-                            /* If the device is in dismounted_devs, there was a
-                             * previous matching t_dismount_vol log record. */
-                            dismounted_devs.erase(it);
+                        int dev_idx;
+                        if( (dev_idx = indexOf(new_chkpt.dev_paths, dnames[i])) != -1) {
+                            // volume is already in the list and it is safe to
+                            // ignore information about it from the previous chkpt,
+                            // since it is guaranteed to be out-dated
                         }
                         else {
-                            /* There was no t_dismount_vol log record matching this
-                             * volume. This means the volume is still mounted */
                             new_chkpt.dev_paths.push_back(dnames[i]);
+                            new_chkpt.dev_mounted.push_back(true);
+                            new_chkpt.dev_lsn.push_back(lsn_t::null);
+                            // dev_lsn = null, because any further log record
+                            // about this device is going to be more recent
                         }
                     }
 
@@ -615,16 +616,20 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
             case logrec_t::t_mount_vol:
                 {
                     string dev = (const char*)(r.data_ssx());
-                    vector<string>::iterator it = find(dismounted_devs.begin(), dismounted_devs.end(), dev);
-                    if(it != dismounted_devs.end()) {
-                        /* If the device is in dismounted_devs, there was a
-                         * previous matching t_dismount_vol log record. */
-                        dismounted_devs.erase(it);
+                    int dev_idx;
+                    if( (dev_idx = indexOf(new_chkpt.dev_paths, dev)) != -1) {
+                        // volume exists already ...
+                        if(new_chkpt.dev_lsn[dev_idx] < lsn) {
+                            // ... but the log record is more recent
+                            new_chkpt.dev_mounted[dev_idx] = true;
+                            new_chkpt.dev_lsn[dev_idx] = lsn;
+                        }
                     }
                     else {
-                        /* There was no t_dismount_vol log record matching this
-                         * volume. This means the volume is still mounted */
+                        // volume does not exist yet
                         new_chkpt.dev_paths.push_back(dev);
+                        new_chkpt.dev_mounted.push_back(true);
+                        new_chkpt.dev_lsn.push_back(lsn);
                     }
                 }
                 break;
@@ -636,7 +641,21 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
             case logrec_t::t_dismount_vol:
                 {
                     string dev = (const char*)(r.data_ssx());
-                    dismounted_devs.push_back(dev);
+                    int dev_idx;
+                    if( (dev_idx = indexOf(new_chkpt.dev_paths, dev)) != -1) {
+                        // volume exists already ...
+                        if(new_chkpt.dev_lsn[dev_idx] < lsn) {
+                            // ... but the log record is more recent
+                            new_chkpt.dev_mounted[dev_idx] = false;
+                            new_chkpt.dev_lsn[dev_idx] = lsn;
+                        }
+                    }
+                    else {
+                        // volume does not exist yet
+                        new_chkpt.dev_paths.push_back(dev);
+                        new_chkpt.dev_mounted.push_back(false);
+                        new_chkpt.dev_lsn.push_back(lsn);
+                    }
                 }
                 break;
 
@@ -846,8 +865,6 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
         } //switch
     } //while
 
-    w_assert1(dismounted_devs.size() == 0);
-
     // The assumption is that we must scan a completed checkpoint, stop
     // if the assumption failed.
     if (false == scan_done)
@@ -876,6 +893,16 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
 
     // Done with backward log scan, check the compensation list
     _analysis_process_compensation_map(mapCLR, new_chkpt);
+
+    // Remove non-mounted devices
+    for(uint i=0; i<new_chkpt.dev_paths.size(); i++){
+        if(new_chkpt.dev_mounted[i] == false) {
+            new_chkpt.dev_paths.erase(new_chkpt.dev_paths.begin() + i);
+            new_chkpt.dev_mounted.erase(new_chkpt.dev_mounted.begin() + i);
+            new_chkpt.dev_lsn.erase(new_chkpt.dev_lsn.begin() + i);
+            i--;
+        }
+    }
 
     // Remove non-dirty pages
     for(uint i=0; i<new_chkpt.pid.size(); i++){
