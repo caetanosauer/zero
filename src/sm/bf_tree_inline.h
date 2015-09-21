@@ -397,26 +397,34 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
 
 inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch_mode_t mode, bool conditional) {
 
-#ifdef SIMULATE_NO_SWIZZLING
-    _increment_pin_cnt_no_assumption(idx);
-#else // SIMULATE_NO_SWIZZLING
-    if (!is_swizzling_enabled()) {
-        _increment_pin_cnt_no_assumption(idx);
-    }
-#endif // SIMULATE_NO_SWIZZLING
+// #ifdef SIMULATE_NO_SWIZZLING
+//     _increment_pin_cnt_no_assumption(idx);
+// #else // SIMULATE_NO_SWIZZLING
+//     // if (!is_swizzling_enabled()) {
+//         _increment_pin_cnt_no_assumption(idx);
+//     // }
+// #endif // SIMULATE_NO_SWIZZLING
+
+    // CS TODO: this doesn't make sense. What does it matter if we have a
+    // conditional flag, but the method always returns OK whether or not
+    // the latch suceeded??
+    w_assert0(!conditional);
 
     // root page is always swizzled. thus we don't need to increase pin. just take latch.
     W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
     // also, doesn't have to unpin whether there happens an error or not. easy!
     page = &(_buffer[idx]);
 
-#ifdef SIMULATE_NO_SWIZZLING
-    _decrement_pin_cnt_assume_positive(idx);
-#else // SIMULATE_NO_SWIZZLING
-    if (!is_swizzling_enabled()) {
-        _decrement_pin_cnt_assume_positive(idx);
-    }
-#endif // SIMULATE_NO_SWIZZLING
+    get_cb(idx)._pin_cnt++;
+    // ERROUT(<< "LAtched root! pin count " << get_cb(idx)._pin_cnt);
+
+// #ifdef SIMULATE_NO_SWIZZLING
+//     _decrement_pin_cnt_assume_positive(idx);
+// #else // SIMULATE_NO_SWIZZLING
+//     // if (!is_swizzling_enabled()) {
+//         _decrement_pin_cnt_assume_positive(idx);
+//     // }
+// #endif // SIMULATE_NO_SWIZZLING
     return RCOK;
 }
 
@@ -448,6 +456,7 @@ inline void bf_tree_m::unfix(const generic_page* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
+    cb._pin_cnt--;
     w_assert1(cb.latch().held_by_me());
     cb.latch().latch_release();
 }

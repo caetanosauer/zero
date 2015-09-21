@@ -913,6 +913,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 w_assert1(true == cb._in_doubt);
 
             cb.clear_except_latch();
+            cb._pin_cnt = 0;
             cb._pid_vol = vol;
             cb._pid_shpid = shpid;
             cb._dependency_lsn = 0;
@@ -985,8 +986,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // okay, all done
 #ifdef BP_MAINTAIN_PARENT_PTR
             // if (is_swizzling_enabled()) {
-                lintel::unsafe::atomic_fetch_add((uint32_t*)
-                        &(get_cb(parent_idx)._pin_cnt), 1);
+                // lintel::unsafe::atomic_fetch_add((uint32_t*)
+                //         &(get_cb(parent_idx)._pin_cnt), 1);
                 // we installed a new child of the parent      to this
                 // bufferpool. add parent's count
             // }
@@ -1002,6 +1003,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // Page is safe to access, not calling _validate_access(page)
             // for page access validation purpose
             DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: retrieved a new page: " << shpid);
+            cb._pin_cnt++;
+            // ERROUT(<< "Fixed " << idx << " pin count " << cb._pin_cnt);
 
             return RCOK;
         }
@@ -1120,14 +1123,15 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             int32_t cur_cnt = cb.pin_cnt();
             if (cur_cnt < 0) {
                 w_assert1(cur_cnt == -1);
-                DBGOUT1(<<"bf_tree_m: very unlucky! buffer frame " << idx << " has been just evicted. retrying..");
+                DBGOUT1(<<"bf_tree_m: very unlucky! buffer frame " << idx
+                        << " has been just evicted. retrying..");
                 continue;
             }
-#ifndef NO_PINCNT_INCDEC
-            int32_t cur_ucnt = cur_cnt;
-            if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&cb._pin_cnt), &cur_ucnt, cur_ucnt + 1))
-            {
-#endif
+// #ifndef NO_PINCNT_INCDEC
+//             int32_t cur_ucnt = cur_cnt;
+//             if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&cb._pin_cnt), &cur_ucnt, cur_ucnt + 1))
+//             {
+// #endif
                 // okay, CAS went through
                 if (cb._refbit_approximate < BP_MAX_REFCOUNT) {
                     ++cb._refbit_approximate;
@@ -1136,6 +1140,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 // either successfully or unsuccessfully, we latched the page.
                 // we don't need the pin any more.
                 // here we can simply use atomic_dec because it must be positive now.
+                cb._pin_cnt++;
                 w_assert1(cb.pin_cnt() > 0);
                 w_assert1(cb._pid_vol == vol);
                 if (cb._pid_shpid != shpid) {
@@ -1156,7 +1161,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 // really bring any significant performance improvement.
                 w_assert0(cb._pid_shpid == shpid);
 #ifndef NO_PINCNT_INCDEC
-                lintel::unsafe::atomic_fetch_sub((uint32_t*)(&cb._pin_cnt), 1);
+                // lintel::unsafe::atomic_fetch_sub((uint32_t*)(&cb._pin_cnt), 1);
 #endif
                 if (rc.is_error())
                 {
@@ -1205,11 +1210,11 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 }
                 return rc;
 #ifndef NO_PINCNT_INCDEC
-            } else {
-                // another thread is doing something. keep trying.
-                DBGOUT1(<<"bf_tree_m: a bit unlucky! buffer frame " << idx << " has contention. cb._pin_cnt=" << cb._pin_cnt <<", expected=" << cur_ucnt);
-                continue;
-            }
+            // } else {
+            //     // another thread is doing something. keep trying.
+            //     DBGOUT1(<<"bf_tree_m: a bit unlucky! buffer frame " << idx << " has contention. cb._pin_cnt=" << cb._pin_cnt <<", expected=" << cur_ucnt);
+            //     continue;
+            // }
 #endif
         }
     }
@@ -1318,7 +1323,9 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) return;
 #endif // SIMULATE_MAINMEMORYDB
-    get_cb(idx).pin_cnt_atomic_dec(1);
+    // get_cb(idx).pin_cnt_atomic_dec(1);
+    get_cb(idx)._pin_cnt--;
+    ERROUT(<< "Unpin for refix pin count = " << get_cb(idx)._pin_cnt);
 }
 
 ///////////////////////////////////   Page fix/unfix END         ///////////////////////////////////
@@ -1373,6 +1380,7 @@ void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t 
 
 ///////////////////////////////////   Dirty Page Cleaner END       ///////////////////////////////////
 
+#if 0
 bool bf_tree_m::_increment_pin_cnt_no_assumption(bf_idx idx) {
     w_assert1 (_is_valid_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
@@ -1403,6 +1411,7 @@ void bf_tree_m::_decrement_pin_cnt_assume_positive(bf_idx idx) {
     //lintel::unsafe::atomic_fetch_sub((uint32_t*) &(cb._pin_cnt),1);
     cb.pin_cnt_atomic_dec(1);
 }
+#endif
 
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY BEGIN ///////////////////////////////////
 bool bf_tree_m::register_write_order_dependency(const generic_page* page, const generic_page* dependency) {
@@ -1440,12 +1449,14 @@ bool bf_tree_m::register_write_order_dependency(const generic_page* page, const 
         } else {
             // this means we might be requesting more than one dependency...
             // let's check the old dependency is still active
-            if  (_check_dependency_still_active(cb)) {
-                // the old dependency is still active. we can't make another dependency
-                DBGOUT3(<< "WOD failed on " << page->pid << "->" << dependency->pid
-                        << " because dependency still active on CB");
-                return false;
-            }
+            // if  (_check_dependency_still_active(cb)) {
+            //     // the old dependency is still active. we can't make another dependency
+            //     DBGOUT3(<< "WOD failed on " << page->pid << "->" << dependency->pid
+            //             << " because dependency still active on CB");
+            //     return false;
+            // }
+            // CS TODO: disabled!
+            return false;
         }
     }
 
@@ -1456,9 +1467,10 @@ bool bf_tree_m::register_write_order_dependency(const generic_page* page, const 
 
     // check a cycle of dependency
     if (dependency_cb._dependency_idx != 0) {
-        if (_check_dependency_cycle (idx, dependency_idx)) {
-            return false;
-        }
+        // CS TODO: disabled! (Write-order dependency is broken anyway)
+        // if (_check_dependency_cycle (idx, dependency_idx)) {
+        //     return false;
+        // }
     }
 
     //okay, let's register the dependency
@@ -1470,6 +1482,8 @@ bool bf_tree_m::register_write_order_dependency(const generic_page* page, const 
     return true;
 }
 
+// CS TODO: disabled!
+#if 0
 bool bf_tree_m::_check_dependency_cycle(bf_idx source, bf_idx start_idx) {
     w_assert1(source != start_idx);
     bf_idx dependency_idx = start_idx;
@@ -1550,6 +1564,8 @@ bool bf_tree_m::_check_dependency_still_active(bf_tree_cb_t& cb) {
     }
     return still_active;
 }
+#endif
+
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY END ///////////////////////////////////
 
 #ifdef BP_MAINTAIN_PARENT_PTR
@@ -1570,8 +1586,8 @@ void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
     w_assert1(cb._parent != new_parent_idx);
 
     // move the pin_cnt from old to new parent
-    _decrement_pin_cnt_assume_positive(cb._parent);
-    lintel::unsafe::atomic_fetch_add((uint32_t*) &(get_cb(new_parent_idx)._pin_cnt),1);
+    // _decrement_pin_cnt_assume_positive(cb._parent);
+    // lintel::unsafe::atomic_fetch_add((uint32_t*) &(get_cb(new_parent_idx)._pin_cnt),1);
     cb._parent = new_parent_idx;
 }
 #endif // BP_MAINTAIN_PARENT_PTR
@@ -1669,12 +1685,12 @@ inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* poi
 
     // To swizzle the child, add a pin on the page.
     // We might fail here in a very unlucky case.  Still, it's fine.
-    bool pinned = _increment_pin_cnt_no_assumption (idx);
-    if (!pinned) {
-        DBGOUT1(<< "Unlucky! the child page " << child_shpid << " has been just evicted. gave up swizzling it");
-        get_cb(idx)._concurrent_swizzling = false;
-        return;
-    }
+    // bool pinned = _increment_pin_cnt_no_assumption (idx);
+    // if (!pinned) {
+    //     DBGOUT1(<< "Unlucky! the child page " << child_shpid << " has been just evicted. gave up swizzling it");
+    //     get_cb(idx)._concurrent_swizzling = false;
+    //     return;
+    // }
 
     // we keep the pin until we unswizzle it.
     *pointer_addr = idx | SWIZZLED_PID_BIT; // overwrite the pointer in parent page.
@@ -1926,7 +1942,7 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     }
 #endif
     // because it was swizzled, the current pin count is >= 1, so we can simply do atomic decrement.
-    _decrement_pin_cnt_assume_positive(child_idx);
+    // _decrement_pin_cnt_assume_positive(child_idx);
     --_swizzled_page_count_approximate;
 
     *shpid_addr = child_cb._pid_shpid;
