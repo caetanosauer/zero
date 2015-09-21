@@ -77,6 +77,8 @@ struct RawLock;            // Lock information gathering
 #include "vol.h"
 #include <algorithm>
 
+#include "stopwatch.h"
+
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_array_t<lsn_t>;
 template class w_auto_delete_array_t<tid_t>;
