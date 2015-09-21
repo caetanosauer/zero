@@ -208,6 +208,9 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     ::memset (_clockhand_pathway, 0, sizeof(uint32_t) * MAX_CLOCKHAND_DEPTH);
     _clockhand_current_depth = 1;
     _clockhand_pathway[0] = 1;
+
+    _eviction_current_frame = 0;
+    // DO_PTHREAD(pthread_mutex_init(&_clockhand_copy_lock, NULL));
 }
 
 bf_tree_m::~bf_tree_m() {
@@ -246,6 +249,8 @@ bf_tree_m::~bf_tree_m() {
         delete _cleaner;
         _cleaner = NULL;
     }
+    // DO_PTHREAD(pthread_mutex_destroy(&_clockhand_copy_lock));
+
 }
 
 w_rc_t bf_tree_m::init ()
@@ -1146,6 +1151,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 if (cb._pid_shpid != shpid) {
                     DBGOUT1(<<"cb._pid_shpid = " << cb._pid_shpid << ", shpid = " << shpid);
                 }
+                bf_idx parent_idx = parent - _buffer;
+                w_assert1 (_is_active_idx(parent_idx));
+                cb._parent = parent_idx;
                 // CS: this can happen if the following race condition occurs
                 // 1. Thread 1: pin count is retrieved as 0
                 // 2. Thread 2: evicts the frame and sets the pin count to -1
@@ -1623,10 +1631,12 @@ general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpi
 
     //for (int i = -1; i <= max_slot; ++i) {
     for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot; ++i) {
-        if (*p.child_slot_address(i) != shpid) {
-            continue;
+        // ERROUT(<< "Looking for child " << shpid << " on " <<
+        //         *p.child_slot_address(i));
+        if (*p.child_slot_address(i) == shpid) {
+            ERROUT(<< "OK");
+            return i;
         }
-        return i;
     }
     return GeneralRecordIds::INVALID;
 }

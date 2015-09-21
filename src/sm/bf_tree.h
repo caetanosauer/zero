@@ -132,8 +132,9 @@ const uint32_t UNSWIZZLE_BATCH_SIZE = 1000;
 
 /**
 * When eviction is triggered, _about_ this number of frames will be evicted at once.
+* Given as a ratio of the buffer size (currently 1%)
 */
-const uint32_t EVICT_BATCH_SIZE = 1000;
+const float EVICT_BATCH_RATIO = 0.01;
 
 /**
 * We don't go through frames for each evict/unswizzle try.
@@ -184,6 +185,7 @@ class bf_tree_m {
     friend class test_bf_fixed; // for testcases
     friend class bf_tree_cleaner; // for page cleaning
     friend class bf_tree_cleaner_slave_thread_t; // for page cleaning
+    friend class bf_eviction_thread_t;
 
 public:
 #ifdef PAUSE_SWIZZLING_ON
@@ -634,7 +636,7 @@ public:
         uint32_t &evicted_count,
         uint32_t &unswizzled_count,
         evict_urgency_t urgency = EVICT_NORMAL,
-        uint32_t preferred_count = EVICT_BATCH_SIZE);
+        uint32_t preferred_count = 0);
 
     /**
      * Used during Log Analysis in Recovery only
@@ -959,12 +961,15 @@ private:
      */
     uint16_t             _clockhand_current_depth;
 
+    bf_idx _eviction_current_frame;
+
     /**
      * The lock to take when we copy-from/to _clockhand_pathway and _clockhand_current_depth.
      * This only protects the copying. We don't protect between copy-from and copy-to as
      * described above. If we check some frames multiple times, that's fine.
      */
     tatas_lock           _clockhand_copy_lock;
+    // pthread_mutex_t _clockhand_copy_lock;
 
     /** threshold temperature above which to not unswizzle a frame */
     uint32_t             _swizzle_clockhand_threshold;

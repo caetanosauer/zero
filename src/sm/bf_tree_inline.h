@@ -122,9 +122,10 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
     if (true) return RCOK;
 #endif // SIMULATE_MAINMEMORYDB
     w_assert1(parent !=  NULL);
-    if (!is_swizzling_enabled()) {
+    // if (!is_swizzling_enabled()) {
         return _fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page, from_recovery);
-    }
+    // }
+    w_assert0(false);
 
     // the parent must be latched
     w_assert1(latch_mode(parent) == LATCH_SH || latch_mode(parent) == LATCH_EX);
@@ -392,6 +393,7 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
 #endif // SIMULATE_NO_SWIZZLING
 #endif // SIMULATE_MAINMEMORYDB
 
+    // ERROUT(<< "Fixed " << idx);
     return RCOK;
 }
 
@@ -459,6 +461,7 @@ inline void bf_tree_m::unfix(const generic_page* p) {
     cb._pin_cnt--;
     w_assert1(cb.latch().held_by_me());
     cb.latch().latch_release();
+    // ERROUT(<< "Unfixed " << idx << " pin count " << cb._pin_cnt);
 }
 
 inline void bf_tree_m::set_dirty(const generic_page* p) {
@@ -759,13 +762,13 @@ inline shpid_t bf_tree_m::normalize_shpid(shpid_t shpid) const {
     page = &_buffer[idx];
     return page->pid.page;
 #else
-    if (is_swizzling_enabled()) {
+    // if (is_swizzling_enabled()) {
         if (is_swizzled_pointer(shpid)) {
             bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
             page = &_buffer[idx];
             return page->pid.page;
         }
-    }
+    // }
     return shpid;
 #endif
 }

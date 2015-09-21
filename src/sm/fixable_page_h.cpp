@@ -193,7 +193,7 @@ w_rc_t fixable_page_h::fix_root (stid_t store, latch_mode_t mode,
 
 void fixable_page_h::fix_nonbufferpool_page(generic_page* s) {
     w_assert1(s != NULL);
-    w_assert1(s->tag == t_btree_p);  // make sure page type is fixable
+    // w_assert1(s->tag == t_btree_p);  // make sure page type is fixable
 
     unfix();
     _pp                 = s;
