@@ -194,6 +194,12 @@ NORET
 chkpt_m::chkpt_m()
     : _chkpt_thread(0), _chkpt_count(0)
 {
+    const size_t BLOCK_SIZE = 8192;
+    _chkpt_last = ss_m::log->master_lsn();
+    if(_chkpt_last == lsn_t::null) {
+        _chkpt_last = lsn_t(1,0);
+    }
+    cons = new LogArchiver::LogConsumer(_chkpt_last, BLOCK_SIZE, false);
 }
 
 /*********************************************************************
@@ -210,6 +216,8 @@ chkpt_m::~chkpt_m()
     {
         retire_chkpt_thread();
     }
+
+    cons->shutdown();
 
     // Destruct the chkpt_m thresd (itself), if it is a simulated crash,
     // the system might be in the middle of taking a checkpoint, and
@@ -331,6 +339,477 @@ void chkpt_m::synch_take(XctLockHeap& lock_heap)
         // Record lock information only from synch checkpoint and if caller asked for it
         take(t_chkpt_sync, lock_heap, true);
     }
+    return;
+}
+
+// Scans log forward from master_lsn to begin_lsn
+void chkpt_m::forward_scan_log(const lsn_t master_lsn,
+                               const lsn_t begin_lsn,
+                               chkpt_t& new_chkpt,
+                               const bool restart_with_lock)
+{
+    w_assert0(begin_lsn >= master_lsn);
+
+    new_chkpt.begin_lsn = begin_lsn;
+    new_chkpt.min_xct_lsn = begin_lsn;
+    new_chkpt.min_rec_lsn = begin_lsn;
+    new_chkpt.next_vid = 1;
+
+    if (master_lsn == lsn_t::null) {
+        // The only possibility that we have a NULL as master lsn is due to a brand new
+        // start (empty) of the engine, in such case, nothing to scan.
+
+        // LL: we have to guarantee that this is the first chkpt ever being taken.
+        // In this case, the chkpt begin lsn must be the very first one.
+        w_assert0(begin_lsn == lsn_t(1,0));
+
+        DBGOUT3( << "NULL master_lsn, nothing to scan");
+        return;
+    }
+
+    // Special map to mange undecided in-flight transactions
+    tid_CLR_map          mapCLR;
+
+    bool acquire_lock = true;
+
+    vector<logrec_t> lock_tables;
+
+    DBGOUT1(<<"forward_scan_log("<<master_lsn<<", "<<begin_lsn<<")");
+
+    cons->open(begin_lsn);
+
+    logrec_t*     r;
+
+    int num_chkpt_end_handled = 0;
+
+    // Assert first record is Checkpoint Begin Log
+    if(cons->next(r) && r->type() != logrec_t::t_chkpt_begin) {
+            DBGOUT1( << setiosflags(ios::right) << r->lsn()
+                     << resetiosflags(ios::right) << " R: " << *r);
+            W_FATAL_MSG(fcINTERNAL, << "First log record in Log Analysis is not a begin checkpoint log: " << r->type());
+    }
+
+    while (cons->next(r) && r->lsn() < begin_lsn)
+    {
+        acquire_lock = true; // New log record, reset the flag
+
+        DBGOUT3( << setiosflags(ios::right) << r->lsn()
+                  << resetiosflags(ios::right) << " A: " << *r);
+
+        if (r->is_single_sys_xct() && !r->null_pid())
+        {
+            if(_analysis_system_log(*r, new_chkpt) == true)
+            {
+                continue; // Go to next log record
+            }
+            else {
+                // Failure occured, do not continue
+                W_FATAL_MSG(fcINTERNAL, << "Failed to process a system transaction log record during Log Analysis, lsn = " << r->lsn());
+            }    
+        }
+
+        // We already ruled out all SSX logs. So we don't have to worry about
+        // multi-page logs in the code below, because multi-page log only exist
+        // in system transactions
+        w_assert1(!r->is_multi_page());
+        int xct_idx = -1;
+
+        // If log is transaction related, insert the transaction
+        // into transaction table if it is not already there.
+        if (!r->is_single_sys_xct() && (r->tid() != tid_t::null)                // Has a transaction ID
+                   && ((xct_idx = indexOf(new_chkpt.tid, r->tid())) == -1)   // does not exist in transaction table currently
+                   && r->type()!=logrec_t::t_comment      // Not a 'comment' log record, comments can be after xct has ended
+                   && r->type()!=logrec_t::t_skip         // Not a 'skip' log record
+                   && r->type()!=logrec_t::t_max_logrec)  // Not the special 'max' log record which marks the end
+        {
+            new_chkpt.tid.push_back(r->tid());
+            new_chkpt.state.push_back(xct_t::xct_active);
+            new_chkpt.last_lsn.push_back(r->lsn());
+            new_chkpt.undo_nxt.push_back(r->xid_prev());
+            new_chkpt.first_lsn.push_back(r->lsn());             // initialize first lsn to the same value as last_lsn
+
+            // Youngest tid is the largest tid, it is used to generate
+            // next unique transaction id
+            if (r->tid() > new_chkpt.youngest) {
+                new_chkpt.youngest = r->tid();
+            }
+
+            new_chkpt.lock_hash.push_back(vector<uint32_t>());
+            new_chkpt.lock_mode.push_back(vector<okvl_mode>());
+
+            xct_idx = new_chkpt.tid.size() - 1;
+        }
+        else if (!r->is_single_sys_xct() && r->tid() != tid_t::null)            // Has a transaction ID
+        {
+            // Transaction exists in transaction table already
+            w_assert0(xct_idx >= 0);
+            if(new_chkpt.last_lsn[xct_idx] < r->lsn()) {
+                new_chkpt.last_lsn[xct_idx] = r->lsn();
+            }
+        }
+        else
+        {
+            // Log record is not related to transaction table
+            // Go ahead and process the log record
+        }
+
+        switch (r->type())
+        {
+            case logrec_t::t_chkpt_begin:
+                break;
+
+            case logrec_t::t_chkpt_dev_tab:
+                if (num_chkpt_end_handled == 0)
+                {
+                    // Process it only if we have seen a matching 'end checkpoint' log record
+                    // meaning we are processing the last completed checkpoint
+                    chkpt_dev_tab_t* tab = (chkpt_dev_tab_t*) r->data();
+                    std::vector<string> dnames;
+                    tab->read_devnames(dnames);
+                    w_assert0(tab->count == dnames.size());
+                    for (int i = 0; i < tab->count; i++) {
+                        int dev_idx;
+                        if( (dev_idx = indexOf(new_chkpt.dev_paths, dnames[i])) != -1) {
+                            // volume is already in the list and it is safe to 
+                            // ignore information about it from the previous chkpt,
+                            // since it is guaranteed to be out-dated
+                        }
+                        else {
+                            new_chkpt.dev_paths.push_back(dnames[i]);
+                            new_chkpt.dev_mounted.push_back(true);
+                            new_chkpt.dev_lsn.push_back(lsn_t::null);
+                            // dev_lsn = null, because any further log record
+                            // about this device is going to be more recent
+                        }   
+                    }
+
+                    //-1 because next_vid already starts at 1
+                    new_chkpt.next_vid += (tab->next_vid - 1);
+                }
+                break;
+
+            case logrec_t::t_chkpt_backup_tab:
+                if (num_chkpt_end_handled == 0)
+                {
+                    //TODO 
+                }
+                break;
+
+            case logrec_t::t_chkpt_restore_tab:
+                if (num_chkpt_end_handled == 0)
+                {
+                    //TODO
+                }
+                break;
+
+            case logrec_t::t_chkpt_bf_tab:
+                if (num_chkpt_end_handled == 0)
+                {
+                    _analysis_ckpt_bf_log(*r, new_chkpt);
+                }
+                break;
+
+            case logrec_t::t_chkpt_xct_lock:
+                // Log record for per transaction lock information
+                // Due to backward log scan, this log record (might have multiple log
+                // records per active transaction) should be retrieved after the corresponding
+                // t_chkpt_xct_tab log record, in other words, it was generated prior the
+                // corresponding t_chkpt_xct_tab log record
+                if ((num_chkpt_end_handled == 0) && (true == restart_with_lock))
+                {
+                    lock_tables.push_back(*r);
+                }
+                else
+                {
+                    // No matching 'end checkpoint' log record, ignore
+                }
+                break;
+
+            case logrec_t::t_chkpt_xct_tab:
+                if (num_chkpt_end_handled == 0)
+                {
+                    _analysis_ckpt_xct_log(*r, new_chkpt, mapCLR);
+                }
+                break;
+
+            case logrec_t::t_chkpt_end:
+                if (num_chkpt_end_handled == 0)
+                {
+                    // We have finished processing all xcts from the chkpt, now
+                    // we can process the locks:
+
+                    if(new_chkpt.lock_mode.size() < new_chkpt.tid.size()) {
+                        new_chkpt.lock_mode.resize(new_chkpt.tid.size());
+                    }
+
+                    if(new_chkpt.lock_hash.size() < new_chkpt.tid.size()) {
+                        new_chkpt.lock_hash.resize(new_chkpt.tid.size());
+                    }
+
+                    for(uint i=0; i<lock_tables.size(); i++) {
+                        _analysis_ckpt_lock_log(lock_tables[i], new_chkpt);
+                    }
+                }
+                num_chkpt_end_handled++;
+                break;
+
+            case logrec_t::t_mount_vol:
+                {
+                    string dev = (const char*)(r->data_ssx());
+                    int dev_idx;
+                    if( (dev_idx = indexOf(new_chkpt.dev_paths, dev)) != -1) {
+                        // volume exists already ...
+                        if(new_chkpt.dev_lsn[dev_idx] < r->lsn()) {
+                            // ... but the log record is more recent
+                            new_chkpt.dev_mounted[dev_idx] = true;
+                            new_chkpt.dev_lsn[dev_idx] = r->lsn();
+                        }
+                    }
+                    else {
+                        // volume does not exist yet
+                        new_chkpt.dev_paths.push_back(dev);
+                        new_chkpt.dev_mounted.push_back(true);
+                        new_chkpt.dev_lsn.push_back(r->lsn());
+                    }
+                }
+                break;
+
+            case logrec_t::t_format_vol:
+                new_chkpt.next_vid++;
+                break;
+            
+            case logrec_t::t_dismount_vol:
+                {
+                    string dev = (const char*)(r->data_ssx());
+                    int dev_idx;
+                    if( (dev_idx = indexOf(new_chkpt.dev_paths, dev)) != -1) {
+                        // volume exists already ...
+                        if(new_chkpt.dev_lsn[dev_idx] < r->lsn()) {
+                            // ... but the log record is more recent
+                            new_chkpt.dev_mounted[dev_idx] = false;
+                            new_chkpt.dev_lsn[dev_idx] = r->lsn();
+                        }
+                    }
+                    else {
+                        // volume does not exist yet
+                        new_chkpt.dev_paths.push_back(dev);
+                        new_chkpt.dev_mounted.push_back(false);
+                        new_chkpt.dev_lsn.push_back(r->lsn());
+                    }
+                }
+                break;
+
+            case logrec_t::t_add_backup:
+                {
+                    vid_t vid = *((vid_t*) (r->data_ssx()));
+                    const char* dev_name = (const char*)(r->data_ssx() + sizeof(vid_t));
+                        
+                    new_chkpt.backup_vids.push_back(vid);
+                    new_chkpt.backup_paths.push_back(dev_name);
+                }
+                break;
+
+            case logrec_t::t_xct_end_group:
+                {
+                    // Do what we do for t_xct_end for each of the
+                    // transactions in the list
+                    const xct_list_t* list = (xct_list_t*) r->data();
+                    uint listlen = list->count;
+                    for(uint i=0; i<listlen; i++) {
+                        xct_idx = indexOf(new_chkpt.tid, list->xrec[i].tid);
+
+                        // If it's not there, it could have been a read-only xct?
+                        if( (xct_idx != -1) && (xct_t::xct_ended != new_chkpt.state[xct_idx])) {
+                            // Mark the txn as ended, safe to remove it from transaction table
+                            new_chkpt.state[xct_idx] = xct_t::xct_ended;
+                        }
+                    }
+                }
+                break;
+
+            case logrec_t::t_xct_freeing_space:
+            case logrec_t::t_xct_abort:
+            case logrec_t::t_xct_end:
+                {
+                    if (new_chkpt.state[xct_idx] != xct_t::xct_ended) {
+                        new_chkpt.state[xct_idx] = xct_t::xct_ended;
+                    }
+
+                    tid_CLR_map::iterator it = mapCLR.find(r->tid().as_int64());
+                    if(it != mapCLR.end()) {
+                        mapCLR.erase(it);
+                    }
+                }
+                break;
+
+            case logrec_t::t_page_write:
+                {
+                    lpid_t* pid_begin = (lpid_t*)(r->data());
+                    uint32_t* count = (uint32_t*)(r->data() + sizeof(lpid_t));
+                    for(uint i=0; i<*count; i++) {
+                        lpid_t pid = *pid_begin;
+                        pid.page += i;
+
+                        int page;
+                        if( (page = indexOf(new_chkpt.pid, pid)) != -1) {
+                            // Page exists in bf_table, we mark it as !dirty
+                            if(new_chkpt.page_lsn[page] < r->lsn()) {
+                                new_chkpt.page_lsn[page] = r->lsn();
+                                new_chkpt.dirty[page] = false;
+                            }
+                        }
+                        else {
+                            // Page does not exist in bf_table, we add it with 
+                            // dummy values and mark as !dirty
+                            new_chkpt.pid.push_back(pid);
+                            new_chkpt.store.push_back(0);
+                            new_chkpt.rec_lsn.push_back(lsn_t::null);
+                            new_chkpt.page_lsn.push_back(r->lsn());
+                            new_chkpt.dirty.push_back(false);
+                        }
+                    }
+                }
+                break;
+
+            case logrec_t::t_compensate:
+            case logrec_t::t_store_operation:
+            case logrec_t::t_page_set_to_be_deleted:
+            case logrec_t::t_page_img_format:
+            case logrec_t::t_btree_norec_alloc:
+            case logrec_t::t_btree_split:
+            case logrec_t::t_btree_insert:
+            case logrec_t::t_btree_insert_nonghost:
+            case logrec_t::t_btree_update:
+            case logrec_t::t_btree_overwrite:
+            case logrec_t::t_btree_ghost_mark:
+            case logrec_t::t_btree_ghost_reclaim:
+            case logrec_t::t_btree_ghost_reserve:
+            case logrec_t::t_btree_foster_adopt:
+            case logrec_t::t_btree_foster_merge:
+            case logrec_t::t_btree_foster_rebalance:
+            case logrec_t::t_btree_foster_rebalance_norec:
+            case logrec_t::t_btree_foster_deadopt:
+                // The rest of meanful log records, transaction has been created already
+                // we need to take care of both buffer pool and lock acquisition if needed
+                {
+                    // Take care of common stuff among forward and backward log scan first
+                    _analysis_other_log(*r, new_chkpt, xct_idx);
+
+                    if ((acquire_lock == true) && (restart_with_lock == true))
+                    {
+                        // We need to acquire locks (M3/M4/M5) and this is an
+                        // undecided in-flight transaction, process lock for this log record
+                        _analysis_process_lock(*r, new_chkpt, mapCLR, xct_idx);
+                    }
+                    else
+                    {
+                        // winner transaction, no need to acquire locks
+                    }
+
+                    if ((r->tid() != tid_t::null) && (xct_idx != -1) &&
+                        (r->is_page_update()) && (lsn_t::null == r->xid_prev())
+                        && (xct_t::xct_ended == new_chkpt.state[xct_idx]))
+                    {
+                        // If this is an update log record, and we have already seen the
+                        // transaction end/abort log record for this transaction (backward scan),
+                        // and the current log record is the very first log record of this transaction
+                        // it is safe to remove this transaction from transaction table now.
+
+                        // Delete the transaction from transaction table because it
+                        // reduces the size of llinked-list transaction table and improve
+                        // the xct_t::look_up performance of the transaction table
+                        new_chkpt.tid.erase(new_chkpt.tid.begin() + xct_idx);
+                        new_chkpt.state.erase(new_chkpt.state.begin() + xct_idx);
+                        new_chkpt.last_lsn.erase(new_chkpt.last_lsn.begin() + xct_idx);
+                        new_chkpt.undo_nxt.erase(new_chkpt.undo_nxt.begin() + xct_idx);
+                        new_chkpt.first_lsn.erase(new_chkpt.first_lsn.begin() + xct_idx);
+
+                        new_chkpt.lock_hash.erase(new_chkpt.lock_hash.begin() + xct_idx);
+                        new_chkpt.lock_mode.erase(new_chkpt.lock_mode.begin() + xct_idx);
+                    }
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    // Done with forward log scan, check the compensation list
+    _analysis_process_compensation_map(mapCLR, new_chkpt);
+
+     // Remove non-mounted devices
+    for(uint i=0; i<new_chkpt.dev_paths.size(); i++){
+        if(new_chkpt.dev_mounted[i] == false) {
+            new_chkpt.dev_paths.erase(new_chkpt.dev_paths.begin() + i);
+            new_chkpt.dev_mounted.erase(new_chkpt.dev_mounted.begin() + i);
+            new_chkpt.dev_lsn.erase(new_chkpt.dev_lsn.begin() + i);
+            i--;
+        }
+    }
+
+    // Remove non-dirty pages
+    for(uint i=0; i<new_chkpt.pid.size(); i++){
+        if(new_chkpt.dirty[i] == false) {
+            new_chkpt.pid.erase(new_chkpt.pid.begin() + i);
+            new_chkpt.store.erase(new_chkpt.store.begin() + i);
+            new_chkpt.rec_lsn.erase(new_chkpt.rec_lsn.begin() + i);
+            new_chkpt.page_lsn.erase(new_chkpt.page_lsn.begin() + i);
+            new_chkpt.dirty.erase(new_chkpt.dirty.begin() + i);
+            i--;
+        }
+    }
+
+    // We are done with Log Analysis, at this point each transactions in the transaction
+    // table is either loser (active) or winner (ended); non-read-locks have been acquired
+    // on all loser transactions. Remove finished transactions.
+    for(uint i=0; i<new_chkpt.tid.size(); i++) {
+        if (xct_t::xct_ended == new_chkpt.state[i]) {
+            // Then erase the ended transaction
+            new_chkpt.tid.erase(new_chkpt.tid.begin() + i);
+            new_chkpt.state.erase(new_chkpt.state.begin() + i);
+            new_chkpt.last_lsn.erase(new_chkpt.last_lsn.begin() + i);
+            new_chkpt.undo_nxt.erase(new_chkpt.undo_nxt.begin() + i);
+            new_chkpt.first_lsn.erase(new_chkpt.first_lsn.begin() + i);
+
+            // And erase its locks
+            new_chkpt.lock_hash.erase(new_chkpt.lock_hash.begin() + i);
+            new_chkpt.lock_mode.erase(new_chkpt.lock_mode.begin() + i);
+
+            i--;
+        }
+    }
+    // Calculate min_rec_lsn. It is the smallest lsn from all dirty pages.
+    for(uint i=0; i<new_chkpt.rec_lsn.size(); i++) {
+        if(new_chkpt.min_rec_lsn > new_chkpt.rec_lsn[i]) {
+            new_chkpt.min_rec_lsn = new_chkpt.rec_lsn[i];
+        }
+    }
+
+    // Calculate min_xct_lsn. It is the smallest lsn from loser transactions.
+    for(uint i=0; i<new_chkpt.first_lsn.size(); i++) {
+        if(new_chkpt.min_xct_lsn > new_chkpt.first_lsn[i]) {
+            new_chkpt.min_xct_lsn = new_chkpt.first_lsn[i];
+        }
+    }
+
+    w_base_t::base_stat_t f = GET_TSTAT(log_fetches);
+    w_base_t::base_stat_t i = GET_TSTAT(log_inserts);
+    smlevel_0::errlog->clog << info_prio
+        << "After analysis_pass: "
+        << f << " log_fetches, "
+        << i << " log_inserts "
+        << " redo_lsn is " << new_chkpt.min_rec_lsn
+        << " undo_lsn is " << new_chkpt.min_xct_lsn
+        << flushl;
+
+    DBGOUT3 (<< "End of Log Analysis phase.  Master: " << master_lsn
+             << ", redo_lsn: " << new_chkpt.min_rec_lsn
+             << ", undo lsn: " << new_chkpt.min_xct_lsn);
+
+    // TODO(Restart)... performance
+    DBGOUT1( << "Number of in_doubt pages: " << in_doubt_count);
+
     return;
 }
 
@@ -2336,12 +2815,16 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
 
     // Insert chkpt_begin log record.
     LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
+    W_COERCE(ss_m::log->flush_all() );
+
     w_assert1(curr_lsn.data() <= begin_lsn.data());
 
     // Backward scan from begin_lsn to first completed chkpt (may not be master).
     lsn_t master_lsn = ss_m::log->master_lsn();
     chkpt_t new_chkpt;
-    backward_scan_log(master_lsn, begin_lsn, new_chkpt, false);
+
+    //backward_scan_log(master_lsn, begin_lsn, new_chkpt, true);
+    forward_scan_log(master_lsn, begin_lsn, new_chkpt, true);
 
     //============================= SANITY CHECKING ============================
     w_assert1(new_chkpt.backup_vids.size() == new_chkpt.backup_paths.size());

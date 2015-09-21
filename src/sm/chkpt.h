@@ -63,6 +63,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "sm_base.h"
 #include "w_heap.h"
+#include "logarchiver.h"
 
 //#include "lock.h"               // Lock re-acquisition
 //#include "btree_impl.h"         // Lock re-acquisition
@@ -150,6 +151,7 @@ public:
     void             take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap, const bool record_lock = false);
     void             dcpld_take(chkpt_mode_t chkpt_mode);
     void             backward_scan_log(const lsn_t master_lsn, const lsn_t begin_lsn, chkpt_t& new_chkpt, const bool restart_with_lock);
+    void             forward_scan_log(const lsn_t master_lsn, const lsn_t begin_lsn, chkpt_t& new_chkpt, const bool restart_with_lock);
 
 
 
