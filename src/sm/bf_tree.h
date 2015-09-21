@@ -19,6 +19,8 @@ class sm_options;
 class lsn_t;
 struct bf_tree_cb_t; // include bf_tree_cb.h in implementation codes
 struct bf_tree_vol_t; // include bf_tree_vol.h in implementation codes
+
+template <class T>
 class bf_hashtable; // include bf_hashtable.h in implementation codes
 
 class test_bf_tree;
@@ -895,7 +897,7 @@ private:
     generic_page*              _buffer;
 
     /** hashtable to locate a page in this bufferpool. swizzled pages are removed from bufferpool. */
-    bf_hashtable*        _hashtable;
+    bf_hashtable<bf_idx>*        _hashtable;
 
     /**
      * singly-linked freelist. index is same as _buffer/_control_blocks. zero means no link.

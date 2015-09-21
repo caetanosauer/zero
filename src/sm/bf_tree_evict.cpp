@@ -3,6 +3,9 @@
 #include "bf_tree.h"
 #include "btree_page_h.h"
 
+// template definitions
+#include "bf_hashtable.cpp"
+
 /** Context object that is passed around during eviction. */
 struct EvictionContext {
     /** The number of blocks evicted. */

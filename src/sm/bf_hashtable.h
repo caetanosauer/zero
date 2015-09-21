@@ -8,6 +8,7 @@
 #include "w_defines.h"
 #include "bf_idx.h"
 
+template<class T>
 class bf_hashbucket;
 
 /**
@@ -39,6 +40,7 @@ class bf_hashbucket;
  * when the client subsequently tries to pin the page. If that happens, the client
  * must retry from looking up this hashtable.
  */
+template<class T>
 class bf_hashtable {
 public:
     bf_hashtable(uint32_t size);
@@ -48,7 +50,7 @@ public:
      * Returns the bf_idx linked to the given key (volume and page ID, see bf_key() in bf_tree.cpp).
      * If the key doesn't exist in this bufferpool, returns 0 (invalid bf_idx).
      */
-    bf_idx      lookup(uint64_t key) const;
+    T      lookup(uint64_t key) const;
 
     /**
      * Imprecise-but-fast version of lookup().
@@ -56,19 +58,19 @@ public:
      * are possible. The caller must make sure false-positives/negatives won't cause an issue.
      * This is so far used from eviction routine, which doesn't have to be precise.
      */
-    bf_idx      lookup_imprecise(uint64_t key) const;
+    T      lookup_imprecise(uint64_t key) const;
 
     /**
     * Insert the key in the _table and link it with the given bf_idx.
     * if the given key already exists, this method doesn't change anything and returns false.
     */
-    bool        insert_if_not_exists(uint64_t key, bf_idx value);
+    bool        insert_if_not_exists(uint64_t key, T value);
 
     /**
      * Updates the value associated with the given key. Returns false if key
      * is not found.
      */
-    bool        update(uint64_t key, bf_idx value);
+    bool        update(uint64_t key, T value);
 
     /**
      * Removes the key from the _table.
@@ -78,7 +80,7 @@ public:
 
 private:
     uint32_t            _size;
-    bf_hashbucket*      _table;
+    bf_hashbucket<T>*      _table;
 };
 
 #endif // BF_HASHTABLE_H

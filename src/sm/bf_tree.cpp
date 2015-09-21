@@ -36,6 +36,9 @@
 
 #include "restart.h"
 
+// template definitions
+#include "bf_hashtable.cpp"
+
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////
 
 #ifdef PAUSE_SWIZZLING_ON
@@ -192,7 +195,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     //initialize hashtable
     int buckets = w_findprime(1024 + (nbufpages / 4)); // maximum load factor is 25%. this is lower than original shore-mt because we have swizzling
-    _hashtable = new bf_hashtable(buckets);
+    _hashtable = new bf_hashtable<bf_idx>(buckets);
     w_assert0(_hashtable != NULL);
 
     ::memset (_volumes, 0, sizeof(bf_tree_vol_t*) * vol_m::MAX_VOLS);
@@ -2110,7 +2113,7 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     //re-create hashtable
     delete _hashtable;
     int buckets = w_findprime(1024 + (_block_cnt / 4));
-    _hashtable = new bf_hashtable(buckets);
+    _hashtable = new bf_hashtable<bf_idx>(buckets);
     w_assert0(_hashtable != NULL);
     ::memset (_volumes, 0, sizeof(bf_tree_vol_t*) * vol_m::MAX_VOLS);
     _dirty_page_count_approximate = 0;
