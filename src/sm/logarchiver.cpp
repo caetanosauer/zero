@@ -788,7 +788,7 @@ rc_t LogArchiver::ArchiveDirectory::closeScan(int& fd)
     return RCOK;
 }
 
-LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize)
+LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize, bool ignore)
     : nextLSN(startLSN), endLSN(lsn_t::null), currentBlock(NULL),
     blockSize(blockSize)
 {
@@ -801,7 +801,9 @@ LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize)
     reader = new ReaderThread(readbuf, startLSN);
     logScanner = new LogScanner(blockSize);
 
-    initLogScanner(logScanner);
+    if(ignore) {
+        initLogScanner(logScanner);
+    }
     reader->fork();
 }
 

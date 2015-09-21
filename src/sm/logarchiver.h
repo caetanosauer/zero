@@ -711,7 +711,7 @@ public:
      */
     class LogConsumer {
     public:
-        LogConsumer(lsn_t startLSN, size_t blockSize);
+        LogConsumer(lsn_t startLSN, size_t blockSize, bool ignore = true);
         virtual ~LogConsumer();
         void shutdown();
 
