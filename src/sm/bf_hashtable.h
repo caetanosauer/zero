@@ -17,23 +17,23 @@ class bf_hashbucket;
  * \Section{Difference from original Shore-MT's hash table}
  * We changed the protocol of page-pinning in bufferpool,
  * so several things have been changed in this hashtable too.
- * 
+ *
  * The first change is that now this hash table only stores and returns bf_idx,
  * the index in buffer pool, not the actual pointer to the corresponding block.
  * This significantly speeds up the hashtable.
- * 
+ *
  * The second change is that now we use a simple hashing, not cuckoo-hashing.
  * The main reason is that kicking out the existing entry requires additional
  * latching on it to change its hash function.
  * As the cost of hash collision is relatively cheap, we avoid cuckoo-hashing.
  * (This design might be revisited later, though).
- * 
+ *
  * Another notable difference is that now this hashtable is totally separated
  * from the bufferpool itself. In other words, it's merely an unoredered_map<pageid, bf_idx>
  * with spinlocks. This means that we do not pin the page in bufferpool
  * while probing this hash table. It's the caller's responsibility to
  * pin the corresponding page in bufferpool.
- * 
+ *
  * Because of this separation, there IS a slight chance that the page returned by
  * this hashtable is evicted and no longer available in bufferpool
  * when the client subsequently tries to pin the page. If that happens, the client
@@ -63,7 +63,13 @@ public:
     * if the given key already exists, this method doesn't change anything and returns false.
     */
     bool        insert_if_not_exists(uint64_t key, bf_idx value);
-    
+
+    /**
+     * Updates the value associated with the given key. Returns false if key
+     * is not found.
+     */
+    bool        update(uint64_t key, bf_idx value);
+
     /**
      * Removes the key from the _table.
      * Returns if the pageID existed or not.

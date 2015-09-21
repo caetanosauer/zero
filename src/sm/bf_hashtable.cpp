@@ -34,7 +34,7 @@ struct bf_hashbucket_chunk_linked {
     bf_idx*   values;
     uint64_t* keys;
     bf_hashbucket_chunk_linked* next_chunk;
-    
+
     void delete_chain() {
         if (next_chunk != NULL) {
             next_chunk->delete_chain();
@@ -55,7 +55,7 @@ struct bf_hashbucket_chunk {
     uint64_t keys[HASHBUCKET_INITIAL_CHUNK_SIZE];
     /** chains to next chunk if (as a rare occasion) this chunk is not enough. */
     bf_hashbucket_chunk_linked* next_chunk;
-    
+
     void delete_chain() {
         if (next_chunk != NULL) {
             next_chunk->delete_chain();
@@ -77,12 +77,13 @@ public:
     bf_idx find (uint64_t key);
     bf_idx find_imprecise (uint64_t key);
     bool append_if_not_exists (uint64_t key, bf_idx value);
+    bool update (uint64_t key, bf_idx value);
     bool remove (uint64_t key);
 private:
     bf_hashbucket(); // prohibited (not implemented). this class should be bulk-initialized by memset
 };
 
-bf_idx bf_hashbucket::find(uint64_t key) { 
+bf_idx bf_hashbucket::find(uint64_t key) {
     spinlock_read_critical_section cs(&_lock);
 
     //first, take a look at initial chunk
@@ -105,6 +106,7 @@ bf_idx bf_hashbucket::find(uint64_t key) {
 
     return 0; // not found
 }
+
 bf_idx bf_hashbucket::find_imprecise(uint64_t key) {
     // same as find(), but this doesn't take locks. So, we might get false positives/negatives.
     // we have to make sure we don't crash because of concurrent updates (cf. robust search).
@@ -128,6 +130,29 @@ bf_idx bf_hashbucket::find_imprecise(uint64_t key) {
         }
     }
     return 0; // not found
+}
+
+bool bf_hashbucket::update (uint64_t key, bf_idx value) {
+    spinlock_write_critical_section cs(&_lock);
+
+    for (uint32_t i = 0; i < _used_count && i < HASHBUCKET_INITIAL_CHUNK_SIZE; ++i) {
+        if (_chunk.keys[i] == key) {
+            _chunk.values[i] = value;
+            return true;
+        }
+    }
+
+    uint32_t cur_count = HASHBUCKET_INITIAL_CHUNK_SIZE;
+    for (bf_hashbucket_chunk_linked* cur_chunk = _chunk.next_chunk; cur_count < _used_count; cur_chunk = cur_chunk->next_chunk) {
+        w_assert1(cur_chunk != NULL);
+        for (uint32_t i = 0; i < cur_chunk->size && cur_count < _used_count; ++i, ++cur_count) {
+            if (cur_chunk->keys[i] == key) {
+                cur_chunk->values[i] = value;
+            }
+        }
+    }
+
+    return false;
 }
 
 bool bf_hashbucket::append_if_not_exists (uint64_t key, bf_idx value) {
@@ -214,7 +239,7 @@ bool bf_hashbucket::remove (uint64_t key) {
             cur_chunk->keys[cur_chunk->size - 1] = cur_chunk->next_chunk->keys[0];
         }
     }
-    
+
     if (found) {
         --_used_count;
     }
@@ -233,7 +258,12 @@ bf_hashtable::~bf_hashtable() {
         }
         delete[] reinterpret_cast<char*>(_table);
     }
-} 
+}
+
+bool bf_hashtable::update(uint64_t key, bf_idx value) {
+    uint32_t hash = bf_hash(key);
+    return _table[hash % _size].update(key, value);
+}
 
 bool bf_hashtable::insert_if_not_exists(uint64_t key, bf_idx value) {
     uint32_t hash = bf_hash(key);
