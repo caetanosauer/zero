@@ -2081,7 +2081,8 @@ void chkpt_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log reco
             break;
         default:
             {
-                W_FATAL_MSG(fcINTERNAL, << "restart_m::_analysis_acquire_lock_log - Unexpected log record type: " << r.type());
+                if(r.type() != logrec_t::t_page_img_format)
+                    W_FATAL_MSG(fcINTERNAL, << "restart_m::_analysis_acquire_lock_log - Unexpected log record type: " << r.type());
             }
             break;
     }
