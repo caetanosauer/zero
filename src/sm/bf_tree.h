@@ -153,16 +153,13 @@ const uint16_t BP_MAX_REFCOUNT = 16;
  */
 const uint16_t BP_INITIAL_REFCOUNT = 0;
 
+class bf_eviction_thread_t : public smthread_t
+{
+public:
+    bf_eviction_thread_t();
 
-/**\enum replacement_policy_t
- * \brief Page replacement policy.
- */
-enum replacement_policy_t {
-    POLICY_CLOCK = 0,
-    POLICY_CLOCK_PRIORITY,
-    POLICY_RANDOM
+    virtual void run();
 };
-
 
 
 /**
@@ -990,8 +987,6 @@ private:
      */
     int32_t              _swizzled_page_count_approximate;
 
-    /** page replacement policy */
-    replacement_policy_t _replacement_policy;
     /** whether to swizzle non-root pages. */
     bool                 _enable_swizzling;
 };

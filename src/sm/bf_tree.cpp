@@ -97,13 +97,13 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     _block_cnt = nbufpages;
     _enable_swizzling = bufferpool_swizzle;
-    if (strcmp(replacement_policy.c_str(), "clock") == 0) {
-        _replacement_policy = POLICY_CLOCK;
-    } else if (strcmp(replacement_policy.c_str(), "clock+priority") == 0) {
-        _replacement_policy = POLICY_CLOCK_PRIORITY;
-    } else if (strcmp(replacement_policy.c_str(), "random") == 0) {
-        _replacement_policy = POLICY_RANDOM;
-    }
+    // if (strcmp(replacement_policy.c_str(), "clock") == 0) {
+    //     _replacement_policy = POLICY_CLOCK;
+    // } else if (strcmp(replacement_policy.c_str(), "clock+priority") == 0) {
+    //     _replacement_policy = POLICY_CLOCK_PRIORITY;
+    // } else if (strcmp(replacement_policy.c_str(), "random") == 0) {
+    //     _replacement_policy = POLICY_RANDOM;
+    // }
 
 #ifdef SIMULATE_NO_SWIZZLING
     _enable_swizzling = false;
