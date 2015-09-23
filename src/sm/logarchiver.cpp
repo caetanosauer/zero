@@ -1633,6 +1633,13 @@ bool LogArchiver::waitForActivation()
             if (flushReqLSN != lsn_t::null) {
                 return true;
             }
+
+            if (newEnd.lo() == 0) {
+                // If durable_lsn is at the beginning of a new log partition,
+                // it can happen that at this point the file was not created
+                // yet, which would cause the reader thread to fail.
+                continue;
+            }
         }
         control.endLSN = newEnd;
     }
