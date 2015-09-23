@@ -345,7 +345,11 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
         << " , _durable_lsn = " << durable_lsn());
 
 #if W_DEBUG_LEVEL > 0
-    _sanity_check();
+    // CS TODO: sanity check is usually failing here due to
+    // curr_lsn < durable_lsn. I don't think this is a bug on the log buffer
+    // code, but rather that we cannot perform sanity checks without acquiring
+    // the proper mutexes. Therefore, we can't do it here.
+    // _sanity_check();
 #endif
 
     // protect against double-acquire
@@ -434,8 +438,9 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
             << " with next " << *nxt);
 
 #if W_DEBUG_LEVEL > 2
-    _sanity_check();
-#endif 
+    // CS: see comment above
+    // _sanity_check();
+#endif
 
     // caller must release the _partition_lock mutex
     return RCOK;

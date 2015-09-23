@@ -1467,6 +1467,7 @@ log_storage::sanity_check() const
             w_assert1(!p->is_current());
             w_assert1(!p->exists());
         }
+        (void) found_min_lsn;
     }
     /*
      * CS TODO: the global_min_lsn does not have to be found if it is equal
