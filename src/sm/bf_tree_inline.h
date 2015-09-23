@@ -89,14 +89,12 @@ const uint32_t SWIZZLED_LRU_UPDATE_INTERVAL = 1000;
 inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
                                        idx, latch_mode_t mode, bool conditional) {
     bf_tree_cb_t &cb = get_cb(idx);
-#ifdef BP_MAINTAIN_PARENT_PTR
     W_DO(cb.latch().latch_acquire(mode, conditional ?
                 sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
     w_assert1(cb._pin_cnt > 0);
     cb.pin();
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
     ++cb._counter_approximate;
-#endif // BP_MAINTAIN_PARENT_PTR
     ++cb._refbit_approximate;
     assert(false == cb._in_doubt);
     page = &(_buffer[idx]);
@@ -399,6 +397,7 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
         }
     }
 
+#if 0
 #ifndef SIMULATE_MAINMEMORYDB
     /*
      * Verify when swizzling off & non-main memory DB that lookup table handles this page correctly:
@@ -415,6 +414,7 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
     }
 #endif // SIMULATE_NO_SWIZZLING
 #endif // SIMULATE_MAINMEMORYDB
+#endif
 
     get_cb(idx).pin();
     w_assert1(get_cb(idx)._pin_cnt > 0);

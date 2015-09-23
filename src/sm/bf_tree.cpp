@@ -175,14 +175,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     ::memset (_control_blocks, 0, sizeof(bf_tree_cb_t) * nbufpages);
 #endif
 
-#ifdef BP_MAINTAIN_PARENT_PTR
-    // swizzled-LRU is initially empty
-    // _swizzled_lru = new bf_idx[nbufpages * 2];
-    // w_assert0(_swizzled_lru != NULL);
-    // ::memset (_swizzled_lru, 0, sizeof(bf_idx) * nbufpages * 2);
-    // _swizzled_lru_len = 0;
-#endif // BP_MAINTAIN_PARENT_PTR
-
     // initially, all blocks are free
     _freelist = new bf_idx[nbufpages];
     w_assert0(_freelist != NULL);
@@ -227,12 +219,6 @@ bf_tree_m::~bf_tree_m() {
         ::free (buf);
         _control_blocks = NULL;
     }
-#ifdef BP_MAINTAIN_PARENT_PTR
-    // if (_swizzled_lru != NULL) {
-    //     delete[] _swizzled_lru;
-    //     _swizzled_lru = NULL;
-    // }
-#endif // BP_MAINTAIN_PARENT_PTR
     if (_freelist != NULL) {
         delete[] _freelist;
         _freelist = NULL;
@@ -429,6 +415,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
                 break;
             }
             // Load the root page
+            // CS TODO: why is latch not required here?
             preload_rc = _preload_root_page(desc, volume, store, shpid, idx);
         }
 
@@ -615,12 +602,6 @@ w_rc_t bf_tree_m::uninstall_volume(vid_t vid,
             {
             continue;
             }
-#ifdef BP_MAINTAIN_PARENT_PTR
-            // if swizzled, remove from the swizzled-page LRU too
-            // if (_is_in_swizzled_lru(idx)) {
-            //     _remove_from_swizzled_lru(idx);
-            // }
-#endif // BP_MAINTAIN_PARENT_PTR
             _hashtable->remove(bf_key(vid, cb._pid_shpid));
             if (cb._swizzled)
             {
@@ -671,14 +652,12 @@ void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx, lpid_t page_update
 w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     bf_idx idx = shpid;
     bf_tree_cb_t &cb = get_cb(idx);
-#ifdef BP_MAINTAIN_PARENT_PTR
     bf_idx parent_idx = 0;
     // if (is_swizzling_enabled()) {
         parent_idx = parent - _buffer;
         w_assert1 (_is_active_idx(parent_idx));
         cb._parent = parent_idx;
     // }
-#endif // BP_MAINTAIN_PARENT_PTR
     if (virgin_page) {
         cb._rec_lsn = 0;
         cb._dirty = true;
@@ -725,9 +704,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
     w_assert1(vol != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
-#ifdef BP_MAINTAIN_PARENT_PTR
-    // w_assert1(!is_swizzling_enabled() || parent != NULL);
-#endif
     bf_tree_vol_t *volume = _volumes[vol];
     w_assert1(volume != NULL);
     w_assert1(shpid >= volume->_volume->first_data_pageid());
@@ -796,7 +772,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 if (false == force_load)
                     _add_free_block(idx);
 
-                // ERROUT(<<"bf_tree_m: unlucky! not able to acquire cb on a force load page "
+                // DBG(<<"bf_tree_m: unlucky! not able to acquire cb on a force load page "
                 //         << shpid << ". Discard my own work and try again."
                 //         << " force_load = " << force_load);
 
@@ -935,17 +911,17 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             if (true == force_load)
                 w_assert1(true == cb._in_doubt);
 
+            // CS TODO: we should probably hold an EX latch here, but requested
+            // mode my be SH. _grab_free_block should avoid any races here, but
+            // who knows -- better to be safe than sorry
             cb.clear_except_latch();
+            w_assert1(cb.latch().held_by_me());
             cb._pin_cnt = 0;
+            // DBG(<< "Fix " << idx << " set pin cnt to " << cb._pin_cnt);
             cb._pid_vol = vol;
             cb._pid_shpid = shpid;
             cb._dependency_lsn = 0;
             bf_idx parent_idx = 0;
-            // if (is_swizzling_enabled()) {
-                parent_idx = parent - _buffer;
-                w_assert1 (_is_active_idx(parent_idx));
-                cb._parent = parent_idx;
-            // }
             if (!virgin_page)
             {
                 // if the page is read from disk, at least it's sure that
@@ -1006,14 +982,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             w_assert1(false == force_load);
 
             // okay, all done
-#ifdef BP_MAINTAIN_PARENT_PTR
-            // if (is_swizzling_enabled()) {
-                // lintel::unsafe::atomic_fetch_add((uint32_t*)
-                //         &(get_cb(parent_idx)._pin_cnt), 1);
-                // we installed a new child of the parent      to this
-                // bufferpool. add parent's count
-            // }
-#endif // BP_MAINTAIN_PARENT_PTR
             page = &(_buffer[idx]);
 
             // Just loaded a page, the page loading was due to:
@@ -1037,12 +1005,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // Page index is registered in hash table
             force_load = false;
 
-            // unlike swizzled case, we have to atomically pin it while verifying it's still there.
-            if (parent) {
-                DBGOUT3(<<"swizzled case: parent = " << parent->pid << ", shpid = " << shpid << " frame=" << idx);
-            } else {
-                DBGOUT3(<<"swizzled case: parent = NIL"<< ", shpid = " << shpid << " frame=" << idx);
-            }
+            // unlike swizzled case, we have to pin it while verifying it's
+            // still there.
             bf_tree_cb_t &cb = get_cb(idx);
 
             shpid_t root_shpid = smlevel_0::bf->get_root_page_id(stid_t(vol, cb._store_num));
@@ -1326,9 +1290,11 @@ bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
 
     bf_idx idx = page - _buffer;
     w_assert1(_is_active_idx(idx));
+
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) return idx;
 #endif // SIMULATE_MAINMEMORYDB
+
     w_assert1(get_cb(idx)._pin_cnt >= 0);
     w_assert1(get_cb(idx).latch().held_by_me());
 
@@ -1339,9 +1305,11 @@ bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
 
 void bf_tree_m::unpin_for_refix(bf_idx idx) {
     w_assert1(_is_active_idx(idx));
+
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) return;
 #endif // SIMULATE_MAINMEMORYDB
+
     w_assert1(get_cb(idx)._pin_cnt > 0);
 
     w_assert1(get_cb(idx).latch().held_by_me());
@@ -1616,7 +1584,7 @@ general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpi
         // ERROUT(<< "Looking for child " << shpid << " on " <<
         //         *p.child_slot_address(i));
         if (*p.child_slot_address(i) == shpid) {
-            ERROUT(<< "OK");
+            // ERROUT(<< "OK");
             return i;
         }
     }
@@ -1695,11 +1663,6 @@ inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* poi
     get_cb(parent)->_swizzled_ptr_cnt_hint++;
 #endif
     ++_swizzled_page_count_approximate;
-#ifdef BP_MAINTAIN_PARENT_PTR
-    // w_assert1(!_is_in_swizzled_lru(idx));
-    // _add_to_swizzled_lru(idx);
-    // w_assert1(_is_in_swizzled_lru(idx));
-#endif // BP_MAINTAIN_PARENT_PTR
     get_cb(idx)._concurrent_swizzling = false;
 }
 
@@ -1951,20 +1914,12 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     return true;
 }
 
-#ifdef BP_MAINTAIN_PARENT_PTR
-void bf_tree_m::_unswizzle_with_parent_pointer() {
-}
-#endif // BP_MAINTAIN_PARENT_PTR
-
 ///////////////////////////////////   SWIZZLE/UNSWIZZLE END ///////////////////////////////////
 
 void bf_tree_m::debug_dump(std::ostream &o) const
 {
     o << "dumping the bufferpool contents. _block_cnt=" << _block_cnt << "\n";
     o << "  _freelist_len=" << _freelist_len << ", HEAD=" << FREELIST_HEAD << "\n";
-#ifdef BP_MAINTAIN_PARENT_PTR
-    // o << "  _swizzled_lru_len=" << _swizzled_lru_len << ", HEAD=" << SWIZZLED_LRU_HEAD << ", TAIL=" << SWIZZLED_LRU_TAIL << std::endl;
-#endif // BP_MAINTAIN_PARENT_PTR
 
     for (vid_t vid = 1; vid < vol_m::MAX_VOLS; ++vid) {
         bf_tree_vol_t* vol = _volumes[vid];
@@ -1989,9 +1944,6 @@ void bf_tree_m::debug_dump(std::ostream &o) const
             if (cb._in_doubt) {
                 o << " (in_doubt)";
             }
-#ifdef BP_MAINTAIN_PARENT_PTR
-            o << ", _parent=" << cb._parent;
-#endif // BP_MAINTAIN_PARENT_PTR
             o << ", _swizzled=" << cb._swizzled;
             o << ", _pin_cnt=" << cb._pin_cnt;
             o << ", _rec_lsn=" << cb._rec_lsn;
@@ -1999,12 +1951,6 @@ void bf_tree_m::debug_dump(std::ostream &o) const
             o << ", _dependency_shpid=" << cb._dependency_shpid;
             o << ", _dependency_lsn=" << cb._dependency_lsn;
             o << ", _refbit_approximate=" << cb._refbit_approximate;
-#ifdef BP_MAINTAIN_PARENT_PTR
-            o << ", _counter_approximate=" << cb._counter_approximate;
-            // if (_is_in_swizzled_lru(idx)) {
-            //     o << ", swizzled_lru.prev=" << SWIZZLED_LRU_PREV(idx) << ".next=" << SWIZZLED_LRU_NEXT(idx);
-            // }
-#endif // BP_MAINTAIN_PARENT_PTR
             o << ", ";
             cb.latch().print(o);
         } else {
@@ -2086,10 +2032,6 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
         bf_tree_cb_t &cb = get_cb(i);
         cb.clear();
     }
-#ifdef BP_MAINTAIN_PARENT_PTR
-    // ::memset (_swizzled_lru, 0, sizeof(bf_idx) * _block_cnt * 2);
-    // _swizzled_lru_len = 0;
-#endif // BP_MAINTAIN_PARENT_PTR
     _freelist[0] = 1;
     for (bf_idx i = 1; i < _block_cnt - 1; ++i) {
         _freelist[i] = i + 1;

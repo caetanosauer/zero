@@ -75,15 +75,6 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // Also, this flag assumes there is only one volume.
 // #define SIMULATE_MAINMEMORYDB
 
-// A flag whether the bufferpool maintains a parent pointer in each buffer frame.
-// Maintaining a parent pointer is tricky especially when several pages change
-// their parent at the same time (e.g., page split/merge/rebalance in a node page).
-// Without this flag, we simply don't have parent pointer, thus do a hierarchical
-// walking to find a pge to evict.
-// #define BP_MAINTAIN_PARENT_PTR
-//// TODO Now that we evict hierarchically, we won't need it in any situation.
-//// We should remove all codes in #ifdef BP_MAINTAIN_PARENT_PTR. JIRA Issue ZERO-178.
-
 // A flag whether the bufferpool maintains replacement priority per page.
 #define BP_MAINTAIN_REPLACEMENT_PRIORITY
 
@@ -468,7 +459,6 @@ public:
      */
     w_rc_t uninstall_volume (vid_t vid, const bool clear_cb = true);
 
-#ifdef BP_MAINTAIN_PARENT_PTR
     /**
      * Whenever the parent of a page is changed (adoption or de-adoption),
      * this method must be called to switch it in bufferpool.
@@ -476,7 +466,6 @@ public:
      * don't go away while this switch (i.e., latch them).
      */
     void switch_parent (generic_page* page, generic_page* new_parent);
-#endif // BP_MAINTAIN_PARENT_PTR
 
     /**
      * Swizzle a child pointer in the parent page to speed-up accesses on the child.
@@ -720,27 +709,6 @@ private:
     /** if the shpid is a swizzled pointer, convert it to the original page id. */
     void   _convert_to_pageid (shpid_t* shpid) const;
 
-#ifdef BP_MAINTAIN_PARENT_PTR
-    /**
-     * Newly adds the speficied block to the head of swizzled-pages LRU.
-     * This page must be a swizzled page that can be unswizzled.
-     */
-    // void   _add_to_swizzled_lru (bf_idx idx);
-    /**
-     * Eliminates the speficied block from swizzled-pages LRU.
-     */
-    // void   _remove_from_swizzled_lru (bf_idx idx);
-    /** Tells if the block is contained in swizzled-pages LRU. */
-    // bool   _is_in_swizzled_lru (bf_idx idx) const;
-
-    /**
-     * Brings the speficied block to the head of swizzled-pages LRU, assuming the block is already on the LRU.
-     * This is costly because of locks, so call this only once in 100 or 1000 times.
-     * If the page is worth swizzling, even once in 100 would be very frequent.
-     */
-    // void   _update_swizzled_lru (bf_idx idx);
-#endif // BP_MAINTAIN_PARENT_PTR
-
     /** finds a free block and returns its index. if free list is empty and 'evict' = true, it evicts some page. */
     w_rc_t _grab_free_block(bf_idx& ret, bool evict = true);
 
@@ -798,11 +766,6 @@ private:
     w_rc_t _evict_traverse_page(EvictionContext &context);
     /** called from _evict_traverse_page(). evict/unswizzle the given page. */
     w_rc_t _evict_page(EvictionContext &context, btree_page_h &p);
-
-#ifdef BP_MAINTAIN_PARENT_PTR
-    /** implementation of _trigger_unswizzling assuming parent pointer in each bufferpool frame. */
-    void   _unswizzle_with_parent_pointer();
-#endif // BP_MAINTAIN_PARENT_PTR
 
     /**
      * Tries to unswizzle the given child page from the parent page.
@@ -911,22 +874,6 @@ private:
 
     /** spin lock to protect all freelist related stuff. */
     tatas_lock           _freelist_lock;
-
-#ifdef BP_MAINTAIN_PARENT_PTR
-    /**
-     * doubly-linked LRU list for swizzled pages THAT CAN BE UNSWIZZLED.
-     * (in other words, root pages aren't included in this counter and the linked list)
-     * The array size is 2 * _block_cnt. [block i's prev][block i's next][block i+1's prev]...
-     * This logically belongs to _control_blocks, but is an array by itself for efficiency.
-     * [0] and [1] are special, meaning list head and tail.
-     */
-    // CS: commented out (new eviction)
-    // bf_idx*              _swizzled_lru;
-    /** count of swizzled pages that can be unswizzled. */
-    // uint32_t _swizzled_lru_len;
-    /** spin lock to protect swizzled page LRU list. */
-    // tatas_lock           _swizzled_lru_lock;
-#endif // BP_MAINTAIN_PARENT_PTR
 
     /**
      * \brief Hierarchical clockhand to maintain where we lastly visited
