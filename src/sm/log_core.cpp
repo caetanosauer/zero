@@ -85,23 +85,23 @@ typedef smlevel_0::fileoff_t fileoff_t;
 class flush_daemon_thread_t : public smthread_t {
     log_common* _log;
 public:
-    flush_daemon_thread_t(log_common* log) : 
+    flush_daemon_thread_t(log_common* log) :
          smthread_t(t_regular, "flush_daemon", WAIT_NOT_USED), _log(log) { }
 
     virtual void run() { _log->flush_daemon(); }
 };
 
 log_common::log_common(const sm_options& options)
-    : 
-      _log_corruption(false),          
+    :
+      _log_corruption(false),
       _readbuf(NULL),
 #ifdef LOG_DIRECT_IO
       _writebuf(NULL),
-#endif     
-      _start(0), 
-      _end(0),     
+#endif
+      _start(0),
+      _end(0),
       _segsize(options.get_int_option("sm_logbufsize", DFT_LOGBUFSIZE)),
-      _waiting_for_flush(false),     
+      _waiting_for_flush(false),
       _shutting_down(false),
       _flush_daemon_running(false)
 {
@@ -174,12 +174,12 @@ log_common::log_common(const sm_options& options)
 #endif // LOG_DIRECT_IO
 
     if (_segsize < 64 * 1024) {
-        // not mt-safe, but this is not going to happen in 
+        // not mt-safe, but this is not going to happen in
         // concurrency scenario
-        smlevel_0::errlog->clog << error_prio 
+        smlevel_0::errlog->clog << error_prio
         << "Log buf size (sm_logbufsize) too small: "
-        << _segsize << ", require at least " << 64 * 1024 
-        << endl; 
+        << _segsize << ", require at least " << 64 * 1024
+        << endl;
         smlevel_0::errlog->clog << error_prio << endl;
         fprintf(stderr,
             "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
@@ -190,13 +190,13 @@ log_common::log_common(const sm_options& options)
     w_assert1(is_aligned(_readbuf));
     w_assert1(_curr_lsn == _durable_lsn);
     if (1) {
-        smlevel_0::errlog->clog << debug_prio 
+        smlevel_0::errlog->clog << debug_prio
             << "Log _start " << start_byte() << " end_byte() " << end_byte()
             << endl
-            << "Log _curr_lsn " << _curr_lsn 
+            << "Log _curr_lsn " << _curr_lsn
             << " _durable_lsn " << _durable_lsn
-            << endl; 
-        smlevel_0::errlog->clog << debug_prio 
+            << endl;
+        smlevel_0::errlog->clog << debug_prio
             << "Curr epoch  base_lsn " << _cur_epoch.base_lsn
             << endl
             << "Curr epoch  base " << _cur_epoch.base
@@ -205,7 +205,7 @@ log_common::log_common(const sm_options& options)
             << endl
             << "Curr epoch  end " << _cur_epoch.end
             << endl;
-        smlevel_0::errlog->clog << debug_prio 
+        smlevel_0::errlog->clog << debug_prio
             << "Old epoch  base_lsn " << _old_epoch.base_lsn
             << endl
             << "Old epoch  base " << _old_epoch.base
@@ -229,7 +229,7 @@ log_common::log_common(const sm_options& options)
     }
 }
 
-log_common::~log_common() 
+log_common::~log_common()
 {
     w_assert1(_durable_lsn == _curr_lsn);
 
@@ -382,7 +382,7 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
      * STEP 2: Read log record from the partition
      */
     lsn_t prev_lsn = lsn_t::null;
-    DBGOUT3(<< "fetch @ lsn: " << ll);    
+    DBGOUT3(<< "fetch @ lsn: " << ll);
     W_COERCE(p->read(readbuf(), rp, ll, forward ? NULL : &prev_lsn,
             partition_t::invalid_fhdl));
     w_assert0(rp->get_lsn_ck() == ll);
@@ -402,7 +402,7 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
             }
 
             // re-read
-            DBGOUT3(<< "fetch @ lsn: " << ll);                
+            DBGOUT3(<< "fetch @ lsn: " << ll);
             W_COERCE(p->read(readbuf(), rp, ll));
             w_assert0(rp->get_lsn_ck() == ll);
         }
@@ -411,12 +411,12 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
             // the first call to p->read()
             w_assert0(prev_lsn != lsn_t::null);
             ll = prev_lsn;
-            DBGOUT3(<< "fetch @ lsn: " << ll);                
+            DBGOUT3(<< "fetch @ lsn: " << ll);
             W_COERCE(p->read(readbuf(), rp, ll, &prev_lsn,
                         partition_t::invalid_fhdl));
             w_assert0(rp->get_lsn_ck() == ll);
         }
-    } 
+    }
 
     // set nxt pointer accordingly
     if (nxt) {
@@ -446,8 +446,8 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     return RCOK;
 }
 
-void log_core::shutdown() 
-{ 
+void log_core::shutdown()
+{
     // gnats 52:  RACE: We set _shutting_down and signal between the time
     // the daemon checks _shutting_down (false) and waits.
     //
@@ -460,7 +460,7 @@ void log_core::shutdown()
     _shutting_down = true;
     while (*&_shutting_down) {
         CRITICAL_SECTION(cs, _wait_flush_lock);
-        // The only thread that should be waiting 
+        // The only thread that should be waiting
         // on the _flush_cond is the log flush daemon.
         // Yet somehow we wedge here.
         DO_PTHREAD(pthread_cond_broadcast(&_flush_cond));
@@ -475,7 +475,7 @@ void log_core::shutdown()
  *
  *  log_core::log_core(bufsize, reformat)
  *
- *  Open and scan logdir for master lsn and last log file. 
+ *  Open and scan logdir for master lsn and last log file.
  *  Truncate last incomplete log record (if there is any)
  *  from the last log file.
  *
@@ -486,7 +486,7 @@ log_core::log_core(const sm_options& options)
     FUNC(log_core::log_core);
 
 #ifdef LOG_DIRECT_IO
-    posix_memalign((void**)&_buf, LOG_DIO_ALIGN, _segsize);    
+    posix_memalign((void**)&_buf, LOG_DIO_ALIGN, _segsize);
 #else
     _buf = new char[_segsize];
 #endif
@@ -529,13 +529,13 @@ log_core::log_core(const sm_options& options)
     start_flush_daemon();
 
     if (1) {
-        smlevel_0::errlog->clog << debug_prio 
+        smlevel_0::errlog->clog << debug_prio
             << "Log _start " << start_byte() << " end_byte() " << end_byte()
             << endl
             << "Log _curr_lsn " << _curr_lsn
             << " _durable_lsn " << _durable_lsn
-            << endl; 
-        smlevel_0::errlog->clog << debug_prio 
+            << endl;
+        smlevel_0::errlog->clog << debug_prio
             << "Curr epoch  base_lsn " << _cur_epoch.base_lsn
             << endl
             << "Curr epoch  base " << _cur_epoch.base
@@ -544,7 +544,7 @@ log_core::log_core(const sm_options& options)
             << endl
             << "Curr epoch  end " << _cur_epoch.end
             << endl;
-        smlevel_0::errlog->clog << debug_prio 
+        smlevel_0::errlog->clog << debug_prio
             << "Old epoch  base_lsn " << _old_epoch.base_lsn
             << endl
             << "Old epoch  base " << _old_epoch.base
@@ -557,7 +557,7 @@ log_core::log_core(const sm_options& options)
 }
 
 
-log_core::~log_core() 
+log_core::~log_core()
 {
     delete _storage;
     delete _resv;
@@ -613,7 +613,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
     // CS: TODO commented out waiting-for-space stuff
     //while(*&_waiting_for_space ||
     while(
-            end_byte() - start_byte() + recsize > segsize() - 2* log_storage::BLOCK_SIZE) 
+            end_byte() - start_byte() + recsize > segsize() - 2* log_storage::BLOCK_SIZE)
     {
         _insert_lock.release(&info->me);
         {
@@ -622,7 +622,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
             {
                 // CS: changed from waiting_for_space to waiting_for_flush
                 _waiting_for_flush = true;
-                // Use signal since the only thread that should be waiting 
+                // Use signal since the only thread that should be waiting
                 // on the _flush_cond is the log flush daemon.
                 DO_PTHREAD(pthread_cond_signal(&_flush_cond));
                 DO_PTHREAD(pthread_cond_wait(&_wait_cond, &_wait_flush_lock));
@@ -927,7 +927,7 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
     // important parts of the log to fake crash (by making the
     // log appear to end here).
     if (_log_corruption) {
-        smlevel_0::errlog->clog << error_prio 
+        smlevel_0::errlog->clog << error_prio
         << "Generating corrupt log record at lsn: " << curr_lsn() << flushl;
         rec.corrupt();
         // Now turn it off.
@@ -1063,7 +1063,7 @@ rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flu
  * This method handles the wait/block of the daemon thread,
  * and when awake, calls its main-work method, flush_daemon_work.
  */
-void log_common::flush_daemon() 
+void log_common::flush_daemon()
 {
     /* Algorithm: attempt to flush non-durable portion of the buffer.
      * If we empty out the buffer, block until either enough
@@ -1092,7 +1092,7 @@ void log_common::flush_daemon()
             }
 
             // NOTE: right now the thread waiting for a flush has woken up or will woke up, but...
-            // this thread, as long as success is true (it just flushed something in the previous 
+            // this thread, as long as success is true (it just flushed something in the previous
             // flush_daemon_work), will keep calling flush_daemon_work until there is nothing to flush....
             // this happens in the background
 
@@ -1246,7 +1246,7 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
 
 #if W_DEBUG_LEVEL > 2
     _sanity_check();
-#endif 
+#endif
 
     _durable_lsn = end_lsn;
     _start = new_start;
@@ -1327,19 +1327,19 @@ rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
     return RCOK;
 }
 
-// Determine if this lsn is holding up scavenging of logs by (being 
+// Determine if this lsn is holding up scavenging of logs by (being
 // on a presumably hot page, and) being a rec_lsn that's in the oldest open
 // log partition and that oldest partition being sufficiently aged....
 /*
  * CS: does not seem to be used -- commented out for now.
  */
-//bool log_core::squeezed_by(const lsn_t &self)  const 
+//bool log_core::squeezed_by(const lsn_t &self)  const
 //{
     //// many partitions are open
-    //return 
+    //return
     //((curr_lsn().file() - global_min_lsn().file()) >=  (PARTITION_COUNT-2))
         //&&
-    //(self.file() == global_min_lsn().file())  // the given lsn 
+    //(self.file() == global_min_lsn().file())  // the given lsn
                                               //// is in the oldest file
     //;
 //}
