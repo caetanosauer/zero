@@ -187,6 +187,25 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
     w_assert0(move_count > 0);
     DBG(<< "NEW FOSTER CHILD " << new_page);
 
+    // set parent pointer on hash table
+    smlevel_0::bf->switch_parent(new_page_id, page.get_generic_page());
+
+    // set parent pointer for children that moved to new page
+    int max_slot = new_page.max_child_slot();
+    for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot;
+            ++i)
+    {
+        shpid_t shpid = *new_page.child_slot_address(i);
+        if ((shpid & SWIZZLED_PID_BIT) == 0) {
+            smlevel_0::bf->switch_parent(lpid_t(page.pid().vol(), shpid),
+                    new_page.get_generic_page());
+        }
+        else {
+            // CS TODO handle swizzled case
+            w_assert0(false);
+        }
+    }
+
     /*
      * Step 3: Delete moved records and update foster child pointer and high
      * fence on overflowing page. Foster parent is not recompressed after
@@ -303,6 +322,10 @@ rc_t btree_impl::_ux_adopt_foster_core (btree_page_h &parent, btree_page_h &chil
     w_assert0 (child.get_foster() != 0);
     shpid_t new_child_pid = child.get_foster();
     lsn_t child_emlsn = child.get_foster_emlsn();
+
+    // Switch parent of newly adopted child
+    smlevel_0::bf->switch_parent(lpid_t(child.pid().vol(), new_child_pid),
+            parent.get_generic_page());
 
     W_DO(log_btree_foster_adopt (parent, child, new_child_pid, child_emlsn, new_child_key));
     _ux_adopt_foster_apply_parent (parent, new_child_pid, child_emlsn, new_child_key);

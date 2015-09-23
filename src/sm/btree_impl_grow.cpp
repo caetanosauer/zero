@@ -187,6 +187,23 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
                             infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
              )); // nothing to steal
 
+    // If old root had any children, now they all have a wrong parent in the
+    // buffer pool hash table. Therefore, we need to update it for each child
+    int max_slot = cp.max_child_slot();
+    for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot;
+            ++i)
+    {
+        shpid_t shpid = *cp.child_slot_address(i);
+        if ((shpid & SWIZZLED_PID_BIT) == 0) {
+            smlevel_0::bf->switch_parent(lpid_t(cp.pid().vol(), shpid),
+                    cp.get_generic_page());
+        }
+        else {
+            // CS TODO handle swizzled case
+            w_assert0(false);
+        }
+    }
+
     w_assert3(cp.is_consistent(true, true));
     cp.unfix();
 

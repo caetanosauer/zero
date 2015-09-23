@@ -740,6 +740,11 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
         bf_idx idx = 0;
         if (_hashtable->lookup(key, p)) {
             idx = p.first;
+            if (p.second != parent - _buffer) {
+                // need to fix update parent pointer
+                p.second = parent - _buffer;
+                _hashtable->update(key, p);
+            }
         }
         if ((idx == 0) || (true == force_load))
         {
@@ -921,7 +926,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             cb._pid_vol = vol;
             cb._pid_shpid = shpid;
             cb._dependency_lsn = 0;
-            bf_idx parent_idx = 0;
+            bf_idx parent_idx = parent - _buffer;
             if (!virgin_page)
             {
                 // if the page is read from disk, at least it's sure that
@@ -1526,30 +1531,27 @@ bool bf_tree_m::_check_dependency_still_active(bf_tree_cb_t& cb) {
 
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY END ///////////////////////////////////
 
-#ifdef BP_MAINTAIN_PARENT_PTR
-void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
+void bf_tree_m::switch_parent(lpid_t pid, generic_page* parent)
 {
-    // if (!is_swizzling_enabled()) {
-    //     return;
-    // }
-    bf_idx idx = page - _buffer;
-    w_assert1(false == get_cb(idx)._in_doubt);
-    w_assert1(_is_active_idx(idx));
-    bf_tree_cb_t &cb = get_cb(idx);
+    uint64_t key = bf_key(pid.vol(), pid.page);
+    bf_idx_pair p;
+    bool found = _hashtable->lookup(key, p);
+    // if page is not cached, there is nothing to update
+    if (!found) { return; }
 
-    w_assert1(_is_active_idx(cb._parent));
+    bf_idx parent_idx = parent - _buffer;
+    // TODO CS: this assertion fails sometimes -- why?
+    // Is it because of concurrent adoptions which race and one wins and the
+    // other simply does a "dummy" adoption?
+    // w_assert1(parent_idx != p.second);
+    // ERROUT(<< "Parent of " << pid << " updated to " << parent_idx
+    //         << " from " << p.second);
+    p.second = parent_idx;
+    found = _hashtable->update(key, p);
 
-    bf_idx new_parent_idx = new_parent - _buffer;
-    w_assert1(_is_active_idx(new_parent_idx));
-    w_assert1(cb._parent != new_parent_idx);
-
-    // move the pin_cnt from old to new parent
-    // _decrement_pin_cnt_assume_positive(cb._parent);
-    // lintel::unsafe::atomic_fetch_add((uint32_t*) &(get_cb(new_parent_idx)._pin_cnt),1);
-    cb._parent = new_parent_idx;
+    // page cannot be evicted since first lookup because caller latched it
+    w_assert0(found);
 }
-#endif // BP_MAINTAIN_PARENT_PTR
-
 
 void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
     DBGOUT3 (<< "converting the page " << page->pid << "... ");

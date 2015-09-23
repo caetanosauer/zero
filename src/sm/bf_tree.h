@@ -465,7 +465,7 @@ public:
      * The caller must make sure the page itself, old and new parent pages
      * don't go away while this switch (i.e., latch them).
      */
-    void switch_parent (generic_page* page, generic_page* new_parent);
+    void switch_parent (lpid_t, generic_page*);
 
     /**
      * Swizzle a child pointer in the parent page to speed-up accesses on the child.
