@@ -792,7 +792,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         // the following check is approximate (without latch).
         // we check for real later, so that's fine.
         vid_t vol = cb._pid_vol;
-        if (vol >= vol_m::MAX_VOLS || _parent->get_cleaner_for_vol(vol) != _id) {
+        if (vol == 0 || vol >= vol_m::MAX_VOLS ||
+                _parent->get_cleaner_for_vol(vol) != _id) {
             continue;
         }
         bool clean_it = false;
