@@ -489,7 +489,10 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     // so the cb._rec_lsn (initial dirty lsn) would be 0
     cb._rec_lsn = _buffer[idx].lsn.data();
     w_assert3(_buffer[idx].lsn.hi() > 0);
-    cb.pin_cnt_set(1); // root page's pin count is always positive
+    cb._pin_cnt = 0; // root page's pin count is always positive
+    DBG(<< "Fix root set pin cnt to " << cb._pin_cnt);
+    w_assert1(cb.latch().held_by_me());
+    w_assert1(cb.latch().mode() == LATCH_EX);
     cb._swizzled = true;
 
     // When install volume, if the root page was not already loaded, then the in_doubt
@@ -554,7 +557,8 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
             cb._pid_shpid = idx;
             cb._rec_lsn = _buffer[idx].lsn.data();
             w_assert3(_buffer[idx].lsn.hi() > 0);
-            cb.pin_cnt_set(1);
+            cb._pin_cnt = 0;
+            DBG(<< "Fix root set pin cnt to " << cb._pin_cnt);
             cb._in_doubt = false;
             cb._recovery_access = false;
             cb._used = true;
@@ -685,7 +689,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
         bf_idx parent_idx = parent - _buffer;
         cb._pid_vol = get_cb(parent_idx)._pid_vol;
         cb._pid_shpid = idx;
-        cb.pin_cnt_set(1);
+        cb._pin_cnt = 1;
     }
     cb._used = true;
     w_rc_t rc = cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
@@ -1021,8 +1025,10 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // Page is safe to access, not calling _validate_access(page)
             // for page access validation purpose
             DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: retrieved a new page: " << shpid);
-            cb._pin_cnt++;
-            // ERROUT(<< "Fixed " << idx << " pin count " << cb._pin_cnt);
+            cb.pin();
+            w_assert1(cb.latch().held_by_me());
+            w_assert1(cb._pin_cnt > 0);
+            DBG(<< "Fixed " << idx << " pin count " << cb._pin_cnt);
 
             return RCOK;
         }
@@ -1136,107 +1142,98 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 }
             }
 
-            // Page is registered in hash table and it is not an in_doubt page, meaning the actual page is in buffer pool already
+            // Page is registered in hash table and it is not an in_doubt page,
+            // meaning the actual page is in buffer pool already
 
-            int32_t cur_cnt = cb.pin_cnt();
-            if (cur_cnt < 0) {
-                w_assert1(cur_cnt == -1);
-                DBGOUT1(<<"bf_tree_m: very unlucky! buffer frame " << idx
+            w_rc_t rc = cb.latch().latch_acquire(mode, conditional ?
+                    sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
+
+            if (rc.is_error())
+            {
+                DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame "
+                        << idx << " rc=" << rc);
+                return rc;
+            }
+
+            if (cb._refbit_approximate < BP_MAX_REFCOUNT) {
+                ++cb._refbit_approximate;
+            }
+
+            if (cb._pin_cnt < 0) {
+                w_assert1(cb._pin_cnt == -1);
+                ERROUT(<<"bf_tree_m: very unlucky! buffer frame " << idx
                         << " has been just evicted. retrying..");
+                cb.latch().latch_release();
                 continue;
             }
-// #ifndef NO_PINCNT_INCDEC
-//             int32_t cur_ucnt = cur_cnt;
-//             if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&cb._pin_cnt), &cur_ucnt, cur_ucnt + 1))
-//             {
-// #endif
-                // okay, CAS went through
-                if (cb._refbit_approximate < BP_MAX_REFCOUNT) {
-                    ++cb._refbit_approximate;
-                }
-                w_rc_t rc = cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
-                // either successfully or unsuccessfully, we latched the page.
-                // we don't need the pin any more.
-                // here we can simply use atomic_dec because it must be positive now.
-                cb._pin_cnt++;
-                w_assert1(cb.pin_cnt() > 0);
-                w_assert1(cb._pid_vol == vol);
-                if (cb._pid_shpid != shpid) {
-                    DBGOUT1(<<"cb._pid_shpid = " << cb._pid_shpid << ", shpid = " << shpid);
-                }
-                bf_idx parent_idx = parent - _buffer;
-                w_assert1 (_is_active_idx(parent_idx));
-                cb._parent = parent_idx;
-                // CS: this can happen if the following race condition occurs
-                // 1. Thread 1: pin count is retrieved as 0
-                // 2. Thread 2: evicts the frame and sets the pin count to -1
-                // 3. Thread 2: loads new page and resets pin count to 0
-                // 4. Thread 1: increments pin count successfully and latches
-                //    the page, but it is a different page, so the assertion
-                //    fails
-                // In essence, the whole "pin count" mechanism is broken. For
-                // every concurrent object, there should be only one
-                // concurrency control mechanism to protect it. In the case of
-                // pages, it is the latch. Introducing additional mechanisms,
-                // like an atomic pin count, is only error-prone and does not
-                // really bring any significant performance improvement.
-                w_assert0(cb._pid_shpid == shpid);
-#ifndef NO_PINCNT_INCDEC
-                // lintel::unsafe::atomic_fetch_sub((uint32_t*)(&cb._pin_cnt), 1);
-#endif
+            w_assert1(cb._pid_vol == vol);
+            if (cb._pid_shpid != shpid) {
+                DBGOUT1(<<"cb._pid_shpid = " << cb._pid_shpid << ", shpid = " << shpid);
+            }
+            // bf_idx parent_idx = parent - _buffer;
+            // w_assert1 (_is_active_idx(parent_idx));
+            // cb._parent = parent_idx;
+            // CS: this can happen if the following race condition occurs
+            // 1. Thread 1: pin count is retrieved as 0
+            // 2. Thread 2: evicts the frame and sets the pin count to -1
+            // 3. Thread 2: loads new page and resets pin count to 0
+            // 4. Thread 1: increments pin count successfully and latches
+            //    the page, but it is a different page, so the assertion
+            //    fails
+            // In essence, the whole "pin count" mechanism is broken. For
+            // every concurrent object, there should be only one
+            // concurrency control mechanism to protect it. In the case of
+            // pages, it is the latch. Introducing additional mechanisms,
+            // like an atomic pin count, is only error-prone and does not
+            // really bring any significant performance improvement.
+            w_assert0(cb._pid_shpid == shpid);
+
+            page = &(_buffer[idx]);
+
+            // Page was already loaded in buffer pool by:
+            //     Recovery operation - was an in_doubt page
+            // or
+            //     Previous user transaction - was not an in_doubt page
+            // we need to validate the page only if running in concurrent mode
+            // and the request coming from a user transaction
+            //
+            // Two scenarios:
+            //     User transaction - validate
+            //     Recovery operation - allow
+            //                    from_recovery - UNDO operation
+            //                    cb._recovery_access - REDO operation
+            //         Two different ways to indicate caller from recovery, because
+            //         REDO is page driven so we can mark cb._recovery_access
+            //         but UNDO is transaction driven, not able to associate it to target
+            //         page and also it has to traversal B-tree (visit multiple pages), so
+            //         it is relying on input parameter 'from_recovery'
+
+            if ((true == from_recovery) || (true == cb._recovery_access))
+            {
+                // From Recovery, no validation
+                DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from recovery, skip check for accessability, page: " << shpid);
+            }
+            else
+            {
+                // DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page "
+                // << " from user txn, check for accessability, page: " << shpid);
+                rc = _validate_access(page);
                 if (rc.is_error())
                 {
-                    DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame " << idx << " rc=" << rc);
+                    ++cb._refbit_approximate;
+                    if (cb.latch().held_by_me())
+                        cb.latch().latch_release();
+                    return rc;
                 }
-                else
-                {
-                    page = &(_buffer[idx]);
+            }
 
-                    // Page was already loaded in buffer pool by:
-                    //     Recovery operation - was an in_doubt page
-                    // or
-                    //     Previous user transaction - was not an in_doubt page
-                    // we need to validate the page only if running in concurrent mode
-                    // and the request coming from a user transaction
-                    //
-                    // Two scenarios:
-                    //     User transaction - validate
-                    //     Recovery operation - allow
-                    //                    from_recovery - UNDO operation
-                    //                    cb._recovery_access - REDO operation
-                    //         Two different ways to indicate caller from recovery, because
-                    //         REDO is page driven so we can mark cb._recovery_access
-                    //         but UNDO is transaction driven, not able to associate it to target
-                    //         page and also it has to traversal B-tree (visit multiple pages), so
-                    //         it is relying on input parameter 'from_recovery'
-
-                    if ((true == from_recovery) || (true == cb._recovery_access))
-                    {
-                        // From Recovery, no validation
-                        DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from recovery, skip check for accessability, page: " << shpid);
-                    }
-                    else
-                    {
-                        DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from user txn, check for accessability, page: " << shpid);
-                        rc = _validate_access(page);
-                        if (rc.is_error())
-                        {
-                            ++cb._refbit_approximate;
-                            if (cb.latch().held_by_me())
-                                cb.latch().latch_release();
-                        }
-                    }
-
-                    // On successful return, we are holding latch on this page
-                }
-                return rc;
-#ifndef NO_PINCNT_INCDEC
-            // } else {
-            //     // another thread is doing something. keep trying.
-            //     DBGOUT1(<<"bf_tree_m: a bit unlucky! buffer frame " << idx << " has contention. cb._pin_cnt=" << cb._pin_cnt <<", expected=" << cur_ucnt);
-            //     continue;
-            // }
-#endif
+            w_assert1(cb.latch().held_by_me());
+            cb.pin();
+            // CS TODO: race condition! assert succeeds, but 0 is printed below
+            w_assert1(cb._pin_cnt > 0);
+            DBG(<< "Fix set pin cnt of " << idx << " to " << cb._pin_cnt);
+            w_assert1(cb._pin_cnt > 0);
+            return RCOK;
         }
     }
 }
@@ -1326,27 +1323,31 @@ w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the unde
 bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
     w_assert1(page != NULL);
     w_assert1(latch_mode(page) != LATCH_NL);
+
     bf_idx idx = page - _buffer;
     w_assert1(_is_active_idx(idx));
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) return idx;
 #endif // SIMULATE_MAINMEMORYDB
-    // this is just atomic increment, not a CAS, because we know
-    // the page is latched and eviction thread wouldn't consider this block.
-    w_assert1(get_cb(idx).pin_cnt() >= 0);
-    get_cb(idx).pin_cnt_atomic_inc(1);
+    w_assert1(get_cb(idx)._pin_cnt >= 0);
+    w_assert1(get_cb(idx).latch().held_by_me());
+
+    get_cb(idx).pin();
+    DBG(<< "Refix set pin cnt to " << get_cb(idx)._pin_cnt);
     return idx;
 }
 
 void bf_tree_m::unpin_for_refix(bf_idx idx) {
     w_assert1(_is_active_idx(idx));
-    w_assert1(get_cb(idx).pin_cnt() > 0);
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) return;
 #endif // SIMULATE_MAINMEMORYDB
-    // get_cb(idx).pin_cnt_atomic_dec(1);
-    get_cb(idx)._pin_cnt--;
-    ERROUT(<< "Unpin for refix pin count = " << get_cb(idx)._pin_cnt);
+    w_assert1(get_cb(idx)._pin_cnt > 0);
+
+    w_assert1(get_cb(idx).latch().held_by_me());
+    get_cb(idx).unpin();
+    DBG(<< "Unpin for refix set pin cnt to " << get_cb(idx)._pin_cnt);
+    w_assert1(get_cb(idx)._pin_cnt >= 0);
 }
 
 ///////////////////////////////////   Page fix/unfix END         ///////////////////////////////////
@@ -1401,38 +1402,6 @@ void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t 
 
 ///////////////////////////////////   Dirty Page Cleaner END       ///////////////////////////////////
 
-#if 0
-bool bf_tree_m::_increment_pin_cnt_no_assumption(bf_idx idx) {
-    w_assert1 (_is_valid_idx(idx));
-    bf_tree_cb_t &cb = get_cb(idx);
-#if 0
-    int32_t cur = cb._pin_cnt;
-    while (true) {
-        w_assert1(cur >= -1);
-        if (cur == -1) {
-            break; // being evicted! fail
-        }
-
-        if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&cb._pin_cnt), &cur , cur + 1)) {
-            return true; // increment occurred
-        }
-
-        // if we get here it's because another thread raced in here,
-        // and updated the pin count before we could.
-    }
-    return false;
-#endif
-    return cb.pin_cnt_atomic_inc_no_assumption(1);
-}
-
-void bf_tree_m::_decrement_pin_cnt_assume_positive(bf_idx idx) {
-    w_assert1 (_is_active_idx(idx));
-    bf_tree_cb_t &cb = get_cb(idx);
-    w_assert1 (cb.pin_cnt() >= 1);
-    //lintel::unsafe::atomic_fetch_sub((uint32_t*) &(cb._pin_cnt),1);
-    cb.pin_cnt_atomic_dec(1);
-}
-#endif
 
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY BEGIN ///////////////////////////////////
 bool bf_tree_m::register_write_order_dependency(const generic_page* page, const generic_page* dependency) {
@@ -1516,7 +1485,7 @@ bool bf_tree_m::_check_dependency_cycle(bf_idx source, bf_idx start_idx) {
             break;
         }
         bf_tree_cb_t &dependency_cb = get_cb(dependency_idx);
-        w_assert1(dependency_cb.pin_cnt() >= 0);
+        w_assert1(dependency_cb._pin_cnt >= 0);
         bf_idx next_dependency_idx = dependency_cb._dependency_idx;
         if (next_dependency_idx == 0) {
             break;
@@ -1547,17 +1516,17 @@ bool bf_tree_m::_check_dependency_cycle(bf_idx source, bf_idx start_idx) {
 }
 
 bool bf_tree_m::_compare_dependency_lsn(const bf_tree_cb_t& cb, const bf_tree_cb_t &dependency_cb) const {
-    w_assert1(cb.pin_cnt() >= 0);
+    w_assert1(cb._pin_cnt >= 0);
     w_assert1(cb._dependency_idx != 0);
     w_assert1(cb._dependency_shpid != 0);
-    w_assert1(dependency_cb.pin_cnt() >= 0);
+    w_assert1(dependency_cb._pin_cnt >= 0);
     return dependency_cb._used && dependency_cb._dirty // it's still dirty
         && dependency_cb._pid_vol == cb._pid_vol // it's still the vol and
         && dependency_cb._pid_shpid == cb._dependency_shpid // page it was referring..
         && dependency_cb._rec_lsn <= cb._dependency_lsn; // and not flushed after the registration
 }
 bool bf_tree_m::_check_dependency_still_active(bf_tree_cb_t& cb) {
-    w_assert1(cb.pin_cnt() >= 0);
+    w_assert1(cb._pin_cnt >= 0);
     bf_idx next_idx = cb._dependency_idx;
     if (next_idx == 0) {
         return false;
@@ -1962,7 +1931,7 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     // w_assert1(child_cb._pid_shpid == _buffer[child_idx].pid.page);
     // w_assert1(_buffer[child_idx].btree_level == 1);
     w_assert1(child_cb._pid_vol == parent_cb._pid_vol);
-    w_assert1(child_cb.pin_cnt() >= 1); // because it's swizzled
+    w_assert1(child_cb._pin_cnt >= 1); // because it's swizzled
     bf_idx_pair p;
     w_assert1(_hashtable->lookup(bf_key (child_cb._pid_vol, child_cb._pid_shpid), p));
     w_assert1(child_idx == p.first);
@@ -2024,7 +1993,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
             o << ", _parent=" << cb._parent;
 #endif // BP_MAINTAIN_PARENT_PTR
             o << ", _swizzled=" << cb._swizzled;
-            o << ", _pin_cnt=" << cb.pin_cnt();
+            o << ", _pin_cnt=" << cb._pin_cnt;
             o << ", _rec_lsn=" << cb._rec_lsn;
             o << ", _dependency_idx=" << cb._dependency_idx;
             o << ", _dependency_shpid=" << cb._dependency_shpid;
@@ -2216,7 +2185,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t*
                 // Ignore this page if the pin count is -1
                 // Checkpoint records dirty pages in buffer pool, we never evict dirty pages so ignoring
                 // a page that is being evicted (pin_cnt == -1) is safe.
-                if (cb.pin_cnt() == -1)
+                if (cb._pin_cnt == -1)
                 {
                     if (cb.latch().held_by_me())
                         cb.latch().latch_release();

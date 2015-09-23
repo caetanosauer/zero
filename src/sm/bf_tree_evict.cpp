@@ -255,7 +255,7 @@ bool bf_tree_m::_try_evict_block(bf_idx parent_idx, bf_idx idx) {
     // find a block that has no pinning (or not being evicted by others).
     // this check is approximate as it's without lock.
     // false positives are fine, and we do the real check later
-    if (cb.pin_cnt() != 0) {
+    if (cb._pin_cnt != 0) {
         return false;
     }
 
@@ -273,7 +273,7 @@ bool bf_tree_m::_try_evict_block(bf_idx parent_idx, bf_idx idx) {
         // CAS did it job. the current thread has an exclusive access to this block
         bool evicted = _try_evict_block_pinned(parent_cb, cb, parent_idx, idx);
         if (!evicted) {
-            cb.pin_cnt_set(0);
+            cb._pin_cnt = -1;
         }
         return evicted;
     }
@@ -283,7 +283,7 @@ bool bf_tree_m::_try_evict_block(bf_idx parent_idx, bf_idx idx) {
 bool bf_tree_m::_try_evict_block_pinned(
     bf_tree_cb_t &parent_cb, bf_tree_cb_t &cb,
     bf_idx parent_idx, bf_idx idx) {
-    w_assert1(cb.pin_cnt() == -1);
+    w_assert1(cb._pin_cnt == -1);
 
     // let's do a real check.
     if (cb._dirty || !cb._used || cb._in_doubt) {
@@ -340,7 +340,7 @@ bool bf_tree_m::_try_evict_block_pinned(
 bool bf_tree_m::_try_evict_block_update_emlsn(
     bf_tree_cb_t &parent_cb, bf_tree_cb_t &cb,
     bf_idx parent_idx, bf_idx idx, general_recordid_t child_slotid) {
-    w_assert1(cb.pin_cnt() == -1);
+    w_assert1(cb._pin_cnt == -1);
     w_assert1(parent_cb.latch().is_latched());
 
     w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
@@ -351,7 +351,7 @@ bool bf_tree_m::_try_evict_block_update_emlsn(
     // we can immediately release EX latch because no one will newly take latch as _pin_cnt==-1
     cb.latch().latch_release();
     DBGOUT1(<<"evicting page idx = " << idx << " shpid = " << cb._pid_shpid
-            << " pincnt = " << cb.pin_cnt());
+            << " pincnt = " << cb._pin_cnt);
 
     // Output Single-Page-Recovery log for updating EMLSN in parent.
     // safe to disguise as LATCH_EX for the reason above.
@@ -394,7 +394,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     w_assert1(_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb._dirty);
-    w_assert1(cb.pin_cnt() == 0);
+    w_assert1(cb._pin_cnt == 0);
     w_assert1(!cb.latch().is_latched());
     cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
     cb._dirty = false;

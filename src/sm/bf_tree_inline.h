@@ -89,9 +89,12 @@ const uint32_t SWIZZLED_LRU_UPDATE_INTERVAL = 1000;
 inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
                                        idx, latch_mode_t mode, bool conditional) {
     bf_tree_cb_t &cb = get_cb(idx);
-    w_assert1(cb.pin_cnt() > 0);
-    W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
 #ifdef BP_MAINTAIN_PARENT_PTR
+    W_DO(cb.latch().latch_acquire(mode, conditional ?
+                sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+    w_assert1(cb._pin_cnt > 0);
+    cb.pin();
+    DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
     ++cb._counter_approximate;
 #endif // BP_MAINTAIN_PARENT_PTR
     ++cb._refbit_approximate;
@@ -178,7 +181,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         bf_tree_cb_t &cb = get_cb(idx);
         W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
         w_assert1 (_is_active_idx(idx));
-        w_assert1(cb.pin_cnt() > 0);
+        w_assert1(cb._pin_cnt > 0);
         w_assert1(cb._pid_vol == vol);
         w_assert1(false == cb._in_doubt);
         w_assert1(cb._pid_shpid == _buffer[idx].pid.page);
@@ -274,13 +277,20 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, stid_t store, shp
     // this page will be the root page of a new store.
     W_DO(_grab_free_block(idx));
     w_assert1(_is_valid_idx(idx));
-    volume->_root_pages[store.store] = idx;
 
-    get_cb(idx).clear();
+    W_DO(_latch_root_page(page, idx, LATCH_EX, false));
+
+    w_assert1(get_cb(idx).latch().held_by_me());
+    get_cb(idx).clear_except_latch();
     get_cb(idx)._pid_vol = store.vol;
     get_cb(idx)._pid_shpid = shpid;
     get_cb(idx)._store_num = store.store;
-    get_cb(idx).pin_cnt_set(1); // root page's pin count is always positive
+
+    // no races on pin since we have EX latch
+    w_assert1(get_cb(idx)._pin_cnt == 0);
+    get_cb(idx).pin();
+    DBG(<< "Fixed virgin root " << idx << " pin cnt " << get_cb(idx)._pin_cnt);
+
     get_cb(idx)._used = true;
     get_cb(idx)._dirty = true;
     get_cb(idx)._in_doubt = false;
@@ -288,14 +298,14 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, stid_t store, shp
     get_cb(idx)._uncommitted_cnt = 0;
     ++_dirty_page_count_approximate;
     get_cb(idx)._swizzled = true;
-    // for some type of caller (e.g., redo) we still need hashtable entry for root
+
     bool inserted = _hashtable->insert_if_not_exists(bf_key(store.vol, shpid),
             bf_idx_pair(idx, 0));
-    if (!inserted) {
-        ERROUT (<<"failed to insert a virgin root page to hashtable. this must not have happened because there shouldn't be any race. wtf");
-        return RC(eINTERNAL);
-    }
-    return _latch_root_page(page, idx, LATCH_EX, false);
+    w_assert0(inserted);
+
+    volume->_root_pages[store.store] = idx;
+
+    return RCOK;
 }
 
 inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
@@ -328,19 +338,28 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
         // currently, only restore should get into this if-block
         w_assert0(volume->_volume->is_failed());
 
+        // CS TODO -- why don't we need a latch here?
+        // We assume that no one else will touch that idx, because
+        // _grab_free_block runs in a critical section. However, this is a weak
+        // assumption, because god knows who might be looking into the CB and
+        // the page. Note that not even the old pin mechanism solved this
+        // completely, because it was subject to the ABA problem.
         shpid_t root_shpid = volume->_volume->get_store_root(store.store);
         W_DO(_grab_free_block(idx));
+        W_DO(_latch_root_page(page, idx, mode, conditional));
         W_DO(_preload_root_page(volume, volume->_volume, store.store,
                     root_shpid, idx));
         w_assert1(_buffer[idx].pid == lpid_t(store.vol, root_shpid));
         volume->add_root_page(store.store, idx);
     }
+    else {
+        W_DO(_latch_root_page(page, idx, mode, conditional));
+    }
 
     w_assert1(_is_valid_idx(idx));
     w_assert1(_is_active_idx(idx));
     w_assert1(get_cb(idx)._pid_vol == vid_t(store.vol));
-
-    w_assert1(true == get_cb(idx)._used);
+    w_assert1(get_cb(idx)._used);
 
     // Root page is pre-loaded into buffer pool when loading volume
     // this function is called for both normal and Recovery operations
@@ -348,7 +367,7 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
     // when called, need to block user txn in such case, but allow recovery
     // operation to go through
 
-    if (true == get_cb(idx)._in_doubt)
+    if (get_cb(idx)._in_doubt)
     {
         DBGOUT3(<<"bf_tree_m::fix_root: root page is still in_doubt");
 
@@ -367,8 +386,6 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
             }
         }
     }
-
-    W_DO(_latch_root_page(page, idx, mode, conditional));
 
     if ((false == get_cb(idx)._in_doubt) &&                                 // Page not in_doubt
         (false == from_undo) && (false == get_cb(idx)._recovery_access))    // From concurrent user transaction
@@ -399,7 +416,10 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
 #endif // SIMULATE_NO_SWIZZLING
 #endif // SIMULATE_MAINMEMORYDB
 
-    // ERROUT(<< "Fixed " << idx);
+    get_cb(idx).pin();
+    w_assert1(get_cb(idx)._pin_cnt > 0);
+    w_assert1(get_cb(idx).latch().held_by_me());
+    DBG(<< "Fixed root " << idx << " pin cnt " << get_cb(idx)._pin_cnt);
     return RCOK;
 }
 
@@ -423,8 +443,8 @@ inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch
     // also, doesn't have to unpin whether there happens an error or not. easy!
     page = &(_buffer[idx]);
 
-    get_cb(idx)._pin_cnt++;
-    // ERROUT(<< "LAtched root! pin count " << get_cb(idx)._pin_cnt);
+    // CS: this method is always called by a fix, which is responsible for
+    // incrementing the pin count
 
 // #ifdef SIMULATE_NO_SWIZZLING
 //     _decrement_pin_cnt_assume_positive(idx);
@@ -464,15 +484,18 @@ inline void bf_tree_m::unfix(const generic_page* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
-    cb._pin_cnt--;
     w_assert1(cb.latch().held_by_me());
+    cb.unpin();
+    w_assert1(cb._pin_cnt >= 0);
+    DBG(<< "Unfixed " << idx << " pin count " << cb._pin_cnt);
     cb.latch().latch_release();
-    // ERROUT(<< "Unfixed " << idx << " pin count " << cb._pin_cnt);
 }
 
 inline void bf_tree_m::set_dirty(const generic_page* p) {
     uint32_t idx = p - _buffer;
-    w_assert1 (_is_active_idx(idx));
+    // CS TODO: ignoring the used flag for now
+    // w_assert1 (_is_active_idx(idx));
+    w_assert1 (_is_valid_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
     if (!cb._dirty) {
         cb._dirty = true;

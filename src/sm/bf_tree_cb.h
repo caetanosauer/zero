@@ -141,6 +141,7 @@ struct bf_tree_cb_t {
     lsndata_t _rec_lsn;       // +8 -> 24
 
     /// Pointer to the parent page.  zero for root pages; protected by ??
+    // TODO CS: NOT USED ANYMORE
     bf_idx _parent;        // +4 -> 28
     
     /// Whether this page is swizzled from the parent; protected by ??
@@ -239,6 +240,18 @@ struct bf_tree_cb_t {
     latch_t                     _latch;         // +64 ->128
 #endif
 
+    // increment pin count atomically
+    void pin()
+    {
+        lintel::unsafe::atomic_fetch_add(&_pin_cnt, 1);
+    }
+
+    // decrement pin count atomically
+    void unpin()
+    {
+        lintel::unsafe::atomic_fetch_sub(&_pin_cnt, 1);
+    }
+
     // disabled (no implementation)
     bf_tree_cb_t();
     bf_tree_cb_t(const bf_tree_cb_t&);
@@ -255,60 +268,6 @@ struct bf_tree_cb_t {
 
     latch_t &latch() {
         return *latchp();
-    }
-
-    int32_t pin_cnt() const {
-#ifdef NO_PINCNT_INCDEC
-        return _pin_cnt + latchp()->latch_cnt();
-#else
-        return _pin_cnt;
-#endif
-    }
-
-    void pin_cnt_set(int32_t val) {
-        _pin_cnt = val;
-    }
-
-/// @todo NO_PINCNT_INCDEC is possibly unnecessary and should be cleaned up/removed (Haris)
-#ifndef NO_PINCNT_INCDEC
-    void pin_cnt_atomic_inc(int32_t by_val) {
-        lintel::unsafe::atomic_fetch_add((uint32_t*) &(_pin_cnt), by_val);
-    }
-#else
-    void pin_cnt_atomic_inc(int32_t) {
-    }
-#endif
-
-#ifndef NO_PINCNT_INCDEC
-    void pin_cnt_atomic_dec(int32_t by_val) {
-        lintel::unsafe::atomic_fetch_sub((uint32_t*) &(_pin_cnt), by_val);
-    }
-#else
-    void pin_cnt_atomic_dec(int32_t) {
-    }
-#endif
-
-#ifdef NO_PINCNT_INCDEC
-    bool pin_cnt_atomic_inc_no_assumption(int32_t /* by_val */) {
-        return true;
-#else
-    bool pin_cnt_atomic_inc_no_assumption(int32_t by_val) {
-        int32_t cur = _pin_cnt;
-        while (true) {
-            w_assert1(cur >= -1);
-            if (cur == -1) {
-                break; // being evicted! fail
-            }
-            
-            if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&_pin_cnt), &cur , cur + by_val)) {
-                return true; // increment occurred
-            }
-
-            // if we get here it's because another thread raced in here,
-            // and updated the pin count before we could.
-        }
-        return false;
-#endif
     }
 };
 
