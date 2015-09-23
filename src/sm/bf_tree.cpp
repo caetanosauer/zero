@@ -298,7 +298,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
         uint64_t key = bf_key(vid, shpid);
         bf_idx idx = 0;
         bf_idx_pair p;
-        if (_hashtable->lookup_imprecise(key, p)) {
+        if (_hashtable->lookup(key, p)) {
             idx = p.first;
         }
 
@@ -2473,4 +2473,23 @@ w_rc_t bf_tree_m::_try_recover_page(generic_page* parent,     // In: parent page
         return smlevel_0::recovery->recover_single_page(p, emlsn);
     }
 
+}
+
+void bf_tree_m::_delete_block(bf_idx idx) {
+    w_assert1(_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+    w_assert1(cb._dirty);
+    w_assert1(cb._pin_cnt == 0);
+    w_assert1(!cb.latch().is_latched());
+    cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
+    cb._dirty = false;
+    cb._in_doubt = false; // always set in_doubt bit to false
+    cb._uncommitted_cnt = 0;
+
+    DBGOUT1(<<"delete block: remove page shpid = " << cb._pid_shpid);
+    bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
+    w_assert1(removed);
+
+    // after all, give back this block to the freelist. other threads can see this block from now on
+    _add_free_block(idx);
 }

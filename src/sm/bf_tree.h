@@ -752,20 +752,6 @@ private:
 
     /** Core implementation of evict_blocks(). */
     w_rc_t _evict_blocks(EvictionContext &context);
-    /** Debug out the current evict context. Do nothing in release mode. */
-    void   _dump_evict_clockhand(const EvictionContext &context) const;
-    /** Quickly lookup the given vol/pid in bufferpool. Used by non-precise routine (evict). */
-    void   _lookup_buf_imprecise(btree_page_h &parent, uint32_t slot,
-                                 bf_idx &idx, bool &swizzled) const;
-
-    /** called from evict_blocks(). traverses the given volume. */
-    w_rc_t _evict_traverse_volume(EvictionContext &context);
-    /** called from evict_blocks(). traverses the given store. */
-    w_rc_t _evict_traverse_store(EvictionContext &context);
-    /** called from evict_blocks(). traverses the given non-root page. */
-    w_rc_t _evict_traverse_page(EvictionContext &context);
-    /** called from _evict_traverse_page(). evict/unswizzle the given page. */
-    w_rc_t _evict_page(EvictionContext &context, btree_page_h &p);
 
     /**
      * Tries to unswizzle the given child page from the parent page.
@@ -775,20 +761,6 @@ private:
     bool   _unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot);
 
     bool   _are_there_many_swizzled_pages() const;
-
-    /**
-     * Increases the pin_cnt of the given block and makes sure the block is not being evicted or invalid.
-     * This method assumes no knowledge of the current state of the block, so this might be costly.
-     * Also, this might fail (the block is being evicted or invalid), in which case this returns false.
-     */
-    bool   _increment_pin_cnt_no_assumption (bf_idx idx);
-
-    /**
-     * Releases one pin. This method must be used only for decreasing pin_cnt from n+1 to n where n>=0.
-     * In other words, setting -1 to pin_cnt must not happen in this method.
-     * Assuming it, this function is just an atomic_dec().
-     */
-    void   _decrement_pin_cnt_assume_positive (bf_idx idx);
 
     /**
      * Deletes the given block from this buffer pool. This method must be called when
