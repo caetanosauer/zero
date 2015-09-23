@@ -80,7 +80,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict) {
                 bf_idx idx = FREELIST_HEAD;
                 DBGTHRD(<< "Grabbing idx " << idx);
                 w_assert1(_is_valid_idx(idx));
-                w_assert1 (!get_cb(idx)._used);
+                // w_assert1 (!get_cb(idx)._used);
                 ret = idx;
 
                 --_freelist_len;
@@ -379,6 +379,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
     bf_idx idx = _eviction_current_frame;
     evicted_count = 0;
 
+    unsigned rounds = 0;
     unsigned nonleaf_count = 0;
     unsigned invalid_parents = 0;
 
@@ -399,10 +400,13 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
             if (evicted_count == 0) {
                 ERROUT(<< "Nonleafs: " << nonleaf_count << " invalid parents: "
                         << invalid_parents);
-                w_assert1(false);
-                return RC(eFRAMENOTFOUND);
+                rounds++;
+                if (rounds == 3) {
+                    w_assert1(false);
+                    return RC(eFRAMENOTFOUND);
+                }
             }
-            return RCOK;
+            else { return RCOK; }
         }
 
         // CS TODO -- why do we latch CB manually instead of simply fixing
@@ -413,49 +417,25 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         bf_tree_cb_t& cb = get_cb(idx);
         rc_t latch_rc;
 
-        // Step 1: latch parent in SH mode (latch coupling)
-        bf_idx parent_idx = cb._parent;
-        // Index zero is never used, so it means invalid pointer
-        // (see bf_tree_m constructor)
-        if (parent_idx == 0) {
-            ERROUT(<< "Eviction failed on parent idx for " << idx);
-            idx++;
-            continue;
-        }
-
-        bf_tree_cb_t& parent_cb = get_cb(parent_idx);
-        latch_rc = parent_cb.latch().latch_acquire(LATCH_SH,
-                sthread_t::WAIT_IMMEDIATE);
-        if (latch_rc.is_error()) {
-            // just give up. If we try to latch it unconditionally, we may
-            // deadlock, because other threads are also waiting on the eviction
-            // mutex
-            ERROUT(<< "Eviction failed on parent latch for " << idx);
-            idx++;
-            continue;
-        }
-
+        // Step 1: latch page in EX mode and check if eligible for eviction
         latch_rc = cb.latch().latch_acquire(LATCH_EX,
                sthread_t::WAIT_IMMEDIATE);
         if (latch_rc.is_error()) {
             idx++;
-            parent_cb.latch().latch_release();
-            ERROUT(<< "Eviction failed on latch for " << idx);
+            DBG3(<< "Eviction failed on latch for " << idx);
             continue;
         }
-
         w_assert1(cb.latch().held_by_me());
-        w_assert1(parent_cb.latch().held_by_me());
 
         // now we hold an EX latch -- check if leaf and not dirty
         btree_page_h p;
         p.fix_nonbufferpool_page(_buffer + idx);
+        // CS TODO: ignoring used flag for now
         if (p.tag() != t_btree_p || !p.is_leaf() || cb._dirty
-                || !cb._used || cb._in_doubt || p.pid() == p.root())
+                || cb._in_doubt || p.pid() == p.root())
         {
-            parent_cb.latch().latch_release();
             cb.latch().latch_release();
-            ERROUT(<< "Eviction failed on flags for " << idx);
+            DBG3(<< "Eviction failed on flags for " << idx);
             if (!p.is_leaf()) {
                 nonleaf_count++;
             }
@@ -466,38 +446,62 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         // page is a B-tree leaf -- check if pin count is zero
         if (cb._pin_cnt > 0)
         {
-            // CS TODO: this should actually never happen
-            // How can we have an EX latch and the page still be pinned?
-            parent_cb.latch().latch_release();
             cb.latch().latch_release();
-            ERROUT(<< "Eviction failed on for " << idx
+            DBG3(<< "Eviction failed on for " << idx
                     << " pin count is " << cb._pin_cnt);
             idx++;
             continue;
         }
 
-        // Page will be evicted -- update EMLSN on parent
+        // Step 2: latch parent in SH mode (latch coupling)
+        generic_page *page = &_buffer[idx];
+        lpid_t pid = page->pid;
+        bf_idx_pair idx_pair;
+        bool found = _hashtable->lookup(bf_key(pid.vol(), pid.page), idx_pair);
+        bf_idx parent_idx = idx_pair.second;
+        w_assert1(!found || idx == idx_pair.first);
 
-        // Eviction is pretty much done now. Frame has been freed and can be
-        // written into, so we update the evicted count. The update of the
-        // EMLSN on the parent below can be done asynchronously.
-        // CS TODO: save optimizations for later -- leave it as-is for now
+        // Index zero is never used, so it means invalid pointer
+        // (see bf_tree_m constructor)
+        if (!found || parent_idx == 0) {
+            cb.latch().latch_release();
+            DBG3(<< "Eviction failed on parent idx for " << idx);
+            idx++;
+            continue;
+        }
 
+        // parent is latched in SH mode, OK because it just overwrites an emlsn
+        bf_tree_cb_t& parent_cb = get_cb(parent_idx);
+        latch_rc = parent_cb.latch().latch_acquire(LATCH_SH,
+                sthread_t::WAIT_IMMEDIATE);
+        if (latch_rc.is_error()) {
+            // just give up. If we try to latch it unconditionally, we may
+            // deadlock, because other threads are also waiting on the eviction
+            // mutex
+            cb.latch().latch_release();
+            DBG3(<< "Eviction failed on parent latch for " << idx);
+            idx++;
+            continue;
+        }
+        w_assert1(parent_cb.latch().held_by_me());
+
+        // Step 3: look for emlsn slot on parent
         generic_page *parent = &_buffer[parent_idx];
         w_assert0(parent->tag == t_btree_p);
 
         general_recordid_t child_slotid = find_page_id_slot(parent, cb._pid_shpid);
         // How can this happen if we have latch on both?
         if (child_slotid == GeneralRecordIds::INVALID) {
+            DBG3(<< "Eviction failed on slot for " << idx
+                    << " pin count is " << cb._pin_cnt);
             parent_cb.latch().latch_release();
             cb.latch().latch_release();
-            ERROUT(<< "Eviction failed on slot for " << idx
-                    << " pin count is " << cb._pin_cnt);
             invalid_parents++;
             idx++;
             continue;
         }
 
+        // Step 4: Page will be evicted -- update EMLSN on parent
         btree_page_h parent_h;
         parent_h.fix_nonbufferpool_page(parent);
         lsn_t old = parent_h.get_emlsn_general(child_slotid);
@@ -519,13 +523,13 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
         w_assert1(removed);
 
+        DBG3(<< "EVICTED " << idx << " pid " << cb._pid_shpid);
         cb.clear_except_latch();
         // -1 indicates page was evicted (i.e., it's invalid and can be read into)
         cb._pin_cnt = -1;
         parent_cb.latch().latch_release();
         cb.latch().latch_release();
 
-        ERROUT(<< "EVICTED " << idx);
         _add_free_block(idx);
         idx++;
         evicted_count++;
