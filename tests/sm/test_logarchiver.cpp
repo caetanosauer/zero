@@ -185,10 +185,10 @@ rc_t heapTestReal(ss_m* ssm, test_volume_t* test_vol)
     logrec_t* lr;
     bool pushed = false;
     while (cons.next(lr)) {
-        pushed = heap.push(lr);
+        pushed = heap.push(lr, false);
         if (!pushed) {
             emptyHeapAndCheck(heap);
-            pushed = heap.push(lr);
+            pushed = heap.push(lr, false);
             EXPECT_TRUE(pushed);
         }
     }
@@ -423,17 +423,17 @@ rc_t archIndexTestSingle(ss_m*, test_volume_t*)
         }
         bpos += lr->length();
 
-        result = index->probeFirst(pid, lr->lsn_ck());
+        result = index->probeFirst(pid, lpid_t::null, lr->lsn_ck());
         EXPECT_TRUE(result);
 
-        EXPECT_EQ(pid, result->pid);
+        EXPECT_EQ(pid, result->pidBegin);
         EXPECT_EQ(beginLSN, result->runBegin);
         EXPECT_EQ(endLSN, result->runEnd);
         if (pid.page != firstPIDinBlock.page) {
-            EXPECT_EQ(currBlock * blockSize, result->offset);
+            EXPECT_EQ(currBlock * blockSize, result->offsetBegin);
         }
         else {
-            EXPECT_EQ(lastBlockWithSamePID * blockSize, result->offset);
+            EXPECT_EQ(lastBlockWithSamePID * blockSize, result->offsetBegin);
         }
 
         // only one run -- no further results expected

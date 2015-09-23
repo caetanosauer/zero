@@ -456,88 +456,88 @@ TEST (TreeBufferpoolTest, NoSwizzle) {
 }
 
 #ifdef BP_MAINTAIN_PARENT_PTR
-w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
+// w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
 
-    bf_tree_m &pool(*smlevel_0::bf);
-    lpid_t root_pid(test_volume->_vid, 1, 3);
+//     bf_tree_m &pool(*smlevel_0::bf);
+//     lpid_t root_pid(test_volume->_vid, 3);
 
-    generic_page *root_page = NULL;
-    W_DO(pool.fix_virgin_root(root_page, test_volume->_vid, 1, root_pid.page));
-    EXPECT_TRUE (root_page != NULL);
-    ::memset(root_page, 0, sizeof(generic_page));
-    root_page->pid = root_pid;
-    root_page->tag = t_btree_p;
-    root_page->btree_level = 2;
-    root_page->btree_foster = 0;
-    root_page->init_items();
-    bf_tree_cb_t &root_cb (*test_bf_tree::get_bf_control_block(&pool, root_page));
-    EXPECT_EQ(1, root_cb._pin_cnt); // root page is always swizzled, so pin_cnt is 1.
-    EXPECT_TRUE (pool.is_swizzled(root_page));
+//     btree_page *root_page = NULL;
+//     W_DO(pool.fix_virgin_root(root_page, test_volume->_vid, 1, root_pid.page));
+//     EXPECT_TRUE (root_page != NULL);
+//     ::memset(root_page, 0, sizeof(generic_page));
+//     root_page->pid = root_pid;
+//     root_page->tag = t_btree_p;
+//     root_page->btree_level = 2;
+//     root_page->btree_foster = 0;
+//     root_page->init_items();
+//     bf_tree_cb_t &root_cb (*test_bf_tree::get_bf_control_block(&pool, root_page));
+//     EXPECT_EQ(1, root_cb._pin_cnt); // root page is always swizzled, so pin_cnt is 1.
+//     EXPECT_TRUE (pool.is_swizzled(root_page));
 
-    lpid_t child_pid(test_volume->_vid, 1, root_pid.page + 1);
-    test_bf_tree::_add_child_pointer (root_page, child_pid.page);
-    generic_page *child_page = NULL;
-    W_DO(pool.fix_nonroot(child_page, root_page, child_pid.vol(), child_pid.page, LATCH_EX, true, true));
-    EXPECT_TRUE (child_page != NULL);
-    ::memset(child_page, 0, sizeof(generic_page));
-    child_page->pid = child_pid;
-    child_page->tag = t_btree_p;
-    child_page->btree_level = 1;
-    child_page->btree_foster = 0;
-    child_page->init_items();
-    bf_tree_cb_t &child_cb (*test_bf_tree::get_bf_control_block(&pool, child_page));
-    EXPECT_EQ(1, child_cb._pin_cnt);
-    EXPECT_EQ(2, root_cb._pin_cnt); // added as child
-    EXPECT_EQ(test_bf_tree::get_bf_idx(&pool, root_page), child_cb._parent);
-    EXPECT_TRUE (pool.is_swizzled(child_page));
+//     lpid_t child_pid(test_volume->_vid, 1, root_pid.page + 1);
+//     test_bf_tree::_add_child_pointer (root_page, child_pid.page);
+//     btree_page *child_page = NULL;
+//     W_DO(pool.fix_nonroot(child_page, root_page, child_pid.vol(), child_pid.page, LATCH_EX, true, true));
+//     EXPECT_TRUE (child_page != NULL);
+//     ::memset(child_page, 0, sizeof(generic_page));
+//     child_page->pid = child_pid;
+//     child_page->tag = t_btree_p;
+//     child_page->btree_level = 1;
+//     child_page->btree_foster = 0;
+//     child_page->init_items();
+//     bf_tree_cb_t &child_cb (*test_bf_tree::get_bf_control_block(&pool, child_page));
+//     EXPECT_EQ(1, child_cb._pin_cnt);
+//     EXPECT_EQ(2, root_cb._pin_cnt); // added as child
+//     EXPECT_EQ(test_bf_tree::get_bf_idx(&pool, root_page), child_cb._parent);
+//     EXPECT_TRUE (pool.is_swizzled(child_page));
 
-    lpid_t sibling_pid(test_volume->_vid, 1, root_pid.page + 2);
-    child_page->btree_foster = sibling_pid.page; // add as a foster child
-    generic_page *sibling_page = NULL;
-    W_DO(pool.fix_nonroot(sibling_page, child_page, sibling_pid.vol(), sibling_pid.page, LATCH_EX, true, true));
-    EXPECT_TRUE (sibling_page != NULL);
-    ::memset(sibling_page, 0, sizeof(generic_page));
-    sibling_page->pid = sibling_pid;
-    sibling_page->tag = t_btree_p;
-    sibling_page->btree_level = 1;
-    sibling_page->btree_foster = 0;
-    sibling_page->init_items();
-    bf_tree_cb_t &sibling_cb (*test_bf_tree::get_bf_control_block(&pool, sibling_page));
-    EXPECT_EQ(1, sibling_cb._pin_cnt);
-    EXPECT_EQ(2, child_cb._pin_cnt); // added as child
-    EXPECT_EQ(2, root_cb._pin_cnt);
-    EXPECT_EQ(test_bf_tree::get_bf_idx(&pool, child_page), sibling_cb._parent);
-    EXPECT_TRUE (pool.is_swizzled(sibling_page));
+//     lpid_t sibling_pid(test_volume->_vid, 1, root_pid.page + 2);
+//     child_page->btree_foster = sibling_pid.page; // add as a foster child
+//     generic_page *sibling_page = NULL;
+//     W_DO(pool.fix_nonroot(sibling_page, child_page, sibling_pid.vol(), sibling_pid.page, LATCH_EX, true, true));
+//     EXPECT_TRUE (sibling_page != NULL);
+//     ::memset(sibling_page, 0, sizeof(generic_page));
+//     sibling_page->pid = sibling_pid;
+//     sibling_page->tag = t_btree_p;
+//     sibling_page->btree_level = 1;
+//     sibling_page->btree_foster = 0;
+//     sibling_page->init_items();
+//     bf_tree_cb_t &sibling_cb (*test_bf_tree::get_bf_control_block(&pool, sibling_page));
+//     EXPECT_EQ(1, sibling_cb._pin_cnt);
+//     EXPECT_EQ(2, child_cb._pin_cnt); // added as child
+//     EXPECT_EQ(2, root_cb._pin_cnt);
+//     EXPECT_EQ(test_bf_tree::get_bf_idx(&pool, child_page), sibling_cb._parent);
+//     EXPECT_TRUE (pool.is_swizzled(sibling_page));
 
-    pool.debug_dump(std::cout);
+//     pool.debug_dump(std::cout);
 
-    // then, adopt the sibling to real parent
-    test_bf_tree::_add_child_pointer (root_page, sibling_pid.page);
-    child_page->btree_foster = 0;
-    pool.switch_parent(sibling_page, root_page);
+//     // then, adopt the sibling to real parent
+//     test_bf_tree::_add_child_pointer (root_page, sibling_pid.page);
+//     child_page->btree_foster = 0;
+//     pool.switch_parent(sibling_page, root_page);
 
-    // moved the pin count to real parent
-    EXPECT_EQ(1, sibling_cb._pin_cnt);
-    EXPECT_EQ(1, child_cb._pin_cnt);
-    EXPECT_EQ(3, root_cb._pin_cnt);
-    EXPECT_EQ(test_bf_tree::get_bf_idx(&pool, root_page), sibling_cb._parent);
+//     // moved the pin count to real parent
+//     EXPECT_EQ(1, sibling_cb._pin_cnt);
+//     EXPECT_EQ(1, child_cb._pin_cnt);
+//     EXPECT_EQ(3, root_cb._pin_cnt);
+//     EXPECT_EQ(test_bf_tree::get_bf_idx(&pool, root_page), sibling_cb._parent);
 
-    pool.debug_dump(std::cout);
+//     pool.debug_dump(std::cout);
 
-    pool.unfix(sibling_page);
-    pool.unfix(child_page);
-    pool.unfix(root_page);
+//     pool.unfix(sibling_page);
+//     pool.unfix(child_page);
+//     pool.unfix(root_page);
 
-    pool.debug_dump(std::cout);
-    return RCOK;
-}
-TEST (TreeBufferpoolTest, SwitchParent) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(test_bf_switch_parent,
-        false, default_locktable_size, default_quota_in_pages, 10,
-        1, 10000, 10000, 64, false, true
-    ), 0);
-}
+//     pool.debug_dump(std::cout);
+//     return RCOK;
+// }
+// TEST (TreeBufferpoolTest, SwitchParent) {
+//     test_env->empty_logdata_dir();
+//     EXPECT_EQ(test_env->runBtreeTest(test_bf_switch_parent,
+//         false, default_locktable_size, default_quota_in_pages, 10,
+//         1, 10000, 10000, 64, false, true
+//     ), 0);
+// }
 #endif // BP_MAINTAIN_PARENT_PTR
 
 int main(int argc, char **argv) {
