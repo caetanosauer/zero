@@ -109,13 +109,6 @@ const bool _bf_pause_swizzling = false; // compiler will strip this out from if 
 #endif // PAUSE_SWIZZLING_ON
 
 /**
- * recursive clockhand's maximum depth used while choosing a page to evict/unswizzle.
- * To make this depth reasonably short, we never swizzle foster-child pointer.
- * Foster relationship is tentative and short-lived, so it doesn't need the performance boost in BP.
- */
-const uint16_t MAX_CLOCKHAND_DEPTH = 10;
-
-/**
  * When unswizzling is triggered, _about_ this number of frames will be unswizzled at once.
  * The smaller this number, the more frequent you need to trigger unswizzling.
  */
@@ -594,32 +587,16 @@ public:
 
 
     /**
-     * \brief Invoke block eviction, possibly unswizzling too, based on hierarchical clockhand.
-     * @param[out] evicted_count Returns the number of blocks evicted
-     * @param[out] unswizzled_count Returns the number of blocks unswizzled
-     * @param[in] urgency Specifies how thorough the eviction should be
-     * @param[in] preferred_count Number of blocks to evict. Might evict less or more blocks
-     * for some reason
-     * \details
-     * Our eviction is hierarchical because we might have to unswizzle the page before
-     * eviction and because Single-Page-Recovery needs to touch parent to evict child.
-     * Below are the contracts of this method. In short, it's supposed to be thorough
-     * but still best-effort (otherwise this method and other methods need too many locks).
+     * New eviction algorithm. Sweeps the buffer pool sequentially (like
+     * clock), simply evicting every leaf page for which:
+     * 1) An EX latch can be acquired conditionally
+     * 2) A parent pointer is available and up-to-date
+     * 3) The parent can be latched in SH mode conditionally
+     * 4) The pin count is zero
      *
-     * 1. Restarts tree traversal from the clockhand place to make sure it's \e largely fair.
-     *   It might have some hiccups like skipping or double-visiting a few pages, but it's not
-     * that often.
-     * 2. It's very highly likely that this method evicts/unswizzles a bunch of frames.
-     *   But, there is a slight chance that you need to call this again to evict more frames.
-     * 3. Absolutely no deadlocks nor waits. If this method finds that a frame is being
-     * write-locked by someone, it simply skips that frame. All locks by this method is
-     * conditional and for very short-time.
-     * 4. Absolutely multi-thread safe. Again, it might have some hiccups on fairness
-     * because of multi-threading, but concurrent threads calling this method at the same
-     * time will cause no severe problems.
-     * 5. Lastly, this method isn't supposed to be super-fast, but should be okay to call it
-     * for every millisec or so. If you have to call this method too often, increase the batch
-     * size.
+     * This is not as good as clock or LRU in terms of hit ratio, but unlike
+     * the previous hierarchical algorithm, it is thread-safe. It is also
+     * single-threaded, i.e., only one thread evicts at a time.
      */
     w_rc_t evict_blocks(
         uint32_t &evicted_count,
@@ -847,51 +824,14 @@ private:
     /** spin lock to protect all freelist related stuff. */
     tatas_lock           _freelist_lock;
 
-    /**
-     * \brief Hierarchical clockhand to maintain where we lastly visited
-     * to choose a victim page for eviction/unswizzling.
-     * \details
-     * The first element is the volume to check,
-     * the second element is the store to check,
-     * the third element is the ordinal in the root page (0=first child,1=second child),...
-     *
-     * We need this hierarchical clockhand because we must
-     * go _back_ to the parent page to evict/unswizzle the child.
-     * The swizzled pointer is stored in the parent page, we need to
-     * modify it back to a usual page ID. The hierarchical clockhand
-     * tells what is the parent page without parent pointers.
-     * Also, eviction needs parent to apply EMLSN update for Single-Page-Recovery.
-     *
-     * Like the usual clockhand, hierarchical clockhand can be imprecise
-     * to avoid locks or other heavy-weight methods.
-     *   If we skip over some node, that's fine. We will visit it later anyways.
-     *   If we visit some node twice, that's fine. Not much overhead.
-     *   If any other inconsistency occured, that's fine. We just restart the search.
-     * We are just going to find a few pages to evict/unswizzle, nothing more.
-     *
-     * This variable is the shared place each eviction/unswizzling thread copy-from
-     * at beginning and copy-back at the end. If there are multi-threads doing eviction/
-     * unswizzling, this can result in double-checking some frames, but that's fine.
-     */
-    uint32_t             _clockhand_pathway[MAX_CLOCKHAND_DEPTH];
-    /**
-     * the lastly visited element in _swizzle_clockhand_pathway that might have some
-     * remaining descendants to visit.
-     */
-    uint16_t             _clockhand_current_depth;
 
     bf_idx _eviction_current_frame;
 
     /**
-     * The lock to take when we copy-from/to _clockhand_pathway and _clockhand_current_depth.
-     * This only protects the copying. We don't protect between copy-from and copy-to as
-     * described above. If we check some frames multiple times, that's fine.
+     * Lock that provides mutual exclusion for the eviction algorithm.
+     * Only one thread may perform eviction at a time.
      */
-    tatas_lock           _clockhand_copy_lock;
-    // pthread_mutex_t _clockhand_copy_lock;
-
-    /** threshold temperature above which to not unswizzle a frame */
-    uint32_t             _swizzle_clockhand_threshold;
+    pthread_mutex_t _eviction_lock;
 
     // queue_based_lock_t   _eviction_mutex;
 

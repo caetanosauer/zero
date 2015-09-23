@@ -200,12 +200,8 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     _dirty_page_count_approximate = 0;
     _swizzled_page_count_approximate = 0;
 
-    ::memset (_clockhand_pathway, 0, sizeof(uint32_t) * MAX_CLOCKHAND_DEPTH);
-    _clockhand_current_depth = 1;
-    _clockhand_pathway[0] = 1;
-
     _eviction_current_frame = 0;
-    // DO_PTHREAD(pthread_mutex_init(&_clockhand_copy_lock, NULL));
+    DO_PTHREAD(pthread_mutex_init(&_eviction_lock, NULL));
 }
 
 bf_tree_m::~bf_tree_m() {
@@ -238,7 +234,7 @@ bf_tree_m::~bf_tree_m() {
         delete _cleaner;
         _cleaner = NULL;
     }
-    // DO_PTHREAD(pthread_mutex_destroy(&_clockhand_copy_lock));
+    DO_PTHREAD(pthread_mutex_destroy(&_eviction_lock));
 
 }
 
@@ -1890,10 +1886,6 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     }
     bf_idx child_idx = shpid ^ SWIZZLED_PID_BIT;
     bf_tree_cb_t &child_cb = get_cb(child_idx);
-    // don't unswizzle a frame that is hotter than current threshold temperature
-    if (child_cb._refbit_approximate > _swizzle_clockhand_threshold) {
-        return false;
-    }
     w_assert1(child_cb._used);
     w_assert1(child_cb._swizzled);
     // in some lazy testcases, _buffer[child_idx] aren't initialized. so these checks are disabled.

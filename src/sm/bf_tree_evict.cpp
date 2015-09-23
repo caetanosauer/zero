@@ -107,9 +107,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         preferred_count = EVICT_BATCH_RATIO * _block_cnt + 1;
     }
 
-    // CS: new eviction
-    //
-    CRITICAL_SECTION(cs, &_clockhand_copy_lock);
+    CRITICAL_SECTION(cs, &_eviction_lock);
 
     // CS once mutex is finally acquired, check if we still need to evict
     // CS TODO: using an arbitrary number as the target free count. This
