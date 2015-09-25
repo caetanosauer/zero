@@ -257,6 +257,13 @@ public:
         };
         struct RunInfo {
             lsn_t firstLSN;
+            // lastLSN must be equal to firstLSN of the following run.  We keep
+            // it redundantly so that index probes don't have to look beyond
+            // the last finished run. We used to keep a global lastLSN field in
+            // the index, but there can be a race between the writer thread
+            // inserting new runs and probes on the last finished, so it was
+            // removed.
+            lsn_t lastLSN;
 
             // Simple min-max filter for page IDs (min is in 1st entry)
             lpid_t lastPID;
@@ -271,7 +278,6 @@ public:
 
         size_t blockSize;
         std::vector<RunInfo> runs;
-        lsn_t lastLSN;
         pthread_mutex_t mutex;
         char* writeBuffer;
         char* readBuffer;

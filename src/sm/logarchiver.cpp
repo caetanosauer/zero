@@ -1996,7 +1996,7 @@ tryagain:
 
 LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize, lsn_t startLSN,
         size_t bucketSize)
-    : blockSize(blockSize), lastLSN(startLSN), lastFinished(-1),
+    : blockSize(blockSize), lastFinished(-1),
     bucketSize(bucketSize), blocksInCurrentRun(0)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
@@ -2058,17 +2058,16 @@ rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
 {
     CRITICAL_SECTION(cs, mutex);
 
-    w_assert0(lastLSN == first);
-
     // check if it isn't an empty run (from truncation)
     if (offset > 0 && lastFinished < (int) runs.size()) {
         lastFinished++;
+        w_assert1(lastFinished == 0 || first == runs[lastFinished-1].lastLSN);
         w_assert1(lastFinished < (int) runs.size());
+
         runs[lastFinished].firstLSN = first;
+        runs[lastFinished].lastLSN = last;
         W_DO(serializeRunInfo(runs[lastFinished], fd, offset));
     }
-
-    lastLSN = last;
 
     return RCOK;
 }
@@ -2125,6 +2124,7 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
     W_DO(me()->open(fname, flags, 0744, fd));
 
     run.firstLSN = ArchiveDirectory::parseLSN(fname, false /* end */);
+    run.lastLSN = ArchiveDirectory::parseLSN(fname, true /* end */);
 
     size_t indexBlockCount = 0;
     size_t dataBlockCount = 0;
@@ -2333,17 +2333,12 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result)
 {
     // Assmuptions: mutex is held; run index and pid are set in given result
     size_t index = result->runIndex;
+    w_assert1((int) index <= lastFinished);
     RunInfo* run = &runs[index];
 
     // Step 1) Determine run LSN boundaries (which gives file name)
     result->runBegin = runs[index].firstLSN;
-    // We already checked that index <= lastFinished in probeFirst/Next
-    if (index < runs.size() - 1) {
-        result->runEnd = runs[index + 1].firstLSN;
-    }
-    else {
-        result->runEnd = lastLSN;
-    }
+    result->runEnd = runs[index].lastLSN;
 
     // Step 2) Determine begin and end offsets within the file
     size_t entryBegin = 0;
