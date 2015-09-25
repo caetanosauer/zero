@@ -182,7 +182,7 @@ partition_t::clear()
     _mask=0;
     _clr_state(m_open_for_read);
     _clr_state(m_open_for_append);
-    DBGTHRD(<<"partition_t::clear num " << num() << " clobbering "
+    DBG5(<<"partition_t::clear num " << num() << " clobbering "
             << _fhdl_rd << " and " << _fhdl_app);
     _fhdl_rd = invalid_fhdl;
     _fhdl_app = invalid_fhdl;
@@ -193,7 +193,7 @@ partition_t::init(log_storage *owner)
 {
     _owner = owner;
     _eop = owner->limit(); // always
-    DBGTHRD(<< "partition_t::init setting _eop to " << _eop );
+    DBG5(<< "partition_t::init setting _eop to " << _eop );
     clear();
 }
 
@@ -243,7 +243,7 @@ partition_t::flush(
     long size = (end2 - start2) + (end1 - start1);
     long write_size = size;
 
-    DBGTHRD( << "Sync-ing log lsn " << lsn
+    DBG5( << "Sync-ing log lsn " << lsn
                 << " start1 " << start1
                 << " end1 " << end1
                 << " start2 " << start2
@@ -471,7 +471,7 @@ partition_t::flush(
     long write_size = size;
 
     { // sync log: Seek the file to the right place.
-        DBGTHRD( << "Sync-ing log lsn " << lsn
+        DBG5( << "Sync-ing log lsn " << lsn
                 << " start1 " << start1
                 << " end1 " << end1
                 << " start2 " << start2
@@ -610,7 +610,7 @@ partition_t::_peek(
     int fd
 )
 {
-    DBGTHRD("_peek: num_wanted=" << num_wanted << " peek_loc=" << peek_loc
+    DBG5("_peek: num_wanted=" << num_wanted << " peek_loc=" << peek_loc
             << " whole_size=" << whole_size << " recovery=" << recovery
             << " fd=" << fd);
     w_assert3(num() == 0 || num() == num_wanted);
@@ -640,7 +640,7 @@ partition_t::_peek(
         peek_loc = 0;
         peeked_high = false;
     }
-    DBGTHRD(
+    DBG5(
             << " peek_loc " << peek_loc
             << " nosize " << nosize
             << " _eop " << this->_eop
@@ -653,13 +653,13 @@ partition_t::_peek(
     w_assert1(whole_size <= this->_eop);
 again:
     lsn_t pos = lsn_t(uint32_t(num()), sm_diskaddr_t(peek_loc));
-    DBGTHRD("peek_loc " << peek_loc << " yields sm_diskaddr/pos " << pos);
+    DBG5("peek_loc " << peek_loc << " yields sm_diskaddr/pos " << pos);
 
     lsn_t lsn_ck = pos ;
     w_rc_t rc;
 
     while(pos.lo() < this->_eop) {
-        DBGTHRD("pos.lo() = " << pos.lo()
+        DBG5("pos.lo() = " << pos.lo()
                 << " and eop=" << this->_eop);
         if(recovery) {
             // increase the starting point as much as possible.
@@ -669,22 +669,22 @@ again:
                       pos = _owner->master_lsn();
             }
         }
-        DBGTHRD( <<"reading pos=" << pos <<" eop=" << this->_eop);
+        DBG5( <<"reading pos=" << pos <<" eop=" << this->_eop);
 
         // CS: TODO not sure if _peekbuf will work!
         rc = read(_peekbuf, l, pos, NULL, fd);
-        DBGTHRD(<<"POS " << pos << ": tx." << *l);
+        DBG5(<<"POS " << pos << ": tx." << *l);
 
         if(rc.err_num() == eEOF) {
             // eof or record -- wipe it out
-            DBGTHRD(<<"EOF--Skipping!");
+            DBG5(<<"EOF--Skipping!");
             _skip(pos, fd);
             break;
         }
 
         w_assert1(l != NULL);
 
-        DBGTHRD(<<"peek index " << _index
+        DBG5(<<"peek index " << _index
             << " l->length " << l->length()
             << " l->type " << int(l->type()));
 
@@ -694,7 +694,7 @@ again:
             lsn_ck = l->get_lsn_ck();
             int err = 0;
 
-            DBGTHRD( <<"lsnck=" << lsn_ck << " pos=" << pos
+            DBG5( <<"lsnck=" << lsn_ck << " pos=" << pos
                 <<" l.length=" << l->length() );
 
 
@@ -711,7 +711,7 @@ again:
 
             if( num_wanted  && (lsn_ck.hi() != num_wanted) ) {
                 // Wrong partition - break out/return
-                DBGTHRD(<<"NOSTASH because num_wanted="
+                DBG5(<<"NOSTASH because num_wanted="
                         << num_wanted
                         << " lsn_ck="
                         << lsn_ck
@@ -719,7 +719,7 @@ again:
                 return;
             }
 
-            DBGTHRD( <<"type()=" << int(l->type())
+            DBG5( <<"type()=" << int(l->type())
                 << " index()=" << this->index()
                 << " lsn_ck=" << lsn_ck
                 << " err=" << err );
@@ -743,13 +743,13 @@ again:
                 pos == first_lsn()) {
                 // it's a skip record and it's the first rec in partition
                 if( lsn_ck != lsn_t::null )  {
-                    DBGTHRD( <<" first rec is skip and has lsn " << lsn_ck );
+                    DBG5( <<" first rec is skip and has lsn " << lsn_ck );
                     err = 1;
                 }
             } else {
                 // ! skip record or ! first in the partition
                 if ( (lsn_ck.hi()-1) % PARTITION_COUNT != (uint32_t)this->index()) {
-                    DBGTHRD( <<"unexpected end of log");
+                    DBG5( <<"unexpected end of log");
                     err = 2;
                 }
             }
@@ -768,7 +768,7 @@ again:
 
                 if(peeked_high) {
                     // set pos to 0 and start this loop all over
-                    DBGTHRD( <<"Peek high failed at loc " << pos);
+                    DBG5( <<"Peek high failed at loc " << pos);
                     peek_loc = 0;
                     peeked_high = false;
                     goto again;
@@ -787,16 +787,16 @@ again:
                 // we drop out the loop, below, pos is set
                 // correctly.
                 lsn_ck = lsn_t(num_wanted, pos.lo());
-                DBGTHRD(<<"truncating partition fd=" << fd << " at " << lsn_ck);
+                DBG5(<<"truncating partition fd=" << fd << " at " << lsn_ck);
                 _skip(lsn_ck, fd);
                 w_assert0(lsn_ck.lo()==0); // for debugging
                 break;
             }
         }
-        // DBGTHRD(<<" changing pos from " << pos << " to " << lsn_ck );
+        // DBG5(<<" changing pos from " << pos << " to " << lsn_ck );
         pos = lsn_ck;
 
-        DBGTHRD(<< " recovery=" << recovery
+        DBG5(<< " recovery=" << recovery
             << " master=" << _owner->master_lsn()
         );
         if( l->type() == logrec_t::t_skip
@@ -811,7 +811,7 @@ again:
              * THEN
              *  we've seen enough
              */
-            DBGTHRD(<<" BREAK EARLY ");
+            DBG5(<<" BREAK EARLY ");
             break;
         }
         pos.advance(l->length());
@@ -821,7 +821,7 @@ again:
     // was a skip or if we don't care about the recovery checks.
 
     w_assert1(l != NULL);
-    DBGTHRD(<<"pos= " << pos << "l->type()=" << int(l->type()));
+    DBG5(<<"pos= " << pos << "l->type()=" << int(l->type()));
 
 #if W_DEBUG_LEVEL > 2
     if(pos.lo() > first_lsn().lo()) {
@@ -847,7 +847,7 @@ again:
 
         _set_state(m_exists);
 
-        DBGTHRD(<<"STASHED num()=" << num()
+        DBG5(<<"STASHED num()=" << num()
                 << " size()=" << size()
             );
     } else {
@@ -855,7 +855,7 @@ again:
         w_assert3(size() == nosize || size() == 0);
         // size can be 0 if the partition is exactly
         // a skip record
-        DBGTHRD(<<"SIZE NOT STASHED ");
+        DBG5(<<"SIZE NOT STASHED ");
     }
 }
 
@@ -869,7 +869,7 @@ partition_t::_skip(const lsn_t &ll, int fd)
     // Current partition should flush(), not skip()
     w_assert1(_num == 0 || _num != _owner->partition_num());
 
-    DBGTHRD(<<"skip at " << ll);
+    DBG5(<<"skip at " << ll);
 
 #ifdef LOG_DIRECT_IO
     char * _skipbuf = NULL;
@@ -894,7 +894,7 @@ partition_t::_skip(const lsn_t &ll, int fd)
     delete [] _skipbuf;
 #endif
 
-    DBGTHRD(<<"wrote and flushed skip record at " << ll);
+    DBG5(<<"wrote and flushed skip record at " << ll);
 
     _set_last_skip_lsn(ll);
 }
@@ -918,7 +918,7 @@ w_rc_t
 partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
         lsn_t* prev_lsn, int fd)
 {
-    FUNC(partition::read);
+    // FUNC(partition::read);
 
     INC_TSTAT(log_fetches);
 
@@ -938,7 +938,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
     lower *= XFERSIZE;
     fileoff_t off = pos - lower;
 
-    DBGTHRD(<<"seek to lsn " << ll
+    DBG5(<<"seek to lsn " << ll
         << " index=" << _index << " fd=" << fd
         << " pos=" << pos
         //<< " lower=" << lower  << " + " << start()
@@ -954,7 +954,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
 
     rp = (logrec_t *)(readbuf + off);
 
-    DBGTHRD(<< "off= " << ((int)off)
+    DBG5(<< "off= " << ((int)off)
         << "readbuf@ " << W_ADDR(readbuf)
         << " rp@ " << W_ADDR(rp)
     );
@@ -962,10 +962,10 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
 
     while (first_time || leftover > 0) {
 
-        DBGTHRD(<<"leftover=" << int(leftover) << " b=" << b);
+        DBG5(<<"leftover=" << int(leftover) << " b=" << b);
 
         w_rc_t e = me()->pread(fd, (void *)(readbuf + b), XFERSIZE, lower + b);
-        DBGTHRD(<<"after me()->read() size= " << int(XFERSIZE));
+        DBG5(<<"after me()->read() size= " << int(XFERSIZE));
 
 
         if (e.is_error()) {
@@ -1000,7 +1000,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
             }
             first_time = false;
             leftover = rp->length() - (b - off);
-            DBGTHRD(<<" leftover now=" << leftover);
+            DBG5(<<" leftover now=" << leftover);
 
             // Try to get lsn of previous log record (for backward scan)
             if (prev_lsn) {
@@ -1024,10 +1024,10 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
         } else {
             leftover -= XFERSIZE;
             w_assert3(leftover == (int)rp->length() - (b - off));
-            DBGTHRD(<<" leftover now=" << leftover);
+            DBG5(<<" leftover now=" << leftover);
         }
     }
-    DBGTHRD( << "readbuf@ " << W_ADDR(readbuf)
+    DBG5( << "readbuf@ " << W_ADDR(readbuf)
         << " first 4 chars are: "
         << (int)(*((char *)readbuf))
         << (int)(*((char *)readbuf+1))
@@ -1049,7 +1049,7 @@ partition_t::open_for_read(
     // protected w_assert2(_owner->_partition_lock.is_mine()==true);
     // asserted before call in srv_log.cpp
 
-    DBGTHRD(<<"start open for part " << __num << " err=" << err);
+    DBG5(<<"start open for part " << __num << " err=" << err);
 
     w_assert1(__num != 0);
 
@@ -1066,7 +1066,7 @@ partition_t::open_for_read(
 
         int fd;
         w_rc_t e;
-        DBGTHRD(<< "partition " << __num
+        DBG5(<< "partition " << __num
                 << "open_for_read OPEN " << fname);
 
 #ifdef LOG_DIRECT_IO
@@ -1077,7 +1077,7 @@ partition_t::open_for_read(
 #endif
         e = me()->open(fname, flags, 0, fd);
 
-        DBGTHRD(<< " OPEN " << fname << " returned " << fd);
+        DBG5(<< " OPEN " << fname << " returned " << fd);
 
         if (e.is_error()) {
             if(err) {
@@ -1091,7 +1091,7 @@ partition_t::open_for_read(
                 w_assert3(_fhdl_rd == invalid_fhdl);
                 // _fhdl_rd = invalid_fhdl;
                 _clr_state(m_open_for_read);
-                DBGTHRD(<<"fhdl_app() is " << _fhdl_app);
+                DBG5(<<"fhdl_app() is " << _fhdl_app);
                 return RCOK;
             }
         }
@@ -1099,7 +1099,7 @@ partition_t::open_for_read(
         w_assert3(_fhdl_rd == invalid_fhdl);
         _fhdl_rd = fd;
 
-        DBGTHRD(<<"size is " << size());
+        DBG5(<<"size is " << size());
         // size might not be known, might be anything
         // if this is an old partition
 
@@ -1115,7 +1115,7 @@ partition_t::open_for_read(
     //w_assert3(flushed());
 
     w_assert3(_fhdl_rd != invalid_fhdl);
-    DBGTHRD(<<"_fhdl_rd = " <<_fhdl_rd );
+    DBG5(<<"_fhdl_rd = " <<_fhdl_rd );
     return RCOK;
 }
 
@@ -1141,7 +1141,7 @@ partition_t::close(bool both)
     }
     if (both) {
         if (fhdl_rd() != invalid_fhdl) {
-            DBGTHRD(<< " CLOSE " << fhdl_rd());
+            DBG5(<< " CLOSE " << fhdl_rd());
             e = me()->close(fhdl_rd());
             if (e.is_error()) {
                 smlevel_0::errlog->clog << error_prio
@@ -1155,7 +1155,7 @@ partition_t::close(bool both)
     }
 
     if (is_open_for_append()) {
-        DBGTHRD(<< " CLOSE " << fhdl_rd());
+        DBG5(<< " CLOSE " << fhdl_rd());
         e = me()->close(fhdl_app());
         if (e.is_error()) {
             smlevel_0::errlog->clog << error_prio
@@ -1165,7 +1165,7 @@ partition_t::close(bool both)
         }
         _fhdl_app = invalid_fhdl;
         _clr_state(m_open_for_append);
-        DBGTHRD(<<"fhdl_app() is " << _fhdl_app);
+        DBG5(<<"fhdl_app() is " << _fhdl_app);
     }
 
     _clr_state(m_flushed);
@@ -1262,7 +1262,7 @@ partition_t::peek(
 
     smlevel_0::fileoff_t part_size = fileoff_t(0);
 
-    DBGTHRD(<<"partition " << __num << " peek opening " << fname);
+    DBG5(<<"partition " << __num << " peek opening " << fname);
 
     // first create it if necessary.
 #ifdef LOG_DIRECT_IO
@@ -1278,7 +1278,7 @@ partition_t::peek(
             << "ERROR: cannot open log file: " << endl << e << flushl;
         W_COERCE(e);
     }
-    DBGTHRD(<<"partition " << __num << " peek  opened " << fname);
+    DBG5(<<"partition " << __num << " peek  opened " << fname);
     {
          sthread_base_t::filestat_t statbuf;
          e = me()->fstat(fd, statbuf);
@@ -1289,7 +1289,7 @@ partition_t::peek(
                 W_COERCE(e);
          }
          part_size = statbuf.st_size;
-         DBGTHRD(<< "partition " << __num << " peek "
+         DBG5(<< "partition " << __num << " peek "
              << "size of " << fname << " is " << part_size);
     }
 
@@ -1312,7 +1312,7 @@ partition_t::peek(
         // the standard insert()/write code causes a
         // prime() to occur and that doesn't solve anything.
 
-        DBGTHRD(<<" peek DESTROYING PARTITION " << __num << "  on fd " << fd);
+        DBG5(<<" peek DESTROYING PARTITION " << __num << "  on fd " << fd);
 
         // First: write any-old junk
         e = me()->ftruncate(fd,  log_storage::BLOCK_SIZE );
@@ -1339,9 +1339,9 @@ partition_t::peek(
     }
 
     if (fdp) {
-        DBGTHRD(<< "partition " << __num << " SAVED, NOT CLOSED fd " << fd); *fdp = fd;
+        DBG5(<< "partition " << __num << " SAVED, NOT CLOSED fd " << fd); *fdp = fd;
     } else {
-        DBGTHRD(<< " CLOSE " << fd);
+        DBG5(<< " CLOSE " << fd);
         e = me()->close(fd);
         if (e.is_error()) {
             smlevel_0::errlog->clog << fatal_prio
@@ -1404,7 +1404,7 @@ partition_t::close_for_append()
     int f = fhdl_app();
     if (f != invalid_fhdl)  {
         w_rc_t e;
-        DBGTHRD(<< " CLOSE " << f);
+        DBG5(<< " CLOSE " << f);
         e = me()->close(f);
         if (e.is_error()) {
             smlevel_0::errlog->clog  << warning_prio
@@ -1421,7 +1421,7 @@ partition_t::close_for_read()
     int f = fhdl_rd();
     if (f != invalid_fhdl)  {
         w_rc_t e;
-        DBGTHRD(<< " CLOSE " << f);
+        DBG5(<< " CLOSE " << f);
         e = me()->close(f);
         if (e.is_error()) {
             smlevel_0::errlog->clog  << warning_prio
@@ -1453,7 +1453,7 @@ partition_t::flush(
 )
 {
 
-    DBGTHRD( << "Sync-ing log lsn " << lsn
+    DBG5( << "Sync-ing log lsn " << lsn
              << " write_size " << write_size
              << " seg_cnt " << seg_cnt );
 
@@ -1604,7 +1604,7 @@ partition_t::flush(int fd, lsn_t lsn, int64_t size, int64_t write_size,
                    sdisk_base_t::iovec_t *iov, uint32_t seg_cnt)
 {
     { // sync log: Seek the file to the right place.
-        DBGTHRD( << "Sync-ing log lsn " << lsn
+        DBG5( << "Sync-ing log lsn " << lsn
                  << " write_size " << write_size
                  << " seg_cnt " << seg_cnt );
 
@@ -1816,12 +1816,12 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
 
 //     while (first_time || leftover > 0) {
 
-//         //DBGTHRD(<<"leftover=" << int(leftover) << " b=" << b);
+//         //DBG5(<<"leftover=" << int(leftover) << " b=" << b);
 //         DBGOUT3(<<"leftover=" << int(leftover) << " b=" << b);
 
 
 //         w_rc_t e = me()->pread(fd, ((char*)rp)+b, XFERSIZE, start() + pos + b);
-//         DBGTHRD(<<"after me()->read() size= " << int(XFERSIZE));
+//         DBG5(<<"after me()->read() size= " << int(XFERSIZE));
 
 
 //         if (e.is_error()) {
@@ -1851,17 +1851,17 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
 //             DBGOUT3(<<"length" << rp->length());
 
 //             leftover = (int)rp->length() - (b);
-//             //DBGTHRD(<<" leftover now=" << leftover);
+//             //DBG5(<<" leftover now=" << leftover);
 //             DBGOUT3(<<" leftover now=" << leftover);
 //         } else {
 //             leftover -= XFERSIZE;
 //             w_assert3(leftover == (int)rp->length() - (b));
-//             //DBGTHRD(<<" leftover now=" << leftover);
+//             //DBG5(<<" leftover now=" << leftover);
 //             DBGOUT3(<<" leftover now=" << leftover);
 
 //         }
 //     }
-//     DBGTHRD( << "readbuf@ " << W_ADDR(readbuf)
+//     DBG5( << "readbuf@ " << W_ADDR(readbuf)
 //         << " first 4 chars are: "
 //         << (int)(*((char *)readbuf))
 //         << (int)(*((char *)readbuf+1))
@@ -1896,7 +1896,7 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
     lower *= XFERSIZE;
     fileoff_t off = pos - lower;
 
-    DBGTHRD(<<"seek to lsn " << ll
+    DBG5(<<"seek to lsn " << ll
         << " index=" << _index << " fd=" << fd
         << " pos=" << pos
         //<< " lower=" << lower  << " + " << start()
@@ -1912,7 +1912,7 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
 
     rp = (logrec_t *)(readbuf + off);
 
-    DBGTHRD(<< "off= " << ((int)off)
+    DBG5(<< "off= " << ((int)off)
         << "readbuf@ " << W_ADDR(readbuf)
         << " rp@ " << W_ADDR(rp)
     );
@@ -1920,9 +1920,9 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
 
     while (first_time || leftover > 0) {
 
-        DBGTHRD(<<"leftover=" << int(leftover) << " b=" << b);
+        DBG5(<<"leftover=" << int(leftover) << " b=" << b);
         w_rc_t e = me()->pread(fd, (void *)(readbuf + b), XFERSIZE, lower + b);
-        DBGTHRD(<<"after me()->read() size= " << int(XFERSIZE));
+        DBG5(<<"after me()->read() size= " << int(XFERSIZE));
 
 
         if (e.is_error()) {
@@ -1946,14 +1946,14 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
             }
             first_time = false;
             leftover = rp->length() - (b - off);
-            DBGTHRD(<<" leftover now=" << leftover);
+            DBG5(<<" leftover now=" << leftover);
         } else {
             leftover -= XFERSIZE;
             w_assert3(leftover == (int)rp->length() - (b - off));
-            DBGTHRD(<<" leftover now=" << leftover);
+            DBG5(<<" leftover now=" << leftover);
         }
     }
-    DBGTHRD( << "readbuf@ " << W_ADDR(readbuf)
+    DBG5( << "readbuf@ " << W_ADDR(readbuf)
         << " first 4 chars are: "
         << (int)(*((char *)readbuf))
         << (int)(*((char *)readbuf+1))

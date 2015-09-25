@@ -140,6 +140,8 @@ char* BackupPrefetcher::fix(unsigned segment)
                 }
                 w_assert0(status[i] == SLOT_UNFIXED);
                 status[i] = SLOT_FIXED;
+                DBGOUT3(<< "Fixed backup reader slot " << i <<  "from segment "
+                    << segment);
                 fixWaiting = false;
                 return buffer + (i * segmentSizeBytes);
             }
@@ -180,6 +182,8 @@ void BackupPrefetcher::unfix(unsigned segment)
             w_assert1(status[i] == SLOT_FIXED);
             // since each segment is used only once, it goes directly to
             // free instead of unfixed
+            DBGOUT3(<< "Freed backup reader slot " << i <<  "from segment "
+                    << segment);
             status[i] = SLOT_FREE;
             return;
         }
@@ -290,6 +294,8 @@ void BackupPrefetcher::run()
             // Re-acquire mutex to mark slot as read, i.e., unfixed
             CRITICAL_SECTION(cs, &mutex);
             status[slotIdx] = SLOT_UNFIXED;
+            DBGOUT3(<< "Read backup reader slot " << slotIdx <<  "for segment "
+                    << next);
         }
 
         DBGOUT3(<< "Segment " << next << " read finished");
