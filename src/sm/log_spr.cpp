@@ -83,9 +83,20 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     w_assert1(p.is_fixed());
     lpid_t pid = p.pid();
     DBGOUT1(<< "Single-Page-Recovery on " << pid << ", EMLSN=" << emlsn);
-    if (smlevel_0::bk->page_exists(p.vol(), pid.page))
+
+    // CS TODO: because of cleaner bug, we fetch page from disk itself.  In
+    // other words, if we are performing write elision, then we must read from
+    // disk instead of backup. We need to distinguish between cases of failure
+    // and normal outdated pages. Ideally, the volume manager should handle
+    // that transparently, so that a volume read is redirected to a backup if
+    // necessary (similar to how restore works currently).
+
+    if (true)
+    // if (smlevel_0::bk->page_exists(p.vol(), pid.page))
     {
-        W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
+        // W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
+        W_DO(smlevel_0::vol->get(p.vol())->read_page(pid.page,
+                    *p.get_generic_page()));
         w_assert1(pid == p.pid());
         DBGOUT1(<< "Backup page retrieved. Backup-LSN=" << p.lsn());
         if (p.lsn() > emlsn)
