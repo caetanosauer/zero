@@ -632,13 +632,19 @@ void RestoreMgr::restoreSegment(char* workspace,
 
 void RestoreMgr::restoreLoop()
 {
+    // Additional bitmap to keep track of segments already replayed
+    // but not yet written out. This avoids restoring the same segment
+    // twice in the case that a request comes in for a segment which
+    // was already processed but not yet written out asynchronously.
+    RestoreBitmap doneSegments(numPages / segmentSize + 1);
+
     LogArchiver::ArchiveScanner logScan(archive);
 
     stopwatch_t timer;
 
     while (numRestoredPages < numPages) {
         shpid_t requested = scheduler->next();
-        if (isRestored(requested)) {
+        if (doneSegments.get(getSegmentForPid(requested))) {
             continue;
         }
         if (requested == shpid_t(0)) {
@@ -787,11 +793,13 @@ void RestoreMgr::restoreLoop()
             // segment does not need any log replay
             // CS TODO BUG -- this may be the last seg, so short I/O happens
             finishSegment(workspace, segment, segmentSize);
+            doneSegments.set(segment);
             INC_TSTAT(restore_skipped_segs);
             continue;
         }
 
         restoreSegment(workspace, merger, firstPage);
+        doneSegments.set(segment);
 
         delete merger;
     }
@@ -885,6 +893,13 @@ size_t RestoreMgr::restoreSegment(char* workspace,
 
 void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
 {
+    // segments below the first data PID are metadata segments and should
+    // not be writen by restore directly
+    if (getPidForSegment(segment + 1) <= firstDataPid) {
+        DBG(<< "Ignoring finish of segment " << segment);
+        return;
+    }
+
     /*
      * Now that the segment is restored, copy it into the buffer pool frame
      * of each matching request. Acquire the mutex for that to avoid race
@@ -929,6 +944,15 @@ void RestoreMgr::writeSegment(char* workspace, unsigned segment, size_t count)
     if (count > 0) {
         shpid_t firstPage = getPidForSegment(segment);
         w_assert0((int) count <= segmentSize);
+        w_assert1(getPidForSegment(segment+1) > firstDataPid);
+
+        // adjust wirte begin for the segment containing the first data page
+        if (firstPage < firstDataPid) {
+            size_t amount = firstDataPid - firstPage;
+            firstPage = firstDataPid;
+            count -= amount;
+            workspace += amount * sizeof(generic_page);
+        }
 
         // write pages back to replacement device (or backup)
         if (takeBackup) {
