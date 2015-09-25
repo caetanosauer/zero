@@ -403,16 +403,13 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
         {
             DBGOUT3(<<"bf_tree_m::install_volume: root page is not in hash table, loading...");
             // Root page is not in hash table, pre-load it
-            w_rc_t grab_rc = _grab_free_block(idx);
-            if (grab_rc.is_error())
-            {
-                ERROUT(<<"failed to grab a free page while mounting a volume: " << grab_rc);
-                rc = grab_rc;
-                break;
-            }
-            // Load the root page
-            // CS TODO: why is latch not required here?
+            // CS TODO: why not use fix_root here?
+            // With proper pinning, we could acquire an SH latch and pin it to -1
+            // to indicate this is an in-transit frame
+            W_DO(_grab_free_block(idx));
+            W_DO(get_cb(idx).latch().latch_acquire(LATCH_EX, sthread_t::WAIT_FOREVER));
             preload_rc = _preload_root_page(desc, volume, store, shpid, idx);
+            get_cb(idx).latch().latch_release();
         }
 
         if (preload_rc.is_error())
@@ -461,7 +458,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     }
 
     bf_tree_cb_t &cb = get_cb(idx);
-    cb.clear();
+    cb.clear_except_latch();
     cb._pid_vol = vid;
     cb._pid_shpid = shpid;
     cb._store_num = store;
@@ -1120,38 +1117,17 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 return rc;
             }
 
-            if (cb._refbit_approximate < BP_MAX_REFCOUNT) {
-                ++cb._refbit_approximate;
-            }
-
-            if (cb._pin_cnt < 0) {
-                w_assert1(cb._pin_cnt == -1);
-                DBG(<<"bf_tree_m: very unlucky! buffer frame " << idx
-                        << " has been just evicted. retrying..");
+            if (cb._pin_cnt < 0 || cb._pid_vol != vol || cb._pid_shpid != shpid)
+            {
+                // Page was evicted between hash table probe and latching
+                DBG(<< "Page evicted right before latching. Retrying.");
                 cb.latch().latch_release();
                 continue;
             }
-            w_assert1(cb._pid_vol == vol);
-            if (cb._pid_shpid != shpid) {
-                DBGOUT1(<<"cb._pid_shpid = " << cb._pid_shpid << ", shpid = " << shpid);
+
+            if (cb._refbit_approximate < BP_MAX_REFCOUNT) {
+                ++cb._refbit_approximate;
             }
-            // bf_idx parent_idx = parent - _buffer;
-            // w_assert1 (_is_active_idx(parent_idx));
-            // cb._parent = parent_idx;
-            // CS: this can happen if the following race condition occurs
-            // 1. Thread 1: pin count is retrieved as 0
-            // 2. Thread 2: evicts the frame and sets the pin count to -1
-            // 3. Thread 2: loads new page and resets pin count to 0
-            // 4. Thread 1: increments pin count successfully and latches
-            //    the page, but it is a different page, so the assertion
-            //    fails
-            // In essence, the whole "pin count" mechanism is broken. For
-            // every concurrent object, there should be only one
-            // concurrency control mechanism to protect it. In the case of
-            // pages, it is the latch. Introducing additional mechanisms,
-            // like an atomic pin count, is only error-prone and does not
-            // really bring any significant performance improvement.
-            w_assert0(cb._pid_shpid == shpid);
 
             page = &(_buffer[idx]);
 

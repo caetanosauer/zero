@@ -194,7 +194,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
             continue;
         }
 
-        // Step 2: latch parent in SH mode (latch coupling)
+        // Step 2: latch parent in SH mode
         generic_page *page = &_buffer[idx];
         lpid_t pid = page->pid;
         bf_idx_pair idx_pair;
@@ -268,12 +268,13 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         cb.clear_except_latch();
         // -1 indicates page was evicted (i.e., it's invalid and can be read into)
         cb._pin_cnt = -1;
-        parent_cb.latch().latch_release();
-        cb.latch().latch_release();
 
         _add_free_block(idx);
         idx++;
         evicted_count++;
+
+        parent_cb.latch().latch_release();
+        cb.latch().latch_release();
     }
 
     _eviction_current_frame = idx;
