@@ -20,6 +20,9 @@
 #include "restart.h"
 #include "vol.h"
 
+// Template definitions
+#include "bf_hashtable.cpp"
+
 void swizzling_stat_swizzle();
 void swizzling_stat_print(const char* prefix);
 void swizzling_stat_reset();

@@ -1,9 +1,7 @@
-#include "bf_hashtable.h"
 #include "bf_tree_cb.h"
 #include "bf_tree.h"
 #include "btree_page_h.h"
 
-// Template definitions
 #include "bf_hashtable.cpp"
 
 w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict) {

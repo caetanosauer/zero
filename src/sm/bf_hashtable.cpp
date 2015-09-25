@@ -1,6 +1,8 @@
 /*
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
+#ifndef BF_HASHTABLE_CPP
+#define BF_HASHTABLE_CPP
 
 #include "w_defines.h"
 #include "w_base.h"
@@ -276,3 +278,5 @@ bool bf_hashtable<T>::remove(uint64_t key) {
     uint32_t hash = bf_hash(key);
     return _table[hash % _size].remove(key);
 }
+
+#endif
