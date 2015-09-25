@@ -108,9 +108,6 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
     CRITICAL_SECTION(cs, &_eviction_lock);
 
     // CS once mutex is finally acquired, check if we still need to evict
-    // CS TODO: using an arbitrary number as the target free count. This
-    // should probably be something like the number of threads plus some
-    // factor
     if (_freelist_len >= preferred_count) {
         evicted_count = 0;
         unswizzled_count = 0;
@@ -197,6 +194,8 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         // Step 2: latch parent in SH mode
         generic_page *page = &_buffer[idx];
         lpid_t pid = page->pid;
+        w_assert1(pid.vol() == cb._pid_vol && pid.page == cb._pid_shpid);
+
         bf_idx_pair idx_pair;
         bool found = _hashtable->lookup(bf_key(pid.vol(), pid.page), idx_pair);
         bf_idx parent_idx = idx_pair.second;
@@ -261,7 +260,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         // eviction finally suceeded
 
         // remove it from hashtable.
-        bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
+        bool removed = _hashtable->remove(bf_key(pid.vol(), pid.page));
         w_assert1(removed);
 
         DBG3(<< "EVICTED " << idx << " pid " << cb._pid_shpid);
