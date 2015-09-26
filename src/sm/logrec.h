@@ -67,6 +67,7 @@ class RestoreBitmap;
 
 #include "logfunc_gen.h"
 #include "xct.h"
+#include "w_okvl.h"
 
 #include <boost/static_assert.hpp>
 

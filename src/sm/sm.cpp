@@ -82,6 +82,7 @@ class prologue_rc_t;
 #include "tid_t.h"
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
+#include "bf_tree.h"
 
 #include "allocator.h"
 #include "plog_xct.h"

@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -58,15 +58,16 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define PROLOGUE_H
 
 #include "w_defines.h"
+#include "xct.h"
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
 // arguments:
 // name of function in which this is used
 //
-// expected state: 
-//  not_in_xct 
-//  in_xct 
+// expected state:
+//  not_in_xct
+//  in_xct
 //  can_be_in_xct
 //  commitable_xct
 //  abortable_xct
@@ -79,7 +80,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
                            prologue_rc_t::constrnt, (pin_cnt_change));         \
     if (prologue.error_occurred()) return prologue.rc();
 
-// NOTE : these next two make sense only for scan iterators; the 
+// NOTE : these next two make sense only for scan iterators; the
 // _error_occurred are local to the scan_i.
 // INIT_SCAN_PROLOGUE_RC is for the constructors
 // NOTE: 2nd arg readwrite has to be fully specified by caller
@@ -92,7 +93,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
         _error_occurred = prologue.rc();                                       \
     }
 
-// SCAN_METHOD_PROLOGUE_RC is for the methods, which return an rc 
+// SCAN_METHOD_PROLOGUE_RC is for the methods, which return an rc
 #define SCAN_METHOD_PROLOGUE(func_name, constraint, pin_cnt_change)            \
     FUNC(func_name);                                                           \
     prologue_rc_t prologue(prologue_rc_t::in_xct,                              \
@@ -110,21 +111,21 @@ class prologue_rc_t {
 public:
     enum xct_state_t {
         in_xct,          // must be active and not prepared
-        commitable_xct, // must be prepared if external, 
+        commitable_xct, // must be prepared if external,
                         // else must be active or prepared
         not_in_xct,     // may not have tx, regardless of state
         can_be_in_xct,  // in or not -- no test for active or prepared
-        abortable_xct   // active or prepared 
+        abortable_xct   // active or prepared
     };
     enum xct_constraint_t {
         read_only,      // this method/function is read-only and so can have
                         // multiple threads attached to this xct
-        read_write      // this method/function may perform updates 
+        read_write      // this method/function may perform updates
                         // and so if in xct, must be a single-threaded xct
     };
- 
-    prologue_rc_t(xct_state_t is_in_xct, 
-                 xct_constraint_t, 
+
+    prologue_rc_t(xct_state_t is_in_xct,
+                 xct_constraint_t,
                  int pin_cnt_change);
     ~prologue_rc_t();
     void no_longer_in_xct();
@@ -148,14 +149,14 @@ private:
 /*
  * Install the implementation code in sm.cpp
  */
-#if defined(SM_C) 
+#if defined(SM_C)
 
 prologue_rc_t::prologue_rc_t(
         xct_state_t is_in_xct,  // expected state
         xct_constraint_t constraint,  // what this method does
         int pin_cnt_change) :
-            _xct_state(is_in_xct), 
-            _constraint(constraint), 
+            _xct_state(is_in_xct),
+            _constraint(constraint),
             _pin_cnt_change(pin_cnt_change),
             _toggle(0), _victim(0)
 {
@@ -165,19 +166,19 @@ prologue_rc_t::prologue_rc_t(
     bool        check_log = true;
     bool        check_1thread = false;
 
-    switch (_xct_state) 
+    switch (_xct_state)
     {
     case in_xct:
-        if ( (!_the_xct) 
+        if ( (!_the_xct)
             || (_the_xct->state() != smlevel_0::xct_active)) {
 
-            _rc = rc_t(__FILE__, __LINE__, 
+            _rc = rc_t(__FILE__, __LINE__,
                     (_the_xct)?
                     eISPREPARED :
                     eNOTRANS
                 );
             check_log = false;
-        } 
+        }
         break;
 
     case commitable_xct: {
@@ -227,7 +228,7 @@ prologue_rc_t::prologue_rc_t(
 #if W_DEBUG_LEVEL > 2
     me()->mark_pin_count();
     me()->in_sm(true);
-#endif 
+#endif
 
     if(_xct_state != not_in_xct) {
         // FRJ: use placement new to avoid malloc
@@ -243,7 +244,7 @@ prologue_rc_t::prologue_rc_t(
     // Make sure we don't have multiple update threads attached.
     // Also, Make note that this is an update thread.
     if(_the_xct && (_constraint == read_write))  {
-        int num = _the_xct->attach_update_thread(); 
+        int num = _the_xct->attach_update_thread();
         if(num > 1) {
             _rc =  RC(eTWOUTHREAD);
             return; //return this error
@@ -252,7 +253,7 @@ prologue_rc_t::prologue_rc_t(
     }
     else check_log = false;
 
-    if(check_1thread) 
+    if(check_1thread)
     {
         _rc = _the_xct->check_one_thread_attached();
         // let the first error found prevail
@@ -262,7 +263,7 @@ prologue_rc_t::prologue_rc_t(
     }
 
 
-    if(check_log && !smlevel_0::in_recovery() ) 
+    if(check_log && !smlevel_0::in_recovery() )
     {
         _rc = xct_log_warn_check_t::check(_victim);
         // if(_rc.is_error())  {
@@ -281,18 +282,18 @@ prologue_rc_t::~prologue_rc_t()
 #if W_DEBUG_LEVEL > 2
     me()->check_pin_count(_pin_cnt_change);
     me()->in_sm(false);
-#endif 
+#endif
     // FRJ: destruct manually becuase we used placement new
     if(_toggle) { _toggle->~xct_log_switch_t(); }
 
     if(_victim) {
-        sm_stats_info_t * stats = _victim->is_instrumented() ? 
+        sm_stats_info_t * stats = _victim->is_instrumented() ?
                 _victim->steal_stats() : 0;
         // should always be able to abort.
         W_COERCE(_victim->abort());
         INC_TSTAT(log_warn_abort_cnt);
         delete _victim;
-        delete stats; 
+        delete stats;
         _victim = 0;
     }
 }

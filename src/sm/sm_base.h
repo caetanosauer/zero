@@ -90,7 +90,6 @@ class xct_i;
 
 class vol_m;
 class BackupManager;
-class bf_m;
 class bf_tree_m;
 class comm_m;
 class log_m;

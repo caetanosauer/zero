@@ -13,7 +13,6 @@
 #include "btcursor.h"
 #include "btree_impl.h"
 #include "bf_tree.h"
-#include "bf_tree_inline.h"
 #include "vec_t.h"
 #include "xct.h"
 #include "lock.h"

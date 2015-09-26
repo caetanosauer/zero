@@ -7,6 +7,7 @@
 #include "logarchiver.h"
 
 #include <queue>
+#include <map>
 
 class sm_options;
 class RestoreBitmap;

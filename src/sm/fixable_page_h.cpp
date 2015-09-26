@@ -8,9 +8,9 @@
 #include "sm_base.h"
 
 #include "btree_logrec.h"
-#include "bf_tree_inline.h"
 #include "restart.h"
 #include "logrec.h"
+#include "bf_tree.h"
 
 
 int fixable_page_h::force_Q_fixing = 0;  // <<<>>>

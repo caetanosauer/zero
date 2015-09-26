@@ -20,6 +20,32 @@
 #include "restart.h"
 
 
+shpid_t btree_page_h::pid0() const
+{
+    shpid_t shpid = page()->btree_pid0;
+    if (shpid) {
+        return smlevel_0::bf->normalize_shpid(shpid);
+    }
+    return shpid;
+}
+
+shpid_t btree_page_h::get_foster() const {
+    shpid_t shpid = page()->btree_foster;
+    if (shpid) {
+        return smlevel_0::bf->normalize_shpid(shpid);
+    }
+    return shpid;
+}
+
+shpid_t btree_page_h::child(slotid_t slot) const
+{
+    shpid_t shpid = child_opaqueptr(slot);
+    if (shpid) {
+        return smlevel_0::bf->normalize_shpid(shpid);
+    }
+    return shpid;
+}
+
 btrec_t&
 btrec_t::set(const btree_page_h& page, slotid_t slot) {
     FUNC(btrec_t::set);

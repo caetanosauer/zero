@@ -9,6 +9,7 @@
 
 #include "btree_logrec.h"
 #include "vol.h"
+#include "bf_tree_cb.h"
 
 btree_insert_t::btree_insert_t(
     const btree_page_h&   _page,

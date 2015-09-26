@@ -10,10 +10,11 @@
 #include "latch.h"
 #include "tatas.h"
 #include "sm_s.h"
+#include "vol.h"
 #include "generic_page.h"
 #include "bf_idx.h"
-#include "vol.h"
 #include "bf_hashtable.h"
+#include "bf_tree_cb.h"
 #include <iosfwd>
 
 class sm_options;

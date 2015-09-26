@@ -12,12 +12,8 @@
 #include "w_key.h"
 #include "w_endian.h"
 
-#include "bf_tree_inline.h" // for normalize_shpid <<<>>>
-
 struct btree_lf_stats_t;
 struct btree_int_stats_t;
-
-
 
      /*
      * When this page belongs to a foster chain, we need to store
@@ -25,11 +21,6 @@ struct btree_int_stats_t;
      * batch-verification with bitmaps.  @see
      * btree_impl::_ux_verify_volume()
      */
-
-
-
-
-
 
 class btree_page_h;
 
@@ -1098,14 +1089,6 @@ inline shpid_t btree_page_h::pid0_opaqueptr() const {
     return page()->btree_pid0;
 }
 
-inline shpid_t btree_page_h::pid0() const {
-    shpid_t shpid = page()->btree_pid0;
-    if (shpid) {
-        return smlevel_0::bf->normalize_shpid(shpid);
-    }
-    return shpid;
-}
-
 inline bool btree_page_h::is_leaf() const {
     return level() == 1;
 }
@@ -1120,14 +1103,6 @@ inline bool btree_page_h::is_node() const {
 
 inline shpid_t btree_page_h::get_foster_opaqueptr() const {
     return page()->btree_foster;
-}
-
-inline shpid_t btree_page_h::get_foster() const {
-    shpid_t shpid = page()->btree_foster;
-    if (shpid) {
-        return smlevel_0::bf->normalize_shpid(shpid);
-    }
-    return shpid;
 }
 
 inline int16_t btree_page_h::get_prefix_length() const {
@@ -1234,13 +1209,6 @@ inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const {
     w_assert1(slot >= 0);
     w_assert1(slot < nrecs());
     return page()->item_child(slot+1);
-}
-inline shpid_t btree_page_h::child(slotid_t slot) const {
-    shpid_t shpid = child_opaqueptr(slot);
-    if (shpid) {
-        return smlevel_0::bf->normalize_shpid(shpid);
-    }
-    return shpid;
 }
 
 

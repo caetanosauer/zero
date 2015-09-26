@@ -5,7 +5,6 @@
 #include "bf_tree_cleaner.h"
 #include <sys/time.h>
 #include "sm_base.h"
-#include "sm_base.h"
 #include "bf_tree_cb.h"
 #include "bf_tree_vol.h"
 #include "bf_tree.h"
@@ -22,7 +21,6 @@
 
 #include "sm.h"
 #include "xct.h"
-#include "bf_tree_inline.h"
 
 typedef bf_tree_cleaner_slave_thread_t* slave_ptr;
 
