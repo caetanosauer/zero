@@ -759,10 +759,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             w_assert1(idx != 0);
             bf_tree_cb_t &cb = get_cb(idx);
 
-            // Acquire latch before loading the page, this is necessary for 'force load' on in_doubt
-            // page, because restart thread (M2/M4) or concurrent transactions (M4) might be
-            // loading the same page at this moment
-            w_rc_t check_rc = cb.latch().latch_acquire(mode, sthread_t::WAIT_IMMEDIATE);
+            // STEP 2) Acquire EX latch, so that only one thread attempts read
+            w_rc_t check_rc = cb.latch().latch_acquire(LATCH_EX,
+                    sthread_t::WAIT_IMMEDIATE);
             if (check_rc.is_error())
             {
                 // Cannot latch cb, probably a concurrent user transaction is trying to load this
@@ -995,6 +994,14 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             w_assert1(cb.latch().held_by_me());
             w_assert1(cb._pin_cnt > 0);
             DBG(<< "Fixed " << idx << " pin count " << cb._pin_cnt);
+            w_assert1(!force_load);
+
+            if (mode != LATCH_EX) {
+                // CS: I dont know what LATCh_Q is about
+                // Ignoring for now
+                w_assert1(mode == LATCH_SH);
+                cb.latch().downgrade();
+            }
 
             return RCOK;
         }
