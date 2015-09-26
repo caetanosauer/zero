@@ -653,7 +653,7 @@ private:
      * @param[in] shpid Page ID
      * @param[in] page_emlsn if != 0, it is the page last update LSN identified during Log Analysis
      */
-    w_rc_t _check_read_page(generic_page* parent, bf_idx idx, vid_t vol,
+    w_rc_t _check_read_page(generic_page* parent, generic_page* page, vid_t vol,
                                  shpid_t shpid, const lsn_t page_emlsn);
 
     /**
@@ -667,7 +667,7 @@ private:
      * did not match). Otherwise, the page is just a little stale and Single-Page-Recovery is more efficient.
      * @param[in] page_emlsn If not NULL, it is the last LSN gathered during Log Analysis
      */
-    w_rc_t _try_recover_page(generic_page* parent, bf_idx idx, vid_t vol,
+    w_rc_t _try_recover_page(generic_page* parent, generic_page* page, vid_t vol,
                              shpid_t shpid, bool corrupted, const lsn_t page_emlsn);
 
     /** used by fix_root and fix_virgin_root. */

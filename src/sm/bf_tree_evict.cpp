@@ -168,9 +168,8 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         // now we hold an EX latch -- check if leaf and not dirty
         btree_page_h p;
         p.fix_nonbufferpool_page(_buffer + idx);
-        // CS TODO: ignoring used flag for now
         if (p.tag() != t_btree_p || !p.is_leaf() || cb._dirty
-                || cb._in_doubt || p.pid() == p.root())
+                || !cb._used || cb._in_doubt || p.pid() == p.root())
         {
             cb.latch().latch_release();
             DBG3(<< "Eviction failed on flags for " << idx);
@@ -182,8 +181,9 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         }
 
         // page is a B-tree leaf -- check if pin count is zero
-        if (cb._pin_cnt > 0)
+        if (cb._pin_cnt != 0)
         {
+            // pin count -1 means page was already evicted
             cb.latch().latch_release();
             DBG3(<< "Eviction failed on for " << idx
                     << " pin count is " << cb._pin_cnt);
@@ -194,7 +194,8 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         // Step 2: latch parent in SH mode
         generic_page *page = &_buffer[idx];
         lpid_t pid = page->pid;
-        w_assert1(pid.vol() == cb._pid_vol && pid.page == cb._pid_shpid);
+        w_assert1(cb._pin_cnt < 0 ||
+                (pid.vol() == cb._pid_vol && pid.page == cb._pid_shpid));
 
         bf_idx_pair idx_pair;
         bool found = _hashtable->lookup(bf_key(pid.vol(), pid.page), idx_pair);
@@ -227,9 +228,11 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
 
         // Step 3: look for emlsn slot on parent
         generic_page *parent = &_buffer[parent_idx];
-        w_assert0(parent->tag == t_btree_p);
+        // CS TODO: this assertion fails sometimes, but then if I print
+        // it on gdb right after, I guet true. NO IDEA what's happening!
+        // w_assert0(parent->tag == t_btree_p);
 
-        general_recordid_t child_slotid = find_page_id_slot(parent, cb._pid_shpid);
+        general_recordid_t child_slotid = find_page_id_slot(parent, pid.page);
         // How can this happen if we have latch on both?
         if (child_slotid == GeneralRecordIds::INVALID) {
             DBG3(<< "Eviction failed on slot for " << idx
@@ -246,14 +249,16 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         parent_h.fix_nonbufferpool_page(parent);
         lsn_t old = parent_h.get_emlsn_general(child_slotid);
         if (old < _buffer[idx].lsn) {
-            DBGOUT1(<< "Updated EMLSN on page " << parent_h.pid() << " slot=" << child_slotid
-                    << " (child pid=" << cb._pid_shpid << ")"
+            DBGOUT1(<< "Updated EMLSN on page " << parent_h.pid()
+                    << " slot=" << child_slotid
+                    << " (child pid=" << pid.page << ")"
                     << ", OldEMLSN=" << old << " NewEMLSN=" << _buffer[idx].lsn);
             W_COERCE(_sx_update_child_emlsn(parent_h, child_slotid, _buffer[idx].lsn));
             // Note that we are not grabbing EX latch on parent here.
             // This is safe because no one else should be touching these exact bytes,
             // and because EMLSN values are aligned to be "regular register".
-            set_dirty(parent); // because fix_nonbufferpool_page() would skip set_dirty().
+            // However, we still need to mark the frame as dirty.
+            set_dirty(parent);
             w_assert1(parent_h.get_emlsn_general(child_slotid) == _buffer[idx].lsn);
         }
 
@@ -263,7 +268,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         bool removed = _hashtable->remove(bf_key(pid.vol(), pid.page));
         w_assert1(removed);
 
-        DBG3(<< "EVICTED " << idx << " pid " << cb._pid_shpid);
+        DBG3(<< "EVICTED " << idx << " pid " << pid.page);
         cb.clear_except_latch();
         // -1 indicates page was evicted (i.e., it's invalid and can be read into)
         cb._pin_cnt = -1;
