@@ -716,8 +716,9 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol, size_t fro
     }
 
 // #ifndef BF_WRITE_ELISION
-    // then, write them out in one batch
-    W_COERCE(_parent->_bufferpool->_volumes[vol]->_volume->write_many_pages(_write_buffer[from].pid.page, _write_buffer + from, consecutive));
+    W_COERCE(_parent->_bufferpool->_volumes[vol]->_volume->write_many_pages(
+                _write_buffer[from].pid.page, _write_buffer + from,
+                consecutive));
 // #endif // BF_WRITE_ELISION
 
     // after writing them out, update rec_lsn in bufferpool
@@ -725,15 +726,27 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol, size_t fro
         bf_idx idx = _write_buffer_indexes[i];
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
 
-        cb._dirty = false;
-        cb._in_doubt = false;
-        cb._recovery_access = false;
-        --_parent->_bufferpool->_dirty_page_count_approximate;
+        // CS bugfix: we have to latch and compare LSNs before marking clean
+        cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_FOREVER);
+        generic_page& buffered = *smlevel_0::bf->get_page(idx);
+        generic_page& copied = _write_buffer[i];
 
-        cb._rec_lsn = _write_buffer[i].lsn.data();
-        cb._dependency_idx = 0;
-        cb._dependency_lsn = 0;
-        cb._dependency_shpid = 0;
+        if (buffered.pid == copied.pid) {
+            if (buffered.lsn == copied.lsn) {
+                cb._dirty = false;
+            }
+            // CS TODO: why are in_doubt and recovery_access set here???
+            cb._in_doubt = false;
+            cb._recovery_access = false;
+            --_parent->_bufferpool->_dirty_page_count_approximate;
+
+            cb._rec_lsn = _write_buffer[i].lsn.data();
+            cb._dependency_idx = 0;
+            cb._dependency_lsn = 0;
+            cb._dependency_shpid = 0;
+        }
+
+        cb.latch().latch_release();
     }
 
     return RCOK;

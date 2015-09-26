@@ -2465,6 +2465,12 @@ generic_page* bf_tree_m::get_page(const bf_tree_cb_t *cb) {
     w_assert1(_is_valid_idx(idx));
     return _buffer + idx;
 }
+
+generic_page* bf_tree_m::get_page(const bf_idx& idx) {
+    w_assert1(_is_valid_idx(idx));
+    return _buffer + idx;
+}
+
 shpid_t bf_tree_m::get_root_page_id(stid_t store) {
     if (_volumes[store.vol] == NULL) {
         return 0;

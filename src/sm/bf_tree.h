@@ -219,6 +219,7 @@ public:
 
     /** returns the bufferpool page corresponding to the given control block. mainly for debugging. */
     generic_page* get_page(const bf_tree_cb_t *cb);
+    generic_page* get_page(const bf_idx& idx);
 
     /** returns the page ID of the root page (which is already loaded in this bufferpool) in given store. mainly for debugging or approximate purpose. */
     shpid_t get_root_page_id(stid_t store);
