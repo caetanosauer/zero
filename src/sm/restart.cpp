@@ -598,14 +598,15 @@ void restart_m::log_analysis(
     }
 
     //Re-load buffer
-    for (uint i=0; i<v_chkpt.pid.size(); i++) {
+    for (buf_tab_t::iterator it  = v_chkpt.buf_tab.begin();
+                             it != v_chkpt.buf_tab.end(); ++it) {
         bf_idx idx = 0;
         w_rc_t rc = RCOK;
 
-        rc = smlevel_0::bf->register_and_mark(idx, v_chkpt.pid[i],
-                                                v_chkpt.store[i],
-                                                v_chkpt.rec_lsn[i].data() /*first_lsn*/,
-                                                v_chkpt.page_lsn[i].data() /*last_lsn*/,
+        rc = smlevel_0::bf->register_and_mark(idx, it->first,
+                                                it->second.store,
+                                                it->second.rec_lsn.data() /*first_lsn*/,
+                                                it->second.page_lsn.data() /*last_lsn*/,
                                                 in_doubt_count);
 
         if (rc.is_error()) {
@@ -617,18 +618,19 @@ void restart_m::log_analysis(
 
     //Re-create transactions
     xct_t::update_youngest_tid(v_chkpt.youngest);
-    for(uint i=0; i<v_chkpt.tid.size(); i++) {
+    for(xct_tab_t::iterator it  = v_chkpt.xct_tab.begin();
+                            it != v_chkpt.xct_tab.end(); ++it) {
         xct_t* xd = new xct_t(NULL,               // stats
                         WAIT_SPECIFIED_BY_THREAD, // default timeout value
                         false,                    // sys_xct
                         false,                    // single_log_sys_xct
-                        v_chkpt.tid[i],
-                        v_chkpt.last_lsn[i],      // last_LSN
-                        v_chkpt.undo_nxt[i],      // next_undo
+                        it->first,
+                        it->second.last_lsn,      // last_LSN
+                        it->second.undo_nxt,      // next_undo
                         true);                    // loser_xct, set to true for recovery
 
-        xd->set_first_lsn(v_chkpt.first_lsn[i]); // Set the first LSN of the in-flight transaction
-        xd->set_last_lsn(v_chkpt.last_lsn[i]);   // Set the last lsn in the transaction
+        xd->set_first_lsn(it->second.first_lsn); // Set the first LSN of the in-flight transaction
+        xd->set_last_lsn(it->second.last_lsn);   // Set the last lsn in the transaction
 
         // Loser transaction
         if (true == use_serial_restart())
@@ -640,24 +642,28 @@ void restart_m::log_analysis(
 
     //Re-acquire locks
     if(restart_with_lock) {
-        for(uint i=0; i<v_chkpt.tid.size(); i++) {
-            xct_t* xd = xct_t::look_up(v_chkpt.tid[i]);
-            for(uint j=0; j<v_chkpt.lock_hash[i].size(); j++) {
-                _re_acquire_lock(lock_heap, v_chkpt.lock_mode[i][j], v_chkpt.lock_hash[i][j], xd);
+        for(lck_tab_t::iterator it  = v_chkpt.lck_tab.begin(); 
+                                it != v_chkpt.lck_tab.end(); ++it) {
+            xct_t* xd = xct_t::look_up(it->first);
+            list<lck_tab_entry_t>::iterator jt;
+            for(jt = it->second.begin(); jt != it->second.end(); ++jt) {
+                _re_acquire_lock(lock_heap, jt->lock_mode, jt->lock_hash, xd);
             }
         }
     }
 
     //Re-mount devices
     smlevel_0::vol->set_next_vid(v_chkpt.next_vid);
-    for (uint i=0; i<v_chkpt.dev_paths.size(); i++) {
-        smlevel_0::vol->sx_mount(v_chkpt.dev_paths[i].c_str(), false /* log */);
+    for (dev_tab_t::iterator it  = v_chkpt.dev_tab.begin(); 
+                             it != v_chkpt.dev_tab.end(); ++it) {
+        smlevel_0::vol->sx_mount(it->first.c_str(), false /* log */);
     }
 
     //Re-add backups
-    for (uint i=0; i<v_chkpt.backup_vids.size(); i++) {
-        smlevel_0::vol->sx_add_backup(v_chkpt.backup_vids[i],
-                                      v_chkpt.backup_paths[i], false /* log */);
+    for (bkp_tab_t::iterator it  = v_chkpt.bkp_tab.begin(); 
+                             it != v_chkpt.bkp_tab.end(); ++it) {
+        smlevel_0::vol->sx_add_backup(it->first,
+                                      it->second.bkp_path, false /* log */);
     }
 }
 

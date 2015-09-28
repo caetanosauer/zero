@@ -70,6 +70,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 //#include "btree_logrec.h"       // Lock re-acquisition
 
 #include <vector>
+#include <list>
+#include <map>
 #include <algorithm>
 #include <limits>
 
@@ -78,6 +80,40 @@ struct comp_lock_info_t;
 class CmpXctLockTids;
 typedef class Heap<comp_lock_info_t*, CmpXctLockTids> XctLockHeap;
 
+struct dev_tab_entry_t {
+  bool dev_mounted;
+  lsn_t dev_lsn;
+};
+
+struct bkp_tab_entry_t {
+  string bkp_path;
+};
+
+struct buf_tab_entry_t {
+  snum_t store;
+  lsn_t rec_lsn;              // initial dirty lsn
+  lsn_t page_lsn;             // last write lsn
+  bool dirty;                 //this flag is only used to filter non-dirty pages
+};
+
+struct lck_tab_entry_t {
+  okvl_mode lock_mode;
+  uint32_t lock_hash;
+};
+
+struct xct_tab_entry_t {
+  smlevel_0::xct_state_t state;
+  lsn_t last_lsn;               // most recent log record
+  lsn_t undo_nxt;               // undo next
+  lsn_t first_lsn;              // first lsn of the txn
+};
+
+typedef map<string, dev_tab_entry_t>       dev_tab_t;
+typedef map<vid_t, bkp_tab_entry_t>        bkp_tab_t;
+typedef map<lpid_t, buf_tab_entry_t>       buf_tab_t;
+typedef map<tid_t, list<lck_tab_entry_t> > lck_tab_t;
+typedef map<tid_t, xct_tab_entry_t>        xct_tab_t;
+
 struct chkpt_t{
   lsn_t begin_lsn;
   lsn_t min_rec_lsn;
@@ -85,32 +121,20 @@ struct chkpt_t{
 
   //Volume Table
   vid_t next_vid;
-  vector<string> dev_paths;
-  vector<bool> dev_mounted;
-  vector<lsn_t> dev_lsn;
+  dev_tab_t dev_tab;
 
   //Backup Table
-  vector<vid_t> backup_vids;
-  vector<string> backup_paths;
+  bkp_tab_t bkp_tab;
 
   //Dirty Page Table
-  vector<lpid_t> pid;     // page lpid
-  vector<snum_t> store;     // page lpid
-  vector<lsn_t> rec_lsn;   // initial dirty lsn
-  vector<lsn_t> page_lsn;  // last write lsn
-  vector<bool> dirty;      //this flag is only used to filter non-dirty pages
+  buf_tab_t buf_tab;
 
-  //Lock Table (one vector per transaction)
-  vector<vector<okvl_mode> > lock_mode;  // lock mode
-  vector<vector<uint32_t> > lock_hash;   // lock hash
+  //Lock Table
+  lck_tab_t lck_tab;
 
   //Transaction Table
   tid_t youngest;
-  vector<tid_t> tid;               // transaction ID
-  vector<smlevel_0::xct_state_t> state; // state
-  vector<lsn_t> last_lsn;          // most recent log record
-  vector<lsn_t> undo_nxt;          // undo next
-  vector<lsn_t> first_lsn;         // first lsn of the txn
+  xct_tab_t xct_tab;
 };
 
 
@@ -165,24 +189,11 @@ private:
     void             _analysis_ckpt_bf_log(logrec_t& r,  chkpt_t& new_chkpt);
     void             _analysis_ckpt_xct_log(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR);
     void             _analysis_ckpt_lock_log(logrec_t& r, chkpt_t& new_chkpt);
-    void             _analysis_other_log(logrec_t& r, chkpt_t& new_chkpt, int xct_idx);
-    void             _analysis_process_lock(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR, int xct_idx);
-    void             _analysis_acquire_lock_log(logrec_t& r, chkpt_t& new_chkpt, int xct_idx);
+    void             _analysis_other_log(logrec_t& r, chkpt_t& new_chkpt);
+    void             _analysis_process_lock(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR);
+    void             _analysis_acquire_lock_log(logrec_t& r, chkpt_t& new_chkpt);
     void             _analysis_process_compensation_map(tid_CLR_map& mapCLR, chkpt_t& new_chkpt);
     void             _analysis_process_txn_table(chkpt_t& new_chkpt);
-
-    template<typename T>
-    int indexOf(vector<T> vector, T value) {
-      typename std::vector<T>::iterator it = find(vector.begin(), vector.end(), value);
-      if(it != vector.end()) {
-        size_t r = std::distance(vector.begin(), it);
-        w_assert0(r <= INT_MAX);
-        return r;
-      }
-      else {
-        return -1;
-      }
-    }
 
 
 public:
