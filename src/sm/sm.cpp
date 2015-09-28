@@ -1001,6 +1001,9 @@ rc_t ss_m::_truncate_log()
      */
     lsn_t master = log->master_lsn();
     lsn_t min_chkpt = log->min_chkpt_rec_lsn();
+    // When this fails, it means either that some pages were not written
+    // out prior to the last checkpoint (min rec_lsn of all CB's on buffer)
+    // or that some transactions are still active
     w_assert0(master == min_chkpt);
 
     int partition = master.hi();

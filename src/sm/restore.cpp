@@ -626,6 +626,9 @@ void RestoreMgr::restoreSegment(char* workspace,
 
     ADD_TSTAT(restore_time_replay, timer.time_us());
 
+    // Last page is not checksumed above, so we do it here
+    page->checksum = page->calculate_checksum();
+
     finishSegment(workspace, segment, current - firstPage);
     ADD_TSTAT(restore_time_write, timer.time_us());
 }
