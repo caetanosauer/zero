@@ -136,25 +136,19 @@ btree_impl::_sx_grow_tree(btree_page_h& rp)
     // allocate a page as separate system transaction
     new_pid._vol = rp.vol();
     W_DO(smlevel_0::vol->get(rp.vol())->alloc_a_page(new_pid.page));
+
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());
-    rc_t ret = _ux_grow_tree_core(rp, new_pid);
-    W_DO (sxs.end_sys_xct (ret));
-    return ret;
-}
 
-rc_t
-btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
-{
-    w_assert1 (xct()->is_sys_xct());
-    FUNC(btree_impl::_sx_grow_tree);
     INC_TSTAT(bt_grows);
 
     w_assert1(rp.latch_mode() == LATCH_EX);
     w_assert1(rp.is_fence_low_infimum()); // this should be left-most.
 
     if (rp.get_foster () == 0) {
-        return RCOK; // other concurrent thread might have done it
+        // other concurrent thread might have done it
+        W_DO(smlevel_0::vol->get(rp.vol())->deallocate_page(new_pid.page));
+        return RCOK;
     }
     DBGOUT1("TREE grow");
 
@@ -166,8 +160,8 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
     rp.copy_chain_fence_high_key(cp_chain_high);
 
     btree_page_h cp;
-    W_DO(cp.fix_nonroot(rp, rp.vol(), cp_pid.page, LATCH_EX, false, true));
-    W_DO(cp.format_steal(cp.lsn(), cp_pid, rp.store(), rp.pid().page, rp.level(),
+    W_DO(cp.fix_nonroot(rp, rp.vol(), new_pid.page, LATCH_EX, false, true));
+    W_DO(cp.format_steal(cp.lsn(), new_pid, rp.store(), rp.pid().page, rp.level(),
         rp.pid0(), rp.get_pid0_emlsn(), // copy pid0 of root too
         rp.get_foster(), rp.get_foster_emlsn(),
                          cp_fence_low, cp_fence_high, cp_chain_high, // use current root's fence keys
@@ -210,6 +204,7 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
     // that's it. then, we adopt keys to the new root page later
     w_assert3(rp.is_consistent(true, true));
 
+    W_DO (sxs.end_sys_xct (RCOK));
     return RCOK;
 }
 

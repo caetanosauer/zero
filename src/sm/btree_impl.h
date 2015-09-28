@@ -785,11 +785,6 @@ public:
      * @param[in] root current root page.
     */
     static rc_t                        _sx_grow_tree(btree_page_h& root);
-    /**
-     * this version assumes system transaction as the active transaction on current thread.
-     * @see _sx_grow_tree()
-     */
-    static rc_t                        _ux_grow_tree_core(btree_page_h& root, const lpid_t &cp_pid);
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
