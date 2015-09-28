@@ -468,6 +468,17 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
 {
     if (_dirty_shutdown_happening()) return RCOK;
 
+    // CS: flush log to guarantee WAL property. It's much simpler and more
+    // efficient to do it once and with the current LSN as argument, instead
+    // of checking the max LSN of each copied page. Taking the current LSN is
+    // also safe because all copies were taken at this point, and further updates
+    // would affect the page image on the buffer, and not the copied versions.
+    W_COERCE(smlevel_0::log->flush(smlevel_0::log->curr_lsn()));
+
+    DBG(<< "Cleaner activated with " << candidates.size()
+            << " candidate frames");
+    unsigned cleaned_count = 0;
+
     // Don't clean the buffer pool if in the middle of recovery of Log Analysis or REDO,
     // because we are using buffer pool for the Recovery REDO purpose
     if (smlevel_0::before_recovery() ||
@@ -525,7 +536,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 // now the buffer is full. flush it out and also reset the buffer
                 DBGOUT3(<< "Write buffer full. Flushing from " << write_buffer_from
                         << " to " << write_buffer_cur);
-                W_DO(_flush_write_buffer (vol, write_buffer_from, write_buffer_cur - write_buffer_from));
+                W_DO(_flush_write_buffer (vol, write_buffer_from,
+                            write_buffer_cur - write_buffer_from, cleaned_count));
                 write_buffer_from = 0;
                 write_buffer_cur = 0;
             }
@@ -627,7 +639,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                     // flush up to _previous_ entry (before incrementing write_buffer_cur)
                     DBGOUT3(<< "Next page not consecutive. Flushing from " <<
                             write_buffer_from << " to " << write_buffer_cur);
-                    W_DO(_flush_write_buffer (vol, write_buffer_from, write_buffer_cur - write_buffer_from));
+                    W_DO(_flush_write_buffer (vol, write_buffer_from,
+                                write_buffer_cur - write_buffer_from, cleaned_count));
                     write_buffer_from = write_buffer_cur;
                 }
                 ++write_buffer_cur;
@@ -674,17 +687,21 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     if (write_buffer_cur > write_buffer_from) {
         DBGOUT3(<< "Finished cleaning round. Flushing from " << write_buffer_from
                 << " to " << write_buffer_cur);
-        W_DO(_flush_write_buffer (vol, write_buffer_from, write_buffer_cur - write_buffer_from));
+        W_DO(_flush_write_buffer (vol, write_buffer_from,
+                    write_buffer_cur - write_buffer_from, cleaned_count));
         write_buffer_from = 0; // not required, but to make sure
         write_buffer_cur = 0;
     }
+
+    DBG(<< "Cleaner round done. Pages cleaned: " << cleaned_count);
 
     DBGOUT1(<<"_clean_volume(cleaner=" << _id << "): done volume " << vol);
     return RCOK;
 }
 
 
-w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol, size_t from, size_t consecutive)
+w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol,
+        size_t from, size_t consecutive, unsigned& cleaned_count)
 {
     if (_dirty_shutdown_happening()) return RCOK;
     if (consecutive == 0) {
@@ -693,38 +710,40 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol, size_t fro
     DBGOUT2(<<"_flush_write_buffer(cleaner=" << _id
             << "): writing " << consecutive << " consecutive pages "
             << " from pid " << _write_buffer[from].pid);
+
+    // CS: flushing the log only once for each round (see _clean_volume)
     // we'll compute the highest lsn of the pages, and do one log flush to that lsn.
-    lsndata_t max_page_lsn = lsndata_null;
+    // lsndata_t max_page_lsn = lsndata_null;
+    // for (size_t i = from; i < from + consecutive; ++i) {
+    //     w_assert1(_write_buffer[i].pid.vol() == vol);
+    //     if (i > from) {
+    //         w_assert1(_write_buffer[i].pid.page == _write_buffer[i - 1].pid.page + 1);
+    //     }
+    //     if (_write_buffer[i].lsn.data() > max_page_lsn) {
+    //         max_page_lsn = _write_buffer[i].lsn.data();
+    //     }
+    // }
+    // // WAL: ensure that the log is durable to this lsn
+    // if (max_page_lsn != lsndata_null) {
+    //     if (smlevel_0::log == NULL) {
+    //         ERROUT (<< "Cleaner encountered null log manager. Probably dirty shutdown?");
+    //         return RC(eINTERNAL);
+    //     }
+    //     W_COERCE( smlevel_0::log->flush(lsn_t(max_page_lsn)) );
+    // }
+
+    W_COERCE(_parent->_bufferpool->_volumes[vol]->_volume->write_many_pages(
+                _write_buffer[from].pid.page, _write_buffer + from,
+                consecutive));
+
     for (size_t i = from; i < from + consecutive; ++i) {
+        bf_idx idx = _write_buffer_indexes[i];
+        bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
+
         w_assert1(_write_buffer[i].pid.vol() == vol);
         if (i > from) {
             w_assert1(_write_buffer[i].pid.page == _write_buffer[i - 1].pid.page + 1);
         }
-        if (_write_buffer[i].lsn.data() > max_page_lsn) {
-            max_page_lsn = _write_buffer[i].lsn.data();
-        }
-    }
-
-
-    // WAL: ensure that the log is durable to this lsn
-    if (max_page_lsn != lsndata_null) {
-        if (smlevel_0::log == NULL) {
-            ERROUT (<< "Cleaner encountered null log manager. Probably dirty shutdown?");
-            return RC(eINTERNAL);
-        }
-        W_COERCE( smlevel_0::log->flush(lsn_t(max_page_lsn)) );
-    }
-
-// #ifndef BF_WRITE_ELISION
-    W_COERCE(_parent->_bufferpool->_volumes[vol]->_volume->write_many_pages(
-                _write_buffer[from].pid.page, _write_buffer + from,
-                consecutive));
-// #endif // BF_WRITE_ELISION
-
-    // after writing them out, update rec_lsn in bufferpool
-    for (size_t i = from; i < from + consecutive; ++i) {
-        bf_idx idx = _write_buffer_indexes[i];
-        bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
 
         // CS bugfix: we have to latch and compare LSNs before marking clean
         cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_FOREVER);
@@ -734,13 +753,15 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol, size_t fro
         if (buffered.pid == copied.pid) {
             if (buffered.lsn == copied.lsn) {
                 cb._dirty = false;
+                cleaned_count++;
             }
             // CS TODO: why are in_doubt and recovery_access set here???
             cb._in_doubt = false;
             cb._recovery_access = false;
             --_parent->_bufferpool->_dirty_page_count_approximate;
 
-            cb._rec_lsn = _write_buffer[i].lsn.data();
+            // cb._rec_lsn = _write_buffer[i].lsn.data();
+            cb._rec_lsn = lsn_t::null.data();
             cb._dependency_idx = 0;
             cb._dependency_lsn = 0;
             cb._dependency_shpid = 0;

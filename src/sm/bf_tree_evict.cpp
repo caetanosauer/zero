@@ -72,7 +72,6 @@ w_rc_t bf_tree_m::_get_replacement_block() {
     int urgency = EVICT_NORMAL;
     while (true) {
     // for (int urgency = EVICT_NORMAL; urgency <= EVICT_COMPLETE; ++urgency) {
-        W_DO(wakeup_cleaners());
         W_DO(evict_blocks(evicted_count, unswizzled_count, (evict_urgency_t) urgency));
         if (evicted_count > 0 || _freelist_len > 0) {
             return RCOK;
@@ -101,6 +100,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         uint32_t& unswizzled_count, evict_urgency_t /* urgency */,
         uint32_t preferred_count)
 {
+    W_DO(wakeup_cleaners());
     if (preferred_count == 0) {
         preferred_count = EVICT_BATCH_RATIO * _block_cnt + 1;
     }
@@ -120,6 +120,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
     unsigned rounds = 0;
     unsigned nonleaf_count = 0;
     unsigned invalid_parents = 0;
+    unsigned dirty_count = 0;
 
     /*
      * CS: strategy is to try acquiring an EX latch imediately. If it works,
@@ -132,17 +133,14 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         if (idx == _block_cnt) {
             idx = 0;
         }
-        // one round and no eviction yet -- error
-        // TODO CS: how to handle this?
         if (idx == _eviction_current_frame - 1) {
+            W_DO(wakeup_cleaners());
             if (evicted_count == 0) {
-                ERROUT(<< "Nonleafs: " << nonleaf_count << " invalid parents: "
-                        << invalid_parents);
+                ERROUT(<< "Eviction stuck! Nonleafs: " << nonleaf_count
+                        << " invalid parents: " << invalid_parents
+                        << " dirty: " << dirty_count);
                 rounds++;
-                if (rounds == 3) {
-                    w_assert1(false);
-                    return RC(eFRAMENOTFOUND);
-                }
+                usleep(5000); //5ms
             }
             else { return RCOK; }
         }
@@ -173,9 +171,8 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         {
             cb.latch().latch_release();
             DBG3(<< "Eviction failed on flags for " << idx);
-            if (!p.is_leaf()) {
-                nonleaf_count++;
-            }
+            if (!p.is_leaf()) { nonleaf_count++; }
+            if (cb._dirty) { dirty_count++; }
             idx++;
             continue;
         }

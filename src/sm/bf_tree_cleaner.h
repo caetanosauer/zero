@@ -176,7 +176,8 @@ private:
     w_rc_t _do_work ();
     bool _exists_requested_work();
     w_rc_t _clean_volume(vid_t vol, const std::vector<bf_idx> &candidates, bool requested_volume, lsndata_t requested_lsn);
-    w_rc_t _flush_write_buffer(vid_t vol, size_t from, size_t consecutive);
+    w_rc_t _flush_write_buffer(vid_t vol, size_t from, size_t consecutive,
+            unsigned& cleaned_count);
 
     /** parent object. */
     bf_tree_cleaner*            _parent;
