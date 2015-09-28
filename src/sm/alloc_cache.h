@@ -26,8 +26,12 @@ class bf_fixed_m;
 class alloc_cache_t {
 public:
     /** Creates an empty cache.*/
-    alloc_cache_t (vid_t vid, bf_fixed_m* fixed_pages) :
-        _vid(vid), _fixed_pages(fixed_pages), _contiguous_free_pages_begin(0), _contiguous_free_pages_end(0) {}
+    alloc_cache_t (bf_fixed_m* fixed_pages) :
+        _fixed_pages(fixed_pages), _contiguous_free_pages_begin(0),
+        _contiguous_free_pages_end(0)
+    {
+        w_assert1(fixed_pages != NULL);
+    }
 
     /** Initialize this object by scanning alloc_page pages of the volume. */
     rc_t load_by_scan (shpid_t max_pid);
@@ -75,7 +79,6 @@ public:
     }
 
 private:
-    vid_t _vid;
     bf_fixed_m* _fixed_pages;
 
     /**

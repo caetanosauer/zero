@@ -405,7 +405,7 @@ void vol_t::build_caches()
     _fixed_bf = new bf_fixed_m(this, _unix_fd, _num_pages);
     w_assert1(_fixed_bf);
 
-    _alloc_cache = new alloc_cache_t(_vid, _fixed_bf);
+    _alloc_cache = new alloc_cache_t(_fixed_bf);
     w_assert1(_alloc_cache);
 
     _stnode_cache = new stnode_cache_t(_vid, _fixed_bf);

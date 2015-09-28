@@ -13,7 +13,6 @@
 
 rc_t alloc_cache_t::load_by_scan (shpid_t max_pid)
 {
-    w_assert1(_fixed_pages != NULL);
     spinlock_write_critical_section cs(&_queue_lock);
     _non_contiguous_free_pages.clear();
     _contiguous_free_pages_begin = max_pid;
@@ -24,7 +23,7 @@ rc_t alloc_cache_t::load_by_scan (shpid_t max_pid)
     generic_page *pages = _fixed_pages->get_pages();
     for (uint32_t i = 0; i < alloc_pages_cnt; ++i) {
         alloc_page_h al (pages + i);
-        w_assert1(al.vol() == _vid);
+        // w_assert1(al.vol() == _vid);
 
         shpid_t hwm = al.get_pid_highwatermark();
         shpid_t offset = al.get_pid_offset();

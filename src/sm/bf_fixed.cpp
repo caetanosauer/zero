@@ -64,8 +64,14 @@ w_rc_t bf_fixed_m::init()
 }
 
 
-w_rc_t bf_fixed_m::flush(bool toBackup) {
-    spinlock_write_critical_section cs(&_checkpoint_lock); // protect against modifications.
+w_rc_t bf_fixed_m::flush(bool toBackup)
+{
+    if (!_parent) {
+        W_FATAL_MSG(eINTERNAL, <<
+                "bf_fixed not associated with a volume -- flush not supported");
+    }
+
+    spinlock_write_critical_section cs(&_checkpoint_lock);
 
     if (toBackup) {
         // if writing to backup, just dump buffer into file and exit
