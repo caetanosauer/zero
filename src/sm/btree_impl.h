@@ -463,7 +463,7 @@ public:
      * @param[in] child child page of the parent that (might) has foster-children.
      * @param[out] pushedup whether the adopt was done
      */
-    static rc_t _sx_opportunistic_adopt_foster(btree_page_h &parent, btree_page_h &child, 
+    static rc_t _sx_opportunistic_adopt_foster(btree_page_h &parent, btree_page_h &child,
                                                     bool &pushedup, const bool from_recovery);
 
     /**
@@ -695,16 +695,16 @@ public:
      * miss_lock_mode; exception: if key equals the low fence key of leaf, instead lock
      * just that key with lock mode exact_hit_lock_mode (the gap is not locked in this
      * case).
-     * 
-     * @param[in] slot          The slot where key would be placed if inserted (usually a 
+     *
+     * @param[in] slot          The slot where key would be placed if inserted (usually a
      *                          return value of btree_page_h::search()) or -1, in which
      *                          case the leaf will be searched to determine the correct slot.
      * @param[in] latch_mode    If this has to un-latch/re-latch, this mode is used.
      * @param[in] check_only    If set, release the lock immediately after acquiring it.
-     * 
+     *
      * @pre key no record with key key exists in leaf (low fence is fine),
      * exact_hit_lock_mode is N for the gap, and miss_lock_mode is N for the key.
-     * 
+     *
      * Used when the exact key is not found and range locking is needed.
      * @see _ux_lock_key()
      */
