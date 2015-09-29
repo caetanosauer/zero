@@ -443,13 +443,14 @@ lsn_t LogArchiver::ArchiveDirectory::parseLSN(const char* str, bool end)
     const char* hpos = strchr(str, delim) + 1;
     const char* lpos = strchr(hpos, '.') + 1;
 
-    char* hstr = new char[11]; // the highest 32-bit integer has 10 digits
-    memset(hstr, 0, 11);
+    // the highest 48-bit integer has 15 digits
+    char* hstr = new char[15];
+    memset(hstr, 0, 15);
     strncpy(hstr, hpos, lpos - hpos - 1);
     char* lstr = (char*) lpos;
     if (!end) {
-        lstr = new char[11];
-        memset(lstr, 0, 11);
+        lstr = new char[15];
+        memset(lstr, 0, 15);
         const char* lend = strchr(lpos, '-');
         strncpy(lstr, lpos, lend - lpos);
     }
