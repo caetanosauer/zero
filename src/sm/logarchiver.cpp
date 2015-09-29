@@ -1304,72 +1304,11 @@ void LogArchiver::ArchiveScanner::MergeHeapEntry::moveToNext()
     }
 }
 
-lpid_t LogArchiver::ArchiveScanner::MergeHeapEntry::lastPIDinBlock()
-{
-    logrec_t* tmp = lr;
-    logrec_t* prev = lr;
-    while (tmp->type() != logrec_t::t_skip) {
-        prev = tmp;
-        w_assert0(tmp->length() > 0);
-        tmp = (logrec_t*) (((char*) tmp) + tmp->length());
-    }
-    return prev->pid();
-}
-
-void LogArchiver::ArchiveScanner::RunMerger::setEndPID(lpid_t endPID)
-{
-    for (int i = 0; i < heap.NumElements(); i++) {
-        MergeHeapEntry& entry = heap.Value(i);
-        entry.runScan->lastPID = endPID;
-    }
-}
-
 void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
 {
     w_assert0(!started);
     MergeHeapEntry entry(r);
     heap.AddElementDontHeapify(entry);
-}
-
-lpid_t LogArchiver::ArchiveScanner::RunMerger::getHighestFirstPID()
-{
-    lpid_t highestPID = lpid_t::null;
-    for (int i = 0; i < heap.NumElements(); i++) {
-        MergeHeapEntry& entry = heap.Value(i);
-        if (entry.pid > highestPID) {
-            highestPID = entry.pid;
-        }
-    }
-
-    return highestPID;
-}
-
-lpid_t LogArchiver::ArchiveScanner::RunMerger::getLowestLastPID()
-{
-    lpid_t lowestPID = lpid_t::null;
-    for (int i = 0; i < heap.NumElements(); i++) {
-        MergeHeapEntry& entry = heap.Value(i);
-        if (!entry.active) { continue; }
-
-        lpid_t pid = entry.lastPIDinBlock();
-        if (pid < lowestPID || lowestPID.is_null()) {
-            lowestPID = pid;
-        }
-    }
-    return lowestPID;
-}
-
-void LogArchiver::ArchiveScanner::RunMerger::advanceToPID(lpid_t pid)
-{
-    w_assert0(!started);
-    for (int i = 0; i < heap.NumElements(); i++) {
-        MergeHeapEntry& entry = heap.Value(i);
-        while (entry.pid < pid && entry.active) {
-            entry.moveToNext();
-        }
-        DBG3(<< "Heap entry advanced to pid " << entry.pid
-                << " with LSN " << entry.lsn);
-    }
 }
 
 bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)

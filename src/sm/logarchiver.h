@@ -507,8 +507,8 @@ public:
         struct RunScanner {
             const lsn_t runBegin;
             const lsn_t runEnd;
-            lpid_t firstPID;
-            lpid_t lastPID;
+            const lpid_t firstPID;
+            const lpid_t lastPID;
             size_t stopOffset;
 
             size_t offset;
@@ -593,10 +593,6 @@ public:
             void addInput(RunScanner* r);
             bool next(logrec_t*& lr);
             void dumpHeap(ostream& out);
-            lpid_t getHighestFirstPID();
-            lpid_t getLowestLastPID();
-            void advanceToPID(lpid_t pid);
-            void setEndPID(lpid_t pid);
 
             size_t heapSize()
             {
