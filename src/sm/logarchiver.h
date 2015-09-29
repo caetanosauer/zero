@@ -234,8 +234,11 @@ public:
         void newBlock(vector<pair<lpid_t, size_t> > buckets);
 
         rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
-        ProbeResult* probeFirst(lpid_t startPID, lpid_t endPID, lsn_t lsn);
-        void probeNext(ProbeResult*& prev, lsn_t endLSN = lsn_t::null);
+        ProbeResult* probeFirst(lpid_t startPID, lpid_t endPID, lsn_t lsn,
+                size_t minReadSize = 0, size_t maxReadSize = 0);
+        void probeNext(ProbeResult*& prev,
+                size_t minReadSize = 0, size_t maxReadSize = 0,
+                lsn_t endLSN = lsn_t::null);
 
         rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
         rc_t loadRunInfo(const char* fname);
@@ -296,7 +299,8 @@ public:
         size_t blocksInCurrentRun;
 
         size_t findRun(lpid_t endPID, lsn_t lsn);
-        void probeInRun(ProbeResult*);
+        void probeInRun(ProbeResult*,
+                size_t minReadSize = 0, size_t maxReadSize = 0);
         // binary search
         size_t findEntry(RunInfo* run, lpid_t pid,
                 int from = -1, int to = -1);
@@ -496,8 +500,9 @@ public:
 
         struct RunMerger;
 
-        RunMerger* open(lpid_t startPID, lpid_t endPID,
-                lsn_t startLSN, lsn_t endLSN = lsn_t::null);
+        RunMerger* open(lpid_t startPID, lpid_t endPID, lsn_t startLSN,
+                size_t minReadSize = 0, size_t maxReadSize = 0,
+                lsn_t endLSN = lsn_t::null);
 
         void close (RunMerger* merger)
         {

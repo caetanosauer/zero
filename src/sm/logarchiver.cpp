@@ -1106,18 +1106,19 @@ LogArchiver::ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory,
 
 LogArchiver::ArchiveScanner::RunMerger*
 LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
-        lsn_t startLSN, lsn_t endLSN)
+        lsn_t startLSN, size_t minReadSize, size_t maxReadSize, lsn_t endLSN)
 {
     RunMerger* merger = new RunMerger();
     vector<ProbeResult> probes;
 
     // probe for runs
     ArchiveIndex::ProbeResult* runProbe =
-        archIndex->probeFirst(startPID, endPID, startLSN);
+        archIndex->probeFirst(startPID, endPID, startLSN, minReadSize,
+                maxReadSize);
 
     while (runProbe) {
         probes.push_back(*runProbe);
-        archIndex->probeNext(runProbe, endLSN);
+        archIndex->probeNext(runProbe, minReadSize, maxReadSize, endLSN);
     }
 
     delete runProbe;
@@ -1140,7 +1141,6 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
         delete merger;
         return NULL;
     }
-
 
     return merger;
 }
@@ -2269,7 +2269,8 @@ size_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
     }
 }
 
-void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result)
+void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result,
+        size_t minReadSize, size_t maxReadSize)
 {
     // Assmuptions: mutex is held; run index and pid are set in given result
     size_t index = result->runIndex;
@@ -2297,20 +2298,41 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result)
         }
     }
 
-    // restrict binary search based on previous search
+    // Find index entry for the endPid using a restricted binary search
     size_t entryEnd = findEntry(run, result->pidEnd, entryBegin,
             run->entries.size() - 1);
-    if (result->pidEnd.is_null() || entryEnd >= run->entries.size() - 1) {
+
+    if (result->pidEnd.is_null()) {
         result->offsetEnd = 0; // zero indicates read until EOF
+        return;
     }
-    else {
+
+    // increase entryEnd until we achieve the minReadSize
+    do {
         // end offset must be exclusive (thus +1)
-        result->offsetEnd = run->entries[entryEnd+1].offset;
+        entryEnd++;
+        result->offsetEnd = run->entries[entryEnd].offset;
+    } while (result->offsetEnd - result->offsetBegin < minReadSize &&
+            entryEnd < run->entries.size() - 1);
+
+    // but decrease it if we passed the maxReadSize
+    if (maxReadSize > 0 && entryEnd - entryBegin > 1 &&
+            result->offsetEnd - result->offsetBegin > maxReadSize)
+    {
+        entryEnd--;
+    }
+
+    // now readjust endPID for the expanded read size
+    w_assert1(entryEnd < run->entries.size());
+    result->offsetEnd = run->entries[entryEnd].offset;
+    result->pidEnd = run->entries[entryEnd].pid;
+    if (entryEnd == run->entries.size() - 1) {
+        result->offsetEnd = 0; // read until EOF
     }
 }
 
 ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t startPID,
-        lpid_t endPID, lsn_t lsn)
+        lpid_t endPID, lsn_t lsn, size_t minReadSize, size_t maxReadSize)
 {
     CRITICAL_SECTION(cs, mutex);
 
@@ -2333,12 +2355,13 @@ ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t startPID,
     result->pidBegin = startPID;
     result->pidEnd = endPID;
     result->runIndex = index;
-    probeInRun(result);
+    probeInRun(result, minReadSize, maxReadSize);
 
     return result;
 }
 
-void LogArchiver::ArchiveIndex::probeNext(ProbeResult*& prev, lsn_t endLSN)
+void LogArchiver::ArchiveIndex::probeNext(ProbeResult*& prev,
+        size_t minReadSize, size_t maxReadSize, lsn_t endLSN)
 {
     CRITICAL_SECTION(cs, mutex);
 
@@ -2362,7 +2385,7 @@ void LogArchiver::ArchiveIndex::probeNext(ProbeResult*& prev, lsn_t endLSN)
     }
 
     prev->runIndex = index;
-    probeInRun(prev);
+    probeInRun(prev, minReadSize, maxReadSize);
 }
 
 void LogArchiver::ArchiveIndex::dumpIndex(ostream& out)
