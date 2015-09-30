@@ -89,7 +89,7 @@ public:
 
     // necessary and sufficient conditions for
     // is_null() are determined by default constructor, q.v.
-    bool        is_null() const { return page == 0; }
+    bool        is_null() const { return page == 0 && _vol == 0; }
 
     bool operator==(const lpid_t& p) const;
     bool operator!=(const lpid_t& p) const;
