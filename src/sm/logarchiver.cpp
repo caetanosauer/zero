@@ -1011,10 +1011,7 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
 
     if (bucketSize > 0 && lr->pid().page / bucketSize >= nextBucket) {
         buckets.push_back(pair<lpid_t, size_t>(lr->pid(), pos));
-        if (nextBucket == 0) {
-            nextBucket = lr->pid().page / bucketSize;
-        }
-        nextBucket++;
+        nextBucket = lr->pid().page / bucketSize + 1;
     }
 
     memcpy(dest + pos, lr, lr->length());
@@ -1974,7 +1971,8 @@ void LogArchiver::ArchiveIndex::newBlock(lpid_t firstPID)
     runs.back().entries.push_back(e);
 }
 
-void LogArchiver::ArchiveIndex::newBlock(vector<pair<lpid_t, size_t> > buckets)
+void LogArchiver::ArchiveIndex::newBlock(const vector<pair<lpid_t, size_t> >&
+        buckets)
 {
     CRITICAL_SECTION(cs, mutex);
 

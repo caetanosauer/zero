@@ -231,7 +231,7 @@ public:
         void init();
 
         void newBlock(lpid_t firstPID);
-        void newBlock(vector<pair<lpid_t, size_t> > buckets);
+        void newBlock(const vector<pair<lpid_t, size_t> >& buckets);
 
         rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
         ProbeResult* probeFirst(lpid_t startPID, lpid_t endPID, lsn_t lsn,
