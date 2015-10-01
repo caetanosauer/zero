@@ -891,7 +891,7 @@ alloc_a_page_log::alloc_a_page_log(vid_t vid, shpid_t pid)
 {
     memcpy(data_ssx(), &vid, sizeof(vid_t));
     memcpy(data_ssx() + sizeof(vid_t), &pid, sizeof(shpid_t));
-    fill(0, sizeof(vid_t) + sizeof(shpid_t));
+    fill(lpid_t(vid, 0), sizeof(vid_t) + sizeof(shpid_t));
 }
 
 void alloc_a_page_log::redo(fixable_page_h*)
@@ -908,7 +908,7 @@ dealloc_a_page_log::dealloc_a_page_log(vid_t vid, shpid_t pid)
 {
     memcpy(data_ssx(), &vid, sizeof(vid_t));
     memcpy(data_ssx() + sizeof(vid_t), &pid, sizeof(shpid_t));
-    fill(0, sizeof(vid_t) + sizeof(shpid_t));
+    fill(lpid_t(vid, 0), sizeof(vid_t) + sizeof(shpid_t));
 }
 
 void dealloc_a_page_log::redo(fixable_page_h*)

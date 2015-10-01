@@ -174,6 +174,11 @@ public:
         fill(NULL, 0, tag, length);
     }
 
+    void fill(lpid_t pid, smsize_t length)
+    {
+        fill(&pid, 0, 0, length);
+    }
+
     void fill(const generic_page_h& p, smsize_t length)
     {
         w_assert3(p.store() != 0);

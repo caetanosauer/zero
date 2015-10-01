@@ -206,6 +206,10 @@ sub def_rec {
       header._cat = $cat, header._type = t_$type;
       logrec_t::fill(p, store, tag, l);
     }
+    void fill(lpid_t pid, int l) {
+      header._cat = $cat, header._type = t_$type;
+      logrec_t::fill(&pid, 0, 0, l);
+    }
     void fill(const generic_page_h& p, int l) {
       header._cat = $cat, header._type = t_$type;
       logrec_t::fill(p, l);
