@@ -39,7 +39,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /**\brief General-purpose heap.
  *
- * This class implements a general purpose heap.  
+ * This class implements a general purpose heap.
  * The element type T and the ordering function (via class Cmp)
  * are passed in as parameters to the Heap template.
  *
@@ -70,7 +70,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * The comparison class, Cmp, must have the member functions
  *   gt (T* left, T* right) returns true iff left > right
  *
- * RemoveFirst always removes the largest element. 
+ * RemoveFirst always removes the largest element.
  *
  ****************************************************************************/
 
@@ -79,32 +79,32 @@ template <class T, class Cmp>
 class Heap
 {
     public:
-                        Heap(const Cmp& cmpFunction, 
+                        Heap(const Cmp& cmpFunction,
                                 int initialNumElements = 32);
                         ~Heap();
 
                         /**\brief How many elements in the heap? */
-        int             NumElements() const; 
+        int             NumElements() const;
 
                         /**\brief Take top/largest element off */
-        T               RemoveFirst();             
+        T               RemoveFirst();
 
                         /**\brief Remove element from the middle */
-        T               RemoveN(int i);      
+        T               RemoveN(int i);
 
                         /**\brief Put in heap and recompute to restore heap property */
-        void            AddElement(const T& elem); 
+        void            AddElement(const T& elem);
 
                         /**\brief Put in heap but do NOT recompute to restore heap property */
-        void            AddElementDontHeapify(const T& elem); 
+        void            AddElementDontHeapify(const T& elem);
                         /**\brief Recompute to restore heap property */
-        void            Heapify(); 
+        void            Heapify();
 
                         /**\brief Get reference to top of heap (do not remove) */
         T&              First();
 
                         /**\brief Get reference arbitrary element (do not remove) */
-        T&              Value(int i);       
+        T&              Value(int i);
 
                         /**\brief Get reference element just below top (do not remove) */
         const T&        Second() const;
@@ -114,24 +114,24 @@ class Heap
         void            ReplacedFirst();
 
                         /**\brief Inform heap that element \e i must rise in heap
-                         * to restore heap property. More efficient than general 
+                         * to restore heap property. More efficient than general
                          * Heapify() */
-        void            IncreasedN(int i); 
+        void            IncreasedN(int i);
 
                         /**\brief Inform heap that element \e i must drop in heap
-                         * to restore heap property. More efficient than general 
+                         * to restore heap property. More efficient than general
                          * Heapify() */
         void            DecreasedN(int i);
 
                         /**\brief Check heap property */
-        void            CheckHeap() const; 
+        void            CheckHeap() const;
 
                         /**\brief Dump heap */
         void            Print(ostream& out) const;
 
                         /**\brief Check heap property from given
                          * root to the bottom */
-        bool            HeapProperty(int root) const; 
+        bool            HeapProperty(int root) const;
 
     protected:
         int                numElements;
@@ -145,7 +145,7 @@ class Heap
         int                Parent(int i) const;
 
         void                PrintRoot(ostream& out, int rootElem, int indentLevel) const;
-        void                CheckHeapRoot(int rootElem) const; 
+        void                CheckHeapRoot(int rootElem) const;
                                 // check heap property for entire heap
         bool                HeapProperty(int lower, int upper) const; // check
                                 // heap property from lower->upper, inclusive
@@ -155,7 +155,7 @@ class Heap
         void                SiftUp(int rootElem); // fix heap from rootElem
                                 // to top of heap
 
-        void                GrowElements(int newSize); // accommodate more 
+        void                GrowElements(int newSize); // accommodate more
 };
 
 
@@ -337,7 +337,7 @@ void Heap<T, Cmp>::AddElement(const T& elem)
     }
     elements[rootElem] = elem;
 }
-            
+
 
 // use this to fill the heap initially.
 // proceed with a call to Heapify() when all elements are added.
@@ -358,7 +358,7 @@ void Heap<T, Cmp>::AddElementDontHeapify(const T& elem)
 // only rootElem violates the heap condition.
 //
 // starts at the rootElem and stops if there is a valid heap.
-// otherwise it sifts the rootElem down into the tree of the 
+// otherwise it sifts the rootElem down into the tree of the
 // larger of the children.
 //
 // this runs in O(log n).
@@ -372,7 +372,7 @@ void Heap<T, Cmp>::SiftDown(int rootElem)
     if(LeftChild(rootElem) < numElements) {
         w_assert9(HeapProperty(LeftChild(rootElem)));
     }
-    
+
     if (numElements > 1)  {
         const T rootValue = elements[rootElem];
         while (rootElem <= Parent(numElements - 1)) {
@@ -388,7 +388,7 @@ void Heap<T, Cmp>::SiftDown(int rootElem)
             }
 
             // If the larger child is larger than the root, swap the root
-            // with the larger child.  
+            // with the larger child.
             if (cmp.gt(elements[child], rootValue))  {
                 elements[rootElem] = elements[child];                // need to swap
                 rootElem = child;
@@ -421,7 +421,7 @@ void Heap<T, Cmp>::SiftUp(int rootElem)
     if(rootElem > 0) {
         const T rootValue = elements[rootElem];
         int         i = rootElem;
-        while (i > 0) { 
+        while (i > 0) {
             if (cmp.gt(rootValue, elements[Parent(i)]))  {
                 // Swap : move down parent
                 elements[i] = elements[Parent(i)];
@@ -432,7 +432,7 @@ void Heap<T, Cmp>::SiftUp(int rootElem)
         }
         elements[i] = rootValue;                                // complete swap
     }
-    /*  
+    /*
      * Now: legit down to and including root Elem
      */
     w_assert9(HeapProperty(0, rootElem));
@@ -485,12 +485,12 @@ void Heap<T, Cmp>::CheckHeapRoot(int rootElem) const
 {
     if (rootElem < numElements)  {
         if (LeftChild(rootElem) < numElements)  {
-            w_assert1(!cmp.gt(elements[LeftChild(rootElem)], 
+            w_assert1(!cmp.gt(elements[LeftChild(rootElem)],
                 elements[rootElem]));
             CheckHeapRoot(LeftChild(rootElem));
         }
         if (RightChild(rootElem) < numElements)  {
-            w_assert1(!cmp.gt(elements[RightChild(rootElem)], 
+            w_assert1(!cmp.gt(elements[RightChild(rootElem)],
                 elements[rootElem]));
             CheckHeapRoot(RightChild(rootElem));
         }
@@ -527,7 +527,7 @@ void Heap<T, Cmp>::PrintRoot(ostream& out, int rootElem, int indentLevel) const
         cout << elements[rootElem] << endl;
         PrintRoot(out, LeftChild(rootElem), indentLevel + 1);
         for (int i = 0; i < indentLevel; i++)  {
-            out << '\t';
+            out << ' ';
         }
         PrintRoot(out, RightChild(rootElem), indentLevel + 1);
     }
