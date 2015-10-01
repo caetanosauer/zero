@@ -1068,7 +1068,6 @@ rc_t ss_m::_truncate_log()
         logArchiver->shutdown();
 
         // generate empty run to fill hole of new partition
-        W_DO(logArchiver->getDirectory()->openNewRun());
         W_DO(logArchiver->getDirectory()->closeCurrentRun(newEndLSN, true));
         delete logArchiver;
         logArchiver = NULL;

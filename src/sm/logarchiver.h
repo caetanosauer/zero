@@ -347,7 +347,6 @@ public:
         // run generation methods
         rc_t append(const char* data, size_t length);
         rc_t closeCurrentRun(lsn_t runEndLSN, bool allowEmpty = false);
-        rc_t openNewRun();
 
         // run scanning methods
         rc_t openForScan(int& fd, lsn_t runBegin, lsn_t runEnd);
@@ -367,6 +366,11 @@ public:
         fileoff_t appendPos;
         size_t blockSize;
 
+        // closeCurrentRun needs mutual exclusion because it is called by both
+        // the writer thread and the archiver thread in processFlushRequest
+        pthread_mutex_t mutex;
+
+        rc_t openNewRun();
         os_dirent_t* scanDir(os_dir_t& dir);
     };
 

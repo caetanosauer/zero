@@ -267,7 +267,6 @@ void LogArchiver::ReaderThread::run()
 void LogArchiver::WriterThread::run()
 {
     DBGTHRD(<< "Writer thread activated");
-    W_COERCE(directory->openNewRun());
 
     while(true) {
         char const* src = buf->consumerRequest();
@@ -303,7 +302,6 @@ void LogArchiver::WriterThread::run()
              *  holes exist in the archive.
              */
             W_COERCE(directory->closeCurrentRun(maxLSNInRun));
-            W_COERCE(directory->openNewRun());
             w_assert1(directory->getLastLSN() == maxLSNInRun);
             currentRun = run;
             maxLSNInRun = lsn_t::null;
@@ -569,6 +567,11 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
     SKIP_LOGREC._len = sizeof(baseLogHeader);
     SKIP_LOGREC._type = logrec_t::t_skip;
     SKIP_LOGREC._cat = 1; // t_status is protected...
+
+    DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
+
+    // ArchiveDirectory invariant is that current_run file always exists
+    openNewRun();
 }
 
 LogArchiver::ArchiveDirectory::~ArchiveDirectory()
@@ -576,6 +579,7 @@ LogArchiver::ArchiveDirectory::~ArchiveDirectory()
     if(archIndex) {
         delete archIndex;
     }
+    DO_PTHREAD(pthread_mutex_destroy(&mutex));
 }
 
 rc_t LogArchiver::ArchiveDirectory::listFiles(std::vector<std::string>* list)
@@ -628,39 +632,41 @@ rc_t LogArchiver::ArchiveDirectory::openNewRun()
 rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN,
         bool allowEmpty)
 {
-    if (appendFd < 0) {
-        W_FATAL_MSG(fcINTERNAL,
-            << "Attempt to close unopened run");
-    }
-    if (appendPos == 0 && !allowEmpty) {
-        // nothing was appended -- just close file and return
-        w_assert0(runEndLSN == lsn_t::null);
-        W_DO(me()->close(appendFd));
-        appendFd = -1;
-        return RCOK;
-    }
-    w_assert1(runEndLSN != lsn_t::null);
+    CRITICAL_SECTION(cs, mutex);
 
-    if (lastLSN != runEndLSN) {
-        std::stringstream fname;
-        fname << archdir << "/" << LogArchiver::RUN_PREFIX
-            << lastLSN << "-" << runEndLSN;
+    if (appendFd >= 0) {
+        if (appendPos == 0 && !allowEmpty) {
+            // nothing was appended -- just close file and return
+            w_assert0(runEndLSN == lsn_t::null);
+            W_DO(me()->close(appendFd));
+            appendFd = -1;
+            return RCOK;
+        }
+        w_assert1(runEndLSN != lsn_t::null);
 
-        std::string currentFName = archdir + "/" + CURR_RUN_FILE;
-        W_DO(me()->frename(appendFd, currentFName.c_str(), fname.str().c_str()));
+        if (lastLSN != runEndLSN) {
+            std::stringstream fname;
+            fname << archdir << "/" << LogArchiver::RUN_PREFIX
+                << lastLSN << "-" << runEndLSN;
 
-        // register index information and write it on end of file
-        if (archIndex) {
-            archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
+            std::string currentFName = archdir + "/" + CURR_RUN_FILE;
+            W_DO(me()->frename(appendFd, currentFName.c_str(), fname.str().c_str()));
+
+            // register index information and write it on end of file
+            if (archIndex) {
+                archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
+            }
+
+            DBGTHRD(<< "Closing current output run: " << fname.str());
         }
 
-        DBGTHRD(<< "Closing current output run: " << fname.str());
+        W_DO(me()->close(appendFd));
+        appendFd = -1;
     }
 
-    W_DO(me()->close(appendFd));
-    appendFd = -1;
-
     lastLSN = runEndLSN;
+
+    openNewRun();
 
     return RCOK;
 }
@@ -1613,7 +1619,6 @@ bool LogArchiver::processFlushRequest()
             // Forcibly close current run to guarantee that LSN is persisted
             W_COERCE(directory->closeCurrentRun(flushReqLSN,
                         true /* allowEmpty */));
-            W_COERCE(directory->openNewRun());
             blkAssemb->resetWriter();
 
             /* Now we know that the requested LSN has been processed by the
