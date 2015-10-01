@@ -223,8 +223,7 @@ public:
             lpid_t pidEnd;
             lsn_t runBegin;
             lsn_t runEnd;
-            size_t offsetBegin;
-            size_t offsetEnd;
+            size_t offset;
             size_t runIndex;
         };
 
@@ -239,6 +238,9 @@ public:
         void probeNext(ProbeResult*& prev,
                 size_t minReadSize = 0, size_t maxReadSize = 0,
                 lsn_t endLSN = lsn_t::null);
+        void probe(std::vector<ProbeResult>& probes,
+                lpid_t startPID, lsn_t startLSN, size_t segmentSize,
+                size_t minReadSize, size_t maxReadSize);
 
         rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
         rc_t loadRunInfo(const char* fname);
@@ -298,8 +300,8 @@ public:
         // number of blocks in current run (used by variable buckets only)
         size_t blocksInCurrentRun;
 
-        size_t findRun(lpid_t endPID, lsn_t lsn);
-        void probeInRun(ProbeResult*,
+        size_t findRun(lsn_t lsn);
+        void probeInRun(ProbeResult&, size_t segmentSize,
                 size_t minReadSize = 0, size_t maxReadSize = 0);
         // binary search
         size_t findEntry(RunInfo* run, lpid_t pid,
@@ -500,9 +502,9 @@ public:
 
         struct RunMerger;
 
-        RunMerger* open(lpid_t startPID, lpid_t endPID, lsn_t startLSN,
-                size_t minReadSize = 0, size_t maxReadSize = 0,
-                lsn_t endLSN = lsn_t::null);
+        RunMerger* open(lpid_t startPID, lsn_t startLSN, size_t segmentSize = 0,
+                size_t maxSegments = 1, size_t minReadSize = 0,
+                size_t maxReadSize = 0);
 
         void close (RunMerger* merger)
         {
@@ -514,7 +516,6 @@ public:
             const lsn_t runEnd;
             const lpid_t firstPID;
             const lpid_t lastPID;
-            size_t stopOffset;
 
             size_t offset;
             char* buffer;
@@ -530,10 +531,6 @@ public:
             virtual ~RunScanner();
 
             bool next(logrec_t*& lr);
-
-            void setStopOffset(size_t offset) {
-                stopOffset = offset;
-            }
 
             friend std::ostream& operator<< (ostream& os, const RunScanner& m);
 

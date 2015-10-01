@@ -1094,31 +1094,39 @@ LogArchiver::ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory,
 }
 
 LogArchiver::ArchiveScanner::RunMerger*
-LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
-        lsn_t startLSN, size_t minReadSize, size_t maxReadSize, lsn_t endLSN)
+LogArchiver::ArchiveScanner::open(lpid_t startPID, lsn_t startLSN,
+        size_t segmentSize, size_t maxSegments,
+        size_t minReadSize, size_t maxReadSize)
 {
     RunMerger* merger = new RunMerger();
     vector<ProbeResult> probes;
 
     // probe for runs
-    ArchiveIndex::ProbeResult* runProbe =
-        archIndex->probeFirst(startPID, endPID, startLSN, minReadSize,
-                maxReadSize);
+    archIndex->probe(probes, startPID, startLSN, segmentSize,
+            minReadSize, maxReadSize);
 
-    while (runProbe) {
-        probes.push_back(*runProbe);
-        archIndex->probeNext(runProbe, minReadSize, maxReadSize, endLSN);
+    // decide how many segments to restore based on endPid of each probe
+    if (maxSegments == 0) { maxSegments = 1; }
+    lpid_t maxEndPid = lpid_t::null;
+    shpid_t maxRange = maxSegments * segmentSize;
+    for (size_t i = 0; i < probes.size(); i++) {
+        lpid_t end = probes[i].pidEnd;
+        if (end.is_null()) { continue; }
+        w_assert0(end.vol() == startPID.vol());
+        if (end.page - startPID.page <= maxRange && end > maxEndPid)
+        {
+            maxEndPid = end;
+        }
     }
 
-    delete runProbe;
-
+    // maxEndPid is the pid of the number of segments we decided above
     for (size_t i = 0; i < probes.size(); i++) {
         RunScanner* runScanner = new RunScanner(
                 probes[i].runBegin,
                 probes[i].runEnd,
-                startPID,
-                endPID,
-                probes[i].offsetBegin,
+                probes[i].pidBegin,
+                probes[i].pidEnd.is_null() ? lpid_t::null : maxEndPid,
+                probes[i].offset,
                 directory
         );
 
@@ -1150,7 +1158,6 @@ LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
     else {
         bucketSize = 0;
     }
-    stopOffset = 0;
 
     // skip tells first next invocation to read first block
     memcpy(buffer, &SKIP_LOGREC, sizeof(baseLogHeader));
@@ -1196,16 +1203,7 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
      */
     size_t readSize = blockSize;
     if (bucketSize > 0) {
-        if (stopOffset > 0 && offset >= stopOffset) {
-            W_COERCE(directory->closeScan(fd));
-            return false;
-        }
-
         readSize = blockSize - (offset % blockSize);
-        if (stopOffset > 0 && offset + readSize > stopOffset) {
-            readSize = stopOffset - offset;
-        }
-
         bpos = (offset % blockSize == 0) ? blockSize : 0;
     }
 
@@ -1264,15 +1262,16 @@ LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
         lsn = lr->lsn();
         pid = lr->pid();
         active = true;
+        DBG(<< "Run scan opened on pid " << lr->pid() << " afer " << startPID);
 
-        // Advance to second PID to guarantee that all log records of the
-        // retrieved PID are on this block (and maybe after)
-        if (pid != startPID && runScan->bucketSize == 0) {
+        // advance index until startPID is reached
+        if (pid < startPID) {
             bool hasNext = true;
-            while (hasNext && lr->pid() == pid) {
+            while (hasNext && lr->pid() < startPID) {
                 hasNext = runScan->next(lr);
             }
             if (hasNext) {
+                DBG(<< "Run scan advanced to pid " << lr->pid() << " afer " << startPID);
                 pid = lr->pid();
                 lsn = lr->lsn();
             }
@@ -2157,7 +2156,7 @@ rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
     return RCOK;
 }
 
-size_t LogArchiver::ArchiveIndex::findRun(lpid_t endPID, lsn_t lsn)
+size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
 {
     // Assumption: mutex is held by caller
     if (lsn == lsn_t::null) {
@@ -2175,30 +2174,10 @@ size_t LogArchiver::ArchiveIndex::findRun(lpid_t endPID, lsn_t lsn)
         result--;
     }
 
-    /*
-    if (result == 0 && runs[result].firstLSN > lsn) {
-        // looking for an LSN which is not contained in the archive
-        // (can only happen if old runs were recycled)
-        result = -1;
+    // skip empty runs
+    while (runs[result].entries.size() == 0 && result <= lastFinished) {
+        result++;
     }
-    */
-
-    /*
-    if (result >= 0 && endPID != lpid_t::null) {
-        // Now go forward pruning with the given pid.  For old segments probing
-        // against new runs, endPID of segment will likely be less than the
-        // first PID in the runs, meaning the run can be pruned.
-        while (result <= lastFinished &&
-                endPID < runs[result].entries[0].pid)
-        {
-            result++;
-        }
-        if (result > lastFinished) {
-            result = -1;
-        }
-    }
-    */
-    (void) endPID;
 
     // caller must check if returned index is valid
     return result >= 0 ? result : runs.size();
@@ -2259,86 +2238,128 @@ size_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
     }
 }
 
-void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result,
-        size_t minReadSize, size_t maxReadSize)
+void LogArchiver::ArchiveIndex::probeInRun(ProbeResult& res,
+        size_t segmentSize, size_t minReadSize, size_t maxReadSize)
 {
     // Assmuptions: mutex is held; run index and pid are set in given result
-    size_t index = result->runIndex;
+    size_t index = res.runIndex;
     w_assert1((int) index <= lastFinished);
     RunInfo* run = &runs[index];
 
     // Step 1) Determine run LSN boundaries (which gives file name)
-    result->runBegin = runs[index].firstLSN;
-    result->runEnd = runs[index].lastLSN;
+    res.runBegin = runs[index].firstLSN;
+    res.runEnd = runs[index].lastLSN;
 
     // Step 2) Determine begin and end offsets within the file
     size_t entryBegin = 0;
-    if (result->pidBegin.is_null()) {
-        result->offsetBegin = 0;
+    if (res.pidBegin.is_null()) {
+        res.offset = 0;
     }
     else {
-        entryBegin = findEntry(run, result->pidBegin);
+        entryBegin = findEntry(run, res.pidBegin);
         // decide if we mean offset zero or entry zero
-        if (entryBegin == 0 && run->entries[0].pid >= result->pidBegin)
+        if (entryBegin == 0 && run->entries[0].pid >= res.pidBegin)
         {
-            result->offsetBegin = 0;
+            res.offset = 0;
         }
         else {
-            result->offsetBegin = run->entries[entryBegin].offset;
+            res.offset = run->entries[entryBegin].offset;
         }
+    }
+
+    if (segmentSize == 0) {
+        res.pidEnd = lpid_t::null;
+        return;
     }
 
     // Find index entry for the endPid using a restricted binary search
-    size_t entryEnd = findEntry(run, result->pidEnd, entryBegin,
-            run->entries.size() - 1);
+    res.pidEnd = lpid_t(res.pidBegin.vol(), res.pidBegin.page + segmentSize);
+    size_t entryEnd = findEntry(run, res.pidEnd, entryBegin,
+                run->entries.size() - 1);
 
-    if (result->pidEnd.is_null()) {
-        result->offsetEnd = 0; // zero indicates read until EOF
+    if (entryEnd >= run->entries.size() - 1) {
+        res.pidEnd = lpid_t::null; // read until EOF
         return;
     }
 
     // increase entryEnd until we achieve the minReadSize
+    size_t offsetEnd;
     do {
         // end offset must be exclusive (thus +1)
         entryEnd++;
-        result->offsetEnd = run->entries[entryEnd].offset;
-    } while (result->offsetEnd - result->offsetBegin < minReadSize &&
+        offsetEnd = run->entries[entryEnd].offset;
+    } while (offsetEnd - res.offset < minReadSize &&
             entryEnd < run->entries.size() - 1);
 
     // but decrease it if we passed the maxReadSize
     if (maxReadSize > 0 && entryEnd - entryBegin > 1 &&
-            result->offsetEnd - result->offsetBegin > maxReadSize)
+            offsetEnd - res.offset > maxReadSize)
     {
         entryEnd--;
     }
 
-    // now readjust endPID for the expanded read size
+    // now readjust endPID for the expanded read size, but using multiples
+    // of the segment size only
     w_assert1(entryEnd < run->entries.size());
-    result->offsetEnd = run->entries[entryEnd].offset;
-    result->pidEnd = run->entries[entryEnd].pid;
-    if (entryEnd == run->entries.size() - 1) {
-        result->offsetEnd = 0; // read until EOF
+    if (entryEnd < run->entries.size() - 1) {
+        res.pidEnd = run->entries[entryEnd].pid;
+        // make sure endPid is multiple of segment size
+        w_assert1(!res.pidEnd.is_null());
+        shpid_t shpid = res.pidEnd.page;
+        shpid -= shpid % segmentSize;
+        w_assert1(shpid % segmentSize == 0);
+        w_assert0(res.pidEnd.vol() == res.pidBegin.vol());
+        if (shpid <= res.pidBegin.page) {
+            shpid += segmentSize;
+        }
+        res.pidEnd = lpid_t(res.pidEnd.vol(), shpid);
     }
+    else {
+        res.pidEnd = lpid_t::null; // read until EOF
+    }
+
+    // ERROUT(<< "Run probe on " << index << " adjusted to "
+    //         << entryEnd - entryBegin << " entries "
+    //         << " from pid " << res.pidBegin << " to " << res.pidEnd
+    //         << " read size is " << offsetEnd - res.offset
+    //         << " of min " << minReadSize);
 }
 
+void LogArchiver::ArchiveIndex::probe(std::vector<ProbeResult>& probes,
+        lpid_t startPID, lsn_t startLSN, size_t segmentSize,
+        size_t minReadSize, size_t maxReadSize)
+{
+    CRITICAL_SECTION(cs, mutex);
+
+    size_t index = findRun(startLSN);
+    probes.clear();
+
+    ProbeResult res;
+    while ((int) index <= lastFinished) {
+        if (runs[index].entries.size() > 0) {
+            res.pidBegin = startPID;
+            res.pidEnd = lpid_t::null;
+            res.runIndex = index;
+            probeInRun(res, segmentSize, minReadSize, maxReadSize);
+
+            probes.push_back(res);
+        }
+        index++;
+    }
+
+}
+
+#if 0
 ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t startPID,
         lpid_t endPID, lsn_t lsn, size_t minReadSize, size_t maxReadSize)
 {
     CRITICAL_SECTION(cs, mutex);
 
     lsn_t runEndLSN;
-    size_t index = findRun(endPID, lsn);
+    size_t index = findRun(lsn);
 
     if ((int) index > lastFinished) {
-        // runs beyond lastFinished are unavailable for probing
         return NULL;
-    }
-
-    while (runs[index].entries.size() == 0) {
-        index++;
-        if ((int) index > lastFinished) {
-            return NULL;
-        }
     }
 
     ProbeResult* result = new ProbeResult();
@@ -2377,6 +2398,7 @@ void LogArchiver::ArchiveIndex::probeNext(ProbeResult*& prev,
     prev->runIndex = index;
     probeInRun(prev, minReadSize, maxReadSize);
 }
+#endif
 
 void LogArchiver::ArchiveIndex::dumpIndex(ostream& out)
 {

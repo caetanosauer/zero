@@ -288,8 +288,18 @@ RestoreMgr::RestoreMgr(const sm_options& options,
 
     reuseRestoredBuffer =
         options.get_bool_option("sm_restore_reuse_buffer", false);
-    tryMultipleSegments =
-        options.get_bool_option("sm_restore_multiple_segments", false);
+    multipleSegments =
+        options.get_int_option("sm_restore_multiple_segments", 1);
+    if (multipleSegments > 1) {
+        minReadSize =
+            options.get_int_option("sm_restore_min_read_size", 1048576);
+        maxReadSize =
+            options.get_int_option("sm_restore_max_read_size", 1048576 * 8);
+    }
+    else {
+        minReadSize = 0;
+        maxReadSize = 0;
+    }
 
     DO_PTHREAD(pthread_mutex_init(&restoreCondMutex, NULL));
     DO_PTHREAD(pthread_cond_init(&restoreCond, NULL));
@@ -476,9 +486,7 @@ void RestoreMgr::restoreMetadata()
 
     // open scan on pages [0, firstDataPid) to get all metadata operations
     LogArchiver::ArchiveScanner::RunMerger* merger =
-        logScan.open(lpid_t(volume->vid(), 0),
-                lpid_t(volume->vid(), firstDataPid),
-                lsn_t::null);
+        logScan.open(lpid_t(volume->vid(), 0), lsn_t::null, firstDataPid);
 
     logrec_t* lr;
     while (merger->next(lr)) {
@@ -508,10 +516,10 @@ void RestoreMgr::singlePassLoop()
     lsn_t startLSN = useBackup ? volume->get_backup_lsn() : lsn_t(1,0);
 
     lpid_t startPid = lpid_t(volume->vid(), firstDataPid);
-    lpid_t endPid = lpid_t(volume->vid(), volume->num_pages());
     LogArchiver::ArchiveScanner logScan(archive);
     LogArchiver::ArchiveScanner::RunMerger* merger =
-        logScan.open(startPid, endPid, startLSN);
+        logScan.open(startPid, startLSN, volume->num_pages());
+
     if (!merger) {
         // nothing to replay
         return;
@@ -586,7 +594,10 @@ void RestoreMgr::restoreSegment(char* workspace,
 
         w_assert1(lrpid.page < firstPage + segmentSize);
 
-        if (virgin) { continue; }
+        if (virgin) {
+            DBG3(<< "Skipped virgin page " << current);
+            continue;
+        }
 
         w_assert1(page->pid.page == 0 || page->pid.page == current);
 
@@ -608,6 +619,7 @@ void RestoreMgr::restoreSegment(char* workspace,
         w_assert1(lr->page_prev_lsn() == lsn_t::null ||
                 lr->page_prev_lsn() == page->lsn);
 
+        // DBG3(<< "Replaying " << *lr);
         lr->redo(&fixable);
         fixable.update_initial_and_last_lsn(lr->lsn_ck());
         fixable.update_clsn(lr->lsn_ck());
@@ -662,7 +674,6 @@ void RestoreMgr::restoreLoop()
         // FOR EACH SEGMENT
         unsigned segment = getSegmentForPid(requested);
         shpid_t firstPage = getPidForSegment(segment);
-        size_t segmentCount = 1;
 
         if (firstPage > lastUsedPid) {
             DBG(<< "Restore finished on last used page ID " << lastUsedPid);
@@ -670,8 +681,7 @@ void RestoreMgr::restoreLoop()
             break;
         }
 
-        lpid_t start = lpid_t(volume->vid(), firstPage);
-        lpid_t end = lpid_t(volume->vid(), firstPage + segmentSize);
+        lpid_t start = lpid_t(volume->vid(), std::max(firstDataPid, firstPage));
         lsn_t backupLSN = volume->get_backup_lsn();
 
         /* CS TODO:
@@ -713,11 +723,11 @@ void RestoreMgr::restoreLoop()
 #endif
 
         LogArchiver::ArchiveScanner::RunMerger* merger =
-            logScan.open(start, end, backupLSN);
+            logScan.open(start, backupLSN, segmentSize, multipleSegments,
+                    minReadSize, maxReadSize);
 
         DBG3(<< "RunMerger opened with " << merger->heapSize() << " runs"
-                << " for " << segmentCount << " segments starting on LSN "
-                << backupLSN);
+                << " starting on LSN " << backupLSN);
 
         ADD_TSTAT(restore_time_openscan, timer.time_us());
 
@@ -725,7 +735,7 @@ void RestoreMgr::restoreLoop()
 
         ADD_TSTAT(restore_time_read, timer.time_us());
 
-        if (!merger) {
+        if (!merger || merger->heapSize() == 0) {
             // segment does not need any log replay
             // CS TODO BUG -- this may be the last seg, so short I/O happens
             finishSegment(workspace, segment, segmentSize);

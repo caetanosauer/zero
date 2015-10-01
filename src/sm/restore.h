@@ -181,9 +181,19 @@ protected:
 
     /** \brief Whether to try restore of multiple segments with a single log
      * archive scan. This should be beneficial for cases where a single log
-     * archiver log spans a large PID range
+     * archiver block spans a large PID range. If set to 0 or 1, the feature
+     * is turned off. Otherwise, this is the maximum number of segments that
+     * are restored with a single log archive scan.
      */
-    bool tryMultipleSegments;
+    unsigned multipleSegments;
+
+    /** \brief When attempting to restore multiple segments at a time, each
+     * log archive read will be adjusted (if possible) to be of at least
+     * minReadSize bytes, as long as a read of more than maxReadSize is not
+     * required in any other run.
+    */
+    size_t minReadSize;
+    size_t maxReadSize;
 
     /** \brief LSN of restore_begin log record, indicating at which LSN the
      * volume failure was detected. At startup, we must wait until this LSN
