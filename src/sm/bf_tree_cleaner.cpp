@@ -288,19 +288,42 @@ w_rc_t bf_tree_cleaner::force_volume(vid_t vol)
         return RCOK;
     }
     W_DO (_bufferpool->_volumes[vol]->_volume->get_fixed_bf()->flush());
-    _requested_volumes[vol] = true;
-    lintel::atomic_thread_fence(lintel::memory_order_release);
-    W_DO(wakeup_cleaner_for_volume(vol));
-    uint32_t interval = FORCE_SLEEP_MS_MIN;
-    while (_requested_volumes[vol] && !_dirty_shutdown_happening() && !_error_happened) {
-        DBGOUT2(<< "waiting in force_volume...");
-        usleep(interval * 1000);
-        interval *= 2;
-        if (interval >= FORCE_SLEEP_MS_MAX) {
-            interval = FORCE_SLEEP_MS_MAX;
+
+    while (true) {
+        _requested_volumes[vol] = true;
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+        W_DO(wakeup_cleaner_for_volume(vol));
+        uint32_t interval = FORCE_SLEEP_MS_MIN;
+        while (_requested_volumes[vol] && !_dirty_shutdown_happening() && !_error_happened) {
+            DBGOUT2(<< "waiting in force_volume...");
+            usleep(interval * 1000);
+            interval *= 2;
+            if (interval >= FORCE_SLEEP_MS_MAX) {
+                interval = FORCE_SLEEP_MS_MAX;
+            }
+            lintel::atomic_thread_fence(lintel::memory_order_consume);
         }
-        lintel::atomic_thread_fence(lintel::memory_order_consume);
+
+        // CS TODO: temporary fix to make sure all pages are cleaned.
+        // This is required because pages can be written in an older version
+        // when an update happens after the cleaner copy is taken. We need
+        // a better implementation for force_all, but eventually the whole
+        // cleaner will be rewritten, so this suffices for now.
+        bool all_clean = true;
+        bf_idx block_cnt = _bufferpool->_block_cnt;
+        for (bf_idx idx = 1; idx < block_cnt; ++idx) {
+            // no latching is needed -- fuzzy check
+            bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
+            if (cb._dirty) {
+                all_clean = false;
+                break;
+            }
+        }
+        if (all_clean) {
+            break;
+        }
     }
+
     if (_dirty_shutdown_happening()) {
         DBGOUT1(<< "joining all cleaner threads up to 100ms...");
         W_DO(join_cleaners(100));
