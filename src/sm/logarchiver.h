@@ -441,9 +441,9 @@ public:
         BlockAssembly(ArchiveDirectory* directory);
         virtual ~BlockAssembly();
 
-        bool start();
+        bool start(int run);
         bool add(logrec_t* lr);
-        void finish(int run);
+        void finish();
         void shutdown();
         bool hasPendingBlocks();
 

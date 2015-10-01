@@ -895,11 +895,11 @@ bool LogArchiver::selection()
         return false;
     }
 
-    if (!blkAssemb->start()) {
+    int run = heap->topRun();
+    if (!blkAssemb->start(run)) {
         return false;
     }
 
-    int run = heap->topRun();
     DBGTHRD(<< "Producing block for selection on run " << run);
     while (true) {
         if (heap->size() == 0 || run != heap->topRun()) {
@@ -917,14 +917,14 @@ bool LogArchiver::selection()
             break;
         }
     }
-    blkAssemb->finish(run);
+    blkAssemb->finish();
 
     return true;
 }
 
 LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
     : dest(NULL), maxLSNInBlock(lsn_t::null), maxLSNLength(0),
-    lastRun(-1)
+    lastRun(-1), bucketSize(0), nextBucket(0)
 {
     archIndex = directory->getIndex();
     blockSize = directory->getBlockSize();
@@ -932,12 +932,8 @@ LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
     writer = new WriterThread(writebuf, directory);
     writer->fork();
 
-    nextBucket = 0;
     if (archIndex) {
         bucketSize = archIndex->getBucketSize();
-    }
-    else {
-        bucketSize = 0;
     }
 }
 
@@ -973,7 +969,7 @@ size_t LogArchiver::BlockAssembly::getEndOfBlock(const char* b)
     return h->end;
 }
 
-bool LogArchiver::BlockAssembly::start()
+bool LogArchiver::BlockAssembly::start(int run)
 {
     DBGTHRD(<< "Requesting write block for selection");
     dest = writebuf->producerRequest();
@@ -988,6 +984,19 @@ bool LogArchiver::BlockAssembly::start()
     DBGTHRD(<< "Picked block for selection " << (void*) dest);
 
     pos = sizeof(BlockHeader);
+
+    if (run != lastRun) {
+        if (archIndex && lastRun >= 0) {
+            archIndex->appendNewEntry();
+        }
+        nextBucket = 0;
+        lastRun = run;
+    }
+
+    if (bucketSize > 0) {
+        buckets.clear();
+    }
+
     return true;
 }
 
@@ -1019,25 +1028,12 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
     return true;
 }
 
-void LogArchiver::BlockAssembly::finish(int run)
+void LogArchiver::BlockAssembly::finish()
 {
     DBGTHRD("Selection produced block for writing " << (void*) dest <<
-            " in run " << (int) run << " with end " << pos);
-
-    if (lastRun < 0) {
-        // lazy initialization
-        lastRun = run;
-    }
+            " in run " << (int) lastRun << " with end " << pos);
 
     if (archIndex) {
-        // Add new entry to index when we see a new run coming.
-        if (run != lastRun) {
-            // archIndex->appendNewEntry(lastPID);
-            archIndex->appendNewEntry();
-            lastRun = run;
-            nextBucket = 0;
-        }
-
         if (bucketSize == 0) {
             archIndex->newBlock(firstPID);
         }
@@ -1047,13 +1043,9 @@ void LogArchiver::BlockAssembly::finish(int run)
     }
     firstPID = lpid_t::null;
 
-    if (bucketSize > 0) {
-        buckets.clear();
-    }
-
     // write block header info
     BlockHeader* h = (BlockHeader*) dest;
-    h->run = run;
+    h->run = lastRun;
     h->end = pos;
     /*
      * CS: end LSN of a block/run has to be an exclusive boundary, whereas
