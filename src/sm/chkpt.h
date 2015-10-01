@@ -75,6 +75,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <algorithm>
 #include <limits>
 
+ typedef std::map<uint64_t, signed int> tid_CLR_map;
+
 // For checkpoint to gather lock information into heap if asked
 struct comp_lock_info_t;
 class CmpXctLockTids;
