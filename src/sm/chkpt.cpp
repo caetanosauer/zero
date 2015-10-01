@@ -196,7 +196,7 @@ NORET
 chkpt_m::chkpt_m()
     : _chkpt_thread(0), _chkpt_count(0)
 {
-    const size_t BLOCK_SIZE = 8192;
+    const size_t BLOCK_SIZE = 1024 * 1024;
     _chkpt_last = ss_m::log->master_lsn();
     if(_chkpt_last == lsn_t::null) {
         _chkpt_last = lsn_t(1,0);
