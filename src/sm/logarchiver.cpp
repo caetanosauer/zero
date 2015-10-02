@@ -1025,8 +1025,10 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
     }
 
     if (bucketSize > 0 && lr->pid().page / bucketSize >= nextBucket) {
-        buckets.push_back(pair<lpid_t, size_t>(lr->pid(), pos));
-        nextBucket = lr->pid().page / bucketSize + 1;
+        shpid_t shpid = (lr->pid().page / bucketSize) * bucketSize;
+        buckets.push_back(
+                pair<lpid_t, size_t>(lpid_t(lr->pid().vol(), shpid), pos));
+        nextBucket = shpid / bucketSize + 1;
     }
 
     memcpy(dest + pos, lr, lr->length());
