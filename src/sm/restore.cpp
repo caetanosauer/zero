@@ -404,6 +404,11 @@ void RestoreMgr::setSinglePass(bool singlePass)
     scheduler->setSinglePass(singlePass);
 }
 
+void RestoreMgr::setInstant(bool instant)
+{
+    instantRestore = instant;
+}
+
 bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
 {
     if (pid < firstDataPid || pid >= numPages) {

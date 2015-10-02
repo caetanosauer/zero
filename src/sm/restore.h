@@ -80,6 +80,14 @@ public:
      */
     void setSinglePass(bool singlePass = true);
 
+    /** \brief Set instant policy
+     *
+     * If true, access to segments will be enabled incrementally, as proposed
+     * in instant restore. Otherwise, a single-pass restore is performed. Used
+     * for taking a backup.
+     */
+    void setInstant(bool instant = true);
+
     /** \brief Sets the LSN of the restore_begin log record
      *
      * This is required so that we know (up to) which LSN to request from the

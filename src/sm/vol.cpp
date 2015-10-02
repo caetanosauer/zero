@@ -1150,6 +1150,7 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
             this, useBackup, true /* takeBackup */);
     restore.setSinglePass(true);
+    restore.setInstant(false);
     restore.fork();
     restore.join();
     // TODO -- do we have to catch errors from restore thread?
