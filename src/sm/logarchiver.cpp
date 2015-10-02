@@ -1253,7 +1253,7 @@ bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
 std::ostream& operator<< (ostream& os,
         const LogArchiver::ArchiveScanner::RunScanner& m)
 {
-    os << m.runBegin << "-" << m.runEnd;
+    os << m.runBegin << "-" << m.runEnd << " endPID=" << m.lastPID;
     return os;
 }
 
