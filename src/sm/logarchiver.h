@@ -233,11 +233,6 @@ public:
         void newBlock(const vector<pair<lpid_t, size_t> >& buckets);
 
         rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
-        ProbeResult* probeFirst(lpid_t startPID, lpid_t endPID, lsn_t lsn,
-                size_t minReadSize = 0, size_t maxReadSize = 0);
-        void probeNext(ProbeResult*& prev,
-                size_t minReadSize = 0, size_t maxReadSize = 0,
-                lsn_t endLSN = lsn_t::null);
         void probe(std::vector<ProbeResult>& probes,
                 lpid_t startPID, lpid_t endPID, lsn_t startLSN,
                 size_t segmentSize = 0, size_t minReadSize = 0,

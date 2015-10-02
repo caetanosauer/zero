@@ -2360,57 +2360,6 @@ void LogArchiver::ArchiveIndex::probe(std::vector<ProbeResult>& probes,
 
 }
 
-#if 0
-ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t startPID,
-        lpid_t endPID, lsn_t lsn, size_t minReadSize, size_t maxReadSize)
-{
-    CRITICAL_SECTION(cs, mutex);
-
-    lsn_t runEndLSN;
-    size_t index = findRun(lsn);
-
-    if ((int) index > lastFinished) {
-        return NULL;
-    }
-
-    ProbeResult* result = new ProbeResult();
-    result->pidBegin = startPID;
-    result->pidEnd = endPID;
-    result->runIndex = index;
-    probeInRun(result, minReadSize, maxReadSize);
-
-    return result;
-}
-
-void LogArchiver::ArchiveIndex::probeNext(ProbeResult*& prev,
-        size_t minReadSize, size_t maxReadSize, lsn_t endLSN)
-{
-    CRITICAL_SECTION(cs, mutex);
-
-    size_t index = prev->runIndex + 1;
-    while (true) {
-        w_assert0(index <= runs.size());
-        if (
-                (endLSN != lsn_t::null && endLSN < prev->runEnd) || // passed given end
-                ((int) index > lastFinished) // no more (finished) runs available
-           )
-        {
-            delete prev;
-            prev = NULL;
-            return;
-        }
-        // skip empty runs
-        if (runs[index].entries.size() > 0) {
-            break;
-        }
-        index++;
-    }
-
-    prev->runIndex = index;
-    probeInRun(prev, minReadSize, maxReadSize);
-}
-#endif
-
 void LogArchiver::ArchiveIndex::dumpIndex(ostream& out)
 {
     for (size_t i = 0; i < runs.size(); i++) {
