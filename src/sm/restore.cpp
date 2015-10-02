@@ -486,7 +486,8 @@ void RestoreMgr::restoreMetadata()
 
     // open scan on pages [0, firstDataPid) to get all metadata operations
     LogArchiver::ArchiveScanner::RunMerger* merger =
-        logScan.open(lpid_t(volume->vid(), 0), lsn_t::null, firstDataPid);
+        logScan.open(lpid_t(volume->vid(), 0),
+                lpid_t(volume->vid(), firstDataPid), lsn_t::null);
 
     logrec_t* lr;
     while (merger->next(lr)) {
@@ -518,7 +519,7 @@ void RestoreMgr::singlePassLoop()
     lpid_t startPid = lpid_t(volume->vid(), firstDataPid);
     LogArchiver::ArchiveScanner logScan(archive);
     LogArchiver::ArchiveScanner::RunMerger* merger =
-        logScan.open(startPid, startLSN, volume->num_pages());
+        logScan.open(startPid, lpid_t::null, startLSN);
 
     if (!merger) {
         // nothing to replay
@@ -681,7 +682,32 @@ void RestoreMgr::restoreLoop()
             break;
         }
 
-        lpid_t start = lpid_t(volume->vid(), std::max(firstDataPid, firstPage));
+        timer.reset();
+
+        char* workspace = backup->fix(segment);
+        ADD_TSTAT(restore_time_read, timer.time_us());
+
+        lpid_t startPID = lpid_t(volume->vid(), firstPage);
+        lpid_t endPID = lpid_t(volume->vid(), firstPage + segmentSize);
+        size_t actualSegmentSize = segmentSize;
+        if (firstPage < firstDataPid) {
+            // CS TODO: we need to revisit the metadata restore process.  It is
+            // not part of the normal restore loop, so we need to adjust the
+            // restore boundaries for the first segments. We also don't want to
+            // replay metadata log records if it's not correct to do so (as it
+            // is currently the case)
+            if (firstPage + segmentSize < firstDataPid) {
+                // we can skip this segment, since it is purely metadata
+                DBG (<< "Skipped metadata segment " << segment);
+                finishSegment(workspace, segment, segmentSize);
+                doneSegments.set(segment);
+                INC_TSTAT(restore_skipped_segs);
+                continue;
+            }
+            startPID = lpid_t(volume->vid(), firstDataPid);
+            actualSegmentSize -= firstDataPid % segmentSize;
+        }
+
         lsn_t backupLSN = volume->get_backup_lsn();
 
         /* CS TODO:
@@ -723,17 +749,13 @@ void RestoreMgr::restoreLoop()
 #endif
 
         LogArchiver::ArchiveScanner::RunMerger* merger =
-            logScan.open(start, backupLSN, segmentSize, multipleSegments,
-                    minReadSize, maxReadSize);
+            logScan.open(startPID, endPID, backupLSN, actualSegmentSize,
+                    multipleSegments, minReadSize, maxReadSize);
 
         DBG3(<< "RunMerger opened with " << merger->heapSize() << " runs"
                 << " starting on LSN " << backupLSN);
 
         ADD_TSTAT(restore_time_openscan, timer.time_us());
-
-        char* workspace = backup->fix(segment);
-
-        ADD_TSTAT(restore_time_read, timer.time_us());
 
         if (!merger || merger->heapSize() == 0) {
             // segment does not need any log replay

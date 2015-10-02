@@ -239,8 +239,9 @@ public:
                 size_t minReadSize = 0, size_t maxReadSize = 0,
                 lsn_t endLSN = lsn_t::null);
         void probe(std::vector<ProbeResult>& probes,
-                lpid_t startPID, lsn_t startLSN, size_t segmentSize,
-                size_t minReadSize, size_t maxReadSize);
+                lpid_t startPID, lpid_t endPID, lsn_t startLSN,
+                size_t segmentSize = 0, size_t minReadSize = 0,
+                size_t maxReadSize = 0);
 
         rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
         rc_t loadRunInfo(const char* fname);
@@ -506,9 +507,9 @@ public:
 
         struct RunMerger;
 
-        RunMerger* open(lpid_t startPID, lsn_t startLSN, size_t segmentSize = 0,
-                size_t maxSegments = 1, size_t minReadSize = 0,
-                size_t maxReadSize = 0);
+        RunMerger* open(lpid_t startPID, lpid_t endPID, lsn_t startLSN,
+                size_t segmentSize = 0, size_t maxSegments = 1,
+                size_t minReadSize = 0, size_t maxReadSize = 0);
 
         void close (RunMerger* merger)
         {
