@@ -231,7 +231,10 @@ public:
     void                 set_undoable_clr(const lsn_t& c);
     void                 set_pid(const lpid_t& p);
     kind_t               type() const;
-    const char*          type_str() const;
+    const char*          type_str() const
+    {
+        return get_type_str(type());
+    }
     static const char*   get_type_str(kind_t);
     const char*          cat_str() const;
     const char*          data() const;
