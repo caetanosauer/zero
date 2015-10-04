@@ -356,6 +356,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
 
     scheduler = new RestoreScheduler(options, this);
     bitmap = new RestoreBitmap(numPages / segmentSize + 1);
+    replayedBitmap = new RestoreBitmap(numPages / segmentSize + 1);
 }
 
 RestoreMgr::~RestoreMgr()
@@ -577,7 +578,9 @@ void RestoreMgr::restoreSegment(char* workspace,
                 // Time to move to a new segment (multiple-segment restore)
                 ADD_TSTAT(restore_time_replay, timer.time_us());
 
-                finishSegment(workspace, segment, current - firstPage);
+                size_t count = firstPage;
+                if (count > segmentSize) { count = segmentSize; }
+                finishSegment(workspace, segment, count);
                 ADD_TSTAT(restore_time_write, timer.time_us());
 
                 segment = getSegmentForPid(lrpid.page);
@@ -590,10 +593,7 @@ void RestoreMgr::restoreSegment(char* workspace,
 
                 // if doing offline restore, prefetch manually
                 if (!scheduler->isOnDemand()) {
-                    for (size_t i = 0; i < scheduler->getPrefetchWindow(); i++)
-                    {
-                        backup->prefetch(segment + i + 1, 0);
-                    }
+                    backup->prefetch(segment + 1, 0);
                 }
             }
         }
@@ -622,7 +622,7 @@ void RestoreMgr::restoreSegment(char* workspace,
         }
 
         w_assert1(page->pid == lrpid);
-        w_assert1(lr->page_prev_lsn() == lsn_t::null ||
+        w_assert0(lr->page_prev_lsn() == lsn_t::null ||
                 lr->page_prev_lsn() == page->lsn);
 
         // DBG3(<< "Replaying " << *lr);
@@ -653,19 +653,13 @@ void RestoreMgr::restoreSegment(char* workspace,
 
 void RestoreMgr::restoreLoop()
 {
-    // Additional bitmap to keep track of segments already replayed
-    // but not yet written out. This avoids restoring the same segment
-    // twice in the case that a request comes in for a segment which
-    // was already processed but not yet written out asynchronously.
-    RestoreBitmap doneSegments(numPages / segmentSize + 1);
-
     LogArchiver::ArchiveScanner logScan(archive);
 
     stopwatch_t timer;
 
     while (numRestoredPages < numPages) {
         shpid_t requested = scheduler->next();
-        if (doneSegments.get(getSegmentForPid(requested))) {
+        if (replayedBitmap->get(getSegmentForPid(requested))) {
             continue;
         }
         if (requested == shpid_t(0)) {
@@ -705,7 +699,6 @@ void RestoreMgr::restoreLoop()
                 // we can skip this segment, since it is purely metadata
                 DBG (<< "Skipped metadata segment " << segment);
                 finishSegment(workspace, segment, segmentSize);
-                doneSegments.set(segment);
                 INC_TSTAT(restore_skipped_segs);
                 continue;
             }
@@ -766,7 +759,6 @@ void RestoreMgr::restoreLoop()
             // segment does not need any log replay
             // CS TODO BUG -- this may be the last seg, so short I/O happens
             finishSegment(workspace, segment, segmentSize);
-            doneSegments.set(segment);
             INC_TSTAT(restore_skipped_segs);
             continue;
         }
@@ -775,7 +767,6 @@ void RestoreMgr::restoreLoop()
                 << firstPage << " - " << firstPage + segmentSize << ")");
 
         restoreSegment(workspace, merger, firstPage);
-        doneSegments.set(segment);
 
         delete merger;
     }
@@ -869,6 +860,8 @@ size_t RestoreMgr::restoreSegment(char* workspace,
 
 void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
 {
+    replayedBitmap->set(segment);
+
     // segments below the first data PID are metadata segments and should
     // not be writen by restore directly
     if (getPidForSegment(segment + 1) <= firstDataPid) {

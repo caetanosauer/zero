@@ -120,7 +120,12 @@ public:
     virtual void run();
 
 protected:
+    // Two bitmaps are required for asynchronous writing: one to tell which
+    // segments were replayed but not yet written (these are not available for
+    // transactions yet), and one to tell which segments were restored and
+    // written back already (thus available to transactions)
     RestoreBitmap* bitmap;
+    RestoreBitmap* replayedBitmap;
     RestoreScheduler* scheduler;
     LogArchiver::ArchiveDirectory* archive;
     vol_t* volume;
