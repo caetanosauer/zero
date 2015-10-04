@@ -1116,7 +1116,7 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
     // decide how many segments to restore based on endPid of each probe
     if (segmentSize > 0 && minReadSize > 0 && maxSegments > 0) {
         lpid_t maxEndPid = lpid_t::null;
-        shpid_t segmentBegin = startPID.page / segmentSize;
+        shpid_t segmentBegin = (startPID.page / segmentSize) * segmentSize;
         shpid_t maxRange = maxSegments * segmentSize;
         for (size_t i = 0; i < probes.size(); i++) {
             lpid_t end = probes[i].pidEnd;
@@ -1128,9 +1128,17 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
             }
         }
         for (size_t i = 0; i < probes.size(); i++) {
-            if (!probes[i].pidEnd.is_null()) {
-                probes[i].pidEnd = maxEndPid;
-            }
+            probes[i].pidEnd = maxEndPid;
+        }
+        if (!maxEndPid.is_null()) {
+            ERROUT(<< "Restoring segment with "
+                    << maxEndPid.page - startPID.page << " pages from "
+                    << startPID.page << " to " << maxEndPid.page);
+            INC_TSTAT(restore_multiple_segments);
+        }
+        else {
+            ERROUT(<< "Segment " << startPID
+                    << " being restored with null endPid");
         }
     }
 
@@ -1211,10 +1219,7 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
     w_assert1(offset / blockSize < blockCount);
 
     /* In the variable-bucket index, offsets are not necessarily multiples
-     * of the block size, so we always have to adjust the read size. We
-     * also don't know where the block ends, since we are not reading the
-     * block header. Thus, the buffer is zeroed, and we assume the end is
-     * when a logrec with length zero is found.
+     * of the block size, so we always have to adjust the read size.
      */
     size_t readSize = blockSize;
     if (bucketSize > 0) {
@@ -2321,8 +2326,7 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult& res,
         res.pidEnd = run->entries[entryEnd].pid;
         // make sure endPid is multiple of segment size
         w_assert1(!res.pidEnd.is_null());
-        shpid_t shpid = res.pidEnd.page;
-        shpid -= shpid % segmentSize;
+        shpid_t shpid = (res.pidEnd.page / segmentSize) * segmentSize;
         w_assert1(shpid % segmentSize == 0);
         w_assert0(res.pidEnd.vol() == res.pidBegin.vol());
         if (shpid <= res.pidBegin.page) {
