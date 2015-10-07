@@ -578,7 +578,7 @@ void RestoreMgr::restoreSegment(char* workspace,
                 // Time to move to a new segment (multiple-segment restore)
                 ADD_TSTAT(restore_time_replay, timer.time_us());
 
-                size_t count = firstPage;
+                int count = current - firstPage;
                 if (count > segmentSize) { count = segmentSize; }
                 finishSegment(workspace, segment, count);
                 ADD_TSTAT(restore_time_write, timer.time_us());
