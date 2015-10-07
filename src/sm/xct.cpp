@@ -436,23 +436,24 @@ xct_t::~xct_t()
         __saved_xct_log_t=0;
     }
 
-    if (LATCH_NL != latch().mode())
-    {
-        // Someone is accessing this txn, wait until it finished
-        w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
-
-        // Now we can delete the core, no one can acquire latch on this txn after this point
-        // since transaction is being destroyed
         if(_core)
             delete _core;
         _core = NULL;
+    // if (LATCH_NL != latch().mode())
+    // {
+    //     // Someone is accessing this txn, wait until it finished
+    //     w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
 
-        if (false == latch_rc.is_error())
-        {
-            if (latch().held_by_me())
-                latch().latch_release();
-        }
-    }
+    //     // Now we can delete the core, no one can acquire latch on this txn after this point
+    //     // since transaction is being destroyed
+
+    //     if (false == latch_rc.is_error())
+    //     {
+    //         // CS TODO if _core is nullified above, latch() causes segfault!
+    //         if (latch().held_by_me())
+    //             latch().latch_release();
+    //     }
+    // }
 }
 
 #if W_DEBUG_LEVEL > 2

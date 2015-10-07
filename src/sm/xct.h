@@ -864,8 +864,13 @@ public:
     latch_t* latchp() const
     {
         // If _core is gone (txn is being destroyed), return NULL
-        if ( NULL == _core)
-            return (latch_t *)NULL;
+        // CS TODO: this is incorrect. Threads waiting on the latch after
+        // core is destructed will encounter a segmentation fault. The real
+        // problem here is that an object should not be destroyed while some
+        // thread may still try to access it. We need a different design or
+        // some higher form of concurrency control.
+        // if ( NULL == _core)
+        //     return (latch_t *)NULL;
 
         return const_cast<latch_t*>(&(_latch));
     }
