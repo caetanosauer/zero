@@ -374,8 +374,6 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
 
     bool acquire_lock = true;
 
-    vector<logrec_t> lock_tables;
-
     DBGOUT1(<<"forward_scan_log("<<master_lsn<<", "<<begin_lsn<<")");
 
     cons->open(begin_lsn, false);
@@ -510,7 +508,17 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
                 // corresponding t_chkpt_xct_tab log record
                 if ((num_chkpt_end_handled == 0) && (true == restart_with_lock))
                 {
-                    lock_tables.push_back(*r);
+                    const chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r->data();
+
+                    // Go through all the locks and re-acquire them on the transaction object
+                    for (uint i = 0; i < dp->count; i++) {
+                        DBGOUT3(<<"_analysis_acquire_ckpt_lock_log - acquire key lock, hash: " << dp->xrec[i].lock_hash
+                            << ", key lock mode: " << dp->xrec[i].lock_mode.get_key_mode());
+                        lck_tab_entry_t entry;
+                        entry.lock_mode = dp->xrec[i].lock_mode;
+                        entry.lock_hash = dp->xrec[i].lock_hash;
+                        new_chkpt.lck_tab[dp->tid].push_back(entry);
+                    }
                 }
                 else
                 {
@@ -528,10 +536,13 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
             case logrec_t::t_chkpt_end:
                 if (num_chkpt_end_handled == 0)
                 {
-                    // We have finished processing all xcts from the chkpt, now
-                    // we can process the locks:
-                    for(uint i=0; i<lock_tables.size(); i++) {
-                        _analysis_ckpt_lock_log(lock_tables[i], new_chkpt);
+                    // We processed the t_chkpt_xct_lock before the t_chkpt_xct_tab.
+                    // Now we just make sure that all entries that we saw in
+                    // t_chkpt_xct_lock were also present in t_chkpt_xct_tab:
+                    for(lck_tab_t::iterator it=new_chkpt.lck_tab.begin();
+                         it!=new_chkpt.lck_tab.end(); ++it) {
+                        w_assert0(new_chkpt.xct_tab.count(it->first) == 1);
+                        w_assert0(new_chkpt.xct_tab[it->first].state == xct_t::xct_active);
                     }
                 }
                 num_chkpt_end_handled++;
