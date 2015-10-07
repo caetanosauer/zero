@@ -293,8 +293,6 @@ public:
          * variable number of log records, obviously).
          */
         size_t bucketSize;
-        // number of blocks in current run (used by variable buckets only)
-        size_t blocksInCurrentRun;
 
         size_t findRun(lsn_t lsn);
         void probeInRun(ProbeResult&, size_t segmentSize,
@@ -341,8 +339,8 @@ public:
         std::string getArchDir() { return archdir; }
 
         // run generation methods
-        rc_t append(const char* data, size_t length);
-        rc_t closeCurrentRun(lsn_t runEndLSN, bool allowEmpty = false);
+        rc_t append(char* data, size_t length);
+        rc_t closeCurrentRun(lsn_t runEndLSN);
 
         // run scanning methods
         rc_t openForScan(int& fd, lsn_t runBegin, lsn_t runEnd);
@@ -465,6 +463,7 @@ public:
         ArchiveIndex* archIndex;
         size_t blockSize;
         size_t pos;
+        size_t fpos;
 
         lpid_t firstPID;
         // lpid_t lastPID;
@@ -520,11 +519,12 @@ public:
             size_t offset;
             char* buffer;
             size_t bpos;
-            ArchiveDirectory* directory;
             int fd;
             size_t blockCount;
-
             size_t bucketSize;
+
+            ArchiveDirectory* directory;
+            LogScanner* scanner;
 
             RunScanner(lsn_t b, lsn_t e, lpid_t f, lpid_t l, fileoff_t o,
                     ArchiveDirectory* directory);

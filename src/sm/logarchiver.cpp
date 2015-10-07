@@ -269,7 +269,7 @@ void LogArchiver::WriterThread::run()
     DBGTHRD(<< "Writer thread activated");
 
     while(true) {
-        char const* src = buf->consumerRequest();
+        char* src = buf->consumerRequest();
         if (!src) {
             /* Is the finished flag necessary? Yes.
              * The reader thread stops once it reaches endLSN, and then it
@@ -314,7 +314,11 @@ void LogArchiver::WriterThread::run()
             maxLSNInRun = blockLSN;
         }
 
-        W_COERCE(directory->append(src, blockSize));
+        size_t blockEnd = BlockAssembly::getEndOfBlock(src);
+        size_t actualBlockSize= blockEnd - sizeof(BlockAssembly::BlockHeader);
+        memmove(src, src + sizeof(BlockAssembly::BlockHeader), actualBlockSize);
+
+        W_COERCE(directory->append(src, actualBlockSize));
 
         DBGTHRD(<< "Wrote out block " << (void*) src
                 << " with max LSN " << blockLSN);
@@ -629,20 +633,17 @@ rc_t LogArchiver::ArchiveDirectory::openNewRun()
     return RCOK;
 }
 
-rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN,
-        bool allowEmpty)
+rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
 {
     CRITICAL_SECTION(cs, mutex);
 
     if (appendFd >= 0) {
-        if (appendPos == 0 && !allowEmpty) {
+        if (appendPos == 0 && runEndLSN == lsn_t::null) {
             // nothing was appended -- just close file and return
-            w_assert0(runEndLSN == lsn_t::null);
             W_DO(me()->close(appendFd));
             appendFd = -1;
             return RCOK;
         }
-        w_assert1(runEndLSN != lsn_t::null);
 
         if (lastLSN != runEndLSN) {
             std::stringstream fname;
@@ -653,7 +654,12 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN,
             W_DO(me()->frename(appendFd, currentFName.c_str(), fname.str().c_str()));
 
             // register index information and write it on end of file
-            if (archIndex) {
+            if (archIndex && appendPos > 0) {
+                // take into account space for skip log record
+                appendPos += sizeof(baseLogHeader);
+                // and make sure data is written aligned to block boundary
+                appendPos -= appendPos % blockSize;
+                appendPos += blockSize;
                 archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
             }
 
@@ -671,10 +677,15 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN,
     return RCOK;
 }
 
-rc_t LogArchiver::ArchiveDirectory::append(const char* data, size_t length)
+rc_t LogArchiver::ArchiveDirectory::append(char* data, size_t length)
 {
+    // make sure there is always a skip log record at the end
+    w_assert1(length + sizeof(baseLogHeader) <= blockSize);
+    memcpy(data + length, &SKIP_LOGREC, sizeof(baseLogHeader));
+
     INC_TSTAT(la_block_writes);
-    W_COERCE(me()->pwrite(appendFd, data, length, appendPos));
+    W_DO(me()->pwrite(appendFd, data, length + sizeof(baseLogHeader),
+                appendPos));
     appendPos += length;
     return RCOK;
 }
@@ -693,6 +704,9 @@ rc_t LogArchiver::ArchiveDirectory::openForScan(int& fd, lsn_t runBegin,
     return RCOK;
 }
 
+/** Note: buffer must be allocated for at least readSize + IO_ALIGN bytes,
+ * otherwise direct I/O with alignment will corrupt memory.
+ */
 rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
         size_t& offset, size_t readSize)
 {
@@ -704,6 +718,7 @@ rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
     // make sure we don't read more than a block worth of data
     w_assert1(actualOffset <= offset);
     w_assert1(offset % blockSize != 0 || readSize == blockSize);
+    w_assert1(diff < IO_ALIGN);
 
     size_t actualReadSize = readSize + diff;
     if (actualReadSize % IO_ALIGN != 0) {
@@ -996,6 +1011,7 @@ bool LogArchiver::BlockAssembly::start(int run)
             archIndex->appendNewEntry();
         }
         nextBucket = 0;
+        fpos = 0;
         lastRun = run;
     }
 
@@ -1010,7 +1026,7 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
 {
     w_assert0(dest);
 
-    size_t available = blockSize - (sizeof(baseLogHeader) + pos);
+    size_t available = blockSize - (pos + sizeof(baseLogHeader));
     if (lr->length() > available) {
         return false;
     }
@@ -1027,12 +1043,13 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
     if (bucketSize > 0 && lr->pid().page / bucketSize >= nextBucket) {
         shpid_t shpid = (lr->pid().page / bucketSize) * bucketSize;
         buckets.push_back(
-                pair<lpid_t, size_t>(lpid_t(lr->pid().vol(), shpid), pos));
+                pair<lpid_t, size_t>(lpid_t(lr->pid().vol(), shpid), fpos));
         nextBucket = shpid / bucketSize + 1;
     }
 
     memcpy(dest + pos, lr, lr->length());
     pos += lr->length();
+    fpos += lr->length();
     return true;
 }
 
@@ -1065,9 +1082,6 @@ void LogArchiver::BlockAssembly::finish()
      * simply that run boundaries must match (i.e., endLSN(n) == beginLSN(n+1)
      */
     h->lsn = maxLSNInBlock.advance(maxLSNLength);
-
-    w_assert1(blockSize - pos >= sizeof(baseLogHeader));
-    memcpy(dest + pos, &SKIP_LOGREC, sizeof(baseLogHeader));
 
 #if W_DEBUG_LEVEL>=3
     // verify that all log records are within end boundary
@@ -1168,10 +1182,11 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
 LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
         lpid_t f, lpid_t l, fileoff_t o, ArchiveDirectory* directory)
 : runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
-    directory(directory), fd(-1), blockCount(0)
+    fd(-1), blockCount(0), directory(directory)
 {
     // Using direct I/O
-    posix_memalign((void**) &buffer, IO_ALIGN, directory->getBlockSize());
+    posix_memalign((void**) &buffer, IO_ALIGN,
+            directory->getBlockSize() + IO_ALIGN);
     // buffer = new char[directory->getBlockSize()];
     bpos = 0;
 
@@ -1182,8 +1197,8 @@ LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
         bucketSize = 0;
     }
 
-    // skip tells first next invocation to read first block
-    memcpy(buffer, &SKIP_LOGREC, sizeof(baseLogHeader));
+    scanner = new LogScanner(directory->getBlockSize());
+    bpos = directory->getBlockSize();
 }
 
 LogArchiver::ArchiveScanner::RunScanner::~RunScanner()
@@ -1191,6 +1206,8 @@ LogArchiver::ArchiveScanner::RunScanner::~RunScanner()
     if (fd > 0) {
         W_COERCE(directory->closeScan(fd));
     }
+
+    delete scanner;
 
     // Using direct I/O
     free(buffer);
@@ -1210,25 +1227,14 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
     }
 
     // do not read past data blocks into index blocks
-    if (blockCount == 0 || (offset / blockSize) >= blockCount)
+    if (blockCount == 0 || offset >= blockCount * blockSize)
     {
         W_COERCE(directory->closeScan(fd));
         return false;
     }
 
-    w_assert1(offset / blockSize < blockCount);
-
-    /* In the variable-bucket index, offsets are not necessarily multiples
-     * of the block size, so we always have to adjust the read size.
-     */
-    size_t readSize = blockSize;
-    if (bucketSize > 0) {
-        readSize = blockSize - (offset % blockSize);
-        bpos = (offset % blockSize == 0) ? blockSize : 0;
-    }
-
     // offset is updated by readBlock
-    W_COERCE(directory->readBlock(fd, buffer, offset, readSize));
+    W_COERCE(directory->readBlock(fd, buffer, offset, blockSize));
 
     // offset set to zero indicates EOF
     if (offset == 0) {
@@ -1236,31 +1242,30 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
         return false;
     }
 
-    if (bucketSize == 0 || bpos == blockSize) {
-        bpos = sizeof(BlockAssembly::BlockHeader);
-    }
+    bpos = 0;
 
     return true;
 }
 
 bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
 {
-    lr = (logrec_t*) (buffer + bpos);
-    while (lr->type() == logrec_t::t_skip) {
-        if (!nextBlock()) {
-            return false;
+    while (true) {
+        bool scanned = scanner->nextLogrec(buffer, bpos, lr);
+        if (!scanned) {
+            if (!nextBlock()) { return false; }
         }
-        lr = (logrec_t*) (buffer + bpos);
+        else { break; }
     }
 
     w_assert1(lr->valid_header());
 
-    if (lastPID != lpid_t::null && lr->pid() >= lastPID) {
+    if (lr->type() == logrec_t::t_skip ||
+                (lastPID != lpid_t::null && lr->pid() >= lastPID))
+    {
         // end of scan
         return false;
     }
 
-    bpos += lr->length();
     return true;
 }
 
@@ -1631,8 +1636,7 @@ bool LogArchiver::processFlushRequest()
             }
 
             // Forcibly close current run to guarantee that LSN is persisted
-            W_COERCE(directory->closeCurrentRun(flushReqLSN,
-                        true /* allowEmpty */));
+            W_COERCE(directory->closeCurrentRun(flushReqLSN));
             blkAssemb->resetWriter();
 
             /* Now we know that the requested LSN has been processed by the
@@ -1852,7 +1856,7 @@ tryagain:
 
     if (truncMissing > 0) {
         // finish up the trunc logrec from last block
-        DBGTHRD(<< "Reading partial log record -- missing: "
+        DBG5(<< "Reading partial log record -- missing: "
                 << truncMissing << " of " << truncCopied + truncMissing);
         w_assert1(truncMissing <= remaining);
         memcpy(truncBuf + truncCopied, src + pos, truncMissing);
@@ -1865,7 +1869,7 @@ tryagain:
     // we need at least two bytes to read the length
     else if (remaining == 1 || lr->length() > remaining) {
         // remainder of logrec must be read from next block
-        DBGTHRD(<< "Log record with length "
+        DBG5(<< "Log record with length "
                 << (remaining > 1 ? lr->length() : -1)
                 << " does not fit in current block of " << remaining);
         w_assert0(remaining <= LogArchiver::MAX_LOGREC_SIZE);
@@ -1944,7 +1948,7 @@ tryagain:
 LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize, lsn_t startLSN,
         size_t bucketSize)
     : blockSize(blockSize), lastFinished(-1),
-    bucketSize(bucketSize), blocksInCurrentRun(0)
+    bucketSize(bucketSize)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
     writeBuffer = new char[blockSize];
@@ -1992,13 +1996,11 @@ void LogArchiver::ArchiveIndex::newBlock(const vector<pair<lpid_t, size_t> >&
     for (size_t i = 0; i < buckets.size(); i++) {
         BlockEntry e;
         e.pid = buckets[i].first;
-        e.offset = blockSize * blocksInCurrentRun + buckets[i].second;
-        w_assert1(e.offset > prevOffset);
+        e.offset = buckets[i].second;
+        w_assert1(e.offset == 0 || e.offset > prevOffset);
         prevOffset = e.offset;
         runs.back().entries.push_back(e);
     }
-
-    blocksInCurrentRun++;
 }
 
 rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
@@ -2077,7 +2079,6 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
     size_t indexBlockCount = 0;
     size_t dataBlockCount = 0;
     W_DO(getBlockCounts(fd, &indexBlockCount, &dataBlockCount));
-    // w_assert1(dataBlockCount == 0 || dataBlockCount > indexBlockCount);
 
     fileoff_t offset = dataBlockCount * blockSize;
     w_assert1(dataBlockCount == 0 || offset > 0);
@@ -2128,7 +2129,6 @@ void LogArchiver::ArchiveIndex::appendNewEntry()
 
     RunInfo newRun;
     runs.push_back(newRun);
-    blocksInCurrentRun = 0;
 }
 
 rc_t LogArchiver::ArchiveIndex::loadRunInfo(const char* fname)
