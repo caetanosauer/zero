@@ -186,7 +186,7 @@ logrec_t::fill_xct_attr(const tid_t& tid, const lsn_t& last)
 bool
 logrec_t::valid_header(const lsn_t & lsn) const
 {
-    if (header._len < (is_single_sys_xct() ? hdr_single_sys_xct_sz : hdr_non_ssx_sz)
+    if (header._len < sizeof(baseLogHeader)
         || header._type >= logrec_t::t_max_logrec
         || cat() == t_bad_cat
         || header._len > sizeof(logrec_t)
