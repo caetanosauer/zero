@@ -542,7 +542,7 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
                     for(lck_tab_t::iterator it=new_chkpt.lck_tab.begin();
                          it!=new_chkpt.lck_tab.end(); ++it) {
                         w_assert0(new_chkpt.xct_tab.count(it->first) == 1);
-                        w_assert0(new_chkpt.xct_tab[it->first].state == xct_t::xct_active);
+                        //w_assert0(new_chkpt.xct_tab[it->first].state == xct_t::xct_active);
                     }
                 }
                 num_chkpt_end_handled++;
