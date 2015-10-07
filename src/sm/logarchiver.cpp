@@ -442,7 +442,7 @@ LogArchiver::~LogArchiver()
 lsn_t LogArchiver::ArchiveDirectory::parseLSN(const char* str, bool end)
 {
     char delim = end ? '-' : '_';
-    const char* hpos = strchr(str, delim) + 1;
+    const char* hpos = strrchr(str, delim) + 1;
     const char* lpos = strchr(hpos, '.') + 1;
 
     // the highest 48-bit integer has 15 digits
