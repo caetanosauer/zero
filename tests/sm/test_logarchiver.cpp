@@ -65,7 +65,7 @@ rc_t generateFakeArchive(LogArchiver::ArchiveDirectory* dir,
 
     while (runsGen < runCount) {
         unsigned bytesGen = 0;
-        assemb.start();
+        assemb.start(runsGen);
         while (bytesGen < bytesPerRun) {
             factory.next(&lr);
 
@@ -75,8 +75,8 @@ rc_t generateFakeArchive(LogArchiver::ArchiveDirectory* dir,
             assert(lr.valid_header(lr.lsn_ck()));
 
             if (!assemb.add(&lr)) {
-                assemb.finish(runsGen);
-                assemb.start();
+                assemb.finish();
+                assemb.start(runsGen);
                 bool worked = assemb.add(&lr);
                 EXPECT_TRUE(worked);
             }
@@ -85,7 +85,7 @@ rc_t generateFakeArchive(LogArchiver::ArchiveDirectory* dir,
             total++;
         }
 
-        assemb.finish(runsGen);
+        assemb.finish();
         runsGen++;
     }
 

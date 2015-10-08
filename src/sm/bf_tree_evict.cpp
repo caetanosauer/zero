@@ -136,7 +136,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         if (idx == _eviction_current_frame - 1) {
             W_DO(wakeup_cleaners());
             if (evicted_count == 0) {
-                ERROUT(<< "Eviction stuck! Nonleafs: " << nonleaf_count
+                DBG(<< "Eviction stuck! Nonleafs: " << nonleaf_count
                         << " invalid parents: " << invalid_parents
                         << " dirty: " << dirty_count);
                 rounds++;

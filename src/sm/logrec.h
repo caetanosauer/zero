@@ -659,11 +659,7 @@ logrec_t::set_pid(const lpid_t& p)
 inline bool
 logrec_t::null_pid() const
 {
-    // see lpid_t::is_null() for necessary and
-    // sufficient conditions
-    bool result = (header._shpid == 0);
-    w_assert3(result == (pid().is_null()));
-    return result;
+    return pid().is_null();
 }
 
 inline uint16_t
