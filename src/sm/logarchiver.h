@@ -329,8 +329,14 @@ public:
     class ArchiveDirectory {
     public:
         ArchiveDirectory(std::string archdir, size_t blockSize,
-                size_t bucketSize = 0);
+                size_t bucketSize = 0, lsn_t tailLSN = lsn_t::null);
         virtual ~ArchiveDirectory();
+
+        struct RunFileStats {
+            lsn_t beginLSN;
+            lsn_t endLSN;
+            size_t fileSize;
+        };
 
         lsn_t getStartLSN() { return startLSN; }
         lsn_t getLastLSN() { return lastLSN; }
@@ -347,9 +353,11 @@ public:
         rc_t readBlock(int fd, char* buf, size_t& offset, size_t readSize = 0);
         rc_t closeScan(int& fd);
 
-        rc_t listFiles(std::vector<std::string>* list);
+        rc_t listFiles(std::vector<std::string>& list);
+        rc_t listFileStats(std::list<RunFileStats>& list);
 
         static lsn_t parseLSN(const char* str, bool end = true);
+        static size_t getFileSize(int fd);
     private:
         ArchiveIndex* archIndex;
         std::string archdir;
@@ -729,6 +737,45 @@ public:
         bool readWholeBlocks;
 
         bool nextBlock();
+    };
+
+    /**
+     * Basic service to merge existing log archive runs into larger ones.
+     * Currently, the merge logic only supports the *very limited* use case of
+     * merging all N run files into a smaller n, depending on a given fan-in
+     * and size limits. Currently, it is used simply to run our restore
+     * experiments with different number of runs for the same log archive
+     * volume.
+     *
+     * In a proper implementation, we have to support useful policies, with the
+     * restriction that only consecutive runs can be merged. The biggest
+     * limitation right now is that we reuse the logic of BlockAssembly, but
+     * its control logic -- especially the coordination with the WriterThread
+     * -- is quite restricted to the usual case of a consumption of log records
+     * from the standard recovery log, i.e., ascending LSNs and run numbers,
+     * startLSN coming from the existing run files, etc. We have to make that
+     * logic clever and more abstract; or simply don't reuse the BlockAssembly
+     * infrastructure.
+     */
+    class MergerDaemon {
+    public:
+        MergerDaemon(ArchiveDirectory* in, ArchiveDirectory* out);
+        virtual ~MergerDaemon()
+        {}
+
+        rc_t runSync(size_t fanin, size_t minRunSize, size_t maxRunSize);
+        void runAsync(size_t fanin, size_t minRunSize, size_t maxRunSize);
+        rc_t join(bool terminate);
+
+    private:
+        ArchiveDirectory* indir;
+        ArchiveDirectory* outdir;
+        rc_t asyncRC;
+
+        rc_t doMerge(int runNumber,
+            list<ArchiveDirectory::RunFileStats>::const_iterator begin,
+            list<ArchiveDirectory::RunFileStats>::const_iterator end,
+            LogArchiver::BlockAssembly& blkAssemb);
     };
 
 public:

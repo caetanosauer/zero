@@ -460,6 +460,13 @@ lsn_t LogArchiver::ArchiveDirectory::parseLSN(const char* str, bool end)
     return lsn_t(atol(hstr), atol(lstr));
 }
 
+size_t LogArchiver::ArchiveDirectory::getFileSize(int fd)
+{
+    filestat_t fs;
+    W_COERCE(me()->fstat(fd, fs));
+    return fs.st_size;
+}
+
 os_dirent_t* LogArchiver::ArchiveDirectory::scanDir(os_dir_t& dir)
 {
     if (dir == NULL) {
@@ -477,7 +484,7 @@ os_dirent_t* LogArchiver::ArchiveDirectory::scanDir(os_dir_t& dir)
 }
 
 LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
-        size_t blockSize, size_t bucketSize)
+        size_t blockSize, size_t bucketSize, lsn_t tailLSN)
     : archdir(archdir),
     appendFd(-1), mergeFd(-1), appendPos(0), blockSize(blockSize)
 {
@@ -516,13 +523,17 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
         os_closedir(dir);
     }
 
-    // no runs found in archive log -- start from first available partition
+    // if no runs found in archive dir, try using the suggested tailLSN
     if (startLSN.hi() == 0) {
+        startLSN = tailLSN;
+    }
+
+    // no runs found in archive log -- start from first available partition
+    if (startLSN.hi() == 0 && smlevel_0::log) {
         int nextPartition = startLSN.hi();
         char *const fname = new char[smlevel_0::max_devname];
         if (!fname) W_FATAL(fcOUTOFMEMORY);
 
-        w_assert0(smlevel_0::log);
         int max = smlevel_0::log->durable_lsn().hi();
 
         while (nextPartition <= max) {
@@ -547,6 +558,11 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
         startLSN = lsn_t(nextPartition, 0);
     }
 
+    // nothing worked -- start from 1.0 and hope for the best
+    if (startLSN.hi() == 0) {
+        startLSN = lsn_t(1,0);
+    }
+
     // lastLSN is the end LSN of the last generated initial run
     lastLSN = startLSN;
 
@@ -554,7 +570,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
     archIndex = new ArchiveIndex(blockSize, startLSN, bucketSize);
 
     std::vector<std::string> runFiles;
-    listFiles(&runFiles);
+    listFiles(runFiles);
     std::vector<std::string>::const_iterator it;
     for(it=runFiles.begin(); it!=runFiles.end(); ++it) {
         std::string fname = archdir + "/" + *it;
@@ -586,19 +602,41 @@ LogArchiver::ArchiveDirectory::~ArchiveDirectory()
     DO_PTHREAD(pthread_mutex_destroy(&mutex));
 }
 
-rc_t LogArchiver::ArchiveDirectory::listFiles(std::vector<std::string>* list)
+rc_t LogArchiver::ArchiveDirectory::listFiles(std::vector<std::string>& list)
 {
-    w_assert0(list && list->size() == 0);
+    list.clear();
     os_dir_t dir = NULL;
     os_dirent_t* entry = scanDir(dir);
     while (entry != NULL) {
         const char* runName = entry->d_name;
         if (strncmp(RUN_PREFIX, runName, strlen(RUN_PREFIX)) == 0) {
-            list->push_back(std::string(runName));
+            list.push_back(std::string(runName));
         }
         entry = scanDir(dir);
     }
     os_closedir(dir);
+
+    return RCOK;
+}
+
+rc_t LogArchiver::ArchiveDirectory::listFileStats(list<RunFileStats>& list)
+{
+    list.clear();
+    vector<string> fnames;
+    listFiles(fnames);
+
+    RunFileStats stats;
+    for (size_t i = 0; i < fnames.size(); i++) {
+        stats.beginLSN = parseLSN(fnames[i].c_str(), false);
+        stats.endLSN = parseLSN(fnames[i].c_str(), true);
+
+        int fd;
+        openForScan(fd, stats.beginLSN, stats.endLSN);
+        stats.fileSize = getFileSize(fd);
+        closeScan(fd);
+
+        list.push_back(stats);
+    }
 
     return RCOK;
 }
@@ -1057,6 +1095,7 @@ void LogArchiver::BlockAssembly::finish()
 {
     DBGTHRD("Selection produced block for writing " << (void*) dest <<
             " in run " << (int) lastRun << " with end " << pos);
+    w_assert0(dest);
 
     if (archIndex) {
         if (bucketSize == 0) {
@@ -2144,9 +2183,7 @@ rc_t LogArchiver::ArchiveIndex::loadRunInfo(const char* fname)
 rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
         size_t* dataBlocks)
 {
-    filestat_t fs;
-    W_DO(me()->fstat(fd, fs));
-    fileoff_t fsize = fs.st_size;
+    size_t fsize = ArchiveDirectory::getFileSize(fd);
     w_assert1(fsize % blockSize == 0);
 
     // skip emtpy runs
@@ -2378,3 +2415,105 @@ void LogArchiver::ArchiveIndex::dumpIndex(ostream& out)
     }
 }
 
+LogArchiver::MergerDaemon::MergerDaemon(ArchiveDirectory* in,
+        ArchiveDirectory* out)
+    : indir(in), outdir(out)
+{
+    if (!outdir) { outdir = indir; }
+    w_assert0(indir && outdir);
+}
+
+typedef LogArchiver::ArchiveDirectory::RunFileStats RunFileStats;
+
+bool runComp(const RunFileStats& a, const RunFileStats& b)
+{
+    return a.beginLSN < b.beginLSN;
+}
+
+// CS TODO: this currently only works when merging contiguous runs in ascending
+// order, and only for all available runs at once. It fits the purposes of our
+// restore experiments, but it should be fixed in the future. See comments in
+// the header file.
+rc_t LogArchiver::MergerDaemon::runSync(size_t fanin, size_t minRunSize,
+        size_t maxRunSize)
+{
+    list<RunFileStats> stats;
+    indir->listFileStats(stats);
+
+    // sort list by LSN, since only contiguous runs are merged
+    stats.sort(runComp);
+
+    LogArchiver::BlockAssembly blkAssemb(outdir);
+
+    int runNumber = 0;
+    list<RunFileStats>::iterator iter = stats.begin();
+    while (iter != stats.end()) {
+        list<RunFileStats>::iterator begin = iter;
+        size_t accumSize = 0, i = 0;
+
+        // pick runs until getting fan-in or maxRunSize
+        while (i < fanin && iter != stats.end() &&
+                (maxRunSize == 0 || accumSize + iter->fileSize <= maxRunSize))
+        {
+            accumSize += iter->fileSize;
+            iter++;
+            i++;
+        }
+        w_assert0(maxRunSize == 0 || accumSize <= maxRunSize);
+
+        if (i == 0) {
+            iter++;
+            i++;
+            continue;
+        }
+
+        if (i == 1 || (minRunSize > 0 && accumSize < minRunSize)) {
+            // output too small or only one input -- don't merge
+            continue;
+        }
+
+        // now do the merge
+        W_DO(doMerge(runNumber++, begin, iter, blkAssemb));
+    }
+
+    blkAssemb.shutdown();
+
+    return RCOK;
+}
+
+rc_t LogArchiver::MergerDaemon::doMerge(int runNumber,
+        list<RunFileStats>::const_iterator begin,
+        list<RunFileStats>::const_iterator end,
+        LogArchiver::BlockAssembly& blkAssemb)
+{
+    ArchiveScanner::RunMerger merger;
+
+    ERROUT(<< "doMerge");
+    list<RunFileStats>::const_iterator iter = begin;
+    while (iter != end) {
+        ERROUT(<< "Merging " << iter->beginLSN << "-" << iter->endLSN);
+        ArchiveScanner::RunScanner* runScanner =
+            new ArchiveScanner::RunScanner(
+                iter->beginLSN, iter->endLSN, lpid_t::null, lpid_t::null,
+                0 /* offset */, indir
+            );
+
+        merger.addInput(runScanner);
+        iter++;
+    }
+
+    if (merger.heapSize() > 0) {
+        logrec_t* lr;
+        blkAssemb.start(runNumber);
+        while (merger.next(lr)) {
+            if (!blkAssemb.add(lr)) {
+                blkAssemb.finish();
+                blkAssemb.start(runNumber);
+                blkAssemb.add(lr);
+            }
+        }
+        blkAssemb.finish();
+    }
+
+    return RCOK;
+}
