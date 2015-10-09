@@ -108,9 +108,8 @@ public:
      * CS TODO -- concurrency control?
      */
     bool finished()
-    { return metadataRestored && numRestoredPages == numPages; }
+    { return metadataRestored && numRestoredPages == lastUsedPid; }
 
-    size_t getNumPages() { return numPages; }
     size_t getSegmentSize() { return segmentSize; }
     shpid_t getFirstDataPid() { return firstDataPid; }
     shpid_t getLastUsedPid() { return lastUsedPid; }
@@ -140,10 +139,6 @@ protected:
      * (must be a multiple of segmentSize)
      */
     size_t numRestoredPages;
-
-    /** \brief Total number of pages in the failed volume
-     */
-    size_t numPages;
 
     /** \brief First page ID to be restored (i.e., skipping metadata pages)
      */
@@ -351,7 +346,7 @@ protected:
     /// Number of segments to prefetch with sequential scheduling
     unsigned prefetchWindow;
 
-    size_t numPages;
+    shpid_t lastUsedPid;
 
     /** Keep track of first pid not restored to continue single-pass restore.
      * This is just a guess to prune the search for the next not restored.

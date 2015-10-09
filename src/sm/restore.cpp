@@ -106,8 +106,8 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
     : restore(restore)
 {
     w_assert0(restore);
-    numPages = restore->getNumPages();
     firstNotRestored = restore->getFirstDataPid();
+    lastUsedPid = restore->getLastUsedPid();
     trySinglePass =
         options.get_bool_option("sm_restore_sched_singlepass", true);
     onDemand =
@@ -125,7 +125,7 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
     unsigned firstSegment = 0;
     if (randomOrder) {
         // create list of segments in random order
-        size_t numSegments = numPages / restore->getSegmentSize() + 1;
+        size_t numSegments = lastUsedPid / restore->getSegmentSize() + 1;
         randomSegments.resize(numSegments);
         for (size_t i = 0; i < numSegments; i++) {
             randomSegments[i] = i;
@@ -181,7 +181,7 @@ shpid_t RestoreScheduler::next()
         }
         else {
             // if queue is empty, find the first not-yet-restored PID
-            while (next <= numPages && restore->isRestored(next)) {
+            while (next <= lastUsedPid && restore->isRestored(next)) {
                 // if next pid is already restored, then the whole segment is
                 next = next + restore->getSegmentSize();
             }
@@ -312,7 +312,6 @@ RestoreMgr::RestoreMgr(const sm_options& options,
      * the volume, which is required to control restore progress. The maximum
      * allocated page id, delivered by alloc_cache, is also needed
      */
-    numPages = volume->num_pages();
     firstDataPid = volume->first_data_pageid();
     lastUsedPid = volume->last_used_pageid();
 
@@ -355,8 +354,11 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     }
 
     scheduler = new RestoreScheduler(options, this);
-    bitmap = new RestoreBitmap(numPages / segmentSize + 1);
-    replayedBitmap = new RestoreBitmap(numPages / segmentSize + 1);
+    bitmap = new RestoreBitmap(lastUsedPid / segmentSize + 1);
+    replayedBitmap = new RestoreBitmap(lastUsedPid / segmentSize + 1);
+
+    // CS TODO: call restoreMetadata instead of this
+    numRestoredPages = firstDataPid;
 }
 
 RestoreMgr::~RestoreMgr()
@@ -412,7 +414,7 @@ void RestoreMgr::setInstant(bool instant)
 
 bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
 {
-    if (pid < firstDataPid || pid >= numPages) {
+    if (pid < firstDataPid || pid > lastUsedPid) {
         return false;
     }
 
@@ -537,7 +539,7 @@ void RestoreMgr::singlePassLoop()
     restoreSegment(workspace, merger, getPidForSegment(segment));
 
     // signalize that we're done
-    numRestoredPages = numPages;
+    numRestoredPages = lastUsedPid;
 }
 
 void RestoreMgr::restoreSegment(char* workspace,
@@ -657,7 +659,7 @@ void RestoreMgr::restoreLoop()
 
     stopwatch_t timer;
 
-    while (numRestoredPages < numPages) {
+    while (numRestoredPages < lastUsedPid) {
         shpid_t requested = scheduler->next();
         if (replayedBitmap->get(getSegmentForPid(requested))) {
             continue;
@@ -676,8 +678,9 @@ void RestoreMgr::restoreLoop()
         shpid_t firstPage = getPidForSegment(segment);
 
         if (firstPage > lastUsedPid) {
+            // CS TODO is this still necessary?
             DBG(<< "Restore finished on last used page ID " << lastUsedPid);
-            numRestoredPages = numPages;
+            numRestoredPages = lastUsedPid;
             break;
         }
 
@@ -944,8 +947,8 @@ void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
     // Mark whole segment as restored, even if no page was actually replayed
     // (i.e., segment contains only unused pages)
     numRestoredPages += segmentSize;
-    if (numRestoredPages >= numPages) {
-        numRestoredPages = numPages;
+    if (numRestoredPages >= lastUsedPid) {
+        numRestoredPages = lastUsedPid;
     }
 
     if (!redo) {
