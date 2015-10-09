@@ -167,9 +167,17 @@ shpid_t RestoreScheduler::next()
         BackupReader* backup = restore->getBackup();
 
         if (randomOrder) {
+            if (currentRandomSegment >= randomSegments.size()) {
+                return shpid_t(0);
+            }
+
             next = randomSegments[currentRandomSegment]
                 * restore->getSegmentSize();
             currentRandomSegment++;
+
+            if (next == 0) {
+                next = firstNotRestored;
+            }
 
             // prefetch segments
             if (currentRandomSegment % prefetchWindow == 0) {
@@ -669,13 +677,16 @@ void RestoreMgr::restoreLoop()
             usleep(2000); // 2 ms
             continue;
         }
-        w_assert0(requested >= firstDataPid);
 
         timer.reset();
 
         // FOR EACH SEGMENT
         unsigned segment = getSegmentForPid(requested);
         shpid_t firstPage = getPidForSegment(segment);
+
+        if (firstPage + segmentSize <= firstDataPid) {
+            continue;
+        }
 
         if (firstPage > lastUsedPid) {
             // CS TODO is this still necessary?
