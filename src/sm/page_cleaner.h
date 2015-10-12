@@ -8,22 +8,46 @@
 #include "vol.h"
 #include "generic_page.h"
 #include "logarchiver.h"
+#include "bf_tree.h"
 
 #include <vector>
 
+struct CleanerControl {
+    pthread_mutex_t mutex;
+    pthread_cond_t activateCond;
+    lsn_t endLSN;
+    bool activated;
+    bool listening;
+    bool* shutdownFlag;
+
+    CleanerControl(bool* shutdown);
+    ~CleanerControl();
+    bool activate(bool wait, lsn_t lsn = lsn_t::null);
+    bool waitForActivation();
+};
+
 class page_cleaner : public smthread_t {
 public:
-    page_cleaner (vol_t* _volume, LogArchiver::ArchiveDirectory* _archive);
+    const static int SEQ_PAGES = 16; // read/write 16 pages at a time
+
+    page_cleaner (vol_t* _volume, LogArchiver::ArchiveDirectory* _archive, bf_tree_m* _buffer);
     ~page_cleaner ();
     void run();
+    void activate(lsn_t endLSN);
+    void shutdown();
+    bool isActive() { return control.activated; }
 
 private:
     vol_t* volume;
     LogArchiver::ArchiveDirectory* archive;
-    lsn_t current_lsn;
-    vector<generic_page> write_buffer;
+    bf_tree_m* buffer_manager;
 
-    void flush_write_buffer();
+    vector<generic_page> workspace;
+
+    bool shutdownFlag;
+    CleanerControl control;
+
+    void flush_workspace();
 };
 
 

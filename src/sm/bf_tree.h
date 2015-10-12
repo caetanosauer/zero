@@ -163,6 +163,7 @@ class bf_tree_m {
     friend class bf_tree_cleaner_slave_thread_t; // for page cleaning
     friend class bf_eviction_thread_t;
     friend class WarmupThread;
+    friend class page_cleaner;
 
 public:
 #ifdef PAUSE_SWIZZLING_ON
