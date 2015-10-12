@@ -106,7 +106,8 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
     : restore(restore)
 {
     w_assert0(restore);
-    firstNotRestored = restore->getFirstDataPid();
+    firstNotRestored = shpid_t(0);
+    firstDataPid = restore->getFirstDataPid();
     lastUsedPid = restore->getLastUsedPid();
     trySinglePass =
         options.get_bool_option("sm_restore_sched_singlepass", true);
@@ -114,15 +115,12 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
         options.get_bool_option("sm_restore_sched_ondemand", true);
     randomOrder =
         options.get_bool_option("sm_restore_sched_random", false);
-    prefetchWindow =
-        options.get_int_option("sm_restore_prefetcher_window", 3);
 
     if (!onDemand) {
         // override single-pass option
         trySinglePass = true;
     }
 
-    unsigned firstSegment = 0;
     if (randomOrder) {
         // create list of segments in random order
         size_t numSegments = lastUsedPid / restore->getSegmentSize() + 1;
@@ -132,14 +130,6 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
         }
         std::random_shuffle(randomSegments.begin(), randomSegments.end());
         currentRandomSegment = 0;
-        firstSegment = randomSegments[0];
-    }
-
-    if (!onDemand) {
-        // prefetch first segments
-        for (size_t i = 0; i < prefetchWindow; i++) {
-            restore->getBackup()->prefetch(firstSegment + i, 0 /* priority */);
-        }
     }
 }
 
@@ -153,19 +143,17 @@ void RestoreScheduler::enqueue(const shpid_t& pid)
     queue.push(pid);
 }
 
-shpid_t RestoreScheduler::next()
+shpid_t RestoreScheduler::next(bool peek)
 {
     spinlock_write_critical_section cs(&mutex);
 
     shpid_t next = firstNotRestored;
     if (onDemand && queue.size() > 0) {
         next = queue.front();
-        queue.pop();
+        if (!peek) { queue.pop(); }
         INC_TSTAT(restore_sched_queued);
     }
     else if (trySinglePass) {
-        BackupReader* backup = restore->getBackup();
-
         if (randomOrder) {
             if (currentRandomSegment >= randomSegments.size()) {
                 return shpid_t(0);
@@ -173,36 +161,23 @@ shpid_t RestoreScheduler::next()
 
             next = randomSegments[currentRandomSegment]
                 * restore->getSegmentSize();
-            currentRandomSegment++;
-
-            if (next == 0) {
-                next = firstNotRestored;
-            }
-
-            // prefetch segments
-            if (currentRandomSegment % prefetchWindow == 0) {
-                for (size_t i = 0; i < prefetchWindow; i++) {
-                    backup->prefetch(randomSegments[currentRandomSegment + i],
-                            0 /* priority */);
-                }
-            }
+            if (!peek) { currentRandomSegment++; }
         }
         else {
             // if queue is empty, find the first not-yet-restored PID
+            if (next < firstDataPid) { next = firstDataPid; }
             while (next <= lastUsedPid && restore->isRestored(next)) {
                 // if next pid is already restored, then the whole segment is
                 next = next + restore->getSegmentSize();
             }
-            firstNotRestored = next + restore->getSegmentSize();
-
-            // prefetch segments
-            unsigned seg = restore->getSegmentForPid(firstNotRestored);
-            if (seg % prefetchWindow == 0) {
-                for (size_t i = 0; i < prefetchWindow; i++) {
-                    backup->prefetch(seg + i, 0 /* priority */);
-                }
+            if (!peek) {
+                firstNotRestored = next + restore->getSegmentSize();
             }
         }
+
+        if (next < firstDataPid) { next = firstDataPid; }
+        else if (next > lastUsedPid) { next = 0; }
+
         INC_TSTAT(restore_sched_seq);
     }
     else {
@@ -293,6 +268,8 @@ RestoreMgr::RestoreMgr(const sm_options& options,
         W_FATAL_MSG(fcINTERNAL,
                 << "Restore segment size must be a positive number");
     }
+    prefetchWindow =
+        options.get_int_option("sm_restore_prefetcher_window", 3);
 
     reuseRestoredBuffer =
         options.get_bool_option("sm_restore_reuse_buffer", false);
@@ -334,7 +311,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
         }
         else if (backupImpl == BackupPrefetcher::IMPL_NAME) {
             int numSegments = options.get_int_option(
-                    "sm_backup_prefetcher_segments", 10);
+                    "sm_backup_prefetcher_segments", 2);
             w_assert0(numSegments > 0);
             backup = new BackupPrefetcher(volume, numSegments, segmentSize);
             dynamic_cast<BackupPrefetcher*>(backup)->fork();
@@ -433,8 +410,6 @@ bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
     DBGTHRD(<< "Requesting restore of page " << pid);
     scheduler->enqueue(pid);
 
-    backup->prefetch(getSegmentForPid(pid), 1 /* priority */);
-
     if (addr && reuseRestoredBuffer) {
         spinlock_write_critical_section cs(&requestMutex);
 
@@ -530,8 +505,14 @@ void RestoreMgr::singlePassLoop()
 {
     stopwatch_t timer;
 
-    lsn_t startLSN = useBackup ? volume->get_backup_lsn() : lsn_t(1,0);
+    // prefetch first segment
+    unsigned segment = getSegmentForPid(firstDataPid);
+    for (size_t i = 0; i < prefetchWindow; i++) {
+        backup->prefetch(segment + i);
+    }
 
+    // open scan on beginning until EOF
+    lsn_t startLSN = useBackup ? volume->get_backup_lsn() : lsn_t(1,0);
     lpid_t startPid = lpid_t(volume->vid(), firstDataPid);
     LogArchiver::ArchiveScanner logScan(archive);
     LogArchiver::ArchiveScanner::RunMerger* merger =
@@ -542,7 +523,6 @@ void RestoreMgr::singlePassLoop()
         return;
     }
 
-    unsigned segment = 0;
     char* workspace = backup->fix(segment);
     restoreSegment(workspace, merger, getPidForSegment(segment));
 
@@ -601,9 +581,9 @@ void RestoreMgr::restoreSegment(char* workspace,
                 current = getPidForSegment(segment);
                 firstPage = current;
 
-                // if doing offline restore, prefetch manually
-                if (!scheduler->isOnDemand()) {
-                    backup->prefetch(segment + 1, 0);
+                // as we're done with one segment, prefetch another
+                if (!onDemand) {
+                    backup->prefetch(segment + prefetchWindow);
                 }
             }
         }
@@ -669,9 +649,6 @@ void RestoreMgr::restoreLoop()
 
     while (numRestoredPages < lastUsedPid) {
         shpid_t requested = scheduler->next();
-        if (replayedBitmap->get(getSegmentForPid(requested))) {
-            continue;
-        }
         if (requested == shpid_t(0)) {
             // no page available for now
             usleep(2000); // 2 ms
@@ -690,10 +667,17 @@ void RestoreMgr::restoreLoop()
 
         if (firstPage > lastUsedPid) {
             // CS TODO is this still necessary?
-            DBG(<< "Restore finished on last used page ID " << lastUsedPid);
-            numRestoredPages = lastUsedPid;
+            w_assert0(false);
             break;
         }
+
+        if (replayedBitmap->get(segment)) {
+            continue;
+        }
+
+        // prefetch following segment in scheduler queue
+        shpid_t afterThis = scheduler->next(true /* peek */);
+        if (afterThis > 0) { backup->prefetch(afterThis); }
 
         timer.reset();
 
@@ -759,6 +743,10 @@ void RestoreMgr::restoreLoop()
             }
         }
 #endif
+
+        for (size_t i = 0; i < prefetchWindow; i++) {
+            backup->prefetch(segment + i);
+        }
 
         LogArchiver::ArchiveScanner::RunMerger* merger =
             logScan.open(startPID, endPID, backupLSN, actualSegmentSize,

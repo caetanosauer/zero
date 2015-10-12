@@ -115,6 +115,7 @@ public:
     shpid_t getLastUsedPid() { return lastUsedPid; }
     RestoreBitmap* getBitmap() { return bitmap; }
     BackupReader* getBackup() { return backup; }
+    unsigned getPrefetchWindow() { return prefetchWindow; }
 
     virtual void run();
 
@@ -151,6 +152,10 @@ protected:
     /** \brief Reader object that abstracts access to backup segments
      */
     BackupReader* backup;
+
+    /** \brief Number of segments to prefetch for each restore invocation
+     */
+    unsigned prefetchWindow;
 
     /** \brief Asynchronous writer for restored segments
      * If NULL, then only synchronous writes are performed.
@@ -324,12 +329,10 @@ public:
     virtual ~RestoreScheduler();
 
     void enqueue(const shpid_t& pid);
-    shpid_t next();
+    shpid_t next(bool peek = false);
     void setSinglePass(bool singlePass = true);
 
     bool isOnDemand() { return onDemand; }
-
-    unsigned getPrefetchWindow() { return prefetchWindow; }
 
 protected:
     RestoreMgr* restore;
@@ -343,9 +346,8 @@ protected:
     bool onDemand;
     /// Perform single-pass scheduling in random order instead of sequential
     bool randomOrder;
-    /// Number of segments to prefetch with sequential scheduling
-    unsigned prefetchWindow;
 
+    shpid_t firstDataPid;
     shpid_t lastUsedPid;
 
     /** Keep track of first pid not restored to continue single-pass restore.

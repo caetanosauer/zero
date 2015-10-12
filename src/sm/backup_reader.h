@@ -32,7 +32,7 @@ public:
      * provided for implementations that support it. Higher number should mean
      * higher priority.
      */
-    virtual void prefetch(unsigned /* segment */, int /* priority */)
+    virtual void prefetch(unsigned /* segment */, int /* priority */ = 0)
     {
         return; // default: no prefetching
     }

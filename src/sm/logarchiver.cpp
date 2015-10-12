@@ -1144,9 +1144,8 @@ void LogArchiver::BlockAssembly::shutdown()
     writer->join();
 }
 
-LogArchiver::ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory,
-        size_t ioUnit)
-    : directory(directory), archIndex(directory->getIndex()), ioUnit(ioUnit)
+LogArchiver::ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory)
+    : directory(directory), archIndex(directory->getIndex())
 {
     if (!archIndex) {
         W_FATAL_MSG(fcINTERNAL,

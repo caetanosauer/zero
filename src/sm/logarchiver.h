@@ -504,7 +504,7 @@ public:
      */
     class ArchiveScanner {
     public:
-        ArchiveScanner(ArchiveDirectory*, size_t ioUnit = 2048 * 1024);
+        ArchiveScanner(ArchiveDirectory*);
         virtual ~ArchiveScanner() {};
 
         struct RunMerger;
@@ -549,7 +549,6 @@ public:
     private:
         ArchiveDirectory* directory;
         ArchiveIndex* archIndex;
-        size_t ioUnit; // not used yet (CS TODO)
 
         struct MergeHeapEntry {
             // store pid and lsn here to speed up comparisons
