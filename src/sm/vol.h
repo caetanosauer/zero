@@ -56,9 +56,12 @@ public:
         return write_many_pages(page, buf, 1);
     }
 
-    rc_t                read_page(
-        PageID             page,
-        generic_page&       buf);
+    rc_t                read_page(PageID page, generic_page& buf);
+    rc_t                read_many_pages(
+        PageID             first_page,
+        generic_page* const buf,
+        int                 cnt,
+        bool ignoreRestore = false);
 
     rc_t read_backup(PageID first, size_t count, void* buf);
     rc_t write_backup(PageID first, size_t count, void* buf);

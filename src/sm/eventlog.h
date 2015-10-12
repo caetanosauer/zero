@@ -41,7 +41,7 @@ public:
 class sysevent {
 public:
     static void log(logrec_t::kind_t kind);
-    static void log_page_read(PageID shpid);
+    static void log_page_read(PageID shpid, uint32_t cnt);
     static void log_page_write(PageID shpid, uint32_t cnt);
 };
 
