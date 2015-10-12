@@ -1202,7 +1202,8 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
                 probes[i].pidBegin,
                 probes[i].pidEnd,
                 probes[i].offset,
-                directory
+                directory,
+                maxReadSize
         );
 
         merger->addInput(runScanner);
@@ -1218,13 +1219,17 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
 }
 
 LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
-        lpid_t f, lpid_t l, fileoff_t o, ArchiveDirectory* directory)
+        lpid_t f, lpid_t l, fileoff_t o, ArchiveDirectory* directory,
+        size_t readSize)
 : runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
-    fd(-1), blockCount(0), directory(directory)
+    fd(-1), blockCount(0), readSize(readSize), directory(directory)
 {
+    if (readSize == 0) {
+        readSize = directory->getBlockSize();
+    }
+
     // Using direct I/O
-    posix_memalign((void**) &buffer, IO_ALIGN,
-            directory->getBlockSize() + IO_ALIGN);
+    posix_memalign((void**) &buffer, IO_ALIGN, readSize + IO_ALIGN);
     // buffer = new char[directory->getBlockSize()];
     bpos = 0;
 
@@ -1235,7 +1240,7 @@ LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
         bucketSize = 0;
     }
 
-    scanner = new LogScanner(directory->getBlockSize());
+    scanner = new LogScanner(readSize);
     bpos = directory->getBlockSize();
 }
 
@@ -1272,7 +1277,7 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
     }
 
     // offset is updated by readBlock
-    W_COERCE(directory->readBlock(fd, buffer, offset, blockSize));
+    W_COERCE(directory->readBlock(fd, buffer, offset, readSize));
 
     // offset set to zero indicates EOF
     if (offset == 0) {

@@ -530,12 +530,13 @@ public:
             int fd;
             size_t blockCount;
             size_t bucketSize;
+            size_t readSize;
 
             ArchiveDirectory* directory;
             LogScanner* scanner;
 
             RunScanner(lsn_t b, lsn_t e, lpid_t f, lpid_t l, fileoff_t o,
-                    ArchiveDirectory* directory);
+                    ArchiveDirectory* directory, size_t readSize = 0);
             virtual ~RunScanner();
 
             bool next(logrec_t*& lr);
