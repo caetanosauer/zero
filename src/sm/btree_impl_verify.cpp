@@ -371,7 +371,7 @@ rc_t btree_impl::_ux_verify_volume(
         if (!vol->is_allocated_page(pid)) {
             continue;
         }
-        W_DO (vol->read_page(pid, buf));
+        W_DO (vol->read_page(pid, &buf));
         btree_page_h page;
         page.fix_nonbufferpool_page(&buf);
         if (page.tag() == t_btree_p && !page.is_to_be_deleted()) {

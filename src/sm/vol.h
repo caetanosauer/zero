@@ -56,7 +56,8 @@ public:
         return write_many_pages(page, buf, 1);
     }
 
-    rc_t                read_page(PageID page, generic_page& buf);
+    rc_t                read_page(PageID page, generic_page* const buf);
+
     rc_t                read_many_pages(
         PageID             first_page,
         generic_page* const buf,

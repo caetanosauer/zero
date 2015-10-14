@@ -60,7 +60,7 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
         lpid_t pid (stid, shpid);
 
         cout << "checking pid " << shpid << ":";
-        W_IGNORE(smlevel_0::vol->get(test_volume->_vid)->read_page(pid.page, buf));
+        W_IGNORE(smlevel_0::vol->get(test_volume->_vid)->read_page(pid.page, &buf));
         cout << "full-pid=" << buf.pid << ",";
         switch (buf.tag) {
             case t_bad_p: cout << "t_bad_p"; break;

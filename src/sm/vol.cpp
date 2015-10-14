@@ -516,9 +516,9 @@ bool vol_t::set_fake_disk_latency(const int adelay)
  *  Read the page at "pnum" of the volume to the buffer "page".
  *
  *********************************************************************/
-rc_t vol_t::read_page(PageID pnum, generic_page& page)
+rc_t vol_t::read_page(PageID pnum, generic_page* const buf)
 {
-    return read_many_pages(pnum, &page, 1);
+    return read_many_pages(pnum, buf, 1);
 }
 
 /*********************************************************************
@@ -529,10 +529,27 @@ rc_t vol_t::read_page(PageID pnum, generic_page& page)
  *  of the volume.
  *
  *********************************************************************/
-rc_t vol_t::read_many_pages(shpid_t first_page, generic_page* buf, int cnt,
+rc_t vol_t::read_many_pages(shpid_t first_page, generic_page* const buf, int cnt,
         bool ignoreRestore)
 {
     DBG(<< "Page read: vol " << _vid << " from page " << first_page << " to " << first_page + cnt);
+
+    #ifdef ZERO_INIT
+    /*
+     * When a write into the buffer pool of potentially uninitialized
+     * memory occurs (such as padding)
+     * there is a purify/valgrind supression to keep the SM from being gigged
+     * for the SM-using application's legitimate behavior.  However, this
+     * uninitialized memory writes to a page in the buffer pool
+     * colors the corresponding bytes in the buffer pool with the
+     * "uninitialized" memory color.  When a new page is read in from
+     * disk, nothing changes the color of the page back to "initialized",
+     * and you suddenly see UMR or UMC errors from valid buffer pool pages.
+     */
+    memset(buf, '\0', cnt * sizeof(generic_page));
+    #endif
+
+
     /*
      * CS: If volume is marked as failed, we must invoke restore manager and
      * wait until the requested page is restored. If we succeed in placing a
@@ -752,6 +769,7 @@ rc_t vol_t::write_backup(PageID first, size_t count, void* buf)
     return RCOK;
 }
 
+
 /*********************************************************************
  *
  *  vol_t::write_many_pages(pnum, pages, cnt)
@@ -760,7 +778,7 @@ rc_t vol_t::write_backup(PageID first, size_t count, void* buf)
  *  of the volume.
  *
  *********************************************************************/
-rc_t vol_t::write_many_pages(PageID pnum, const generic_page* const pages, int cnt,
+rc_t vol_t::write_many_pages(PageID first_page, const generic_page* const buf, int cnt,
         bool ignoreRestore)
 {
     if (_readonly) {
@@ -815,7 +833,7 @@ rc_t vol_t::write_many_pages(PageID pnum, const generic_page* const pages, int c
 
     w_assert1(pnum > 0 && pnum < (PageID) num_used_pages());
     w_assert1(cnt > 0);
-    size_t offset = size_t(pnum) * sizeof(generic_page);
+    size_t offset = size_t(first_page) * sizeof(generic_page);
 
     smthread_t* t = me();
 
@@ -823,16 +841,13 @@ rc_t vol_t::write_many_pages(PageID pnum, const generic_page* const pages, int c
     if(_apply_fake_disk_latency) start = gethrtime();
 
     // do the actual write now
-    W_COERCE(t->pwrite(_unix_fd, pages, sizeof(generic_page)*cnt, offset));
+    W_COERCE(t->pwrite(_unix_fd, buf, sizeof(generic_page)*cnt, offset));
 
     fake_disk_latency(start);
     ADD_TSTAT(vol_blks_written, cnt);
     INC_TSTAT(vol_writes);
 
-    lpid_t lpnum;
-    lpnum._vol = _vid;
-    lpnum.page = pnum;
-    sysevent::log_page_write(lpnum, cnt);
+    sysevent::log_page_write(first_page, cnt);
 
     return RCOK;
 }

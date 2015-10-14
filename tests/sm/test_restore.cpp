@@ -122,8 +122,8 @@ void verifyVolumesEqual(string pathExp, string pathAct)
         bool isAlloc = allocExp->is_allocated_page(p);
         EXPECT_EQ(isAlloc, allocAct->is_allocated_page(p));
         if (isAlloc) {
-            volExp.read_page(p, bufExp);
-            volAct.read_page(p, bufAct);
+            volExp.read_page(p, &bufExp);
+            volAct.read_page(p, &bufAct);
 
             EXPECT_EQ(lpid_t(vid, p), bufAct.pid);
 
@@ -178,7 +178,7 @@ rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
     W_DO(volume->mark_failed());
 
     generic_page page;
-    W_DO(volume->read_page(1, page));
+    W_DO(volume->read_page(1, &page));
 
     return RCOK;
 }

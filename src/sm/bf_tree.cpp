@@ -429,7 +429,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
 
 w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, StoreID store, PageID shpid, bf_idx idx) {
     w_assert1(shpid >= volume->first_data_pageid());
-    W_DO(volume->read_page(shpid, _buffer[idx]));
+    W_DO(volume->read_page(shpid, &_buffer[idx]));
 
     // _buffer[idx].checksum == 0 is possible when the root page has been never flushed out.
     // this method is called during volume mount (even before recover), crash tests like
@@ -759,7 +759,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
             if (!virgin_page) {
                 INC_TSTAT(bf_fix_nonroot_miss_count);
-                w_rc_t read_rc = volume->_volume->read_page(shpid, *page);
+                w_rc_t read_rc = volume->_volume->read_page(shpid, page);
 
                 // Not checking 'past_end' (stSHORTIO), because if the page
                 // does not exist on disk (only if fix_direct from REDO
@@ -1666,7 +1666,7 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx,
     w_assert1(shpid >= volume->_volume->first_data_pageid());
 
     // Load the physical page from disk
-    W_DO(volume->_volume->read_page(shpid, _buffer[idx]));
+    W_DO(volume->_volume->read_page(shpid, &_buffer[idx]));
 
     // For the loaded page, compare its checksum
     // If inconsistent, return error

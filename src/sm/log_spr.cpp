@@ -94,8 +94,8 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     if (true)
     // if (smlevel_0::bk->page_exists(p.vol(), pid))
     {
-        // W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid));
-        W_DO(smlevel_0::vol->read_page(pid, *p.get_generic_page()));
+        // W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
+        W_DO(smlevel_0::vol->read_page(pid.page, p.get_generic_page()));
         w_assert1(pid == p.pid());
         DBGOUT1(<< "Backup page retrieved. Backup-LSN=" << p.lsn());
         if (p.lsn() > emlsn)
