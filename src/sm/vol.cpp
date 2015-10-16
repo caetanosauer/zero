@@ -562,34 +562,45 @@ rc_t vol_t::read_many_pages(shpid_t first_page, generic_page* const buf, int cnt
      * volume into a new file descriptor for the replacement device. The logic
      * for restore, however, would remain the same.
      */
+
     while (is_failed()) {
-        w_assert1(_restore_mgr);
-
-        { // pin avoids restore mgr being destructed while we access it
-            spinlock_read_critical_section cs(&_mutex);
-            if (!_restore_mgr->pin()) { break; }
+        if(ignoreRestore) {
+            // volume is failed, but we don't want to restore
+            return RC(eVOLFAILED);
         }
-
-        int i = 0;
-        while (i < cnt) {
-            if (!_restore_mgr->isRestored(first_page + i)) {
-                DBG(<< "Page read triggering restore of " << first_page + i);
-                bool reqSucceeded = _restore_mgr->requestRestore(first_page + i, &buf[i]);
-                _restore_mgr->waitUntilRestored(first_page + i);
-                w_assert1(_restore_mgr->isRestored(first_page + i));
-
-                if (reqSucceeded) {
-                    // page is loaded in buffer pool already
-                    w_assert1(buf[i].pid == first_page + i);
-                    sysevent::log_page_read(pnum);
-                    return RCOK;
-                }
+        else {
+            { // pin avoids restore mgr being destructed while we access it
+                spinlock_read_critical_section cs(&_mutex);
+                if (!_restore_mgr->pin()) { break; }
             }
-        }
 
-        _restore_mgr->unpin();
-        check_restore_finished();
-        break;
+            // volume is failed, but we want restore to take place
+            int i = 0;
+            while(i < cnt) {
+                if (!_restore_mgr->isRestored(first_page + i)) {
+                    DBG(<< "Page read triggering restore of " << first_page + i);
+                    bool reqSucceeded = false;
+                    if(cnt == 1) {
+                        reqSucceeded = _restore_mgr->requestRestore(first_page + i, buf);
+                    }
+                    else {
+                        reqSucceeded = _restore_mgr->requestRestore(first_page + i, NULL);
+                    }
+                    _restore_mgr->waitUntilRestored(first_page + i);
+                    w_assert1(_restore_mgr->isRestored(first_page));
+                    if (reqSucceeded) {
+                        // page is loaded in buffer pool already
+                        w_assert1(buf->pid == lpid_t(_vid, first_page + i));
+                        sysevent::log_page_read(pnum);
+                        return RCOK;
+                    }
+                }
+                i++;
+            }
+            _restore_mgr->unpin();
+            check_restore_finished();
+            break;
+        }
     }
 
     w_assert1(first_page > 0 && first_page < (shpid_t)(_num_pages));
