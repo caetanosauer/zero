@@ -2207,6 +2207,11 @@ size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
      * we do a linear search instead of binary search.
      */
     w_assert1(lastFinished >= 0);
+
+    if(lsn >= runs[lastFinished].lastLSN) {
+        return lastFinished + 1;
+    }
+
     int result = lastFinished;
     while (result > 0 && runs[result].firstLSN > lsn) {
         result--;
