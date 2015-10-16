@@ -31,6 +31,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
+// CS TODO: used only for boot_time in sthread and in test cases
+
 /**\cond skip */
 #include <ctime>
 #include <cstring>
@@ -47,7 +49,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
    st_tod    == time of day part of the time
    st_hires    == "higher resolution" part of the time
    HR_SECOND    == high-resolution units in a second
- */  
+ */
 
 #define    NS_SECOND    1000000000    /* nanoseconds in a second */
 #define    US_SECOND    1000000    /* microseconds in a second */
@@ -158,7 +160,7 @@ bool    stime_t::operator<=(const stime_t &r) const
 static inline int sign(const int i)
 {
     return i > 0 ? 1 : i < 0 ? -1 : 0;
-    
+
 }
 
 /* Put a stime into normal form, where the HIRES part
@@ -191,7 +193,7 @@ void stime_t::_normalize()
     }
     signs();
 }
-   
+
 
 /* something that could be completely wacked out */
 void stime_t::normalize()
@@ -256,7 +258,7 @@ stime_t stime_t::operator*(const int factor) const
    lost TOD units into the HIRES range.
 
    The double stuff at least makes it seem to work right.
- */  
+ */
 
 
 stime_t stime_t::operator/(const int factor) const
@@ -269,7 +271,7 @@ stime_t    stime_t::operator*(const double factor) const
 {
     double d = *this;
     d *= factor;
-    stime_t result(d); 
+    stime_t result(d);
     result.normalize();
 
     return result;
@@ -289,7 +291,7 @@ stime_t &stime_t::operator+=(const stime_t &r)
     _time.st_hires += r._time.st_hires;
 
     _normalize();
-    
+
     return *this;
 }
 
@@ -300,7 +302,7 @@ stime_t &stime_t::operator-=(const stime_t &r)
     _time.st_hires -= r._time.st_hires;
 
     _normalize();
-    
+
     return *this;
 }
 
@@ -376,7 +378,7 @@ ostream &stime_t::ctime(ostream &s) const
 {
     /* the second field of the time structs should be a time_t */
     time_t    kludge = _time.st_tod;
-    const   int buflen(26); 
+    const   int buflen(26);
     char    buf[buflen];    /* XXX well known magic number */
 
     char    *when = ctime_r(&kludge, buf);
@@ -486,7 +488,7 @@ stime_t    stime_t::msec(int ms, int sec)
     return r;
 }
 
-    
+
 stime_t    stime_t::usec(int us, int sec)
 {
     stime_t    r;
@@ -519,7 +521,7 @@ stime_t    stime_t::now()
 
 
 /* More conversion operators */
-/* For now, only the seconds conversion does rounding */ 
+/* For now, only the seconds conversion does rounding */
 
 /* roundup #seconds if hr_seconds >= this value */
 #define    HR_ROUNDUP    (HR_SECOND / 2)

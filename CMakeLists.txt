@@ -90,7 +90,7 @@ SET (MANDATORY_FLAGS "-D_REENTRANT -D_POSIX_PTHREAD_SEMANTICS")
 
 # -pedantic requires -Wno-long-long
 #
-SET (ALWAYS_FLAGS "-Wall -Wextra -Woverloaded-virtual -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -pthread")
+SET (ALWAYS_FLAGS "-std=c++11 -Wall -Wextra -Woverloaded-virtual -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -pthread")
 # NO_INLINE_FLAGS =  -fno-inline
 SET (NO_INLINE_FLAGS "")
 SET (YES_INLINE_FLAGS "-finline-functions")

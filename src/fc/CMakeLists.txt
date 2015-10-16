@@ -6,17 +6,11 @@ set(fc_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/mem_block.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/gethrtime.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/w_compat_strstream.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/w_form.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/common_tmpl.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stime.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/vtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/w_base.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/w_bitmap.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/valgrind_help.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/w_listm.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/w_input.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/tls.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/w_findprime.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/tls.cpp)
 
 add_library(fc STATIC ${fc_STAT_SRCS})
 target_link_libraries (fc rt)

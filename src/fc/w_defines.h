@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -93,9 +93,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <valgrind/valgrind.h>
 #endif
 
-#ifdef USING_VALGRIND
-#include "valgrind_help.h"
-#endif
+// #ifdef USING_VALGRIND
+// #include "valgrind_help.h"
+// #endif
 
 // now ZERO_INIT is set according to W_DEBUG_LEVEL.
 #if W_DEBUG_LEVEL>0
@@ -117,7 +117,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 #ifdef ARCH_LP64
 /* enabled LP64 - let's make sure the environment can handle it */
-#if defined(_SC_V6_LP64_OFF64) || _XBS5_LP64_OFF64 || _SC_V6_LPBIG_OFFBIG || _XBS5_LPBIG_OFFBIG 
+#if defined(_SC_V6_LP64_OFF64) || _XBS5_LP64_OFF64 || _SC_V6_LPBIG_OFFBIG || _XBS5_LPBIG_OFFBIG
 #else
 #warning Turning off ARCH_LP64
 #undef ARCH_LP64
@@ -147,7 +147,7 @@ using namespace std;
 
 // avoid nasty bus errors...
 template<class T>
-static inline T* aligned_cast(char const* ptr) 
+static inline T* aligned_cast(char const* ptr)
 {
   // bump the pointer up to the next proper alignment (always a power of 2)
   size_t val = (size_t) ptr;

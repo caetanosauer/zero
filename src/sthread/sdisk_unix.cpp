@@ -235,13 +235,6 @@ w_rc_t    sdisk_unix_t::write(const void *buf, int count, int &done)
     n = ::os_write(_fd, buf, count);
     CHECK_ERRNO(n);
 
-#if defined(USING_VALGRIND)
-    if(RUNNING_ON_VALGRIND)
-    {
-        check_valgrind_errors(__LINE__, __FILE__);
-    }
-#endif
-
     done = n;
 
     return RCOK;
@@ -271,13 +264,6 @@ w_rc_t    sdisk_unix_t::writev(const iovec_t *iov, int iovcnt, int &done)
 
     n = ::os_writev(_fd, (const struct iovec *)iov, iovcnt);
     CHECK_ERRNO(n);
-
-#if defined(USING_VALGRIND)
-    if(RUNNING_ON_VALGRIND)
-    {
-        check_valgrind_errors(__LINE__, __FILE__);
-    }
-#endif
 
     done = n;
 
@@ -310,13 +296,6 @@ w_rc_t    sdisk_unix_t::pwrite(const void *buf, int count, fileoff_t pos,
 
     n = ::os_pwrite(_fd, buf, count, pos);
     CHECK_ERRNO(n);
-
-#if defined(USING_VALGRIND)
-    if(RUNNING_ON_VALGRIND)
-    {
-        check_valgrind_errors(__LINE__, __FILE__);
-    }
-#endif
 
     done = n;
 
