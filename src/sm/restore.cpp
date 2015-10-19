@@ -646,8 +646,11 @@ void RestoreMgr::restoreSegment(char* workspace,
     // Last page is not checksumed above, so we do it here
     page->checksum = page->calculate_checksum();
 
-    finishSegment(workspace, segment, current - firstPage);
+    // finishSegment(workspace, segment, current - firstPage);
+    finishSegment(workspace, segment, segmentSize);
     ADD_TSTAT(restore_time_write, timer.time_us());
+
+    INC_TSTAT(restore_invocations);
 }
 
 void RestoreMgr::restoreLoop()
