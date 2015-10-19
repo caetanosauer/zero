@@ -2464,16 +2464,16 @@ rc_t LogArchiver::MergerDaemon::runSync(size_t fanin, size_t minRunSize,
         }
         w_assert0(maxRunSize == 0 || accumSize <= maxRunSize);
 
-        if (i == 0) {
-            iter++;
-            i++;
-            continue;
-        }
+        // if (i == 0) {
+        //     iter++;
+        //     i++;
+        //     continue;
+        // }
 
-        if (i == 1 || (minRunSize > 0 && accumSize < minRunSize)) {
-            // output too small or only one input -- don't merge
-            continue;
-        }
+        // if (i == 1 || (minRunSize > 0 && accumSize < minRunSize)) {
+        //     // output too small or only one input -- don't merge
+        //     continue;
+        // }
 
         // now do the merge
         W_DO(doMerge(runNumber++, begin, iter, blkAssemb));

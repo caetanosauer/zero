@@ -639,7 +639,7 @@ void chkpt_dev_tab_log::redo(fixable_page_h*)
     w_assert0(tab->count == dnames.size());
 
     for (int i = 0; i < tab->count; i++) {
-        smlevel_0::vol->sx_mount(dnames[i].c_str(), false /* log */);
+        W_COERCE(smlevel_0::vol->sx_mount(dnames[i].c_str(), false /* log */));
     }
     smlevel_0::vol->set_next_vid(tab->next_vid);
 }
