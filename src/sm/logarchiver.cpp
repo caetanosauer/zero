@@ -763,26 +763,22 @@ rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
         actualReadSize = (1 + actualReadSize / IO_ALIGN) * IO_ALIGN;
     }
 
-    rc_t rc = (me()->pread(fd, buf, actualReadSize, actualOffset));
-    if (rc.is_error()) {
-        if (rc.err_num() == stSHORTIO) {
-            // EOF is signalized by setting offset to zero
-            offset = 0;
-            return RCOK;
-        }
-        W_COERCE(rc);
-        return rc;
+    int howMuchRead = 0;
+    W_COERCE(me()->pread_short(
+                fd, buf, actualReadSize, actualOffset, howMuchRead));
+    if (howMuchRead == 0) {
+        // EOF is signalized by setting offset to zero
+        offset = 0;
+        return RCOK;
     }
 
     if (diff > 0) {
         memmove(buf, buf + diff, readSize);
     }
-    // if (readSize < blockSize) {
-    //     memset(buf + readSize, 0, blockSize - readSize);
-    // }
 
     ADD_TSTAT(la_read_time, timer.time_us());
-    ADD_TSTAT(la_read_volume, readSize);
+    ADD_TSTAT(la_read_volume, howMuchRead);
+    INC_TSTAT(la_read_count);
 
     offset += readSize;
     return RCOK;
@@ -1214,6 +1210,8 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
         delete merger;
         return NULL;
     }
+
+    INC_TSTAT(la_open_count);
 
     return merger;
 }
