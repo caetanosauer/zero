@@ -791,7 +791,39 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 continue;
             }
 
-            // STEP 3) Read page from disk
+            // STEP 3) register the page on the hashtable, so that only one
+            // thread reads it (it may be latched by other concurrent fix)
+            bf_idx parent_idx = parent - _buffer;
+            bool registered = _hashtable->insert_if_not_exists(key,
+                    bf_idx_pair(idx, parent_idx));
+            if (!registered) {
+                if (!force_load) {
+                    // If force_load flag is off this pid already exists in
+                    // bufferpool. this means another thread concurrently added
+                    // the page to bufferpool. unlucky, but can happen.
+                    cb.clear_except_latch();
+                    cb.latch().latch_release();
+                    _add_free_block(idx);
+                    continue;
+                }
+                else {
+                    // If the force_load flag is on and the pid is already in
+                    // hash table, this is a force load scenario In this case
+                    // an in_doubt page is loaded due to page driven
+                    // Single-Page-Recovery REDO operation or on-demand user
+                    // transaction triggered REDO operation Clear the in_doubt
+                    // flag on the page so we do not try to load this page
+                    // again
+                    DBGOUT1(<<"bf_tree_m: force_load with page in hash table "
+                            << " already, mark page dirty, page id: " << shpid);
+                    w_assert1(0 != idx);
+                    force_load = false;
+                    // Reset in_doubt and dirty flags accordingly
+                    in_doubt_to_dirty(idx);
+                }
+            }
+
+            // STEP 4) Read page from disk
             page = &_buffer[idx];
             memset(page, 0, sizeof(generic_page));
 
@@ -811,6 +843,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     DBGOUT3(<<"bf_tree_m: error while reading page "
                             << shpid << " to frame " << idx << ". rc=" << read_rc);
 
+                    _hashtable->remove(key);
                     cb.latch().latch_release();
 
                     if (!force_load)
@@ -843,6 +876,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     else
                     {
                         // Someone else beat us in recoverying this page, try again
+                        _hashtable->remove(key);
                         cb.latch().latch_release();
                         force_load = false;
                         // Sleep a while to give the other thread time to finish its work
@@ -869,14 +903,14 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     // first place (force load), this is because we are
                     // erroring out
                     _add_free_block(idx);
-
+                    _hashtable->remove(key);
                     cb.latch().latch_release();
                     return check_rc;
                 }
                 w_assert1(page->lsn.hi() > 0);
             }
 
-            // STEP 4) initialize control block
+            // STEP 5) initialize control block
             w_assert1(cb.latch().held_by_me());
             w_assert1(cb.latch().mode() == LATCH_EX);
             w_assert1(!force_load || cb._in_doubt);
@@ -886,7 +920,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             cb._pid_vol = vol;
             cb._pid_shpid = shpid;
             cb._dependency_lsn = 0;
-            bf_idx parent_idx = parent - _buffer;
             cb._rec_lsn = page->lsn.data();
             if (virgin_page) {
                 // Virgin page, we are not setting _rec_lsn (initial dirty)
@@ -899,36 +932,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             }
             cb._used = true;
             cb._refbit_approximate = BP_INITIAL_REFCOUNT;
-
-            // STEP 5) register the page on the hashtable.
-            bool registered = _hashtable->insert_if_not_exists(key,
-                    bf_idx_pair(idx, parent_idx));
-            if (!registered) {
-                if (!force_load) {
-                    // If force_load flag is off this pid already exists in
-                    // bufferpool. this means another thread concurrently added
-                    // the page to bufferpool. unlucky, but can happen.
-                    cb.latch().latch_release();
-                    cb.clear_except_latch();
-                    _add_free_block(idx);
-                    continue;
-                }
-                else {
-                    // If the force_load flag is on and the pid is already in
-                    // hash table, this is a force load scenario In this case
-                    // an in_doubt page is loaded due to page driven
-                    // Single-Page-Recovery REDO operation or on-demand user
-                    // transaction triggered REDO operation Clear the in_doubt
-                    // flag on the page so we do not try to load this page
-                    // again
-                    DBGOUT1(<<"bf_tree_m: force_load with page in hash table "
-                            << " already, mark page dirty, page id: " << shpid);
-                    w_assert1(0 != idx);
-                    force_load = false;
-                    // Reset in_doubt and dirty flags accordingly
-                    in_doubt_to_dirty(idx);
-                }
-            }
 
             // STEP 6) Fix successful -- pin page and downgrade latch
             // Just loaded a page, the page loading was due to:
