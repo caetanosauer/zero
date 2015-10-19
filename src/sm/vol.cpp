@@ -353,7 +353,8 @@ rc_t vol_t::mount(const char* devname)
     strcpy(_devname, devname);
 
     w_rc_t rc;
-    int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC;
+    int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC
+        | smthread_t::OPEN_DIRECT;
 
     rc = me()->open(devname, open_flags, 0666, _unix_fd);
     if (rc.is_error()) {
@@ -1363,11 +1364,13 @@ rc_t volhdr_t::write(int fd)
  *********************************************************************/
 rc_t volhdr_t::read(int fd)
 {
-    char page[sizeof(generic_page)];
+    char* page;
+    posix_memalign((void**) &page, sizeof(generic_page),
+            sizeof(generic_page));
     /*
      *  Read in first page of volume into tmp.
      */
-    W_DO(me()->pread(fd, &page, sizeof(generic_page), 0));
+    W_DO(me()->pread(fd, page, sizeof(generic_page), 0));
 
     /*
      *  Read the header strings from tmp using an istream.
