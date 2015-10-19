@@ -64,7 +64,7 @@ BackupPrefetcher::BackupPrefetcher(vol_t* volume, size_t numSegments,
     : BackupReader(segmentSize * sizeof(generic_page) * numSegments),
       volume(volume), numSegments(numSegments), segmentSize(segmentSize),
       segmentSizeBytes(segmentSize * sizeof(generic_page)),
-      fixWaiting(false), shutdownFlag(false), lastEvicted(0)
+      fixWaiting(false), shutdownFlag(false), lastEvicted(numSegments - 1)
 {
     w_assert1(volume);
     firstDataPid = volume->first_data_pageid();
@@ -112,6 +112,7 @@ void BackupPrefetcher::prefetch(unsigned segment, int priority)
     else {
         requests.push_back(segment);
     }
+    DBG(<< "Requested prefetch of " << segment);
 }
 
 char* BackupPrefetcher::fix(unsigned segment)
@@ -133,15 +134,14 @@ char* BackupPrefetcher::fix(unsigned segment)
             if (slots[i] == (int) segment && status[i] != SLOT_FREE) {
                 if (status[i] == SLOT_READING) {
                     // Segment is curretly being read -- let's just wait
-                    DBGOUT3(<< "Segment fix: not in buffer but reading. "
-                            << "Waiting... ");
+                    DBG(<< "Segment " << segment << " fix missed. "
+                            << "Waiting for read");
                     wait = true;
                     break;
                 }
                 w_assert0(status[i] == SLOT_UNFIXED);
                 status[i] = SLOT_FIXED;
-                DBGOUT3(<< "Fixed backup reader slot " << i <<  "from segment "
-                    << segment);
+                DBG(<< "Fixed segment " << segment << " into slot " << i);
                 fixWaiting = false;
                 return buffer + (i * segmentSizeBytes);
             }
@@ -163,7 +163,7 @@ char* BackupPrefetcher::fix(unsigned segment)
         }
         requests.push_front(segment);
 
-        DBGOUT(<< "Segment fix: not found. Waking up prefetcher");
+        DBG(<< "Segment " << segment << " fix missed. Wake up prefetcher");
         fixWaiting = true;
         wait = true;
     }
@@ -182,8 +182,7 @@ void BackupPrefetcher::unfix(unsigned segment)
             w_assert1(status[i] == SLOT_FIXED);
             // since each segment is used only once, it goes directly to
             // free instead of unfixed
-            DBGOUT3(<< "Freed backup reader slot " << i <<  "from segment "
-                    << segment);
+            DBG(<< "Unfixed segment " << segment <<  " from slot " << i);
             status[i] = SLOT_FREE;
             return;
         }
@@ -201,6 +200,7 @@ void BackupPrefetcher::run()
         size_t slotIdx = 0;
         char* readSlot = NULL;
         unsigned next = numSegments; // invalid value
+        shpid_t firstPage;
 
         if (wait) {
             usleep(WAIT_TIME);
@@ -218,6 +218,13 @@ void BackupPrefetcher::run()
             }
 
             next = requests.front();
+
+            firstPage = shpid_t(next * segmentSize);
+            if (firstPage >= volume->num_pages()) {
+                // prefetch request beyond end of volume -- ignore
+                requests.pop_front();
+                continue;
+            }
 
             bool alreadyFetched = false;
             // look if segment is already in buffer
@@ -265,6 +272,8 @@ void BackupPrefetcher::run()
 
                 if (wait) { continue; }
 
+                DBG(<< "Evicted " << slots[lastEvicted]);
+                requests.push_front(slots[lastEvicted]);
                 slotIdx = lastEvicted;
                 INC_TSTAT(backup_evict_segment);
             }
@@ -279,13 +288,7 @@ void BackupPrefetcher::run()
 
         } // end of critical section
 
-        DBGOUT3(<< "Prefetching segment " << next);
-        // perform the read into the slot found
-        // shpid_t firstPage = shpid_t(next * segmentSize) + firstDataPid;
-        shpid_t firstPage = shpid_t(next * segmentSize);
-        if (firstPage >= volume->num_pages()) {
-            return;
-        }
+        DBG(<< "Prefetching segment " << next);
 
         INC_TSTAT(restore_backup_reads);
         W_COERCE(volume->read_backup(firstPage, segmentSize, readSlot));
@@ -294,11 +297,10 @@ void BackupPrefetcher::run()
             // Re-acquire mutex to mark slot as read, i.e., unfixed
             CRITICAL_SECTION(cs, &mutex);
             status[slotIdx] = SLOT_UNFIXED;
-            DBGOUT3(<< "Read backup reader slot " << slotIdx <<  "for segment "
-                    << next);
+            DBG(<< "Read segment " << next << " into  slot " << slotIdx);
         }
 
-        DBGOUT3(<< "Segment " << next << " read finished");
+        DBG(<< "Segment " << next << " read finished");
     }
 }
 

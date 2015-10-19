@@ -269,7 +269,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
                 << "Restore segment size must be a positive number");
     }
     prefetchWindow =
-        options.get_int_option("sm_restore_prefetcher_window", 3);
+        options.get_int_option("sm_restore_prefetcher_window", 1);
 
     reuseRestoredBuffer =
         options.get_bool_option("sm_restore_reuse_buffer", false);
@@ -311,7 +311,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
         }
         else if (backupImpl == BackupPrefetcher::IMPL_NAME) {
             int numSegments = options.get_int_option(
-                    "sm_backup_prefetcher_segments", 2);
+                    "sm_backup_prefetcher_segments", 5);
             w_assert0(numSegments > 0);
             backup = new BackupPrefetcher(volume, numSegments, segmentSize);
             dynamic_cast<BackupPrefetcher*>(backup)->fork();
@@ -505,12 +505,6 @@ void RestoreMgr::singlePassLoop()
 {
     stopwatch_t timer;
 
-    // prefetch first segment
-    unsigned segment = getSegmentForPid(firstDataPid);
-    for (size_t i = 0; i < prefetchWindow; i++) {
-        backup->prefetch(segment + i);
-    }
-
     // open scan on beginning until EOF
     lsn_t startLSN = useBackup ? volume->get_backup_lsn() : lsn_t(1,0);
     lpid_t startPid = lpid_t(volume->vid(), firstDataPid);
@@ -523,6 +517,7 @@ void RestoreMgr::singlePassLoop()
         return;
     }
 
+    unsigned segment = getSegmentForPid(firstDataPid);
     char* workspace = backup->fix(segment);
     restoreSegment(workspace, merger, getPidForSegment(segment));
 
@@ -582,9 +577,9 @@ void RestoreMgr::restoreSegment(char* workspace,
                 firstPage = current;
 
                 // as we're done with one segment, prefetch another
-                if (!onDemand) {
-                    backup->prefetch(segment + prefetchWindow);
-                }
+                // if (!scheduler->isOnDemand()) {
+                //     backup->prefetch(segment + prefetchWindow);
+                // }
             }
         }
 
@@ -676,8 +671,8 @@ void RestoreMgr::restoreLoop()
         }
 
         // prefetch following segment in scheduler queue
-        shpid_t afterThis = scheduler->next(true /* peek */);
-        if (afterThis > 0) { backup->prefetch(afterThis); }
+        // shpid_t afterThis = scheduler->next(true /* peek */);
+        // if (afterThis > 0) { backup->prefetch(afterThis); }
 
         timer.reset();
 
@@ -744,9 +739,9 @@ void RestoreMgr::restoreLoop()
         }
 #endif
 
-        for (size_t i = 0; i < prefetchWindow; i++) {
-            backup->prefetch(segment + i);
-        }
+        // for (size_t i = 0; i < prefetchWindow; i++) {
+        //     backup->prefetch(segment + i);
+        // }
 
         LogArchiver::ArchiveScanner::RunMerger* merger =
             logScan.open(startPID, endPID, backupLSN, actualSegmentSize,
@@ -1004,6 +999,17 @@ void RestoreMgr::run()
 
     // restoreMetadata();
     metadataRestored = true;
+    numRestoredPages = firstDataPid;
+
+    // if doing offline or single-pass restore, prefetch all segments
+    if (!scheduler->isOnDemand() || !instantRestore) {
+        unsigned first = getSegmentForPid(firstDataPid);
+        unsigned last = getSegmentForPid(lastUsedPid);
+        for (unsigned i = first; i <= last; i++) {
+            backup->prefetch(i);
+        }
+    }
+
 
     if (instantRestore) {
         restoreLoop();
