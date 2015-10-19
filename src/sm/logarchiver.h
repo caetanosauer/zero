@@ -596,7 +596,7 @@ public:
         // Scan interface exposed to caller
         struct RunMerger {
             RunMerger()
-                : heap(cmp), started(false)
+                : heap(cmp), started(false), endPID(lpid_t::null)
             {}
 
             virtual ~RunMerger() {}
@@ -605,15 +605,14 @@ public:
             bool next(logrec_t*& lr);
             void dumpHeap(ostream& out);
 
-            size_t heapSize()
-            {
-                return heap.NumElements();
-            }
+            size_t heapSize() { return heap.NumElements(); }
+            lpid_t getEndPID() { return endPID; }
 
         private:
             MergeHeapCmp cmp;
             Heap<MergeHeapEntry, MergeHeapCmp> heap;
             bool started;
+            lpid_t endPID;
         };
     };
 

@@ -338,6 +338,8 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long restore_async_write_time Time spend writing segments in async writer
     u_long restore_log_volume       Amount of log replayed during restore (bytes)
     u_long restore_multiple_segments How often multiple segments were restored with a single log scan
+    u_long restore_segment_count    Total number of segments restored
+    u_long restore_invocations      How often the restore segment procedure was invoked
 
     // Log archiver stats
     u_long la_log_slow              Log archiver activated with small window due to slow log growth

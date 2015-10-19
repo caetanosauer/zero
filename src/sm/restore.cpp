@@ -341,9 +341,6 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     scheduler = new RestoreScheduler(options, this);
     bitmap = new RestoreBitmap(lastUsedPid / segmentSize + 1);
     replayedBitmap = new RestoreBitmap(lastUsedPid / segmentSize + 1);
-
-    // CS TODO: call restoreMetadata instead of this
-    numRestoredPages = firstDataPid;
 }
 
 RestoreMgr::~RestoreMgr()
@@ -537,6 +534,23 @@ void RestoreMgr::restoreSegment(char* workspace,
     size_t redone = 0;
     bool virgin = false;
     unsigned segment = getSegmentForPid(firstPage);
+
+    lpid_t endPID = merger->getEndPID();
+    if (endPID.page - firstPage > segmentSize) {
+        unsigned segCount = (endPID.page - firstPage) / segmentSize;
+        if (endPID.page % segmentSize != 0) { segCount++; }
+
+        if (!endPID.is_null()) {
+            DBG(<< "Restoring " << segCount << " segments with "
+                    << endPID.page - firstPage << " pages from "
+                    << firstPage << " to " << endPID.page);
+        }
+        else {
+            DBG(<< "Segment " << segment
+                    << " being restored with null endPid");
+        }
+        INC_TSTAT(restore_multiple_segments);
+    }
 
     logrec_t* lr;
     while (merger->next(lr)) {
@@ -903,6 +917,8 @@ void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
     else {
         writeSegment(workspace, segment, count);
     }
+
+    INC_TSTAT(restore_segment_count);
 }
 
 void RestoreMgr::writeSegment(char* workspace, unsigned segment, size_t count)

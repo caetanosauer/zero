@@ -1178,16 +1178,6 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
         for (size_t i = 0; i < probes.size(); i++) {
             probes[i].pidEnd = maxEndPid;
         }
-        if (!maxEndPid.is_null()) {
-            ERROUT(<< "Restoring segment with "
-                    << maxEndPid.page - startPID.page << " pages from "
-                    << startPID.page << " to " << maxEndPid.page);
-            INC_TSTAT(restore_multiple_segments);
-        }
-        else {
-            ERROUT(<< "Segment " << startPID
-                    << " being restored with null endPid");
-        }
     }
 
     // construct one run scanner for each probed run
@@ -1229,7 +1219,6 @@ LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
     // Using direct I/O
     posix_memalign((void**) &buffer, IO_ALIGN, readSize + IO_ALIGN);
     // buffer = new char[directory->getBlockSize()];
-    bpos = 0;
 
     if (directory->getIndex()) {
         bucketSize = directory->getIndex()->getBucketSize();
@@ -1238,8 +1227,12 @@ LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
         bucketSize = 0;
     }
 
+    // bpos at the end of block triggers reading of the first block
+    // when calling next()
+    bpos = readSize;
+    w_assert1(bpos > 0);
+
     scanner = new LogScanner(readSize);
-    bpos = directory->getBlockSize();
 }
 
 LogArchiver::ArchiveScanner::RunScanner::~RunScanner()
@@ -1291,14 +1284,9 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
 bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
 {
     while (true) {
-        bool scanned = scanner->nextLogrec(buffer, bpos, lr);
-        if (!scanned) {
-            if (!nextBlock()) { return false; }
-        }
-        else { break; }
+        if (scanner->nextLogrec(buffer, bpos, lr)) { break; }
+        if (!nextBlock()) { return false; }
     }
-
-    w_assert1(lr->valid_header());
 
     if (lr->type() == logrec_t::t_skip ||
                 (lastPID != lpid_t::null && lr->pid() >= lastPID))
@@ -1363,6 +1351,11 @@ void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
     w_assert0(!started);
     MergeHeapEntry entry(r);
     heap.AddElementDontHeapify(entry);
+
+    if (endPID.is_null()) {
+        endPID = r->lastPID;
+    }
+    w_assert1(endPID == r->lastPID);
 }
 
 bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
@@ -2329,6 +2322,9 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult& res,
         // caller does not wish to expand the scan, or it is already to EOF
         return;
     }
+    DBG(<< "Run probe start=" << res.pidBegin << " end=" << res.pidEnd <<
+            " segsize=" << segmentSize << " minRead=" << minReadSize <<
+            " maxread=" << maxReadSize);
 
     // Find index entry for the endPid using a restricted binary search
     size_t entryEnd = findEntry(run, res.pidEnd, entryBegin,
@@ -2352,6 +2348,7 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult& res,
             offsetEnd - res.offset > maxReadSize)
     {
         entryEnd--;
+        offsetEnd = run->entries[entryEnd].offset;
     }
 
     if (entryEnd >= run->entries.size()) {
@@ -2374,11 +2371,11 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult& res,
         res.pidEnd = lpid_t(res.pidEnd.vol(), shpid);
     }
 
-    // ERROUT(<< "Run probe on " << index << " adjusted to "
-    //         << entryEnd - entryBegin << " entries "
-    //         << " from pid " << res.pidBegin << " to " << res.pidEnd
-    //         << " read size is " << offsetEnd - res.offset
-    //         << " of min " << minReadSize);
+    DBG(<< "Run probe on " << index << " adjusted to "
+            << entryEnd - entryBegin << " entries "
+            << " from pid " << res.pidBegin << " to " << res.pidEnd
+            << " read size is " << offsetEnd - res.offset
+            << " of min " << minReadSize);
 }
 
 void LogArchiver::ArchiveIndex::probe(std::vector<ProbeResult>& probes,
@@ -2408,11 +2405,15 @@ void LogArchiver::ArchiveIndex::probe(std::vector<ProbeResult>& probes,
 void LogArchiver::ArchiveIndex::dumpIndex(ostream& out)
 {
     for (size_t i = 0; i < runs.size(); i++) {
+        size_t offset = 0, prevOffset = 0;
         for (size_t j = 0; j < runs[i].entries.size(); j++) {
-            out << "run=" << i << " entry=" << j <<
-                " pid= " << runs[i].entries[j].pid <<
-                " offset= " << runs[i].entries[j].offset <<
+            offset = runs[i].entries[j].offset;
+            out << "run " << i << " entry " << j <<
+                " pid " << runs[i].entries[j].pid <<
+                " offset " << offset <<
+                " delta " << offset - prevOffset <<
                 endl;
+            prevOffset = offset;
         }
     }
 }
