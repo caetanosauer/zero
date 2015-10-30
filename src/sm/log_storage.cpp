@@ -813,7 +813,7 @@ log_storage::get_partition_for_flush(lsn_t start_lsn,
             DO_PTHREAD(pthread_mutex_lock(&_scavenge_lock));
         retry:
             // need predicates, lest we be in shutdown()
-            if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
+            //if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
             DBGOUT3(<< "chkpt 1");
             if(smlevel_0::chkpt != NULL) smlevel_0::chkpt->wakeup_and_take();
             u_int oldest = global_min_lsn().hi();
@@ -897,7 +897,7 @@ partition_t        *
 log_storage::_close_min(partition_number_t n)
 {
     // kick the cleaner thread(s)
-    if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
+    //if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
 
     FUNC(log_storage::close_min);
 
@@ -948,7 +948,7 @@ log_storage::_close_min(partition_number_t n)
         }
 
         if(tries++ > 8) W_FATAL(eOUTOFLOGSPACE);
-        if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
+        //if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
         me()->sleep(1000);
         goto again;
     }

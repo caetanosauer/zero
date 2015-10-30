@@ -493,7 +493,7 @@ restart_m::restart(
             // Note this buffer pool flush is only in serial mode, but not in concurrent
             // mode (open database after Log Analysis)
 
-            W_COERCE(bf->force_volume());
+            W_COERCE(bf->wakeup_cleaner());
         }
 
         struct timeval tm_after;
@@ -642,7 +642,7 @@ void restart_m::log_analysis(
 
     //Re-acquire locks
     if(restart_with_lock) {
-        for(lck_tab_t::iterator it  = v_chkpt.lck_tab.begin(); 
+        for(lck_tab_t::iterator it  = v_chkpt.lck_tab.begin();
                                 it != v_chkpt.lck_tab.end(); ++it) {
             xct_t* xd = xct_t::look_up(it->first);
             list<lck_tab_entry_t>::iterator jt;
@@ -654,13 +654,13 @@ void restart_m::log_analysis(
 
     //Re-mount devices
     smlevel_0::vol->set_next_vid(v_chkpt.next_vid);
-    for (dev_tab_t::iterator it  = v_chkpt.dev_tab.begin(); 
+    for (dev_tab_t::iterator it  = v_chkpt.dev_tab.begin();
                              it != v_chkpt.dev_tab.end(); ++it) {
         smlevel_0::vol->sx_mount(it->first.c_str(), false /* log */);
     }
 
     //Re-add backups
-    for (bkp_tab_t::iterator it  = v_chkpt.bkp_tab.begin(); 
+    for (bkp_tab_t::iterator it  = v_chkpt.bkp_tab.begin();
                              it != v_chkpt.bkp_tab.end(); ++it) {
         smlevel_0::vol->sx_add_backup(it->first,
                                       it->second.bkp_path, false /* log */);
