@@ -432,6 +432,11 @@ ss_m::_construct_once()
         if (archiving) {
             logArchiver = new LogArchiver(_options);
             logArchiver->fork();
+
+            bool decoupled_cleaner = _options.get_bool_option("sm_decoupled_cleaner", false);
+            if(decoupled_cleaner) {
+                bf->set_cleaner(logArchiver, _options);
+            }
         }
     } else {
         /* Run without logging at your own risk. */

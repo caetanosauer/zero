@@ -8,6 +8,7 @@
 #include "bf_tree_cb.h"
 #include "bf_tree_vol.h"
 #include "bf_tree_cleaner.h"
+#include "page_cleaner.h"
 #include "bf_tree.h"
 
 #include "smthread.h"
@@ -195,6 +196,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     _cleaner = new bf_tree_cleaner (this, npgwriters,
             cleaner_interval_millisec_min, cleaner_interval_millisec_max,
             cleaner_write_buffer_pages, initially_enable_cleaners);
+    _dcleaner = NULL;
 
     _dirty_page_count_approximate = 0;
     _swizzled_page_count_approximate = 0;
@@ -233,13 +235,25 @@ bf_tree_m::~bf_tree_m() {
         delete _cleaner;
         _cleaner = NULL;
     }
+    if (_dcleaner != NULL) {
+        delete _dcleaner;
+        _dcleaner = NULL;
+    }
     DO_PTHREAD(pthread_mutex_destroy(&_eviction_lock));
 
+}
+
+void bf_tree_m::set_cleaner(LogArchiver* _archiver, const sm_options& _options) {
+    _dcleaner = new page_cleaner_mgr(this, _archiver->getDirectory(), _options);
 }
 
 w_rc_t bf_tree_m::init ()
 {
     W_DO(_cleaner->start_cleaners());
+    if(_dcleaner != NULL) {
+        W_DO(_cleaner->request_stop_cleaners());
+        W_DO(_cleaner->join_cleaners());
+    }
     return RCOK;
 }
 
@@ -248,8 +262,12 @@ w_rc_t bf_tree_m::destroy ()
     if (_volume != NULL) {
         W_DO (uninstall_volume());
     }
-    W_DO(_cleaner->request_stop_cleaner());
-    W_DO(_cleaner->join_cleaner());
+
+    if(_dcleaner == NULL) {
+        W_DO(_cleaner->request_stop_cleaners());
+        W_DO(_cleaner->join_cleaners());
+    }
+
     return RCOK;
 }
 
@@ -424,6 +442,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
         return rc;
     }
     _volume = desc;
+    if(_dcleaner != NULL) W_DO(_dcleaner->install_cleaner());
     return RCOK;
 }
 
@@ -549,6 +568,7 @@ w_rc_t bf_tree_m::uninstall_volume(const bool clear_cb)
     }
 
     delete _volume;
+    if(_dcleaner != NULL) W_DO(_dcleaner->uninstall_cleaner());
     _volume = NULL;
     return RCOK;
 }
@@ -1198,9 +1218,15 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 
 ///////////////////////////////////   Dirty Page Cleaner BEGIN       ///////////////////////////////////
 w_rc_t bf_tree_m::force_volume() {
+    if(_dcleaner != NULL) {
+        return _dcleaner->force_all();
+    }
     return _cleaner->force_volume();
 }
 w_rc_t bf_tree_m::wakeup_cleaners() {
+    if(_dcleaner != NULL) {
+        return _dcleaner->wakeup_cleaners();
+    }
     return _cleaner->wakeup_cleaner();
 }
 

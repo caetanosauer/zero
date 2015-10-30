@@ -24,6 +24,7 @@ class test_bf_tree;
 class test_bf_fixed;
 class bf_tree_cleaner;
 class bf_tree_cleaner_slave_thread_t;
+class page_cleaner_mgr;
 class btree_page_h;
 struct EvictionContext;
 
@@ -163,7 +164,8 @@ class bf_tree_m {
     friend class bf_tree_cleaner_slave_thread_t; // for page cleaning
     friend class bf_eviction_thread_t;
     friend class WarmupThread;
-    friend class page_cleaner;
+    friend class page_cleaner_mgr;
+    friend class page_cleaner_slave;
 
 public:
 #ifdef PAUSE_SWIZZLING_ON
@@ -177,6 +179,8 @@ public:
 
     /** destructs the buffer pool.  */
     ~bf_tree_m ();
+
+    void set_cleaner(LogArchiver* _archiver, const sm_options& _options);
 
     /** returns the total number of blocks in this bufferpool. */
     inline bf_idx get_block_cnt() const {return _block_cnt;}
@@ -811,6 +815,7 @@ private:
 
     /** the dirty page cleaner. */
     bf_tree_cleaner*     _cleaner;
+    page_cleaner_mgr*    _dcleaner;
 
     /**
      * Unreliable count of dirty pages in this bufferpool.

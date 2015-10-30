@@ -1,53 +1,110 @@
 #ifndef PAGE_CLEANER_H
 #define PAGE_CLEANER_H
 
-#include "w_defines.h"
-#include "sm_base.h"
-#include "smthread.h"
-#include "vid_t.h"
-#include "vol.h"
-#include "generic_page.h"
-#include "logarchiver.h"
-#include "bf_tree.h"
+#include "bf_tree.h"        // For page_cleaner_mgr::bufferpool
+#include "logarchiver.h"    // For page_cleaner_mgr::archive (nested class)
+#include "vol.h"            // For page_cleaner_mgr::cleaners and page_cleaner_slave::volume
+#include "generic_page.h"   // For page_cleaner_slave::workspace (?)
+#include "lsn.h"            // For page_cleaner_slave::completed_lsn
+#include "w_base.h"         // For w_rc_t
+#include "smthread.h"       // For smthread_t
 
 #include <vector>
+#include <pthread.h>
 
-struct CleanerControl {
-    pthread_mutex_t mutex;
-    pthread_cond_t activateCond;
-    lsn_t endLSN;
-    bool activated;
-    bool listening;
-    bool* shutdownFlag;
+class page_cleaner_slave;
 
-    CleanerControl(bool* shutdown);
-    ~CleanerControl();
-    bool activate(bool wait, lsn_t lsn = lsn_t::null);
-    bool waitForActivation();
+enum cleaner_mode_t {
+    NORMAL,
+    EAGER
 };
 
-class page_cleaner : public smthread_t {
+class page_cleaner_mgr {
+    friend class page_cleaner_slave;
 public:
-    const static int SEQ_PAGES = 16; // read/write 16 pages at a time
+    page_cleaner_mgr(bf_tree_m* _bufferpool, LogArchiver::ArchiveDirectory* _archive, const sm_options& options);
+    ~page_cleaner_mgr();
 
-    page_cleaner (vol_t* _volume, LogArchiver::ArchiveDirectory* _archive, bf_tree_m* _buffer);
-    ~page_cleaner ();
+    w_rc_t install_cleaner();
+    w_rc_t uninstall_cleaner();
+
+    w_rc_t wakeup_cleaners (); // async clean
+    w_rc_t force_all();        // sync clean
+
+private:
+    bf_tree_m* bufferpool;
+    LogArchiver::ArchiveDirectory* archive;
+
+    page_cleaner_slave* cleaners[1];
+
+    cleaner_mode_t mode;
+    uint sleep_time;
+    uint buffer_size;
+
+    bool _wakeup_a_cleaner(uint id);
+
+    const static int DFT_BUFFER_SIZE = 16;      // in pages
+    const static bool DFT_EAGER = false;
+    const static int DFT_SLEEP_TIME = 10000;    //
+};
+
+struct CleanerControl {
+    bool* shutdownFlag;
+    cleaner_mode_t mode;
+    uint sleep_time;
+
+    pthread_mutex_t mutex;
+    pthread_cond_t activateCond;
+
+    bool activated;
+    bool listening;
+
+    CleanerControl(bool* _shutdown, cleaner_mode_t _mode, uint _sleep_time);
+    ~CleanerControl();
+    /* async = true, activate the cleaner thread and returns to caller
+     * async = false, returns only after cleaner is finished
+     * wait = true, pthread_mutex_lock
+     * wait = false, pthread_mutex_trylock
+     */
+    bool activate(bool wait);
+    bool waitForActivation();
+    bool waitForReturn();
+};
+
+class page_cleaner_slave : public smthread_t {
+public:
+
+    page_cleaner_slave (page_cleaner_mgr* _master,
+                    vol_t* _volume,
+                    uint _bufsize,
+                    cleaner_mode_t _mode,
+                    uint _sleep_time);
+    ~page_cleaner_slave ();
     void run();
-    void activate(lsn_t endLSN);
+
+    /* Returns true only if the cleaner was activated as a result of this call.
+     * The cleaner might have been activated by other thread. In case the caller
+     * wants to make a sync call to cleaner, he can embed it in a while loop:
+     *     while(!cleaner->activate()) {
+     *         sleep();
+     *     }
+     */
+    bool activate();
     void shutdown();
     bool isActive() { return control.activated; }
 
 private:
+    page_cleaner_mgr* master;
     vol_t* volume;
-    LogArchiver::ArchiveDirectory* archive;
-    bf_tree_m* buffer_manager;
 
     vector<generic_page> workspace;
+    uint workspace_size;
 
     bool shutdownFlag;
+    lsn_t completed_lsn;
     CleanerControl control;
 
-    void flush_workspace();
+    w_rc_t flush_workspace();
 };
 
 

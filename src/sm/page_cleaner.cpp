@@ -1,7 +1,18 @@
 #include "page_cleaner.h"
 
-CleanerControl::CleanerControl(bool* shutdownFlag)
-    : endLSN(lsn_t::null), activated(false), listening(false), shutdownFlag(shutdownFlag)
+#include "sm.h" //for ss_m::shutting_down and ss_m::shutdown_clean
+#include "bf_tree_vol.h"
+#include "logrec.h"
+#include "fixable_page_h.h"
+#include "bf_tree_cb.h"
+
+bool _dirty_shutdown_happening_now() {
+    return (ss_m::shutting_down && !ss_m::shutdown_clean);
+}
+
+CleanerControl::CleanerControl(bool* _shutdownFlag, cleaner_mode_t _mode, uint _sleep_time)
+    : shutdownFlag(_shutdownFlag), mode(_mode), sleep_time(_sleep_time),
+    activated(false), listening(false)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
     DO_PTHREAD(pthread_cond_init(&activateCond, NULL));
@@ -13,7 +24,7 @@ CleanerControl::~CleanerControl()
     DO_PTHREAD(pthread_cond_destroy(&activateCond));
 }
 
-bool CleanerControl::activate(bool wait, lsn_t lsn)
+bool CleanerControl::activate(bool wait)
 {
     if (wait) {
         DO_PTHREAD(pthread_mutex_lock(&mutex));
@@ -25,20 +36,19 @@ bool CleanerControl::activate(bool wait, lsn_t lsn)
     }
     // now we hold the mutex -- signal archiver thread and set endLSN
 
-    /* Make sure signal is sent only if thread is listening.
-     * TODO: BUG? The mutex alone cannot guarantee that the signal is not lost,
-     * since the activate call may happen before the thread ever starts
-     * listening. If we ever get problems with archiver getting stuck, this
-     * would be one of the first things to try. We could, e.g., replace
-     * the listening flag with something like "gotSignal" and loop this
-     * method until it's true.
-     */
-    // activation may not decrease the endLSN
-    w_assert0(lsn >= endLSN);
-    endLSN = lsn;
-    activated = true;
-    DO_PTHREAD(pthread_cond_signal(&activateCond));
-    DO_PTHREAD(pthread_mutex_unlock(&mutex));
+    /* run() is in the same critical section of mutex, meaning that if we got here
+     * is because run() released the mutex with cond_wait. */
+
+    if(activated == true) {
+        DO_PTHREAD(pthread_mutex_unlock(&mutex));
+        return false;
+    }
+    else {
+        DBGTHRD(<< "Activating cleaner thread");
+        activated = true;
+        DO_PTHREAD(pthread_cond_signal(&activateCond));
+        DO_PTHREAD(pthread_mutex_unlock(&mutex));   
+    }    
 
     /*
      * Returning true only indicates that signal was sent, and not that the
@@ -56,12 +66,16 @@ bool CleanerControl::waitForActivation()
     listening = true;
     while(!activated) {
         struct timespec timeout;
-        sthread_t::timeout_to_timespec(100, timeout); // 100ms
+        sthread_t::timeout_to_timespec(sleep_time, timeout); // 100ms
         int code = pthread_cond_timedwait(&activateCond, &mutex, &timeout);
         if (code == ETIMEDOUT) {
             if (*shutdownFlag) {
                 DBGTHRD(<< "Activation failed due to shutdown. Exiting");
                 return false;
+            }
+            if(mode == EAGER) {
+                DBGTHRD(<< "Cleaner activating proactively");
+                activated = true;
             }
         }
         DO_PTHREAD_TIMED(code);
@@ -70,16 +84,17 @@ bool CleanerControl::waitForActivation()
     return true;
 }
 
-
-page_cleaner::page_cleaner(vol_t* _volume, LogArchiver::ArchiveDirectory* _archive, bf_tree_m* _buffer_manager)
-: volume(_volume), archive(_archive), buffer_manager(_buffer_manager), shutdownFlag(false), control(&shutdownFlag) {
+page_cleaner_slave::page_cleaner_slave(page_cleaner_mgr* _master, vol_t* _volume,
+                            uint _bufsize, cleaner_mode_t _mode, uint _sleep_time)
+: master(_master), volume(_volume), workspace_size(_bufsize), shutdownFlag(false), control(&shutdownFlag, _mode, _sleep_time) {
+    completed_lsn = lsn_t(1,0);
 }
 
-page_cleaner::~page_cleaner() {
+page_cleaner_slave::~page_cleaner_slave() {
 
 }
 
-void page_cleaner::run() {
+void page_cleaner_slave::run() {
     while(true) {
         CRITICAL_SECTION(cs, control.mutex);
 
@@ -94,15 +109,23 @@ void page_cleaner::run() {
             break;
         }
 
-        DBGTHRD(<< "Cleaner thread activated until " << control.endLSN);
+        lsn_t last_lsn = master->archive->getLastLSN();
+        if(last_lsn <= completed_lsn) {
+            DBGTHRD(<< "Nothing archived to clean.");
+            control.activated = false;
+            continue;
+        }
+
+        DBGTHRD(<< "Cleaner thread activated from " << completed_lsn);
 
         lpid_t first_page = lpid_t(volume->vid(), volume->first_data_pageid());
-        LogArchiver::ArchiveScanner logScan(archive);
-        LogArchiver::ArchiveScanner::RunMerger* merger = logScan.open(first_page, lpid_t::null, control.endLSN);
+        LogArchiver::ArchiveScanner logScan(master->archive);
+        LogArchiver::ArchiveScanner::RunMerger* merger = logScan.open(first_page, lpid_t::null, completed_lsn);
 
+        workspace.clear();
         generic_page* page = NULL;
         logrec_t* lr;
-        while (merger->next(lr)) {
+        while (merger != NULL && merger->next(lr)) {
 
             lpid_t lrpid = lr->construct_pid();
 
@@ -113,20 +136,34 @@ void page_cleaner::run() {
             if(workspace.size() > 0 
                 && workspace.back().pid != lpid_t::null
                 && workspace.back().pid < lrpid) {
-                w_assert0(workspace.size() == SEQ_PAGES);
-                w_assert0(workspace.back().pid == page->pid);
+                w_assert0(workspace.size() == workspace_size);
+                w_assert0(workspace.back().pid >= page->pid);
                 flush_workspace();
                 workspace.clear();
             }
 
             if(workspace.size() == 0) {
-                workspace.resize(SEQ_PAGES);
-                volume->read_many_pages(lrpid.page, &workspace[0], SEQ_PAGES);
+                workspace.resize(workspace_size);
+                /* true for ignoreRestore */
+                w_rc_t err = volume->read_many_pages(lrpid.page, &workspace[0], workspace_size, true);
+                if(err.err_num() == eVOLFAILED) {
+                    DBGOUT(<<"Trying to clean pages, but device is failed. Cleaner deactivating.");
+                    control.activated = false;
+                    break;
+                }
+                else if(err.err_num() != stSHORTIO) {
+                    W_COERCE(err);
+                }
                 page = &workspace[0];
             }
             else {
                 shpid_t base_pid = workspace[0].pid.page;
                 page = &workspace[lrpid.page - base_pid];
+            }
+
+            if(page->lsn >= lr->lsn_ck()) {
+                DBGOUT(<<"Not replaying log record " << lr->lsn_ck() << ". Page " << page->pid << " is up-to-date.");
+                continue;
             }
 
             page->pid = lrpid;
@@ -140,53 +177,57 @@ void page_cleaner::run() {
             DBGOUT(<<"Replayed log record " << lr->lsn_ck() << " for page " << page->pid);
         }
 
-        flush_workspace();
+        if(workspace.size() > 0) {
+            page->checksum = page->calculate_checksum();
+            flush_workspace();
+        }
+        completed_lsn = last_lsn;
+        DBGTHRD(<< "Cleaner thread deactivating. Cleaned until " << completed_lsn);
         control.activated = false;
-    }   
+    }
 }
 
-void page_cleaner::activate(lsn_t endLSN) {
-    DBGTHRD(<< "Activating cleaner thread until " << endLSN);
-    control.activate(true, endLSN);
+bool page_cleaner_slave::activate() {
+    //DBGTHRD(<< "Requesting activation of cleaner thread");
+    return control.activate(true);
 }
 
-void page_cleaner::shutdown() {
+void page_cleaner_slave::shutdown() {
     shutdownFlag = true;
     // make other threads see new shutdown value
     lintel::atomic_thread_fence(lintel::memory_order_release);
 }
 
-void page_cleaner::flush_workspace() {
-    /*
-    if (_dirty_shutdown_happening()) {
+w_rc_t page_cleaner_slave::flush_workspace() {
+    if (_dirty_shutdown_happening_now()) {
         return RCOK;
-    }*/
+    }
 
     shpid_t first_pid = workspace.front().pid.page;
     DBGOUT1(<<"Flushing write buffer from page "<<first_pid << " to page " << first_pid + workspace.size()-1);
-    W_COERCE(volume->write_many_pages(first_pid, &workspace[0], workspace.size()-1));
+    W_COERCE(volume->write_many_pages(first_pid, &workspace[0], workspace.size()));
 
     for(uint i=0; i<workspace.size(); ++i) {
         generic_page& flushed = workspace[i];
         uint64_t key = bf_key(flushed.pid);
-        bf_idx idx = buffer_manager->lookup_in_doubt(key);
+        bf_idx idx = master->bufferpool->lookup_in_doubt(key);
         if(idx != 0) {
             //page is in the buffer
-            bf_tree_cb_t& cb = buffer_manager->get_cb(idx);
+            bf_tree_cb_t& cb = master->bufferpool->get_cb(idx);
             cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_FOREVER);
             generic_page& buffered = *smlevel_0::bf->get_page(idx);
 
             if (buffered.pid == flushed.pid) {
                 w_assert0(buffered.lsn >= flushed.lsn);
 
-                if (buffered.lsn == flushed.lsn) {
+                if (buffered.lsn == flushed.lsn && cb._dirty) {
                     cb._dirty = false;
                     DBGOUT1(<<"Setting page " << flushed.pid.page << " clean.");
                 }
                 // CS TODO: why are in_doubt and recovery_access set here???
                 cb._in_doubt = false;
                 cb._recovery_access = false;
-                --buffer_manager->_dirty_page_count_approximate;
+                --master->bufferpool->_dirty_page_count_approximate;
 
                 // cb._rec_lsn = _write_buffer[i].lsn.data();
                 cb._rec_lsn = lsn_t::null.data();
@@ -197,4 +238,79 @@ void page_cleaner::flush_workspace() {
             cb.latch().latch_release();
         }
     }
+    return RCOK;
+}
+
+page_cleaner_mgr::page_cleaner_mgr( bf_tree_m* _bufferpool, LogArchiver::ArchiveDirectory* _archive, const sm_options& options)
+    : bufferpool(_bufferpool), archive(_archive) {
+        bool eager = options.get_bool_option("sm_decoupled_cleaner_mode", DFT_EAGER);
+        if(eager) {
+            mode = EAGER;
+        }
+        else {
+            mode = NORMAL;
+        }
+        sleep_time = options.get_int_option("sm_decoupled_cleaner_interval", DFT_SLEEP_TIME);
+        buffer_size = options.get_int_option("sm_decoupled_cleaner_bufsize", DFT_BUFFER_SIZE);
+}
+
+page_cleaner_mgr::~page_cleaner_mgr() {
+}
+
+w_rc_t page_cleaner_mgr::install_cleaner(vid_t vid) {
+    w_assert0(bufferpool->_volumes[vid] != NULL);
+    cleaners[vid] = new page_cleaner_slave(this, bufferpool->_volumes[vid]->_volume, buffer_size, mode, sleep_time);
+    cleaners[vid]->fork();
+    return RCOK;
+}
+
+w_rc_t page_cleaner_mgr::uninstall_cleaner(vid_t vid) {
+    cleaners[vid]->shutdown();
+    cleaners[vid]->join();
+    delete cleaners[vid];
+    return RCOK;
+}
+
+w_rc_t page_cleaner_mgr::wakeup_cleaners() {
+    for (unsigned id = 1; id < vol_m::MAX_VOLS; ++id) {
+        _wakeup_a_cleaner(id);
+    }
+    return RCOK;
+}
+
+w_rc_t page_cleaner_mgr::force_all() {
+    while(true) {
+        /* We have to flush log and archive to guarantee that we are going to
+         * replay the most recent log records and clean the buffer */
+        W_DO(ss_m::log->flush_all());
+        ss_m::logArchiver->requestFlushSync(smlevel_0::log->curr_lsn());
+
+        // We do this for reasons
+        W_DO (smlevel_0::vol->force_fixed_buffers());
+
+        wakeup_cleaners();
+
+        bool all_clean = true;
+        bf_idx block_cnt = bufferpool->_block_cnt;
+        for (bf_idx idx = 1; idx < block_cnt; ++idx) {
+            // no latching is needed -- fuzzy check
+            bf_tree_cb_t &cb = bufferpool->get_cb(idx);
+            if (cb._dirty) {
+                all_clean = false;
+                break;
+            }
+        }
+        if (all_clean) {
+            break;
+        }
+    }
+    return RCOK;
+}
+
+bool page_cleaner_mgr::_wakeup_a_cleaner(uint id) {
+    w_assert1(id > 0 && id <= vol_m::MAX_VOLS);
+    if (bufferpool->_volumes[id] != NULL) {
+        return cleaners[id]->activate();
+    }
+    return false;
 }
