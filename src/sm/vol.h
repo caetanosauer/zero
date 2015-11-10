@@ -48,7 +48,7 @@ public:
      */
     rc_t                write_many_pages(
         PageID             first_page,
-        const generic_page* buf,
+        const generic_page* buf,        //caller must align this buffer
         int                 cnt,
         bool ignoreRestore = false);
 
@@ -60,7 +60,7 @@ public:
 
     rc_t                read_many_pages(
         PageID             first_page,
-        generic_page* const buf,
+        generic_page* const buf,        //caller must align this buffer
         int                 cnt,
         bool ignoreRestore = false);
 
