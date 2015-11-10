@@ -248,12 +248,12 @@ w_rc_t page_cleaner_slave::flush_workspace() {
 
                 if (buffered.lsn == flushed.lsn && cb._dirty) {
                     cb._dirty = false;
+                    master->bufferpool->_dirty_page_count_approximate--;
                     DBGOUT1(<<"Setting page " << flushed.pid.page << " clean.");
                 }
                 // CS TODO: why are in_doubt and recovery_access set here???
                 cb._in_doubt = false;
                 cb._recovery_access = false;
-                --master->bufferpool->_dirty_page_count_approximate;
 
                 // cb._rec_lsn = _write_buffer[i].lsn.data();
                 cb._rec_lsn = lsn_t::null.data();
