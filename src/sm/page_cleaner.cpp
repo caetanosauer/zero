@@ -215,7 +215,7 @@ void page_cleaner_slave::run() {
 
 bool page_cleaner_slave::activate() {
     //DBGTHRD(<< "Requesting activation of cleaner thread");
-    return control.activate(true);
+    return control.activate(false);
 }
 
 void page_cleaner_slave::shutdown() {
