@@ -61,11 +61,7 @@ struct CleanerControl {
 
     CleanerControl(bool* _shutdown, cleaner_mode_t _mode, uint _sleep_time);
     ~CleanerControl();
-    /* async = true, activate the cleaner thread and returns to caller
-     * async = false, returns only after cleaner is finished
-     * wait = true, pthread_mutex_lock
-     * wait = false, pthread_mutex_trylock
-     */
+
     bool activate(bool wait);
     bool waitForActivation();
     bool waitForReturn();
