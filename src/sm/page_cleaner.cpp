@@ -309,7 +309,7 @@ w_rc_t page_cleaner_mgr::force_all() {
         /* We have to flush log and archive to guarantee that we are going to
          * replay the most recent log records and clean the buffer */
         W_DO(ss_m::log->flush_all());
-        ss_m::logArchiver->requestFlushSync(smlevel_0::log->curr_lsn());
+        ss_m::logArchiver->requestFlushSync(ss_m::log->durable_lsn());
 
         // We do this for reasons
         W_DO (smlevel_0::vol->force_fixed_buffers());
