@@ -93,8 +93,9 @@ private:
     page_cleaner_mgr* master;
     vol_t* volume;
 
-    vector<generic_page> workspace;
+    generic_page* workspace;
     uint workspace_size;
+    bool workspace_empty;
 
     bool shutdownFlag;
     lsn_t completed_lsn;

@@ -84,14 +84,26 @@ bool CleanerControl::waitForActivation()
     return true;
 }
 
-page_cleaner_slave::page_cleaner_slave(page_cleaner_mgr* _master, vol_t* _volume,
-                            uint _bufsize, cleaner_mode_t _mode, uint _sleep_time)
-: master(_master), volume(_volume), workspace_size(_bufsize), shutdownFlag(false), control(&shutdownFlag, _mode, _sleep_time) {
+page_cleaner_slave::page_cleaner_slave(page_cleaner_mgr* _master,
+                                       vol_t*            _volume,
+                                       uint              _bufsize,
+                                       cleaner_mode_t    _mode,
+                                       uint              _sleep_time)
+: master(_master),
+  volume(_volume),
+  workspace_size(_bufsize),
+  workspace_empty(true),
+  shutdownFlag(false),
+  control(&shutdownFlag, _mode, _sleep_time)
+{
     completed_lsn = lsn_t(1,0);
+    posix_memalign((void**) &workspace, sizeof(generic_page), workspace_size * sizeof(generic_page));
+    memset(workspace, '\0', workspace_size * sizeof(generic_page));
 }
 
-page_cleaner_slave::~page_cleaner_slave() {
-
+page_cleaner_slave::~page_cleaner_slave()
+{
+    delete[] workspace;
 }
 
 void page_cleaner_slave::run() {
@@ -122,7 +134,6 @@ void page_cleaner_slave::run() {
         LogArchiver::ArchiveScanner logScan(master->archive);
         LogArchiver::ArchiveScanner::RunMerger* merger = logScan.open(first_page, lpid_t::null, completed_lsn);
 
-        workspace.clear();
         generic_page* page = NULL;
         logrec_t* lr;
         while (merger != NULL && merger->next(lr)) {
@@ -133,19 +144,19 @@ void page_cleaner_slave::run() {
                 page->checksum = page->calculate_checksum();
             }
 
-            if(workspace.size() > 0 
-                && workspace.back().pid != lpid_t::null
-                && workspace.back().pid < lrpid) {
-                w_assert0(workspace.size() == workspace_size);
-                w_assert0(workspace.back().pid >= page->pid);
+            if(!workspace_empty
+                && workspace[workspace_size-1].pid != lpid_t::null
+                && workspace[workspace_size-1].pid < lrpid) {
+                w_assert0(workspace[workspace_size-1].pid >= page->pid);
                 flush_workspace();
-                workspace.clear();
+
+                memset(workspace, '\0', workspace_size * sizeof(generic_page));
+                workspace_empty = true;
             }
 
-            if(workspace.size() == 0) {
-                workspace.resize(workspace_size);
+            if(workspace_empty) {
                 /* true for ignoreRestore */
-                w_rc_t err = volume->read_many_pages(lrpid.page, &workspace[0], workspace_size, true);
+                w_rc_t err = volume->read_many_pages(lrpid.page, workspace, workspace_size, true);
                 if(err.err_num() == eVOLFAILED) {
                     DBGOUT(<<"Trying to clean pages, but device is failed. Cleaner deactivating.");
                     control.activated = false;
@@ -154,6 +165,8 @@ void page_cleaner_slave::run() {
                 else if(err.err_num() != stSHORTIO) {
                     W_COERCE(err);
                 }
+                workspace_empty = false;
+
                 page = &workspace[0];
             }
             else {
@@ -177,9 +190,12 @@ void page_cleaner_slave::run() {
             DBGOUT(<<"Replayed log record " << lr->lsn_ck() << " for page " << page->pid);
         }
 
-        if(workspace.size() > 0) {
+        if(!workspace_empty) {
             page->checksum = page->calculate_checksum();
             flush_workspace();
+
+            memset(workspace, '\0', workspace_size * sizeof(generic_page));
+            workspace_empty = true;
         }
         completed_lsn = last_lsn;
         DBGTHRD(<< "Cleaner thread deactivating. Cleaned until " << completed_lsn);
@@ -203,11 +219,11 @@ w_rc_t page_cleaner_slave::flush_workspace() {
         return RCOK;
     }
 
-    shpid_t first_pid = workspace.front().pid.page;
-    DBGOUT1(<<"Flushing write buffer from page "<<first_pid << " to page " << first_pid + workspace.size()-1);
-    W_COERCE(volume->write_many_pages(first_pid, &workspace[0], workspace.size()));
+    shpid_t first_pid = workspace[0].pid.page;
+    DBGOUT1(<<"Flushing write buffer from page "<<first_pid << " to page " << first_pid + workspace_size-1);
+    W_COERCE(volume->write_many_pages(first_pid, workspace, workspace_size));
 
-    for(uint i=0; i<workspace.size(); ++i) {
+    for(uint i=0; i<workspace_size; ++i) {
         generic_page& flushed = workspace[i];
         uint64_t key = bf_key(flushed.pid);
         bf_idx idx = master->bufferpool->lookup_in_doubt(key);
