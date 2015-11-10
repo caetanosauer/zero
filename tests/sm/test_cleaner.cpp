@@ -37,22 +37,23 @@ rc_t populateBtree(ss_m* ssm, test_volume_t *test_volume, int count)
 rc_t cleaner(ss_m* ssm, test_volume_t* test_vol)
 {
     init();
-    unsigned howManyToInsert = 2000;
+    unsigned howManyToInsert = 20000;
     W_DO(populateBtree(ssm, test_vol, howManyToInsert));
-    //ssm->activate_archiver();
+    ssm->activate_archiver();
 
-    LogArchiver::LogConsumer cons(lsn_t(1,0), BLOCK_SIZE);
-    LogArchiver::ArchiverHeap heap(BLOCK_SIZE);
-    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE, true);
-    LogArchiver::BlockAssembly assemb(&dir);
+    //LogArchiver::LogConsumer cons(lsn_t(1,0), BLOCK_SIZE);
+    //LogArchiver::ArchiverHeap heap(BLOCK_SIZE);
+    //LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE, true);
+    //LogArchiver::BlockAssembly assemb(&dir);
 
-    LogArchiver la(&dir, &cons, &heap, &assemb);
-    la.fork();
-    la.activate(lsn_t::null, true /* wait */);
+    //LogArchiver la(&dir, &cons, &heap, &assemb);
+    //la.fork();
+    //la.activate(lsn_t::null, true /* wait */);
+
     // wait for logarchiver to consume up to durable LSN,
-    if (la.getDirectory()->getLastLSN() < ssm->log->durable_lsn()) {
-            la.requestFlushSync(ssm->log->durable_lsn());
-    }
+    //if (la.getDirectory()->getLastLSN() < ssm->log->durable_lsn()) {
+    //        la.requestFlushSync(ssm->log->durable_lsn());
+    //}
 
     //page_cleaner_mgr cleaner(smlevel_0::bf, &dir);
     //cleaner.start_cleaners();
@@ -70,7 +71,10 @@ TEST (CleanerTest, cleaner) {
     options.set_bool_option("sm_logging", true);
     options.set_bool_option("sm_archiving", true);
     options.set_bool_option("sm_decoupled_cleaner", true);
-    options.set_string_option("sm_archdir", "/tmp");
+    options.set_bool_option("sm_decoupled_cleaner_mode", true);
+    options.set_bool_option("sm_archiver_eager", true);
+    options.set_string_option("sm_archdir", "/var/tmp/lucas/btree_test_env/archive");
+    options.set_string_option("sm_logdir", "/var/tmp/lucas/btree_test_env/log");
     EXPECT_EQ(test_env->runBtreeTest(cleaner, options), 0);
 }
 
