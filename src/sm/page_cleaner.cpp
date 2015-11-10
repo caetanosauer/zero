@@ -240,7 +240,12 @@ w_rc_t page_cleaner_slave::flush_workspace() {
         if(idx != 0) {
             //page is in the buffer
             bf_tree_cb_t& cb = master->bufferpool->get_cb(idx);
-            cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_FOREVER);
+            w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_IMMEDIATE);
+
+            if (latch_rc.is_error()) {
+                continue;
+            }
+
             generic_page& buffered = *smlevel_0::bf->get_page(idx);
 
             if (buffered.pid == flushed.pid) {
