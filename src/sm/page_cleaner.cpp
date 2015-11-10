@@ -124,8 +124,18 @@ void page_cleaner_slave::run() {
         lsn_t last_lsn = master->archive->getLastLSN();
         if(last_lsn <= completed_lsn) {
             DBGTHRD(<< "Nothing archived to clean.");
-            control.activated = false;
-            continue;
+
+            bf_idx block_cnt = master->bufferpool->_block_cnt;
+            bool in_real_hurry = (unsigned)master->bufferpool->_dirty_page_count_approximate > (block_cnt / 4 * 3);
+            if(in_real_hurry) {
+                DBGTHRD(<< "We are in a hurry. Flushing log and archive for cleaner.");
+                ss_m::log->flush_all();
+                ss_m::logArchiver->requestFlushSync(ss_m::log->durable_lsn());
+            }
+            else {
+                control.activated = false;
+                continue;
+            }
         }
 
         DBGTHRD(<< "Cleaner thread activated from " << completed_lsn);
