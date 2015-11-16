@@ -156,7 +156,7 @@ class chkpt_thread_t;
  *********************************************************************/
 class chkpt_m : public smlevel_0 {
 public:
-    NORET            chkpt_m();
+    NORET            chkpt_m(bool _decoupled);
     NORET            ~chkpt_m();
 
     /*
@@ -179,7 +179,7 @@ public:
     void             backward_scan_log(const lsn_t master_lsn, const lsn_t begin_lsn, chkpt_t& new_chkpt, const bool restart_with_lock);
     void             forward_scan_log(const lsn_t master_lsn, const lsn_t begin_lsn, chkpt_t& new_chkpt, const bool restart_with_lock);
 
-
+    bool decoupled;
 
 private:
     chkpt_thread_t*  _chkpt_thread;

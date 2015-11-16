@@ -193,8 +193,8 @@ struct old_xct_tracker {
  *
  *********************************************************************/
 NORET
-chkpt_m::chkpt_m()
-    : _chkpt_thread(0), _chkpt_count(0)
+chkpt_m::chkpt_m(bool _decoupled)
+    : decoupled(_decoupled), _chkpt_thread(0), _chkpt_count(0)
 {
     const size_t BLOCK_SIZE = 1024 * 1024;
     _chkpt_last = ss_m::log->master_lsn();
@@ -317,9 +317,14 @@ void chkpt_m::synch_take()
         CmpXctLockTids   lock_cmp;
         XctLockHeap      dummy_heap(lock_cmp);
 
-        //take(t_chkpt_sync, dummy_heap);
-        //w_assert1(0 == dummy_heap.NumElements());
-        dcpld_take(t_chkpt_sync);
+        if(decoupled) {
+            dcpld_take(t_chkpt_sync);
+        }
+        else {
+            take(t_chkpt_sync, dummy_heap);
+            w_assert1(0 == dummy_heap.NumElements());
+        }
+        
     }
     return;
 }
@@ -1899,7 +1904,7 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
     //DBGOUT3(<<"analysis: default " <<
     //    r.type() << " tid " << r.tid()
     //    << " page of interest " << page_of_interest);
-    if (r.is_page_update())
+    if (r.is_page_update() && r.type() != logrec_t::t_store_operation)
     {
         // Log record affects buffer pool, and it is not a compensation log record
         //DBGOUT3(<<"is page update " );
@@ -2516,7 +2521,7 @@ void chkpt_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log reco
             break;
         default:
             {
-                if(r.type() != logrec_t::t_page_img_format)
+                if(r.type() != logrec_t::t_page_img_format && r.type() != logrec_t::t_store_operation)
                     W_FATAL_MSG(fcINTERNAL, << "restart_m::_analysis_acquire_lock_log - Unexpected log record type: " << r.type());
             }
             break;
@@ -3977,9 +3982,14 @@ chkpt_thread_t::run()
 
         // No need to acquire checkpoint mutex before calling the checkpoint operation
         // Asynch checkpoint should never record lock information
-        //ss_m::chkpt->take(chkpt_m::t_chkpt_async, dummy_heap);
-        //w_assert1(0 == dummy_heap.NumElements());
-        ss_m::chkpt->dcpld_take(chkpt_m::t_chkpt_async);
+        
+        if(ss_m::chkpt->decoupled) {
+            ss_m::chkpt->dcpld_take(chkpt_m::t_chkpt_async);
+        }
+        else {
+            ss_m::chkpt->take(chkpt_m::t_chkpt_async, dummy_heap);
+            w_assert1(0 == dummy_heap.NumElements());
+        }
     }
 }
 
