@@ -96,7 +96,7 @@ class prologue_rc_t;
 template class w_auto_delete_t<SmStoreMetaStats*>;
 #endif
 
-bool         smlevel_0::shutdown_clean = true;
+bool         smlevel_0::shutdown_clean = false;
 bool         smlevel_0::shutting_down = false;
 
 smlevel_0::operating_mode_t
@@ -408,7 +408,10 @@ ss_m::_construct_once()
      *  Reset flags
      */
     shutting_down = false;
-    shutdown_clean = _options.get_bool_option("sm_shutdown_clean", true);
+    shutdown_clean = _options.get_bool_option("sm_shutdown_clean", false);
+    if (_options.get_bool_option("sm_truncate_log", false)) {
+        shutdown_clean = true;
+    }
 
     // choose log manager implementation
     std::string logimpl = _options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
@@ -878,8 +881,11 @@ ss_m::_destruct_once()
     // in cleanup() is not used
     int nprepared = xct_t::cleanup(false /* don't dispose of prepared xcts */);
     (void) nprepared; // Used only for debugging assert
-    if (shutdown_clean) {
-        DBGTHRD(<< "SM performing clean shutdown");
+
+    // log truncation requires clean shutdown
+    bool truncate = _options.get_bool_option("sm_truncate_log", false);
+    if (shutdown_clean || truncate) {
+        ERROUT(<< "SM performing clean shutdown");
         // dismount all volumes which aren't locked by a prepared xct
         // We can't use normal dismounting for the prepared xcts because
         // they would be logged as dismounted. We need to dismount them
@@ -902,7 +908,7 @@ ss_m::_destruct_once()
 
         delete chkpt; chkpt = 0;
 
-        if (_options.get_bool_option("sm_truncate_log", false)) {
+        if (truncate) {
             W_COERCE(_truncate_log());
         }
     }
@@ -992,7 +998,7 @@ ss_m::_destruct_once()
 /*
  * WARNING: this method assumes that all transaction activity has stopped.
  */
-rc_t ss_m::_truncate_log()
+rc_t ss_m::_truncate_log(bool ignore_chkpt)
 {
     DBGTHRD(<< "Truncating log on LSN " << log->durable_lsn());
     /*
@@ -1004,7 +1010,7 @@ rc_t ss_m::_truncate_log()
     // When this fails, it means either that some pages were not written
     // out prior to the last checkpoint (min rec_lsn of all CB's on buffer)
     // or that some transactions are still active
-    w_assert0(master == min_chkpt);
+    w_assert0(ignore_chkpt || master == min_chkpt);
 
     int partition = master.hi();
     size_t offset = master.lo();
@@ -1040,6 +1046,7 @@ rc_t ss_m::_truncate_log()
         logrec_t* lr = (logrec_t*) (buf + pos);
         lsn_t newLSN(new_part, pos);
         pos += lr->length();
+        w_assert0(lr->length() > 0);
         memcpy(buf + pos - sizeof(lsn_t), &newLSN, sizeof(lsn_t));
         if (lr->type() == logrec_t::t_skip) {
             newEndLSN = lsn_t(new_part, pos - lr->length());
@@ -1104,7 +1111,7 @@ rc_t ss_m::_truncate_log()
 
 void ss_m::set_shutdown_flag(bool clean)
 {
-    shutdown_clean = clean;
+    // shutdown_clean = clean;
 }
 
 // Debugging function

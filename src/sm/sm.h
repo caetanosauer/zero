@@ -625,6 +625,8 @@ public:
      */
     static rc_t         log_file_was_archived(const char * logfile);
 
+    rc_t                _truncate_log(bool ignore_chkpt = false);
+
 private:
 //    void                _construct_once(LOG_WARN_CALLBACK_FUNC x=NULL,
 //                                           LOG_ARCHIVED_CALLBACK_FUNC y=NULL);
@@ -632,7 +634,6 @@ private:
     void                _destruct_once();
     void                _do_restart();
     void                _finish_recovery();
-    rc_t                _truncate_log();
     void                _set_recovery_mode();
 
     // Used for cosntructing xct object depending on chosen implementation
