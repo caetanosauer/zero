@@ -25,6 +25,7 @@
 #include <boost/static_assert.hpp>
 #include <ostream>
 #include <limits>
+#include <algorithm>
 
 #include "sm_options.h"
 #include "latch.h"
@@ -3219,4 +3220,60 @@ shpid_t bf_tree_m::normalize_shpid(shpid_t shpid) const {
     // }
     return shpid;
 #endif
+}
+
+bool pidCmp(const shpid_t& a, const shpid_t& b) { return a < b; }
+
+void WarmupThread::fixChildren(btree_page_h& parent, size_t& fixed, size_t max)
+{
+    btree_page_h page;
+    if (parent.get_foster() > 0) {
+        page.fix_nonroot(parent, 1, parent.get_foster(), LATCH_SH);
+        fixed++;
+        fixChildren(page, fixed, max);
+        page.unfix();
+    }
+
+    if (parent.is_leaf()) {
+        return;
+    }
+
+    page.fix_nonroot(parent, 1, parent.pid0(), LATCH_SH);
+    fixed++;
+    fixChildren(page, fixed, max);
+    page.unfix();
+
+    size_t nrecs = parent.nrecs();
+    for (size_t j = 0; j < nrecs; j++) {
+        if (fixed >= max) {
+            return;
+        }
+        shpid_t pid = parent.child(j);
+        page.fix_nonroot(parent, 1, pid, LATCH_SH);
+        fixed++;
+        fixChildren(page, fixed, max);
+        page.unfix();
+    }
+}
+
+void WarmupThread::run()
+{
+    size_t npages = smlevel_0::bf->get_size();
+    // CS TODO assuming only one volume
+    vol_t* vol = smlevel_0::vol->get(1);
+    stnode_cache_t* stcache = vol->get_stnode_cache();
+    vector<snum_t> stids = stcache->get_all_used_store_ID();
+
+    // Load all pages in depth-first until buffer is full or all pages read
+    btree_page_h parent;
+    vector<shpid_t> pids;
+    size_t fixed = 0;
+    for (size_t i = 0; i < stids.size(); i++) {
+        parent.fix_root(stid_t(1, stids[i]), LATCH_SH);
+        fixed++;
+        fixChildren(parent, fixed, npages);
+    }
+
+    ERROUT(<< "Finished warmup! Pages fixed: " << fixed << " of " << npages <<
+            " with DB size " << vol->get_alloc_cache()->last_used_pageid());
 }

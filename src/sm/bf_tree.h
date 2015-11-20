@@ -171,6 +171,7 @@ class bf_tree_m {
     friend class bf_tree_cleaner; // for page cleaning
     friend class bf_tree_cleaner_slave_thread_t; // for page cleaning
     friend class bf_eviction_thread_t;
+    friend class WarmupThread;
 
 public:
 #ifdef PAUSE_SWIZZLING_ON
@@ -628,6 +629,7 @@ public:
      */
     w_rc_t load_for_redo(bf_idx idx, vid_t vid, shpid_t shpid);
 
+    size_t get_size() { return _block_cnt; }
 
 private:
 
@@ -897,6 +899,18 @@ public:
 
 private:
     bf_idx _idx;
+};
+
+// Thread that fetches pages into the buffer for warming up.
+// Instead of reading a contiguous chunk, it iterates over all
+// B-trees so that higher levels are loaded first.
+class WarmupThread : public smthread_t {
+public:
+    WarmupThread() {};
+    virtual ~WarmupThread() {}
+
+    virtual void run();
+    void fixChildren(btree_page_h& parent, size_t& fixed, size_t max);
 };
 
 // tiny macro to help swizzled-LRU and freelist access
