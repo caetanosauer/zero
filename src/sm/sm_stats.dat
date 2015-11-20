@@ -82,6 +82,8 @@ SM Storage manager = 0x00060000 sm_stats_t {
     // pin/unpin, fix/unfix
     u_long bf_unfix_cleaned      Unfix-clean cleaned a page that had a rec_lsn
 
+    u_long bf_evict                    Evicted page from buffer pool
+
     // srwlock_t (mcs_rwlock) keeps track of approximate number of
     // waits on acquires (this does NOT include contention on the
     // lock's mutex that protects its own critical sections).

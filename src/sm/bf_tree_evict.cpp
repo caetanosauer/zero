@@ -276,6 +276,8 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
 
         parent_cb.latch().latch_release();
         cb.latch().latch_release();
+
+        INC_TSTAT(bf_evict);
     }
 
     _eviction_current_frame = idx;

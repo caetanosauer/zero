@@ -1007,6 +1007,7 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
             if (reqSucceeded) {
                 // page is loaded in buffer pool already
                 w_assert1(page.pid == lpid_t(_vid, pnum));
+                sysevent::log_page_read(pnum);
                 return RCOK;
             }
         }
