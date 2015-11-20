@@ -168,7 +168,7 @@ protected:
      * time. The bitmap keeps track of segments already restored, i.e., one bit
      * per segment.
      */
-    int segmentSize;
+    size_t segmentSize;
 
     /** \brief Whether volume metadata is alread restored or not
      */
@@ -191,6 +191,17 @@ protected:
      * (false only for experiments that simulate traditional restore)
      */
     bool instantRestore;
+
+    /** \brief Always restore sequentially from the requested segment until
+     * the next already-restored segment or EOF, unless a new request is
+     * waiting in the scheduler. In this case, the current restore is
+     * preempted before moving to the next adjacent segment and the enqueued
+     * request is processed. This technique aims to optimize for restore
+     * latency when there is high demand for segments, and for bandwidth when
+     * most of the application working set is already restored or in the buffer
+     * pool.
+     */
+    bool preemptive;
 
     /** \brief Whether to try restore of multiple segments with a single log
      * archive scan. This should be beneficial for cases where a single log
@@ -331,8 +342,10 @@ public:
     void enqueue(const shpid_t& pid);
     shpid_t next(bool peek = false);
     void setSinglePass(bool singlePass = true);
+    bool hasWaitingRequest();
 
     bool isOnDemand() { return onDemand; }
+    bool isSinglePass() { return trySinglePass; }
 
 protected:
     RestoreMgr* restore;

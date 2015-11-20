@@ -143,6 +143,11 @@ void RestoreScheduler::enqueue(const shpid_t& pid)
     queue.push(pid);
 }
 
+bool RestoreScheduler::hasWaitingRequest()
+{
+    return onDemand && queue.size() > 0;
+}
+
 shpid_t RestoreScheduler::next(bool peek)
 {
     spinlock_write_critical_section cs(&mutex);
@@ -262,6 +267,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     w_assert0(volume);
 
     instantRestore = options.get_bool_option("sm_restore_instant", true);
+    preemptive = options.get_bool_option("sm_restore_preemptive", false);
 
     segmentSize = options.get_int_option("sm_restore_segsize", 1024);
     if (segmentSize <= 0) {
@@ -273,18 +279,19 @@ RestoreMgr::RestoreMgr(const sm_options& options,
 
     reuseRestoredBuffer =
         options.get_bool_option("sm_restore_reuse_buffer", false);
+
     multipleSegments =
         options.get_int_option("sm_restore_multiple_segments", 1);
     if (multipleSegments > 1) {
         minReadSize =
             options.get_int_option("sm_restore_min_read_size", 1048576);
-        maxReadSize =
-            options.get_int_option("sm_restore_max_read_size", 1048576 * 8);
     }
     else {
         minReadSize = 0;
-        maxReadSize = 0;
     }
+
+    maxReadSize =
+        options.get_int_option("sm_restore_max_read_size", 1048576 * 2);
 
     DO_PTHREAD(pthread_mutex_init(&restoreCondMutex, NULL));
     DO_PTHREAD(pthread_cond_init(&restoreCond, NULL));
@@ -573,16 +580,28 @@ void RestoreMgr::restoreSegment(char* workspace,
             current++;
             page++;
 
-            if (getSegmentForPid(current) != segment) {
+            if (lrpid.page > lastUsedPid || getSegmentForPid(current) != segment) {
                 // Time to move to a new segment (multiple-segment restore)
                 ADD_TSTAT(restore_time_replay, timer.time_us());
 
                 int count = current - firstPage;
-                if (count > segmentSize) { count = segmentSize; }
+                if (count > (int) segmentSize) { count = segmentSize; }
                 finishSegment(workspace, segment, count);
                 ADD_TSTAT(restore_time_write, timer.time_us());
 
                 segment = getSegmentForPid(lrpid.page);
+
+                // If segment already restored or someone is waiting in the
+                // scheduler, terminate earlier. We also don't have to replay
+                // pages created after the failure.
+                if (!scheduler->isSinglePass() || lrpid.page > lastUsedPid
+                        || replayedBitmap->get(segment)
+                        || (preemptive && scheduler->hasWaitingRequest()))
+                {
+                    merger->close();
+                    return;
+                }
+
                 workspace = backup->fix(segment);
                 ADD_TSTAT(restore_time_read, timer.time_us());
 
@@ -590,11 +609,9 @@ void RestoreMgr::restoreSegment(char* workspace,
                 current = getPidForSegment(segment);
                 firstPage = current;
 
-                // as we're done with one segment, prefetch another
-                // if (!scheduler->isOnDemand()) {
-                //     backup->prefetch(segment + prefetchWindow);
-                // }
+                INC_TSTAT(restore_multiple_segments);
             }
+
         }
 
         w_assert1(lrpid.page < firstPage + segmentSize);
@@ -646,7 +663,6 @@ void RestoreMgr::restoreSegment(char* workspace,
     // Last page is not checksumed above, so we do it here
     page->checksum = page->calculate_checksum();
 
-    // finishSegment(workspace, segment, current - firstPage);
     finishSegment(workspace, segment, segmentSize);
     ADD_TSTAT(restore_time_write, timer.time_us());
 
@@ -687,17 +703,15 @@ void RestoreMgr::restoreLoop()
             continue;
         }
 
-        // prefetch following segment in scheduler queue
-        // shpid_t afterThis = scheduler->next(true /* peek */);
-        // if (afterThis > 0) { backup->prefetch(afterThis); }
-
         timer.reset();
 
         char* workspace = backup->fix(segment);
         ADD_TSTAT(restore_time_read, timer.time_us());
 
         lpid_t startPID = lpid_t(volume->vid(), firstPage);
-        lpid_t endPID = lpid_t(volume->vid(), firstPage + segmentSize);
+        lpid_t endPID = preemptive ? lpid_t::null
+                : lpid_t(volume->vid(), firstPage + segmentSize);
+
         size_t actualSegmentSize = segmentSize;
         if (firstPage < firstDataPid) {
             // CS TODO: we need to revisit the metadata restore process.  It is
@@ -755,10 +769,6 @@ void RestoreMgr::restoreLoop()
             }
         }
 #endif
-
-        // for (size_t i = 0; i < prefetchWindow; i++) {
-        //     backup->prefetch(segment + i);
-        // }
 
         LogArchiver::ArchiveScanner::RunMerger* merger =
             logScan.open(startPID, endPID, backupLSN, actualSegmentSize,

@@ -1390,9 +1390,7 @@ bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
          * destructs these copies in operations like SiftDown(). Therefore the
          * underlying buffer may get wrongly deleted
          */
-        while (heap.NumElements() > 0) {
-            delete heap.RemoveFirst().runScan;
-        }
+        close();
         return false;
     }
 
@@ -1400,6 +1398,13 @@ bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
 
     lr = heap.First().lr;
     return true;
+}
+
+void LogArchiver::ArchiveScanner::RunMerger::close()
+{
+    while (heap.NumElements() > 0) {
+        delete heap.RemoveFirst().runScan;
+    }
 }
 
 void LogArchiver::ArchiveScanner::RunMerger::dumpHeap(ostream& out)

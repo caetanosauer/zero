@@ -604,6 +604,7 @@ public:
             void addInput(RunScanner* r);
             bool next(logrec_t*& lr);
             void dumpHeap(ostream& out);
+            void close();
 
             size_t heapSize() { return heap.NumElements(); }
             lpid_t getEndPID() { return endPID; }
@@ -801,6 +802,8 @@ public:
         eager = e;
         lintel::atomic_thread_fence(lintel::memory_order_release);
     }
+
+    bool getEager() const { return eager; }
 
     static void initLogScanner(LogScanner* logScanner);
 
