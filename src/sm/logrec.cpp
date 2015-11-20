@@ -847,8 +847,9 @@ void restore_end_log::redo(fixable_page_h*)
     // volume must be mounted and failed
     w_assert0(volume && volume->is_failed());
 
-    bool finished = volume->check_restore_finished(true /* redo */);
-    w_assert0(finished);
+    // CS TODO: fix this
+    // bool finished = volume->check_restore_finished(true /* redo */);
+    // w_assert0(finished);
 }
 
 restore_segment_log::restore_segment_log(vid_t vid, uint32_t segment)

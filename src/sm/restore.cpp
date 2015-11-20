@@ -920,11 +920,13 @@ void RestoreMgr::run()
     if (failureLSN != lsn_t::null) {
         // Wait for archiver to persist (or at least make available for
         // probing) all runs until this LSN.
-        DBGTHRD(<< "Restore waiting for log archiver to reach LSN "
+        stopwatch_t timer;
+        ERROUT(<< "Restore waiting for log archiver to reach LSN "
                 << failureLSN);
 
         // wait for log record to be consumed
         while (la->getNextConsumedLSN() < failureLSN) {
+            la->activate(failureLSN, true);
             ::usleep(10000); // 10ms
         }
 
@@ -936,6 +938,8 @@ void RestoreMgr::run()
         if (la->getDirectory()->getLastLSN() < failureLSN) {
             la->requestFlushSync(failureLSN);
         }
+
+        ERROUT(<< "Log archiver finished in " << timer.time() << " seconds");
     }
 
     // wait until volume is actually marked as failed
@@ -965,6 +969,10 @@ void RestoreMgr::run()
     }
 
     w_assert1(bufferedRequests.size() == 0);
+
+    sys_xct_section_t ssx(true);
+    log_restore_end(volume->vid());
+    ssx.end_sys_xct(RCOK);
 }
 
 SegmentWriter::SegmentWriter(RestoreMgr* restore)

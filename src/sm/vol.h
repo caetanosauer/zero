@@ -241,7 +241,7 @@ public:
 
     unsigned num_backups() const;
 
-    bool check_restore_finished(bool redo = false);
+    bool check_restore_finished();
 
     void redo_segment_restore(unsigned segment);
 

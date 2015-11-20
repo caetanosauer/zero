@@ -587,7 +587,7 @@ void vol_t::chkpt_restore_progress(chkpt_restore_tab_t* tab)
     }
 }
 
-bool vol_t::check_restore_finished(bool redo)
+bool vol_t::check_restore_finished()
 {
     if (!is_failed()) {
         return true;
@@ -624,12 +624,6 @@ bool vol_t::check_restore_finished(bool redo)
             _current_backup_lsn = lsn_t::null;
         }
 
-        // log restore end and set failed flag to false
-        if (!redo) {
-            sys_xct_section_t ssx(true);
-            log_restore_end(_vid);
-            ssx.end_sys_xct(RCOK);
-        }
         set_failed(false);
         return true;
     }
