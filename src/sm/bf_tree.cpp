@@ -573,12 +573,13 @@ w_rc_t bf_tree_m::uninstall_volume(vid_t vid,
         return RCOK;
     }
 
-    if (!desc->_volume->is_failed()) {
-        // do not force if ongoing restore -- writing here would cause a
-        // deadlock, since restore is waiting for the uninstall and we
-        // would be waiting for restore here.
-        W_DO(_cleaner->force_volume(vid));
-    }
+    // CS TODO: why forcing volume here??
+    // if (!desc->_volume->is_failed()) {
+    //     // do not force if ongoing restore -- writing here would cause a
+    //     // deadlock, since restore is waiting for the uninstall and we
+    //     // would be waiting for restore here.
+    //     W_DO(_cleaner->force_volume(vid));
+    // }
 
     // If caller is a concurrent recovery and call 'dismount_all' after
     // Log Analysys phase, do not clear the buffer pool because the remaining
