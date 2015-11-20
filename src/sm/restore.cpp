@@ -851,13 +851,22 @@ void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
     }
 
     INC_TSTAT(restore_segment_count);
+
+    // as we're done with one segment, prefetch the next
+    if (scheduler->isOnDemand()) {
+        if (scheduler->hasWaitingRequest()) {
+            backup->prefetch(scheduler->next(true /* peek */));
+        } else {
+            backup->prefetch(segment + 1);
+        }
+    }
 }
 
 void RestoreMgr::writeSegment(char* workspace, unsigned segment, size_t count)
 {
     if (count > 0) {
         shpid_t firstPage = getPidForSegment(segment);
-        w_assert0((int) count <= segmentSize);
+        w_assert0(count <= segmentSize);
         w_assert1(getPidForSegment(segment+1) > firstDataPid);
 
         // adjust wirte begin for the segment containing the first data page
