@@ -428,7 +428,7 @@ bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
          * we guarantee that the segment cannot go from not-restored to
          * restored inside this critical section.
          */
-        if (!isRestored(pid)) {
+        if (!replayedBitmap->get(getSegmentForPid(pid))) {
             // only one request for each page ID at a time
             // (buffer pool logic is responsible for ensuring this)
             w_assert1(bufferedRequests.find(pid) == bufferedRequests.end());
