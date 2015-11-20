@@ -155,8 +155,10 @@ shpid_t RestoreScheduler::next(bool peek)
     shpid_t next = firstNotRestored;
     if (onDemand && queue.size() > 0) {
         next = queue.front();
-        if (!peek) { queue.pop(); }
-        INC_TSTAT(restore_sched_queued);
+        if (!peek) {
+            queue.pop();
+            INC_TSTAT(restore_sched_queued);
+        }
     }
     else if (trySinglePass) {
         if (randomOrder) {
@@ -183,7 +185,7 @@ shpid_t RestoreScheduler::next(bool peek)
         if (next < firstDataPid) { next = firstDataPid; }
         else if (next > lastUsedPid) { next = 0; }
 
-        INC_TSTAT(restore_sched_seq);
+        if (!peek) { INC_TSTAT(restore_sched_seq); }
     }
     else {
         w_assert0(onDemand);
