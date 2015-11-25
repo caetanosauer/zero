@@ -220,7 +220,7 @@ void BackupPrefetcher::run()
             next = requests.front();
 
             firstPage = shpid_t(next * segmentSize);
-            if (firstPage >= volume->num_pages()) {
+            if (firstPage >= volume->num_used_pages()) {
                 // prefetch request beyond end of volume -- ignore
                 requests.pop_front();
                 continue;
@@ -289,6 +289,12 @@ void BackupPrefetcher::run()
         } // end of critical section
 
         DBG(<< "Prefetching segment " << next);
+        // perform the read into the slot found
+        // shpid_t firstPage = shpid_t(next * segmentSize) + firstDataPid;
+        firstPage = shpid_t(next * segmentSize);
+        if (firstPage >= volume->num_used_pages()) {
+            return;
+        }
 
         INC_TSTAT(restore_backup_reads);
         W_COERCE(volume->read_backup(firstPage, segmentSize, readSlot));

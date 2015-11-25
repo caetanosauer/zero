@@ -3,9 +3,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.cpp
     #${CMAKE_CURRENT_SOURCE_DIR}/allocator.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/backup.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backup_reader.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree_cleaner.cpp
@@ -60,7 +58,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/sm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm_s.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/smfile.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/smindex.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/smstats.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/smthread.cpp

@@ -46,15 +46,12 @@ btree_m::max_entry_size() {
 rc_t
 btree_m::create(
     const stid_t&           stid,
-    lpid_t&                 root
+    const lpid_t&           root
     )                // O-  root of new btree
 {
     FUNC(btree_m::create);
     DBGTHRD(<<"btree create: stid " << stid);
 
-    shpid_t shpid;
-    W_DO(smlevel_0::vol->get(stid.vol)->alloc_a_page(shpid));
-    root = lpid_t(stid.vol, shpid);
     W_DO(btree_impl::_ux_create_tree_core(stid, root));
 
     bool empty=false;

@@ -21,12 +21,18 @@
 rc_t ss_m::create_index(vid_t vid, stid_t &stid)
 {
     W_DO(lm->intent_vol_lock(vid, okvl_mode::IX)); // take IX on volume
-    W_DO(vol->get(vid)->create_store(st_regular, stid.store) );
+
+    // CS TODO: page allocation should transfer ownership to stnode
+    shpid_t root;
+    W_DO(smlevel_0::vol->get(vid)->alloc_a_page(root));
+
+    W_DO(vol->get(vid)->create_store(lpid_t(vid, root), stid.store));
     stid.vol = vid;
+
+    W_DO(bt->create(stid_t(vid, stid.store), lpid_t(vid, root)));
+
     W_DO(lm->intent_store_lock(stid, okvl_mode::X)); // take X on this new index
 
-    lpid_t root;
-    W_DO( bt->create(stid_t(vid, stid.store), root) );
     return RCOK;
 }
 

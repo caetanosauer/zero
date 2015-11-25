@@ -78,7 +78,6 @@ class prologue_rc_t;
 #include "restart.h"
 #include "sm_options.h"
 #include "suppress_unused.h"
-#include "backup.h"
 #include "tid_t.h"
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
@@ -237,37 +236,6 @@ ticker_thread_t* smlevel_0::_ticker = 0;
  */
 int ss_m::_instance_cnt = 0;
 sm_options ss_m::_options;
-
-/*
- * NB: reverse function, _make_store_property
- * is defined in dir.cpp -- so far, used only there
- */
-ss_m::store_flag_t
-ss_m::_make_store_flag(store_property_t property)
-{
-    store_flag_t flag = st_unallocated;
-
-    switch (property)  {
-        case t_regular:
-            flag = st_regular;
-            break;
-        case t_temporary:
-            flag = st_tmp;
-            break;
-        case t_load_file:
-            flag = st_load_file;
-            break;
-        case t_insert_file:
-            flag = st_insert_file;
-            break;
-        case t_bad_storeproperty:
-        default:
-            W_FATAL_MSG(eINTERNAL, << "bad store property :" << property );
-            break;
-    }
-
-    return flag;
-}
 
 
 static queue_based_block_lock_t ssm_once_mutex;
@@ -428,11 +396,6 @@ ss_m::_construct_once()
 
     lm = new lock_m(_options);
     if (! lm)  {
-        W_FATAL(eOUTOFMEMORY);
-    }
-
-    bk = new BackupManager(_options.get_string_option("sm_backup_dir", "."));
-    if (! bk) {
         W_FATAL(eOUTOFMEMORY);
     }
 
@@ -710,14 +673,11 @@ void ss_m::_do_restart()
         // and might be working due to recovery activities.
         // But to avoid interference with their control structure,
         // we will do this directly.  Take a checkpoint as well.
-        if(log)
-        {
-            bf->force_until_lsn(log->curr_lsn().data());
+        // CS TODO: force pages
 
-            // An synchronous checkpoint was taken at the end of recovery
-            // This is a synchronous checkpoint after buffer pool flush
-            chkpt->synch_take();
-        }
+        // An synchronous checkpoint was taken at the end of recovery
+        // This is a synchronous checkpoint after buffer pool flush
+        chkpt->synch_take();
 
         // Debug only
         me()->check_pin_count(0);
@@ -895,13 +855,6 @@ ss_m::_destruct_once()
         W_COERCE( bf->force_all() );
         me()->check_actual_pin_count(0);
 
-        // take a clean checkpoints with the volumes which need
-        // to be remounted and the prepared xcts
-        // Note that this force_until_lsn will do a direct bpool scan
-        // with serial writes since the background flushing has been
-        // disabled
-        if(log) bf->force_until_lsn(log->curr_lsn());
-
         // Take a synch checkpoint (blocking) after buffer pool flush but before shutting down
         chkpt->synch_take();
         chkpt->retire_chkpt_thread();
@@ -973,7 +926,6 @@ ss_m::_destruct_once()
 
     W_COERCE(bf->destroy());
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
-    delete bk; bk = 0;
 
     /*
      *  Level 0
@@ -1473,12 +1425,6 @@ ss_m::chain_xct(bool lazy)
     return RCOK;
 }
 
-rc_t ss_m::flushlog() {
-    // forces until the current lsn
-    bf->force_until_lsn(log->curr_lsn());
-    return (RCOK);
-}
-
 /*--------------------------------------------------------------*
  *  ss_m::checkpoint()
  *  For debugging, smsh
@@ -1655,37 +1601,17 @@ ss_m::dismount_vol(const char* path)
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::get_device_quota()                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_device_quota(const char* device, size_t& quota_KB, size_t& quota_used_KB)
-{
-    SM_PROLOGUE_RC(ss_m::get_device_quota, can_be_in_xct, read_only, 0);
-
-    vol_t* v = vol->get(device);
-    size_t page_size_kb = sizeof(generic_page) / 1024;
-    quota_used_KB = v->num_used_pages() * page_size_kb;
-    quota_KB = v->num_pages() * page_size_kb;
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
  *  ss_m::create_vol()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::create_vol(const char* dev_name, smksize_t quota_KB, vid_t& vid)
+ss_m::create_vol(const char* dev_name, vid_t& vid)
 {
     SM_PROLOGUE_RC(ss_m::create_vol, not_in_xct, read_only, 0);
 
-    if(quota_KB > sthread_t::max_os_file_size / 1024) {
-        return RC(eDEVTOOLARGE);
-    }
-
+    // CS TODO: why??
     spinlock_write_critical_section cs(&_begin_xct_mutex);
 
-    W_DO(vol->sx_format(dev_name,
-       shpid_t(quota_KB/(page_sz/1024)),
-       vid));
+    W_DO(vol->sx_format(dev_name, vid));
 
     return RCOK;
 }
@@ -2200,20 +2126,10 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
 
     rc_t rc;
     // get du stats on every store
-    for (stid_t s(vid, 0); s.store < stnode_page_h::max; s.store++) {
+    for (stid_t s(vid, 0); s.store < stnode_page::max; s.store++) {
         DBG(<<"look at store " << s);
 
-        store_flag_t flags;
-        rc = vol->get(vid)->get_store_flags(s.store, flags);
-        if (rc.is_error()) {
-            if (rc.err_num() == eBADSTID) {
-                DBG(<<"skipping bad STID " << s );
-                continue;  // skip any stores that don't exist
-            } else {
-                return rc;
-            }
-        }
-        DBG(<<" getting stats for store " << s << " flags=" << flags);
+        DBG(<<" getting stats for store " << s << " flags=");
         rc = _get_du_statistics(s, new_stats, audit);
         if (rc.is_error()) {
             if (rc.err_num() == eBADSTID) {
@@ -2423,94 +2339,6 @@ operator<<(ostream &o, const sm_stats_info_t &s)
     return o;
 }
 
-
-/*--------------------------------------------------------------*
- *  ss_m::get_store_info()                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_store_info(
-    const stid_t&           stpgid,
-    sm_store_info_t&        info)
-{
-    SM_PROLOGUE_RC(ss_m::get_store_info, in_xct, read_only, 0);
-    W_DO(_get_store_info(stpgid, info));
-    return RCOK;
-}
-
-
-ostream&
-operator<<(ostream& o, smlevel_0::sm_store_property_t p)
-{
-    if (p == smlevel_0::t_regular)                o << "regular";
-    if (p == smlevel_0::t_temporary)                o << "temporary";
-    if (p == smlevel_0::t_load_file)                o << "load_file";
-    if (p == smlevel_0::t_insert_file)                o << "insert_file";
-    if (p == smlevel_0::t_bad_storeproperty)        o << "bad_storeproperty";
-    if (p & !(smlevel_0::t_regular
-                | smlevel_0::t_temporary
-                | smlevel_0::t_load_file
-                | smlevel_0::t_insert_file
-                | smlevel_0::t_bad_storeproperty))  {
-        o << "unknown_property";
-        w_assert3(1);
-    }
-    return o;
-}
-
-ostream&
-operator<<(ostream& o, smlevel_0::store_flag_t flag) {
-    if (flag == smlevel_0::st_unallocated)  o << "|unallocated";
-    if (flag & smlevel_0::st_regular)       o << "|regular";
-    if (flag & smlevel_0::st_tmp)           o << "|tmp";
-    if (flag & smlevel_0::st_load_file)     o << "|load_file";
-    if (flag & smlevel_0::st_insert_file)   o << "|insert_file";
-    if (flag & smlevel_0::st_empty)         o << "|empty";
-    if (flag & !(smlevel_0::st_unallocated
-                | smlevel_0::st_regular
-                | smlevel_0::st_tmp
-                | smlevel_0::st_load_file
-                | smlevel_0::st_insert_file
-                | smlevel_0::st_empty))  {
-        o << "|unknown";
-        w_assert3(1);
-    }
-
-    return o << "|";
-}
-
-ostream&
-operator<<(ostream& o, const smlevel_0::store_operation_t op)
-{
-    const char *names[] = {"delete_store",
-                        "create_store",
-                        "set_deleting",
-                        "set_store_flags",
-                        "set_root"};
-
-    if (op <= smlevel_0::t_set_root)  {
-        return o << names[op];
-    }
-    // else:
-    w_assert3(1);
-    return o << "unknown";
-}
-
-ostream&
-operator<<(ostream& o, const smlevel_0::store_deleting_t value)
-{
-    const char *names[] = { "not_deleting_store",
-                        "deleting_store",
-                        "store_freeing_exts",
-                        "unknown_deleting"};
-
-    if (value <= smlevel_0::t_unknown_deleting)  {
-        return o << names[value];
-    }
-    // else:
-    w_assert3(1);
-    return o << "unknown_deleting_store_value";
-}
-
 rc_t
 ss_m::log_file_was_archived(const char * logfile)
 {
@@ -2544,23 +2372,4 @@ extern "C" {
         W_IGNORE(ss_m::dump_buffers(cout));
         cout << flush;
     }
-}
-
-/*
- * descend to io_m to check the disk containing the given volume
- */
-w_rc_t ss_m::dump_vol_store_info(const vid_t &vid)
-{
-    SM_PROLOGUE_RC(ss_m::dump_vol_store_info, in_xct, read_only,  0);
-    return vol->get(vid)->check_disk();
-}
-
-
-w_rc_t
-ss_m::log_message(const char * const msg)
-{
-    SM_PROLOGUE_RC(ss_m::log_message, in_xct, read_write,  0);
-    w_ostrstream out;
-    out <<  msg << ends;
-    return log_comment(out.c_str());
 }

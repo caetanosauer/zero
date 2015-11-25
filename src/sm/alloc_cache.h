@@ -19,119 +19,75 @@ class bf_fixed_m;
  * This object handles allocation/deallocation requests for one volume.
  * All allocation/deallocation are logged and done in a critical section.
  * To make it scalable, this object is designed to be as fast as possible.
- * Actually, in original Shore-MT, page allocation was a huge bottleneck in high contention.
- * See jira ticket:72 "fix extent management" (originally trac ticket:74) for more details.
  * @See alloc_page_h
  */
 class alloc_cache_t {
 public:
-    /** Creates an empty cache.*/
-    alloc_cache_t (bf_fixed_m* fixed_pages) :
-        _fixed_pages(fixed_pages), _contiguous_free_pages_begin(0),
-        _contiguous_free_pages_end(0)
-    {
-        w_assert1(fixed_pages != NULL);
-    }
-
-    /** Initialize this object by scanning alloc_page pages of the volume. */
-    rc_t load_by_scan (shpid_t max_pid);
+    alloc_cache_t(stnode_cache_t& stcache, bool virgin);
 
     /**
-     * Allocates one new page from the free-page pool.
-     * This method logs the allocation.
+     * Allocates one page. (System transaction)
      * @param[out] pid allocated page ID.
+     * @param[in] store Store to which new page belongs (0 to allocate on
+     *                  store-independent area)
+     * @param[in] redo If redoing the operation (no log generated)
      */
-    rc_t allocate_one_page (shpid_t &pid);
+    rc_t sx_allocate_page(shpid_t &pid, snum_t store = 0, bool redo = false);
 
     /**
-     * Allocates the spefified count of consecutive pages from the free-page pool.
-     * This method logs the allocation.
-     * @param[out] pid_begin the beginning of allocated page IDs.
-     * @param[in] page_count number of pages to allocate.
-     *
-     * CS: commented for now since never used
-     */
-    // rc_t allocate_consecutive_pages (shpid_t &pid_begin, size_t page_count);
-
-    /**
-     * Deallocates one page in the free-page pool.
-     * This method logs the deallocation.
+     * Deallocates one page. (System transaction)
      * @param[in] pid page ID to deallocate.
      */
-    rc_t deallocate_one_page (shpid_t pid);
-
-    // for REDOs.
-    rc_t redo_allocate_one_page (shpid_t pid);
-    // rc_t redo_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count);
-    rc_t redo_deallocate_one_page (shpid_t pid);
-
-    /** Returns the count of all free pages. */
-    size_t get_total_free_page_count () const;
-    /** Returns the count of consecutive free pages. */
-    size_t get_consecutive_free_page_count () const;
+    rc_t sx_deallocate_page(shpid_t pid, snum_t store = 0, bool redo = false);
 
     /** Returns if the page is already allocated. not quite fast. don't call this so often!. */
-    bool is_allocated_page (shpid_t pid) const;
+    bool is_allocated (shpid_t pid);
 
-    shpid_t last_used_pageid()
-    {
-        return _contiguous_free_pages_begin;
-    }
+    rc_t force_pages();
+
+    shpid_t get_last_allocated_pid() const;
 
 private:
-    bf_fixed_m* _fixed_pages;
 
     /**
-     * CACHE LAYOUT
+     * These vectors keep track of the free space for each store. Index 0
+     * refers to space not assigned to any store. The vector last_alloc_page
+     * keeps track of the last page id allocated for each store, which also
+     * allows determining the extent id. This allows quick allocation by simply
+     * incrementing the counter. When it reaches a page id divisible by the
+     * extent size, a new extent must be allocated.
      *
-     * |x| = allocated page
-     * | | = free page
-     *
-     * +-----------------------+
-     * |x| |x| |x|x| | | | | | |
-     * +-----------------------+
-     *    *   *     ^         ^
-     *              cbegin    cend
-     *
-     *  cbegin--cend is the shpid_t range specified by
-     *  _contiguous_free_pages_begin and _contiguous_free_pages_end
-     *
-     *  The pages marked with * in the illustration above are pages that were
-     *  previously allocated and freed -- they end up in the list
-     *  _non_contiguous_free_pages
-     *
-     *  When a page is allocated, we first try to return a slot from the list
-     *  of non-contiguous slots. If it's empty, the slot at cbegin is returned
-     *  and it is incremented. When allocating contigous pages, we go directly
-     *  into the contiguous slots and increment cbegin accordingly.
-     *
-     *  Deallocation always adds the slot back to the list of non-contiguous,
-     *  even if there is an opportunity to decrement cbegin. Once cbegin equals
-     *  cend, it stays like that forever, and all allocations go to the list
-     *  directly. After this point, consecutive allocations are not possible.
-     *
-     *  This simplistic design favors short-living, experimental workloads
-     *  where the contiguous region at the end is not exhausted. It also does
-     *  not provide great concurrency, allowing only one allocation at a time.
-     *  This *should* be OK since page allocation is not expected to be the
-     *  bottleneck.
+     * Pages which are freed end up in the list of freed pages, again
+     * one for each store. Currently, these lists are only used to determine
+     * whether a certain page is allocated or not. To avoid fragmentation in
+     * a workload with many deletions, items should be removed from these lists
+     * when allocating a page to avoid fragmentation. One extreme policy would
+     * be to only use the contiguous space when the corresponding list is
+     * empty, i.e., when the non-contiguous space has been fully utilized.
+     * Policies that trade off allocation performance for fragmentation by
+     * managing allocations from both contiguous and non-contiguous space would
+     * be the more flexible and robust option.
      */
+    vector<shpid_t> last_alloc_page;
+    vector<list<shpid_t>> freed_pages;
 
-    /** the first page in this volume from which all pages are unallocated. */
-    shpid_t _contiguous_free_pages_begin;
-    /** usually just the number of pages in this volume. */
-    shpid_t _contiguous_free_pages_end;
+    /**
+     * Bitmap of extents whose allocation pages were already loaded. This is
+     * needed because the allocation information of each extent is loaded on
+     * demand.
+     */
+    vector<bool> loaded_extents;
 
-    /** ID list of unallocated pages. */
-    std::vector<shpid_t> _non_contiguous_free_pages;
+    stnode_cache_t& stcache;
 
     /** all operations in this object are protected by this lock. */
-    mutable srwlock_t _queue_lock;
+    mutable srwlock_t _latch;
 
-    // they assume _contiguous_free_pages_begin/_non_contiguous_free_pages are already modified
-    rc_t apply_allocate_one_page (shpid_t pid);
-    // rc_t apply_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count);
-    rc_t apply_deallocate_one_page (shpid_t pid);
+    vid_t _vid;
+
+    static const size_t extent_size;
+
+    rc_t load_alloc_page(extent_id_t ext, alloc_page& page, bool is_last_ext);
 };
 
 #endif // ALLOC_CACHE_H

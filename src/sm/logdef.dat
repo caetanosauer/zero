@@ -118,7 +118,7 @@ chkpt_restore_tab  0010000 0.0 (vid_t vid);
 chkpt_end          0000000 0.0 (const lsn_t& master, const lsn_t& min_rec_lsn, const lsn_t& min_xct_lsn);
 mount_vol          1110000 0.0 (const char* dev_name);
 dismount_vol       1110000 0.0 (const char* dev_name);
-format_vol         1110000 0.0 (const char* dev_name, shpid_t num_pages, vid_t vid);
+format_vol         1110000 0.0 (const char* dev_name, vid_t vid);
 add_backup         1110000 0.0 (vid_t vid, const char* dev_name);
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
@@ -131,9 +131,10 @@ xct_end_group      1000000 0.0 (const xct_t** l, int llen);
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################
 # CS TODO -- this should be part of btree empty page allocation
-alloc_a_page       1110000  1.0  (vid_t vid, shpid_t pid);
-dealloc_a_page     1110000  1.0  (vid_t vid, shpid_t pid);
-store_operation    1011011 1.0 (vid_t vid, const store_operation_param& op);
+alloc_page       1110000  1.0  (vid_t vid, shpid_t pid);
+dealloc_page     1110000  1.0  (vid_t vid, shpid_t pid);
+create_store     1110000  1.0  (lpid_t root_pid, snum_t snum);
+append_extent    1110000  1.0  (vid_t vid, snum_t snum, extent_id_t ext);
 # Instant Restore log records
 restore_begin      1110000 0.0 (vid_t vid);
 restore_segment    1110000 0.0 (vid_t vid, uint32_t segment);

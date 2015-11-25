@@ -8,7 +8,6 @@
 #include "bf_tree_cb.h"
 #include "bf_tree_vol.h"
 #include "bf_tree.h"
-#include "bf_fixed.h"
 #include "w_autodel.h"
 #include "generic_page.h"
 #include "fixable_page_h.h"  // just for get_cb in bf_tree_inline.h
@@ -206,7 +205,8 @@ w_rc_t bf_tree_cleaner::force_all()
 
 w_rc_t bf_tree_cleaner::force_all()
 {
-    W_DO (smlevel_0::vol->force_fixed_buffers());
+    // CS TODO: force alloc and stnode caches
+
     for (int i = 0; i < vol_m::MAX_VOLS; i++) {
         _requested_volumes[i] = true;
     }
@@ -239,55 +239,14 @@ w_rc_t bf_tree_cleaner::force_all()
     return RCOK;
 }
 
-bool bf_tree_cleaner::_is_force_until_lsn_done(lsndata_t lsn) const
-{
-    for (unsigned id = 0; id < _slave_threads_size; ++id) {
-        if (_slave_threads[id]->_completed_lsn < lsn) {
-            return false;
-        }
-    }
-    return true;
-}
-
-w_rc_t bf_tree_cleaner::force_until_lsn(lsndata_t lsn)
-{
-    W_DO (smlevel_0::vol->force_fixed_buffers());
-    if (_is_force_until_lsn_done(lsn)) {
-        return RCOK;
-    }
-    _requested_lsn = lsn;
-    W_DO(wakeup_cleaners());
-    uint32_t interval = FORCE_SLEEP_MS_MIN;
-    while (!_dirty_shutdown_happening() && !_error_happened) {
-        DBGOUT2(<< "waiting in force_until_lsn...");
-        if (lsn > _requested_lsn) {
-            // make it sure because a concurrent thread might have overwritten it
-            lsn = _requested_lsn;
-        }
-        usleep(interval * 1000);
-        interval *= 2;
-        if (interval >= FORCE_SLEEP_MS_MAX) {
-            interval = FORCE_SLEEP_MS_MAX;
-        }
-        if (_is_force_until_lsn_done(lsn)) {
-            break;
-        }
-    }
-    if (_dirty_shutdown_happening()) {
-        DBGOUT1(<< "joining all cleaner threads up to 100ms...");
-        W_DO(join_cleaners(100));
-    }
-    DBGOUT2(<< "done force_until_lsn!");
-    return RCOK;
-}
-
 w_rc_t bf_tree_cleaner::force_volume(vid_t vol)
 {
     if (_bufferpool->_volumes[vol] == NULL) {
         DBGOUT2(<< "volume " << vol << " is not mounted");
         return RCOK;
     }
-    W_DO (_bufferpool->_volumes[vol]->_volume->get_fixed_bf()->flush());
+
+    // CS TODO: force pages of stnode and alloc caches
 
     while (true) {
         _requested_volumes[vol] = true;

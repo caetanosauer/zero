@@ -1028,12 +1028,6 @@ public:
      */
     static rc_t            thread_collect(vtable_t&v, bool names_too=true);
 
-    /**
-     * \brief Write all existing log entries to disk.
-     * \ingroup SSMLOG
-     */
-    static rc_t            flushlog();
-
     /**\brief Take a checkpoint.
      * \ingroup SSMAPIDEBUG
      * \note For debugging only!
@@ -1132,10 +1126,6 @@ public:
      */
     static rc_t            start_log_corruption();
 
-    /* for smsh/debugging:
-     * log an arbitrary message */
-    static rc_t            log_message(const char * const msg);
-    /**\endcond skip */
     /**
      * \brief Forces a log flush
      * \ingroup SSMLOG
@@ -1283,46 +1273,6 @@ public:
 
     static rc_t            dismount_vol(const char* device);
 
-    /**\brief Return a list of all volume on a device.
-     * \ingroup SSMVOL
-     * \details
-     * @param[in] device   Operating-system file name of the "device".
-     * @param[out] lvid_list   Returned list of pointers directly into the mount table.
-     * @param[out] lvid_cnt   Returned length of list lvid_list.
-     *
-     * The storage manager allocates the array lvid_list
-     * with new[], and the
-     * caller must return it to the heap with delete[] if it is not null.
-     * It will be null if an error is returned.
-     *
-     * \note This method should \b not
-     * be called in the context of a transaction.
-     */
-    // CS TODO
-
-    // get_device_quota the "quota" (in KB) of the device
-    // and the amount of the quota allocated to volumes on the device.
-    /**\brief Get the device quota.
-     * \ingroup SSMVOL
-     * \details
-     * @param[in] device   Operating-system file name of the "device".
-     * @param[out] quota_KB   Returned quota in kilobytes
-     * @param[out] quota_used_KB   Returned portion of quota allocated to volumes
-     *
-     * The quota_used_KB is the portion of the quota allocated to volumes on the device.
-     *
-     * \note This method \b may
-     * be called in the context of a transaction.
-     *
-     * \note This method \b may
-     * be called in the context of a transaction.
-     */
-    static rc_t            get_device_quota(
-        const char*             device,
-        size_t&              quota_KB,
-        size_t&              quota_used_KB);
-
-
     /*
      * Volume management functions
      */
@@ -1363,7 +1313,6 @@ public:
      * \ingroup SSMVOL
      * \details
      * @param[in] device_name   Operating-system file name of the "device".
-     * @param[in] quota_KB  Quota in kilobytes.
      * @param[out] vid The vid used for the created volume
      *
      * \note This method should \b not
@@ -1371,7 +1320,6 @@ public:
      */
     static rc_t            create_vol(
         const char*             device_name,
-        smksize_t               quota_KB,
         vid_t&           vid
     );
 
@@ -1427,23 +1375,6 @@ public:
         const stid_t&        stid,
         sm_du_stats_t&       du,
         bool                 audit = true);
-
-    /**\brief Dump disk information about the indicated volume.
-     * \ingroup SSMVOL
-     * @param[in] vid The volume of interest.
-     *
-     * This function is for debugging.
-     * It dumps, to the error log, at info_prio priority,
-     * metadata about the given volume, including the number of extents
-     * on the volume, the extent size, and the number of pages dedicated
-     * to store maps and extent maps. Then, for each store on the volume,
-     * it dumps the status of the store and the extents allocated to
-     * that store.
-     *
-     * This function must be run in a transaction, though the function
-     * is read-only.
-     */
-    static rc_t            dump_vol_store_info(const vid_t &vid);
 
     /**\brief Analyze  a volume and collect brief statistics about its usage.
      * \ingroup SSMVOL

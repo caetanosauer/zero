@@ -72,7 +72,7 @@ char*       _w_debug::re_error_str = "Bad regular expression";
 // decipher mixed-up debugging output for those cases.
 //
 
-w_debug::w_debug(const char *n, const char *f) : 
+w_debug::w_debug(const char *n, const char *f) :
     ErrLog(n, log_to_unix_file, f?f:"-")
 {
 #ifdef USE_REGEX
@@ -148,12 +148,12 @@ w_debug::setflags(const char *newflags)
 }
 
 #ifdef USE_REGEX
-int 
+int
 w_debug::re_exec_debug(const char* string)
 {
     if (!re_ready)  {
-        cerr << __LINE__ 
-        << " " << __FILE__ 
+        cerr << __LINE__
+        << " " << __FILE__
         << ": No compiled string." <<endl;
         return 0;
     }
@@ -161,7 +161,7 @@ w_debug::re_exec_debug(const char* string)
     return  match;
 }
 
-char* 
+char*
 w_debug::re_comp_debug(const char* pattern)
 {
     if (re_ready)
@@ -170,8 +170,8 @@ w_debug::re_comp_debug(const char* pattern)
 
     res = re_comp_posix(pattern);
     if(res) {
-        cerr << __LINE__ 
-        << " " << __FILE__ 
+        cerr << __LINE__
+        << " " << __FILE__
         << " Error in re_comp_debug: " << res << endl;
     }
     re_ready = true;
@@ -190,7 +190,7 @@ w_debug::flag_on(
     assert( !( none() && all() ) );
     if(_flags==NULL) {
     res = 0; //  another constructor called this
-            // before this's constructor got called. 
+            // before this's constructor got called.
     } else if(none())     {
     res = 0;
     } else if(all())     {
@@ -213,22 +213,22 @@ w_debug::flag_on(
 }
 
 /* This function prints a hex dump of (len) bytes at address (p) */
-void
-w_debug::memdump(void *p, int len)
-{
-    register int i;
-    char *c = (char *)p;
-    
-    clog << "x";
-    for(i=0; i< len; i++) {
-        W_FORM2(clog,("%2.2x", (*(c+i))&0xff));
-        if(i%32 == 31) {
-            clog << endl << "x";
-        } else if(i%4 == 3) {
-            clog <<  " x";
-        }
-    }
-    clog << "--done" << endl;
-}
+// void
+// w_debug::memdump(void *p, int len)
+// {
+//     register int i;
+//     char *c = (char *)p;
+
+//     clog << "x";
+//     for(i=0; i< len; i++) {
+//         W_FORM2(clog,("%2.2x", (*(c+i))&0xff));
+//         if(i%32 == 31) {
+//             clog << endl << "x";
+//         } else if(i%4 == 3) {
+//             clog <<  " x";
+//         }
+//     }
+//     clog << "--done" << endl;
+// }
 #endif /* __ERRLOG_C__ */
 

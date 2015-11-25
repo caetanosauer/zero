@@ -20,7 +20,6 @@
 
 #include "sm_vtable_enum.h"
 
-#include "bf_fixed.h"
 #include "alloc_cache.h"
 #include "bf_tree.h"
 #include "restore.h"
@@ -87,7 +86,6 @@ vol_t* vol_m::get(vid_t vid)
 
 rc_t vol_m::sx_format(
     const char* devname,
-    shpid_t num_pages,
     vid_t& vid,
     bool logit)
 {
@@ -110,12 +108,15 @@ rc_t vol_m::sx_format(
 
     vid = _next_vid++;
 
+    // CS TODO: remove support for multiple volumes
+    w_assert0(vid == 1);
+
     DBG( << "formating volume " << devname << ">" );
     int flags = smthread_t::OPEN_CREATE | smthread_t::OPEN_RDWR
         | smthread_t::OPEN_TRUNC | smthread_t::OPEN_SYNC;
     int fd;
     W_DO(me()->open(devname, flags, 0666, fd));
-    W_DO(vol_t::write_metadata(fd, vid, num_pages));
+    W_DO(vol_t::write_metadata(fd, vid));
     W_DO(me()->close(fd));
     DBG(<<"format_vol: done" );
 
@@ -126,7 +127,7 @@ rc_t vol_m::sx_format(
      * persistent server state and therefore must be logged and checkpointed.
      */
     if (logit) {
-        log_format_vol(devname, num_pages, vid);
+        log_format_vol(devname, vid);
     }
     W_DO (ssx.end_sys_xct(RCOK));
 
@@ -210,7 +211,7 @@ rc_t vol_m::sx_add_backup(vid_t vid, string path, bool logit)
     w_assert0(vol);
 
     // Make sure backup volume header matches this volume
-    volhdr_t vhdr;
+    stnode_page stpage;
     {
         int fd = -1;
         int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC;
@@ -219,7 +220,7 @@ rc_t vol_m::sx_add_backup(vid_t vid, string path, bool logit)
             W_IGNORE(me()->close(fd));
             return RC_AUGMENT(rc);
         }
-        rc = vhdr.read(fd);
+        rc = me()->read(fd, &stpage, sizeof(generic_page));
         if (rc.is_error())  {
             W_IGNORE(me()->close(fd));
             return RC_AUGMENT(rc);
@@ -228,9 +229,7 @@ rc_t vol_m::sx_add_backup(vid_t vid, string path, bool logit)
         W_DO(me()->close(fd));
     }
 
-    lsn_t backupLSN = vhdr.backupLSN;
-    w_assert0(vol->vid() == vhdr.vid);
-    w_assert0(vol->num_pages() ==  vhdr.num_pages);
+    lsn_t backupLSN = stpage.getBackupLSN();
 
     // will change vol_t state -- start critical section
     // Multiple adds of the same backup file are weird, but not an error.
@@ -303,23 +302,11 @@ rc_t vol_m::list_backups(
     return RCOK;
 }
 
-rc_t vol_m::force_fixed_buffers()
-{
-    spinlock_read_critical_section cs(&_mutex);
-
-    for (uint32_t i = 0; i < MAX_VOLS; i++)  {
-        if (volumes[i]) {
-            W_DO(volumes[i]->get_fixed_bf()->flush());
-        }
-    }
-    return RCOK;
-}
-
 vol_t::vol_t()
              : _unix_fd(-1),
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
-               _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL),
+               _alloc_cache(NULL), _stnode_cache(NULL),
                _failed(false), _readonly(false),
                _restore_mgr(NULL), _backup_fd(-1),
                _current_backup_lsn(lsn_t::null), _backup_write_fd(-1)
@@ -362,22 +349,11 @@ rc_t vol_t::mount(const char* devname)
         return rc;
     }
 
-    //  Read the volume header on the device
-    volhdr_t vhdr;
-    {
-        rc_t rc = vhdr.read(_unix_fd);
-        if (rc.is_error())  {
-            W_IGNORE(me()->close(_unix_fd));
-            _unix_fd = -1;
-            return RC_AUGMENT(rc);
-        }
-    }
-
-    _vid = vhdr.vid;
-    _num_pages =  vhdr.num_pages;
+    // CS TODO: get rid of multiple logical volumes
+    _vid = 1;
 
     clear_caches();
-    build_caches();
+    build_caches(true);
     W_DO(init_metadata());
 
     return RCOK;
@@ -394,45 +370,39 @@ void vol_t::clear_caches()
         delete _stnode_cache;
         _stnode_cache = NULL;
     }
-    if (_fixed_bf) {
-        delete _fixed_bf;
-        _fixed_bf = NULL;
-    }
 }
 
-void vol_t::build_caches()
+void vol_t::build_caches(bool virgin)
 {
     // caller must hold mutex
-    _fixed_bf = new bf_fixed_m(this, _unix_fd, _num_pages);
-    w_assert1(_fixed_bf);
+    stnode_page stpage;
+    if (virgin) {
+        stpage.format_empty(_vid);
+    }
+    else {
+        W_COERCE(read_page(stnode_page::stpid, (generic_page&) stpage));
+    }
 
-    _alloc_cache = new alloc_cache_t(_fixed_bf);
+    _stnode_cache = new stnode_cache_t(stpage);
+    w_assert1(_stnode_cache);
+
+    _alloc_cache = new alloc_cache_t(*_stnode_cache, virgin);
     w_assert1(_alloc_cache);
 
-    _stnode_cache = new stnode_cache_t(_vid, _fixed_bf);
-    w_assert1(_stnode_cache);
+    // CS TODO: should we write back pages of stnode and alloc caches here?
 }
 
 rc_t vol_t::init_metadata()
 {
-    // caller must hold mutex
-    rc_t rc = _fixed_bf->init();
-    if (rc.is_error()) {
-        W_IGNORE(me()->close(_unix_fd));
-        _unix_fd = -1;
-        return rc;
-    }
-
-    _first_data_pageid = _fixed_bf->get_page_cnt() + 1; // +1 for volume header
-    W_DO(_alloc_cache->load_by_scan(_num_pages));
-    _stnode_cache->init();
     W_DO(smlevel_0::bf->install_volume(this));
 
     return RCOK;
 }
 
-rc_t vol_t::write_metadata(int fd, vid_t vid, size_t num_pages)
+rc_t vol_t::write_metadata(int /*fd*/, vid_t /*vid*/)
 {
+    // CS TODO: flush pages of stnode and alloc caches
+#if 0
     /*
      *  Set up and write the volume header
      */
@@ -475,6 +445,7 @@ rc_t vol_t::write_metadata(int fd, vid_t vid, size_t num_pages)
         W_DO(me()->write(fd, &buf, sizeof(generic_page)));
         DBG(<<" done formatting store node region");
     }
+#endif
 
     return RCOK;
 }
@@ -710,57 +681,17 @@ void vol_t::shutdown(bool abrupt)
     W_COERCE(dismount(!abrupt /* uninstall */, abrupt));
 }
 
-rc_t vol_t::check_disk()
-{
-    check_metadata_restored();
-
-    // CS TODO just make this an operator<<
-    volhdr_t vhdr;
-    W_DO(vhdr.read(_unix_fd));
-    smlevel_0::errlog->clog << info_prio << "vol_t::check_disk()\n";
-    smlevel_0::errlog->clog << info_prio
-        << "\tvolid      : " << vhdr.vid << flushl;
-    smlevel_0::errlog->clog << info_prio
-        << "\tnum_pages   : " << vhdr.num_pages << flushl;
-
-    smlevel_0::errlog->clog << info_prio
-        << "\tstore  #   flags   status: [ extent-list ]" << "." << endl;
-    for (shpid_t i = 1; i < stnode_page_h::max; i++)  {
-        stnode_t stnode;
-        _stnode_cache->get_stnode(i, stnode);
-        if (stnode.root)  {
-            smlevel_0::errlog->clog << info_prio
-                << "\tstore " << i << "(root=" << stnode.root << ")\t flags " << stnode.flags;
-            if(stnode.deleting) {
-                smlevel_0::errlog->clog << info_prio
-                << " is deleting: ";
-            } else {
-                smlevel_0::errlog->clog << info_prio
-                << " is active: ";
-            }
-            smlevel_0::errlog->clog << info_prio << " ]" << flushl;
-        }
-    }
-
-    return RCOK;
-}
-
-
 rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
 {
     // if (!redo) check_metadata_restored();
 
     w_assert1(_alloc_cache);
-    if (!redo) {
-        W_DO(_alloc_cache->allocate_one_page(shpid));
-    }
-    else {
-        W_DO(_alloc_cache->redo_allocate_one_page(shpid));
-    }
+    // CS TODO: add store parameter
+    W_DO(_alloc_cache->sx_allocate_page(shpid, 0, redo));
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        ssx.end_sys_xct(log_alloc_a_page(vid(), shpid));
+        ssx.end_sys_xct(log_alloc_page(vid(), shpid));
     }
 
     INC_TSTAT(page_alloc_cnt);
@@ -768,35 +699,17 @@ rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
     return RCOK;
 }
 
-// rc_t vol_t::alloc_consecutive_pages(size_t page_count, shpid_t &pid_begin, bool redo)
-// {
-//     if (!redo) check_metadata_restored();
-
-//     w_assert1(_alloc_cache);
-//     if (!redo) {
-//         W_DO(_alloc_cache->allocate_consecutive_pages(pid_begin, page_count));
-//     }
-//     else {
-//         W_DO(_alloc_cache->redo_allocate_consecutive_pages(pid_begin, page_count));
-//     }
-//     return RCOK;
-// }
-
 rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
 {
     // if (!redo) check_metadata_restored();
 
     w_assert1(_alloc_cache);
-    if (!redo) {
-        W_DO(_alloc_cache->deallocate_one_page(pid));
-    }
-    else {
-        W_DO(_alloc_cache->redo_deallocate_one_page(pid));
-    }
+    // CS TODO: add store parameter
+    W_DO(_alloc_cache->sx_deallocate_page(pid, 0, redo));
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        ssx.end_sys_xct(log_dealloc_a_page(vid(), pid));
+        ssx.end_sys_xct(log_dealloc_page(vid(), pid));
     }
 
     INC_TSTAT(page_dealloc_cnt);
@@ -804,110 +717,15 @@ rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
     return RCOK;
 }
 
-rc_t vol_t::store_operation(const store_operation_param& param, bool redo)
+size_t vol_t::num_used_pages() const
 {
-    // if (!redo) check_metadata_restored();
-
-    w_assert1(param.snum() < stnode_page_h::max);
-    w_assert1(_stnode_cache);
-    W_DO(_stnode_cache->store_operation(param, redo));
-    return RCOK;
+    return _alloc_cache->get_last_allocated_pid();
 }
 
-rc_t vol_t::set_store_flags(snum_t snum, smlevel_0::store_flag_t flags)
+rc_t vol_t::create_store(lpid_t root_pid, snum_t& snum)
 {
     // check_metadata_restored();
-
-    w_assert2(flags & smlevel_0::st_regular
-           || flags & smlevel_0::st_tmp
-           || flags & smlevel_0::st_insert_file);
-
-    if (snum == 0 || !is_valid_store(snum))    {
-        DBG(<<"set_store_flags: BADSTID");
-        return RC(eBADSTID);
-    }
-
-    store_operation_param param(snum, smlevel_0::t_set_store_flags, flags);
-    W_DO( store_operation(param) );
-
-    return RCOK;
-}
-
-rc_t vol_t::get_store_flags(snum_t snum, smlevel_0::store_flag_t& flags,
-        bool ok_if_deleting)
-{
-    // check_metadata_restored();
-
-    if (!is_valid_store(snum))    {
-        DBG(<<"get_store_flags: BADSTID");
-        return RC(eBADSTID);
-    }
-
-    if (snum == 0)  {
-        flags = smlevel_0::st_unallocated;
-        return RCOK;
-    }
-
-    stnode_t stnode;
-    _stnode_cache->get_stnode(snum, stnode);
-
-    /*
-     *  Make sure the store for this page is marked as allocated.
-     *  However, this is not necessarily true during recovery-redo
-     *  since it depends on the order pages made it to disk before
-     *  a crash.
-     */
-    if (!smlevel_0::in_recovery()) {
-        if (!stnode.root) {
-            DBG(<<"get_store_flags: BADSTID for snum " << snum);
-            return RC(eBADSTID);
-        }
-        if ( (!ok_if_deleting) &&  stnode.deleting) {
-            DBG(<<"get_store_flags: BADSTID for snum " << snum);
-            return RC(eBADSTID);
-        }
-    }
-
-    flags = (smlevel_0::store_flag_t)stnode.flags;
-
-    return RCOK;
-}
-
-rc_t vol_t::create_store(smlevel_0::store_flag_t flags, snum_t& snum)
-{
-    // check_metadata_restored();
-
-    w_assert1(_stnode_cache);
-    snum = _stnode_cache->get_min_unused_store_ID();
-    if (snum >= stnode_page_h::max) {
-        W_RETURN_RC_MSG(eOUTOFSPACE, << "volume id = " << _vid);
-    }
-
-    w_assert9(flags & smlevel_0::st_regular
-           || flags & smlevel_0::st_tmp
-           || flags & smlevel_0::st_insert_file);
-
-    // Fill in the store node
-    store_operation_param param(snum, smlevel_0::t_create_store, flags);
-    W_DO( store_operation(param) );
-
-    DBGTHRD(<<"alloc_store done");
-    return RCOK;
-}
-
-rc_t vol_t::set_store_root(snum_t snum, shpid_t root)
-{
-    // check_metadata_restored();
-
-    if (!is_valid_store(snum))    {
-        DBG(<<"set_store_root: BADSTID");
-        return RC(eBADSTID);
-    }
-
-    store_operation_param param(snum, smlevel_0::t_set_root, root);
-    W_DO( store_operation(param) );
-
-    return RCOK;
+    return _stnode_cache->sx_create_store(root_pid.page, snum);
 }
 
 bool vol_t::is_alloc_store(snum_t f) const
@@ -1016,7 +834,6 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
         break;
     }
 
-    w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     size_t offset = size_t(pnum) * sizeof(page);
 
     smthread_t* t = me();
@@ -1041,15 +858,14 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
         /*
          * If we read past the end of the file, this means it is a virgin page,
          * so we simply fill the buffer with zeroes. Note that we can't read
-         * past the logical size of the device (_num_pages) due to the assert
-         * above
+         * past the logical size of the device due to the assert above.
          */
         memset(&page, 0, sizeof(page));
     }
     else {
+        W_DO(err);
         w_assert1(page.pid == lpid_t(_vid, pnum));
     }
-    W_DO(err);
 
     sysevent::log_page_read(pnum);
 
@@ -1062,14 +878,10 @@ rc_t vol_t::read_backup(shpid_t first, size_t count, void* buf)
         W_FATAL_MSG(eINTERNAL,
                 << "Cannot read from backup because it is not active");
     }
-    if (first >= num_pages()) {
-        // reading past logical end of volume
-        return RC(stSHORTIO);
-    }
 
     // adjust count to avoid short I/O
-    if (first + count > num_pages()) {
-        count = num_pages() - first;
+    if (first + count > num_used_pages()) {
+        count = num_used_pages() - first;
     }
 
     size_t offset = size_t(first) * sizeof(generic_page);
@@ -1083,7 +895,7 @@ rc_t vol_t::read_backup(shpid_t first, size_t count, void* buf)
     // page, i.e., the file may be smaller than the total quota.
     if (read_count < (int) count) {
         // Actual short I/O only happens if we are not reading past last page
-        w_assert0(first + count <= num_pages());
+        w_assert0(first + count <= num_used_pages());
     }
 
     // Here, unlike in read_page, virgin pages don't have to be zeroed, because
@@ -1161,9 +973,9 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
 
     // Write volume header and metadata to new backup
     // (must be done after restore so that alloc pages are correct)
-    volhdr_t vhdr(_vid, _num_pages, backupLSN);
-    W_DO(vhdr.write(_backup_write_fd));
-    W_DO(_fixed_bf->flush(true /* toBackup */));
+    // CS TODO
+    // volhdr_t vhdr(_vid, _num_pages, backupLSN);
+    // W_DO(vhdr.write(_backup_write_fd));
 
     // At this point, new backup is fully written
     add_backup(path, backupLSN);
@@ -1182,7 +994,7 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
 rc_t vol_t::write_backup(shpid_t first, size_t count, void* buf)
 {
     w_assert0(_backup_write_fd > 0);
-    w_assert1(first + count <= (shpid_t)(_num_pages));
+    w_assert1(first + count <= (shpid_t) num_used_pages());
     w_assert1(count > 0);
     size_t offset = size_t(first) * sizeof(generic_page);
 
@@ -1193,19 +1005,6 @@ rc_t vol_t::write_backup(shpid_t first, size_t count, void* buf)
 
     return RCOK;
 }
-
-/*********************************************************************
- *
- *  vol_t::write_page(pnum, page)
- *
- *  Write the buffer "page" to the page at "pnum" of the volume.
- *
- *********************************************************************/
-inline rc_t vol_t::write_page(shpid_t pnum, generic_page& page)
-{
-    return write_many_pages(pnum, &page, 1);
-}
-
 
 /*********************************************************************
  *
@@ -1268,7 +1067,7 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
         check_restore_finished();
     }
 
-    w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
+    w_assert1(pnum > 0 && pnum < (shpid_t) num_used_pages());
     w_assert1(cnt > 0);
     size_t offset = size_t(pnum) * sizeof(generic_page);
 
@@ -1300,174 +1099,15 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
     return RCOK;
 }
 
-const char* volhdr_t::prolog[] = {
-    "%% SHORE VOLUME VERSION ",
-    "%% volume_id         : ",
-    "%% num_pages         : ",
-    "%% backupLSN         : "
-};
-
-
-/*********************************************************************
- *
- *  vol_t::write_vhdr(fd, vhdr)
- *
- *  Write the volume header to the volume.
- *
- *********************************************************************/
-rc_t volhdr_t::write(int fd)
-{
-    /*
-     *  The  volume header is written after the first 512 bytes of
-     *  page 0.
-     *  This is necessary for raw disk devices since disk labels
-     *  are often placed on the first sector.  By not writing on
-     *  the first 512bytes of the volume we avoid accidentally
-     *  corrupting the disk label.
-     *
-     *  However, for debugging its nice to be able to "cat" the
-     *  first few bytes (sector) of the disk (since the volume header is
-     *  human-readable).  So, on volumes stored in a unix file,
-     *  the volume header is replicated at the beginning of the
-     *  first page.
-     *
-     *  CS (TODO): I'm nut sure this is true. As far as I understand,
-     *  the "disklabel" is only used in old versions of BSD. In a typical
-     *  Linux scenario, the MBR would be overwritten, but that should be OK,
-     *  since the user will not want to boot from a device he is using for
-     *  raw DB storage. Furthermore, it would be a better practice to use
-     *  a raw partition (e.g., /dev/sdb1) instead of the whole device.
-     */
-    w_assert1(sizeof(generic_page) >= 1024);
-
-    char page[sizeof(generic_page)];
-    memset(&page, '\0', sizeof(generic_page));
-    /*
-     *  Open an ostream on tmp to write header bytes
-     */
-    w_ostrstream s(page, sizeof(generic_page));
-    if (!s)  {
-        /* XXX really eCLIBRARY */
-        return RC(eOS);
-    }
-    s.seekp(0, ios::beg);
-    if (!s)  {
-        return RC(eOS);
-    }
-
-    w_assert0(vid > 0);
-
-    // write out the volume header
-    int i = 0;
-    s << prolog[i++] << version << endl;
-    s << prolog[i++] << vid << endl;
-    s << prolog[i++] << num_pages << endl;
-    s << prolog[i++] << backupLSN << endl;
-    if (!s)  {
-        return RC(eOS);
-    }
-
-    W_DO(me()->pwrite(fd, page, sizeof(generic_page), 0));
-
-    return RCOK;
-}
-
-
-/*********************************************************************
- *
- *  vol_t::read_vhdr(fd, vhdr)
- *
- *  Read the volume header from the file "fd".
- *
- *********************************************************************/
-rc_t volhdr_t::read(int fd)
-{
-    char* page;
-    posix_memalign((void**) &page, sizeof(generic_page),
-            sizeof(generic_page));
-    /*
-     *  Read in first page of volume into tmp.
-     */
-    W_DO(me()->pread(fd, page, sizeof(generic_page), 0));
-
-    /*
-     *  Read the header strings from tmp using an istream.
-     */
-    w_istrstream s(page);
-    s.seekg(0, ios::beg);
-    if (!s)  {
-        /* XXX c library */
-        return RC(eOS);
-    }
-
-    /* XXX magic number should be maximum of strlens of the
-       various prologs. */
-    char buf[80];
-    uint32_t temp;
-    int i = 0;
-    s.read(buf, strlen(prolog[i++])) >> temp;
-    version = temp;
-    s.read(buf, strlen(prolog[i++])) >> vid;
-    s.read(buf, strlen(prolog[i++])) >> num_pages;
-    s.read(buf, strlen(prolog[i++])) >> backupLSN;
-
-    w_assert1(vid > 0);
-    w_assert1(num_pages > 0);
-
-    if ( !s || version != FORMAT_VERSION ) {
-        W_RETURN_RC_MSG(eBADFORMAT,
-            << "Volume format incompatible! \n"
-            << "   version " << version << '\n'
-            << "   expected " << FORMAT_VERSION << '\n'
-            << "Buffer: " << '\n'
-            << buf << '\n'
-        );
-    }
-
-    return RCOK;
-}
-
-uint32_t vol_t::num_used_pages() const
+uint32_t vol_t::get_last_allocated_pid() const
 {
     w_assert1(_alloc_cache);
-    return num_pages() - _alloc_cache->get_total_free_page_count();
+    return _alloc_cache->get_last_allocated_pid();
 }
 
 bool vol_t::is_allocated_page(shpid_t pid) const
 {
     w_assert1(_alloc_cache);
-    return _alloc_cache->is_allocated_page(pid);
+    return _alloc_cache->is_allocated(pid);
 }
 
-shpid_t vol_t::last_used_pageid() const
-{
-    return _alloc_cache->last_used_pageid();
-}
-
-// CS TODO why is this here?
-ostream& operator<<(ostream& o, const store_operation_param& param)
-{
-    o << "snum="    << param.snum()
-        << ", op="    << param.op();
-
-    switch (param.op())  {
-        case smlevel_0::t_delete_store:
-            break;
-        case smlevel_0::t_create_store:
-            o << ", flags="        << param.new_store_flags();
-            break;
-        case smlevel_0::t_set_deleting:
-            o << ", newValue="        << param.new_deleting_value()
-                << ", oldValue="        << param.old_deleting_value();
-            break;
-        case smlevel_0::t_set_store_flags:
-            o << ", newFlags="        << param.new_store_flags()
-                << ", oldFlags="        << param.old_store_flags();
-            break;
-        case smlevel_0::t_set_root:
-            o << ", ext="        << param.root();
-            break;
-    }
-
-    return o;
-}

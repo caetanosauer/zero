@@ -7,32 +7,14 @@
 
 #include "stnode_page.h"
 
-#include "bf_fixed.h"
-
-
-stnode_page_h::stnode_page_h(generic_page* s, const lpid_t& pid):
-    generic_page_h(s, pid, t_stnode_p, 0 /* store */)
-{}
-
-
-
-stnode_cache_t::stnode_cache_t(vid_t vid, bf_fixed_m* special_pages):
-    _vid(vid),
-    _special_pages(special_pages),
-    _stnode_page(special_pages->get_pages() + special_pages->get_page_cnt()
-            - 1)
+stnode_cache_t::stnode_cache_t(stnode_page& stpage)
+    : _stnode_page(stpage), _vid(stpage.pid.vol())
 {
 }
 
-void stnode_cache_t::init()
+shpid_t stnode_cache_t::get_root_pid(snum_t store) const
 {
-    w_assert1(_stnode_page.vol() == _vid);
-    w_assert1(_stnode_page.tag() == t_stnode_p);
-}
-
-
-shpid_t stnode_cache_t::get_root_pid(snum_t store) const {
-    w_assert1(store < stnode_page_h::max);
+    w_assert1(store < stnode_page::max);
 
     // CRITICAL_SECTION (cs, _spin_lock);
     // Commented out to improve scalability, as this is called for
@@ -46,136 +28,115 @@ shpid_t stnode_cache_t::get_root_pid(snum_t store) const {
     return _stnode_page.get(store).root;
 }
 
-bool stnode_cache_t::is_allocated(snum_t store) const {
-    stnode_t s;
-    get_stnode(store, s);
-    return s.is_allocated();
+stnode_t stnode_cache_t::get_stnode(snum_t store) const
+{
+    return _stnode_page.get(store);
 }
 
-void stnode_cache_t::get_stnode(snum_t store, stnode_t &stnode) const {
-    w_assert1(store < stnode_page_h::max);
-    CRITICAL_SECTION (cs, _spin_lock);
-    stnode = _stnode_page.get(store);
+bool stnode_cache_t::is_allocated(snum_t store) const
+{
+    CRITICAL_SECTION (cs, _latch);
+    return get_stnode(store).is_used();
 }
 
+snum_t stnode_cache_t::get_min_unused_store_ID() const
+{
+    // Caller should hold the latch
 
-snum_t stnode_cache_t::get_min_unused_store_ID() const {
-    // This method is not very efficient, but is rarely called (i.e.,
-    // only when creating new stores).
-
-    CRITICAL_SECTION (cs, _spin_lock);
     // Let's start from 1, not 0.  All user store ID's will begin with 1.
     // Store-ID 0 will be a special store-ID for stnode_page/alloc_page's
-    for (size_t i = 1; i < stnode_page_h::max; ++i) {
-        if (!_stnode_page.get(i).is_allocated()) {
+    for (size_t i = 1; i < stnode_page::max; ++i) {
+        if (!_stnode_page.get(i).is_used()) {
             return i;
         }
     }
-    return stnode_page_h::max;
+    return stnode_page::max;
 }
 
-std::vector<snum_t> stnode_cache_t::get_all_used_store_ID() const {
-    std::vector<snum_t> ret;
+void stnode_cache_t::get_used_stores(std::vector<snum_t>& ret) const
+{
+    ret.clear();
 
-    CRITICAL_SECTION (cs, _spin_lock);
-    for (size_t i = 1; i < stnode_page_h::max; ++i) {
-        if (_stnode_page.get(i).is_allocated()) {
+    CRITICAL_SECTION (cs, _latch);
+    for (size_t i = 1; i < stnode_page::max; ++i) {
+        if (_stnode_page.get(i).is_used()) {
             ret.push_back((snum_t) i);
         }
     }
-    return ret;
 }
 
-
-rc_t
-stnode_cache_t::store_operation(store_operation_param param, bool redo)
+rc_t stnode_cache_t::sx_create_store(shpid_t root_pid, snum_t& snum, bool redo)
 {
-    w_assert1(param.snum() < stnode_page_h::max);
+    CRITICAL_SECTION (cs, _latch);
 
-    CRITICAL_SECTION (cs, _spin_lock);
-    stnode_t stnode = _stnode_page.get(param.snum()); // copy out current value.
-
-    switch (param.op())  {
-        case smlevel_0::t_delete_store:
-            {
-                w_assert0(false); // this case currently unused; see JIRA: ZERO-168
-                stnode.root        = 0;
-                stnode.flags       = smlevel_0::st_unallocated;
-                stnode.deleting    = smlevel_0::t_not_deleting_store;
-            }
-            break;
-        case smlevel_0::t_create_store:
-            {
-                w_assert1(redo || stnode.root == 0);
-                w_assert1(param.new_store_flags() != smlevel_0::st_unallocated);
-
-                stnode.root        = 0;
-                stnode.flags       = param.new_store_flags();
-                stnode.deleting    = smlevel_0::t_not_deleting_store;
-            }
-            DBGOUT3 ( << "t_create_store:" << param.snum());
-            break;
-        case smlevel_0::t_set_deleting:
-            {
-                w_assert0(false); // this case currently unused; see JIRA: ZERO-168
-                // Bogus assertion:
-                // If we crash/restart between the time the xct gets
-                // into xct_freeing_space and the time xct_end is
-                // logged, this store operation might already have
-                // been done,
-                // w_assert3(stnode.deleting != param.new_deleting_value());
-                w_assert3(param.old_deleting_value() == smlevel_0::t_unknown_deleting
-                        || stnode.deleting == param.old_deleting_value());
-
-                param.set_old_deleting_value(
-                    (store_operation_param::store_deleting_t)stnode.deleting);
-
-                stnode.deleting    = param.new_deleting_value();
-            }
-            break;
-        case smlevel_0::t_set_store_flags:
-            {
-                w_assert1(param.new_store_flags() != smlevel_0::st_unallocated);
-
-                if (stnode.flags == param.new_store_flags())  {
-                    // xct may have converted file type to regular and
-                    // then the automatic conversion at commit from
-                    // insert_file to regular needs to be ignored
-                    DBG(<<"store flags already set");
-                    return RCOK;
-                } else  {
-                    w_assert3(param.old_store_flags() == smlevel_0::st_unallocated
-                              || stnode.flags == param.old_store_flags());
-
-                    param.set_old_store_flags(
-                            (store_operation_param::store_flag_t)stnode.flags);
-
-                    stnode.flags = param.new_store_flags();
-                }
-            }
-            break;
-        case smlevel_0::t_set_root:
-            {
-                w_assert3(stnode.root == 0);
-                w_assert3(param.root());
-
-                stnode.root = param.root();
-            }
-            DBGOUT3 ( << "t_set_root:" << param.snum() << ". root=" << param.root());
-            break;
-        default:
-            w_assert0(false);
+    snum = get_min_unused_store_ID();
+    if (snum == stnode_page::max) {
+        return RC(eSTCACHEFULL);
     }
 
-    // log it and apply the change to the stnode_page
-     // Protect against checkpoint.  See bf_fixed_m comment.
-    spinlock_read_critical_section cs2(&_special_pages->get_checkpoint_lock());
+    _stnode_page.set_root(snum, root_pid);
+    _stnode_page.update_last_extent(snum, 0);
 
+    sys_xct_section_t ssx(true);
     if (!redo) {
-        W_DO( log_store_operation(_vid, param) );
+        log_create_store(lpid_t(_vid, root_pid), snum);
+    }
+    W_DO(write_stnode_page());
+    W_DO(ssx.end_sys_xct(RCOK));
+
+    return RCOK;
+}
+
+rc_t stnode_cache_t::sx_append_extent(snum_t snum, extent_id_t ext, bool redo)
+{
+    CRITICAL_SECTION (cs, _latch);
+
+    if (snum >= stnode_page::max) {
+        return RC(eSTCACHEFULL);
     }
 
-    _stnode_page.get(param.snum()) = stnode;
-    _special_pages->get_dirty_flags()[_special_pages->get_page_cnt() - 1] = true;
+    sys_xct_section_t ssx(true);
+    _stnode_page.update_last_extent(snum, ext);
+    if (!redo) {
+        W_DO(log_append_extent(_vid, snum, ext));
+    }
+    W_DO(write_stnode_page());
+    W_DO(ssx.end_sys_xct(RCOK));
+
     return RCOK;
+}
+
+/*
+ * CS TODO
+ * Problem: stnode page is the root catalog page of the DB, so it must be
+ * handled properly so that the system is initialized correctly after restart.
+ * We have the following options:
+ * 1) On every SX that modifies the stnode page, force it before commit.
+ * 2) Fix stnode page on buffer pool, so that checkpoints recognize its dirty
+ *    status and REDO repairs it at restart.
+ * 3) During startup, always invoke single-page recovery on stnode page,
+ *    without managing it in the buffer pool.
+ *
+ * Option 1 adds unecessary overhead to normal processing.
+ * Option 2 is the best, most general one, but it requires the buffer pool to
+ * break the assumption that it only manages btree pages. For instance, there
+ * is currently no fix primitive that can be used.
+ * Option 3 is probably the easiest to implement, but it entails special
+ * handling of metadata pages, which is not as elegant as option 1 and not
+ * really what we wanted.
+ *
+ * Going with option 1 for now. Once I update the buffer pool code with proper
+ * fix primitives and correct (perhaps mandatory) swizzling, come back and
+ * implement option 2.
+ * BUT WAIT: If we have decoupled checkpoints, we don't need to worry about
+ * having the page in the buffer pool to detect it as dirty!
+ * The same problem and solution applies to alloc pages
+ */
+
+rc_t stnode_cache_t::write_stnode_page()
+{
+    // Caller must hold latch
+
+    return smlevel_0::vol->get(_vid)->write_page(stnode_page::stpid,
+            (generic_page*) &_stnode_page);
 }

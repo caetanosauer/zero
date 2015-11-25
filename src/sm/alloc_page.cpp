@@ -4,8 +4,13 @@
 
 #include "alloc_page.h"
 
+void alloc_page::reset_all()
+{
+    memset(&bitmap, 0, bitmapsize);
+}
 
-void alloc_page::set_bits(uint32_t from, uint32_t to) {
+void alloc_page::set_bits(uint32_t from, uint32_t to)
+{
     // We need to do bit-wise operations only for first and last
     // bytes.  Other bytes are all "FF".
     for (uint32_t i=from; i<to; i++) {
@@ -24,14 +29,4 @@ void alloc_page::set_bits(uint32_t from, uint32_t to) {
 
         set_bit(i);
     }
-}
-
-
-alloc_page_h::alloc_page_h(generic_page* s, const lpid_t& pid):
-    generic_page_h(s, pid, t_alloc_p, 0 /* store */)
-{
-    shpid_t pid_offset = alloc_pid_to_pid_offset(pid.page);
-    page()->pid_offset        = pid_offset;
-    page()->pid_highwatermark = pid_offset;
-    // page()->bitmap initialized to all OFF's by memset above
 }

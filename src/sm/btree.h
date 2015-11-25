@@ -6,7 +6,7 @@
 #define BTREE_H
 
 /*
- *  Interface to btree manager.  
+ *  Interface to btree manager.
  *  NB: put NO INLINE FUNCTIONS here.
  *  Implementation is class btree_impl, in btree_impl.[ch].
  */
@@ -44,12 +44,12 @@ public:
     void                         construct_once();
     void                         destruct_once();
 
-    static smsize_t                max_entry_size(); 
+    static smsize_t                max_entry_size();
 
     /** Create a btree. Return the root page id in root. */
     static rc_t                        create(
         const stid_t &              stid,
-        lpid_t&                     root
+        const lpid_t&               root
         );
 
     /**
@@ -107,13 +107,13 @@ public:
     static rc_t                 defrag_page(btree_page_h &page);
 
     /**
-    * Find key in btree. If found, copy up to elen bytes of the 
-    *  entry element into el. 
+    * Find key in btree. If found, copy up to elen bytes of the
+    *  entry element into el.
     */
     static rc_t                        lookup(
         stid_t store,
-        const w_keystr_t&              key_to_find, 
-        void*                          el, 
+        const w_keystr_t&              key_to_find,
+        void*                          el,
         smsize_t&                      elen,
         bool&                          found);
 
@@ -128,7 +128,7 @@ public:
     */
     static rc_t                        verify_tree(
         stid_t store, int hash_bits, bool &consistent);
-    
+
     /**
      * \brief Verifies consistency of all BTree indexes in the volume.
      * @copydetails btree_impl::_ux_verify_volume()
@@ -136,7 +136,7 @@ public:
     static rc_t            verify_volume(
         vid_t vid, int hash_bits, verify_volume_result &result);
 protected:
-    /* 
+    /*
      * for use by logrecs for undo
      */
     static rc_t remove_as_undo(stid_t store,const w_keystr_t &key);

@@ -22,7 +22,7 @@
 #include "w_rc.h"
 #include "srwlock.h"
 #include "sthread.h"
-#include "stnode_page.h" // only for stnode_page_h::max
+#include "stnode_page.h" // only for stnode_page::max
 #include "vol.h"
 
 /** max number of volumes overall. */
@@ -113,13 +113,13 @@ public:
  */
 class lil_global_vol_table : public lil_global_table_base {
 public:
-    lil_global_store_table _store_tables[stnode_page_h::max]; // for all possible stores
+    lil_global_store_table _store_tables[stnode_page::max]; // for all possible stores
 
     lil_global_vol_table() {
         ::memset (this, 0, sizeof(*this));
         ::pthread_mutex_init(&_waiter_mutex, NULL);
         ::pthread_cond_init(&_waiter_cond, NULL);
-        for (size_t i = 0; i < stnode_page_h::max; ++i) {
+        for (size_t i = 0; i < stnode_page::max; ++i) {
             ::pthread_mutex_init(&(_store_tables[i]._waiter_mutex), NULL);
             ::pthread_cond_init(&(_store_tables[i]._waiter_cond), NULL);
         }
@@ -127,7 +127,7 @@ public:
     ~lil_global_vol_table(){
         ::pthread_mutex_destroy(&_waiter_mutex);
         ::pthread_cond_destroy(&_waiter_cond);
-        for (size_t i = 0; i < stnode_page_h::max; ++i) {
+        for (size_t i = 0; i < stnode_page::max; ++i) {
             ::pthread_mutex_destroy(&(_store_tables[i]._waiter_mutex));
             ::pthread_cond_destroy(&(_store_tables[i]._waiter_cond));
         }

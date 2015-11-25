@@ -364,7 +364,7 @@ rc_t btree_impl::_ux_verify_volume(
     vol_t *vol = ss_m::vol->get(vid);
     w_assert1(vol);
     generic_page buf;
-    shpid_t endpid = (shpid_t) (vol->num_pages());
+    shpid_t endpid = (shpid_t) (vol->num_used_pages());
     for (shpid_t pid = vol->first_data_pageid(); pid < endpid; ++pid) {
         // TODO we should skip large chunks of unused areas to speedup.
         // TODO we should scan more than one page at a time to speedup.

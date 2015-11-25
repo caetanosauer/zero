@@ -254,7 +254,5 @@ add_custom_target(lint
         --filter=-,+whitespace/line_length,+whitespace/tab # So far minimal rules only
         ${CMAKE_SOURCE_DIR}/src/*.h
         ${CMAKE_SOURCE_DIR}/src/common/*
-        ${CMAKE_SOURCE_DIR}/src/fc/*
-        ${CMAKE_SOURCE_DIR}/src/sthread/*
         ${CMAKE_SOURCE_DIR}/src/sm/*
 )

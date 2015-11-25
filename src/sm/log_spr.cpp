@@ -12,7 +12,6 @@
 #include "restart.h"
 #include "log_spr.h"
 #include "logrec.h"
-#include "backup.h"
 
 page_evict_log::page_evict_log (const btree_page_h& p,
                                 general_recordid_t child_slot, lsn_t child_lsn) {

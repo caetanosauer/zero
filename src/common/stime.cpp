@@ -415,13 +415,13 @@ static void factor_print(ostream &s, long what)
         mine = what / f->factor;
         what = what % f->factor;
         if (mine || printed) {
-            W_FORM(s)(f->label, mine);
+            s << mine << ":";
             printed = true;
         }
     }
 
     /* always print a seconds field */
-    W_FORM(s)(printed ? "%02d" : "%d", what);
+    s << what;
 }
 
 
@@ -430,11 +430,7 @@ ostream    &sinterval_t::print(ostream &s) const
     factor_print(s, _time.st_tod);
 
     if (_time.st_hires) {
-#ifdef USE_POSIX_TIME
-        W_FORM(s)(".%09ld", _time.st_hires);
-#else
-        W_FORM(s)(".%06ld", _time.st_hires);
-#endif
+        s << _time.st_hires;
     }
 
     return s;

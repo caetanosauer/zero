@@ -1678,8 +1678,8 @@ xct_t::dispose()
 
     W_DO(check_one_thread_attached());
     W_COERCE( commit_free_locks());
-    ClearAllStoresToFree();
-    ClearAllLoadStores();
+    // ClearAllStoresToFree();
+    // ClearAllLoadStores();
     _core->_state = xct_ended; // unclean!
     me()->detach_xct(this);
     return RCOK;
@@ -1976,23 +1976,23 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                 CRITICAL_SECTION(cs, emergency_log_flush_mutex);
                 for(int tries_left=3; tries_left > 0; tries_left--) {
                     DBGX(<<" wait for more log space tries_left " << tries_left);
-                    if(tries_left == 1) {
-                    // the checkpoint should also do this, but just in case...
-                    lsn_t target = log_m::first_lsn(log->global_min_lsn().hi()+1);
-                    w_rc_t rc = bf->force_until_lsn(target);
-                    // did the force succeed?
-                    if(rc.is_error()) {
-                        INC_TSTAT(log_full_giveup);
-                        fprintf(stderr, "Log recovery failed\n");
-#if W_DEBUG_LEVEL > 0
-                        extern void dump_all_sm_stats();
-                        dump_all_sm_stats();
-#endif
-                        if(rc.err_num() == eBPFORCEFAILED)
-                        return RC(eOUTOFLOGSPACE);
-                        return rc;
-                    }
-                    }
+                    // if(tries_left == 1) {
+                    // // the checkpoint should also do this, but just in case...
+                    // lsn_t target = log_m::first_lsn(log->global_min_lsn().hi()+1);
+                    // w_rc_t rc = bf->force_until_lsn(target);
+                    // // did the force succeed?
+                    // if(rc.is_error()) {
+                    //     INC_TSTAT(log_full_giveup);
+                    //     fprintf(stderr, "Log recovery failed\n");
+// #if W_DEBUG_LEVEL > 0
+                    //     extern void dump_all_sm_stats();
+                    //     dump_all_sm_stats();
+// #endif
+                    //     if(rc.err_num() == eBPFORCEFAILED)
+                    //     return RC(eOUTOFLOGSPACE);
+                    //     return rc;
+                    // }
+                    // }
 
                     // most likely it's well aware, but just in case...
                     DBGOUT3(<< "chkpt 4");
@@ -2586,8 +2586,6 @@ xct_t::_compensate(const lsn_t& lsn, bool undoable)
     }
 }
 
-
-
 /*********************************************************************
  *
  *  xct_t::rollback(savept)
@@ -2797,184 +2795,6 @@ done:
 
     DBGTHRD(<< "xct_t::rollback done to " << save_pt);
     return rc;
-}
-
-void xct_t::AddStoreToFree(const stid_t& stid)
-{
-    FUNC(x);
-    CRITICAL_SECTION(xctstructure, *this);
-    _core->_storesToFree.push(new stid_list_elem_t(stid));
-}
-
-void xct_t::AddLoadStore(const stid_t& stid)
-{
-    FUNC(x);
-    CRITICAL_SECTION(xctstructure, *this);
-    _core->_loadStores.push(new stid_list_elem_t(stid));
-}
-
-/*
- * clear the list of stores to be freed upon xct completion
- * this is used by abort since rollback will recreate the
- * proper list of stores to be freed.
- *
- * don't *really* need mutex since only called when aborting => 1 thread
- * but we have the acquire here for internal documentation
- */
-void
-xct_t::ClearAllStoresToFree()
-{
-    w_assert2(one_thread_attached());
-    stid_list_elem_t*        s = 0;
-    while ((s = _core->_storesToFree.pop()))  {
-        delete s;
-    }
-
-    w_assert3(_core->_storesToFree.is_empty());
-}
-
-
-/*
- * this function will free all the stores which need to freed
- * by this completing xct.
- *
- * don't REALLY need mutex since only called when committing/aborting
- * => 1 thread attached
- */
-void
-xct_t::FreeAllStoresToFree()
-{
-    // TODO not implemented
-}
-
-void
-xct_t::DumpStoresToFree()
-{
-    stid_list_elem_t*                e;
-    w_list_i<stid_list_elem_t,queue_based_lock_t>        i(_core->_storesToFree);
-
-    FUNC(xct_t::DumpStoresToFree);
-    CRITICAL_SECTION(xctstructure, *this);
-    cout << "list of stores to free";
-    while ((e = i.next()))  {
-        cout << " <- " << e->stid;
-    }
-    cout << endl;
-}
-
-/*
- * Moved here to work around a gcc/egcs bug that
- * caused compiler to choke.
- */
-class VolidCnt {
-    private:
-        int unique_vols;
-        int vol_map[vol_m::MAX_VOLS];
-        snum_t vol_cnts[vol_m::MAX_VOLS];
-    public:
-        VolidCnt() : unique_vols(0) {};
-        int Lookup(int vol)
-            {
-                for (int i = 0; i < unique_vols; i++)
-                    if (vol_map[i] == vol)
-                        return i;
-
-                w_assert9(unique_vols < vol_m::MAX_VOLS);
-                vol_map[unique_vols] = vol;
-                vol_cnts[unique_vols] = 0;
-                return unique_vols++;
-            };
-        int Increment(int vol)
-            {
-                return ++vol_cnts[Lookup(vol)];
-            };
-        int Decrement(int vol)
-            {
-                w_assert9(vol_cnts[Lookup(vol)]);
-                return --vol_cnts[Lookup(vol)];
-            };
-#if W_DEBUG_LEVEL > 2
-        ~VolidCnt()
-            {
-                for (int i = 0; i < unique_vols; i ++)
-                    w_assert9(vol_cnts[i] == 0);
-            };
-#endif
-};
-
-rc_t
-xct_t::ConvertAllLoadStoresToRegularStores()
-{
-
-#if X_LOG_COMMENT_ON
-    {
-        static int uniq=0;
-        static int last_uniq=0;
-
-        // int    nv =  atomic_inc_nv(uniq);
-        int nv =  lintel::unsafe::atomic_fetch_add(&uniq, 1);
-        //Even if someone else slips in here, the
-        //values should never match.
-        w_assert1(last_uniq != nv);
-        *&last_uniq = nv;
-
-        // this is to help us figure out if we
-        // are issuing duplicate commits/log entries or
-        // if the problem is in the log code or the
-        // grabbing of the 1thread log mutex
-        w_ostrstream s;
-        s << "ConvertAllLoadStores uniq=" << uniq
-            << " xct state " << _core->_state
-            << " xct aborted " << _core->_xct_aborting
-            << " xct ended " << _core->_xct_ended
-            << " tid " << tid()
-            << " thread " << me()->id;
-        W_DO(log_comment(s.c_str()));
-    }
-#endif
-
-    w_assert2(one_thread_attached());
-    stid_list_elem_t*        s = 0;
-    VolidCnt cnt;
-
-    {
-        w_list_i<stid_list_elem_t,queue_based_lock_t> i(_core->_loadStores);
-
-        while ((s = i.next()))  {
-            cnt.Increment(s->stid.vol);
-        }
-    }
-
-    while ((s = _core->_loadStores.pop()))  {
-        // bool sync_volume = (cnt.Decrement(s->stid.vol) == 0);
-        store_flag_t f;
-        W_DO(smlevel_0::vol->get(s->stid.vol)
-                ->get_store_flags(s->stid.store, f, true /*ok if deleting*/));
-        // if any combo of  st_tmp, st_insert_file, st_load_file, convert
-        // but only insert and load are put into this list.
-        if(f != st_regular) {
-            W_DO(smlevel_0::vol->get(s->stid.vol)
-                    ->set_store_flags(s->stid.store, st_regular) );
-        }
-        delete s;
-    }
-
-    w_assert3(_core->_loadStores.is_empty());
-
-    return RCOK;
-}
-
-
-void
-xct_t::ClearAllLoadStores()
-{
-    w_assert2(one_thread_attached());
-    stid_list_elem_t*        s = 0;
-    while ((s = _core->_loadStores.pop()))  {
-        delete s;
-    }
-
-    w_assert3(_core->_loadStores.is_empty());
 }
 
 void

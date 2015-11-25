@@ -509,12 +509,6 @@ public:
     w_rc_t force_volume (vid_t vol);
     /** Immediately writes out all dirty pages.*/
     w_rc_t force_all ();
-    /** Immediately writes out all dirty pages up to the given LSN. */
-    w_rc_t force_until_lsn (lsndata_t lsn);
-    /** Immediately writes out all dirty pages up to the given LSN. */
-    w_rc_t force_until_lsn (const lsn_t &lsn) {
-        return force_until_lsn(lsn.data());
-    }
     /** Wakes up all cleaner threads, starting them if not started yet. */
     w_rc_t wakeup_cleaners ();
     /** Wakes up the cleaner thread assigned to the given volume. */

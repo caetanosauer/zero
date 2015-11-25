@@ -273,7 +273,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
      * allocated page id, delivered by alloc_cache, is also needed
      */
     firstDataPid = volume->first_data_pageid();
-    lastUsedPid = volume->last_used_pageid();
+    lastUsedPid = volume->get_last_allocated_pid();
 
     asyncWriter = NULL;
 

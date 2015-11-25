@@ -1101,7 +1101,6 @@ restart_m::analysis_pass_forward(
             break;
 
         case logrec_t::t_compensate:
-        case logrec_t::t_store_operation:
         case logrec_t::t_page_set_to_be_deleted:
         case logrec_t::t_page_img_format:
         case logrec_t::t_btree_norec_alloc:
@@ -1824,7 +1823,6 @@ restart_m::analysis_pass_backward(
             break;
 
         case logrec_t::t_compensate:
-        case logrec_t::t_store_operation:
         case logrec_t::t_page_set_to_be_deleted:
         case logrec_t::t_page_img_format:
         case logrec_t::t_btree_norec_alloc:
@@ -1882,8 +1880,8 @@ restart_m::analysis_pass_backward(
             // CS TODO - IMPLEMENT!
             break;
 
-        case logrec_t::t_alloc_a_page:
-        case logrec_t::t_dealloc_a_page:
+        case logrec_t::t_alloc_page:
+        case logrec_t::t_dealloc_page:
             // do nothing -- page replay will reallocate if necessary
             break;
 
@@ -2127,18 +2125,18 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
 
         // Register the page into buffer pool (don't load the actual page)
         // If the log record describe allocation of a page, then
-        // Allocation of a page (t_alloc_a_page, t_alloc_consecutive_pages) - clear
+        // Allocation of a page (t_alloc_page, t_alloc_consecutive_pages) - clear
         //        the in_doubt bit, because the page might be allocated for a
         //        non-logged operation (e.g., bulk load) which is relying on the page not
         //        being formatted as a regular page.
         //        We clear the in_doubt flag but keep the page in hash table so the page
         //        is considered as used.	A page format log record should come if this is
         //        a regular B-tree page, whcih would mark the in_doubt flag for this page
-        // De-allocation of a page (t_dealloc_a_page, t_page_set_to_be_deleted) -
+        // De-allocation of a page (t_dealloc_page, t_page_set_to_be_deleted) -
         //        clear the in_doubt bit and remove the page from hash table so the page
         //        slot is available for a different page
 
-        if (r.type() == logrec_t::t_alloc_a_page || r.type() == logrec_t::t_dealloc_a_page)
+        if (r.type() == logrec_t::t_alloc_page || r.type() == logrec_t::t_dealloc_page)
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
             uint64_t key = bf_key(page_of_interest.vol(), page_of_interest.page);
@@ -2149,7 +2147,7 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
                 // If the cb for this page does not exist in buffer pool, no-op
                 if (true == smlevel_0::bf->is_in_doubt(idx))
                 {
-                    if (r.type() == logrec_t::t_alloc_a_page)
+                    if (r.type() == logrec_t::t_alloc_page)
                         smlevel_0::bf->clear_in_doubt(idx, true, key);    // Page is still used
                     else
                         smlevel_0::bf->clear_in_doubt(idx, false, key);   // Page is not used
@@ -2641,12 +2639,12 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
         // These log records are not compensation log and affected buffer pool pages
         // we need to record these in_doubt pages in buffer pool
         // Exceptions:
-        // Allocation of a page (t_alloc_a_page, t_alloc_consecutive_pages) - clear
+        // Allocation of a page (t_alloc_page, t_alloc_consecutive_pages) - clear
         //                   the in_doubt bit, because the page might be allocated for a
         //                   non-logged operation, we don't want to re-format the page
-        // De-allocation of a page (t_dealloc_a_page, t_page_set_to_be_deleted) -
+        // De-allocation of a page (t_dealloc_page, t_page_set_to_be_deleted) -
         //                   clear the in_doubt bit, so the page can be evicted if needed.
-        if (r.type() == logrec_t::t_alloc_a_page || r.type() == logrec_t::t_dealloc_a_page)
+        if (r.type() == logrec_t::t_alloc_page || r.type() == logrec_t::t_dealloc_page)
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
             uint64_t key = bf_key(page_of_interest.vol(), page_of_interest.page);
@@ -2657,7 +2655,7 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
                 // If the cb for this page does not exist in buffer pool, no-op
                 if (true == smlevel_0::bf->is_in_doubt(idx))
                 {
-                    if (r.type() == logrec_t::t_alloc_a_page)
+                    if (r.type() == logrec_t::t_alloc_page)
                         smlevel_0::bf->clear_in_doubt(idx, true, key);   // Page is still used
                     else
                         smlevel_0::bf->clear_in_doubt(idx, false, key);  // Page is not used
@@ -2744,16 +2742,11 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
             w_assert1(0 != idx);
         }
     }
-    else if (r.type()!=logrec_t::t_store_operation)   // Store operation (sm)
+    else  // logrec_t::t_store_operation
     {
         // Retrieve a log buffer which we don't know how to handle
         // Raise error
         W_FATAL_MSG(fcINTERNAL, << "Unexpected log record type: " << r.type());
-    }
-    else  // logrec_t::t_store_operation
-    {
-        // Store operation, such as create or delete a store, set store parameters, etc.
-        // Transaction should not be created for this log because there is no tid
     }
 
     if ((r.tid() != tid_t::null) && (xd))
@@ -3996,8 +3989,8 @@ restart_m::redo_log_pass(
                             // creates a new ssx and runs it.
                             // Page allocation - taken care of as part of page format
                             // Page deallocation - no need from a recovery
-                            if (r.type() != logrec_t::t_alloc_a_page
-                                    && r.type() != logrec_t::t_dealloc_a_page
+                            if (r.type() != logrec_t::t_alloc_page
+                                    && r.type() != logrec_t::t_dealloc_page
                                     // CS TODO -- restore not supported yet
                                     && r.type() != logrec_t::t_restore_begin
                                     && r.type() != logrec_t::t_restore_segment
@@ -4445,7 +4438,7 @@ void restart_m::_redo_log_with_pid(
             //     and we should have removed the idx from hashtable, therefore the code
             //     should not get here
             // All other cases are un-expected, raise error
-            if (r.type() == logrec_t::t_alloc_a_page)
+            if (r.type() == logrec_t::t_alloc_page)
             {
                 // This is page allocation log record, nothing is in hashtable for this
                 // page currently
@@ -4460,7 +4453,7 @@ void restart_m::_redo_log_with_pid(
                 // The 'used' flag of the page should be set
                 // w_assert1(true == smlevel_0::bf->is_used(idx));
             }
-            else if (r.type() == logrec_t::t_alloc_a_page)
+            else if (r.type() == logrec_t::t_alloc_page)
             {
                 // The idx should not be in hashtable
                 if (cb.latch().held_by_me())

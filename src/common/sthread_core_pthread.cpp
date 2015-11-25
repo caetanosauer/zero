@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -227,15 +227,12 @@ ostream &operator<<(ostream &o, const sthread_core_t &core)
 {
     o << "core: ";
     if (core.stack_size == 0)
-        W_FORM(o)("[ system thread %#lx creator %#lx ]", 
-                (long) core.pthread, 
-                (long) core.creator
-                );
+        o << "[ system thread " << (long) core.pthread
+            << " creator " << (long) core.creator << "]";
     else
-        W_FORM(o)("[ thread %#lx creator %#lx ] size=%d",  
-            (long) core.pthread, 
-            (long) core.creator, 
-            core.stack_size);
+        o << "[ thread " << (long) core.pthread
+            << " creator " << (long) core.creator << "] "
+            << "size=" << core.stack_size;
     if (core.is_virgin)
         o << ", virgin-core";
     return o;

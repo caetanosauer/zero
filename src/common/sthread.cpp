@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
    Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -135,7 +135,7 @@ extern "C" void threadstats();
    do_init()
  * \endcode
  *
- * This is also called on every sthread fork() and by 
+ * This is also called on every sthread fork() and by
  * \code
     sthread_t::initialize_sthreads_package()
  * \endcode
@@ -154,10 +154,10 @@ private:
     static w_pthread_lock_t  init_mutex;
 };
 
-static sthread_init_t sthread_init; 
+static sthread_init_t sthread_init;
 
 uint32_t    sthread_init_t::initialized = 0;
-w_pthread_lock_t     sthread_init_t::init_mutex; 
+w_pthread_lock_t     sthread_init_t::init_mutex;
 int64_t     sthread_t::max_os_file_size;
 
 bool sthread_t::isStackOK(const char * /*file*/, int /*line*/) const
@@ -205,18 +205,18 @@ bool    sthread_t::isStackFrameOK(size_t size)
 
     if( stack_top  < _danger) {
     if( stack_top  <= absolute_bottom) {
-    fprintf(stderr, 
+    fprintf(stderr,
 // In order of values:
     "STACK OVERFLOW frame (offset -%lld) %p bottom %p danger %p top %p stack_size %lld \n",
     // cast so it works for -m32 and -m64
-     (long long) size, _stack_top, absolute_bottom, _danger, _start_frame, 
+     (long long) size, _stack_top, absolute_bottom, _danger, _start_frame,
      (long long) _stack_size);
     } else {
-    fprintf(stderr, 
+    fprintf(stderr,
 // In order of values:
     "STACK IN GUARD AREA bottom %p frame (offset -%lld) %p danger %p top %p stack_size %lld \n",
     // cast so it works for -m32 and -m64
-     absolute_bottom, (long long) size, _stack_top, _danger, _start_frame, 
+     absolute_bottom, (long long) size, _stack_top, _danger, _start_frame,
      (long long) _stack_size);
     }
     return false;
@@ -263,7 +263,7 @@ w_rc_t    sthread_t::cold_startup()
     // Set the seed for the clib random-number generator, which
     // we use to seed the per-thread RNG
     ::srand(now.tv_usec);
-    
+
     /*
      * Boot the main thread onto the current (system) stack.
      */
@@ -272,7 +272,7 @@ w_rc_t    sthread_t::cold_startup()
         W_FATAL(fcOUTOFMEMORY);
     me_lval() = _main_thread = main;
     W_COERCE( main->fork() );
-    
+
     if (me() != main)
         W_FATAL(stINTERNAL);
 
@@ -391,7 +391,7 @@ void sthread_t::wakeup()
 
 /*
  *  Wait for this thread to end. This method returns when this thread
- *  ends.  Timeout is no longer available. 
+ *  ends.  Timeout is no longer available.
  */
 
 w_rc_t
@@ -402,11 +402,11 @@ sthread_t::join(timeout_in_ms /*timeout*/)
         CRITICAL_SECTION(cs, _start_terminate_lock);
 
         /* A thread that hasn't been forked can't be wait()ed for.
-           It's not a thread until it has been fork()ed. 
+           It's not a thread until it has been fork()ed.
         */
         if (!_forked) {
             rc =  RC(stOS);
-        } else 
+        } else
         {
             cs.exit();
             /*
@@ -437,13 +437,13 @@ w_rc_t    sthread_t::fork()
             return RC(stOS);
 
         /* Add us to the list of threads, unless we are the main thread */
-        if(this != _main_thread) 
+        if(this != _main_thread)
         {
             CRITICAL_SECTION(cs, _class_list_lock);
             _class_list->append(this);
         }
 
-        
+
         _forked = true;
         if(this == _main_thread) {
             // happens at global constructor time
@@ -474,8 +474,8 @@ sthread_t::sthread_t(priority_t        pr,
   id(_next_id++), // make it match the gdb threads #. Origin 1
   _start_terminate_lock(new pthread_mutex_t),
   _start_cond(new pthread_cond_t),
-  _sleeping(false), 
-  _forked(false), 
+  _sleeping(false),
+  _forked(false),
   _terminated(false),
   _unblock_flag(false),
   _core(0),
@@ -487,11 +487,11 @@ sthread_t::sthread_t(priority_t        pr,
 
     DO_PTHREAD(pthread_cond_init(_start_cond, NULL));
     DO_PTHREAD(pthread_mutex_init(_start_terminate_lock, NULL));
-    
+
     _core = new sthread_core_t;
     if (!_core)
         W_FATAL(fcOUTOFMEMORY);
-    _core->sthread = (void *)this;  // not necessary, but might 
+    _core->sthread = (void *)this;  // not necessary, but might
                                     // be useful for debugging
 
     /*
@@ -507,7 +507,7 @@ sthread_t::sthread_t(priority_t        pr,
      */
     DO_PTHREAD(pthread_mutex_init(&_wait_lock, NULL));
     DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
-    
+
     /*
      * stash the procedure (sthread_t::_start)
      * and arg (this)
@@ -536,8 +536,8 @@ sthread_t::sthread_t(priority_t        pr,
 sthread_t::~sthread_t()
 {
     /*
-    fprintf(stderr, "sthread_t %s destructed, this %p core %p pthread %p\n", 
-            name(), this, _core, (void *)myself()); 
+    fprintf(stderr, "sthread_t %s destructed, this %p core %p pthread %p\n",
+            name(), this, _core, (void *)myself());
     fflush(stderr);
     */
     {
@@ -556,8 +556,8 @@ sthread_t::~sthread_t()
                   );
 
     if (_link.member_of()) {
-        W_FORM2(cerr,("sthread_t(%#lx): \"%s\": destroying a thread on a list!",
-              (long)this, name()));
+        cerr << "sthread_t(" << (long)this << ") " << name()
+            << " destroying a thread on a list!" << endl;
     }
     }
     sthread_core_exit(_core, _terminated);
@@ -617,28 +617,28 @@ void    sthread_t::__start(void *arg)
         fprintf(stderr,"Cannot init pthread_attr e=%d\n", e);
         ::exit(1);
     }
-    else 
+    else
     {
         e = pthread_attr_getstacksize( &attr, &sz);
         if(e || sz==0) {
 #ifdef HAVE_PTHREAD_ATTR_GETSTACK
             void *voidp(NULL);
             e = pthread_attr_getstack( &attr, &voidp, &sz);
-            if(e || sz == 0) 
+            if(e || sz == 0)
 #endif
             {
 #if W_DEBUG_LEVEL > 2
-                fprintf(stderr,"Cannot get pthread stack size e=%d, sz=%lld\n", 
+                fprintf(stderr,"Cannot get pthread stack size e=%d, sz=%lld\n",
                 e, (long long)sz);
 #endif
                 sz = PTHREAD_STACK_MIN;
-            } 
+            }
         }
     }
 #define GUARD 8192*4
     if(sz <  GUARD) {
        // fprintf(stderr,"pthread stack size too small: %lld\n", (int64_t)sz);
-#ifndef PTHREAD_STACK_MIN_SUBSTITUTE 
+#ifndef PTHREAD_STACK_MIN_SUBSTITUTE
 // How did I come up with this number?  It's from experimenting with
 // tests/thread1 on chianti, which seems not to be compliant in any way,
 // not giving me any way to find out what the pthreads stack size is.
@@ -675,7 +675,7 @@ void sthread_t::_start()
 {
     tls_tricks::tls_manager::thread_init();
     w_assert1(me() == this);
- 
+
     // assertions: will call stackoverflowed() if !ok and will return false
     w_assert1(isStackFrameOK(0));
     {
@@ -693,7 +693,7 @@ void sthread_t::_start()
         }
     }
 
-    { 
+    {
         // thread checker complains about this not being reentrant
         // so we'll protect it with a mutex.
         // We could use reentrant rand_r but then we need to seed it.
@@ -710,15 +710,15 @@ void sthread_t::_start()
         }
         tls_rng.seed( (seed1 << 24) ^ seed2);
     }
-     
-    
+
+
     {
         /* do not save sigmask */
         w_assert1(me() == this);
 #ifdef STHREAD_CXX_EXCEPTION
         // NOTE: this is not tested in SHORE-MT; it is old code.
         // TODO: exception-handling.
-        
+
         /* Provide a "backstop" exception handler to catch uncaught
            exceptions in the thread.  This prevents them from going
            into never-never land. */
@@ -761,7 +761,7 @@ void sthread_t::_start()
         tls_tricks::tls_manager::thread_fini();
         pthread_exit(0);
     }
-    
+
     W_FATAL(stINTERNAL);    // never reached
 }
 
@@ -790,7 +790,7 @@ sthread_t::block(
     return RCOK;
 }
 
-w_error_codes        
+w_error_codes
 sthread_t::block(int32_t timeout /*= WAIT_FOREVER*/)
 {
     return  _block(NULL, timeout);
@@ -808,7 +808,7 @@ sthread_t::_block(
     sthread_t* self = me();
     {
         CRITICAL_SECTION(cs, self->_wait_lock);
-        
+
         /*
          *  Put on list
          */
@@ -834,26 +834,26 @@ sthread_t::_block(
             self->_link.detach(); // we timed out and removed ourself from the waitlist
         }
     }
-    
+
     return rce;
 }
 
 void sthread_t::timeout_to_timespec(timeout_in_ms timeout, struct timespec &when)
 {
-    w_assert1(timeout != WAIT_IMMEDIATE); 
+    w_assert1(timeout != WAIT_IMMEDIATE);
     w_assert1(timeout != sthread_t::WAIT_FOREVER);
     if(timeout > 0) {
         ::clock_gettime(CLOCK_REALTIME, &when);
         when.tv_nsec += (uint64_t) timeout * 1000000;
         when.tv_sec += when.tv_nsec / 1000000000;
-        when.tv_nsec = when.tv_nsec % 1000000000;    
+        when.tv_nsec = when.tv_nsec % 1000000000;
     }
 }
 
 w_error_codes
 sthread_t::_block(
     timeout_in_ms    timeout,
-    const char* const    
+    const char* const
         ,        // for debugging only
     const void        *
         )
@@ -866,7 +866,7 @@ sthread_t::_block(
     sthread_t* self = me();
     w_assert1(timeout != WAIT_IMMEDIATE);   // not 0 timeout
 
-    
+
 
     // wait...
     status_t old_status = self->_status;
@@ -882,7 +882,7 @@ sthread_t::_block(
         // timeout has passed, so we should drop out if timed out,
         // and it should return 0 if we were signalled.
         while(!error && !self->_unblock_flag)  {
-            error = pthread_cond_timedwait(&self->_wait_cond, 
+            error = pthread_cond_timedwait(&self->_wait_cond,
                     &self->_wait_lock, &when);
             w_assert1(error == ETIMEDOUT || error == 0);
             // Break out if we were signalled
@@ -935,7 +935,7 @@ sthread_t::_block(
  *
  *********************************************************************/
 w_rc_t
-sthread_t::unblock(w_error_codes e) 
+sthread_t::unblock(w_error_codes e)
 {
     CRITICAL_SECTION(cs, _wait_lock);
 
@@ -946,7 +946,7 @@ sthread_t::unblock(w_error_codes e)
     */
     _link.detach();
     return _unblock(e);
-    
+
 }
 
 // this version assumes caller holds _lock
@@ -1055,7 +1055,7 @@ static void print_time(ostream &o, const sinterval_t &real,
     o << "\t%CPU:"
         << " " << setprecision(3) << pcpu
         << "  %user: " << setprecision(2) << pcpu2;
-        o 
+        o
         << endl;
 }
 
@@ -1245,12 +1245,12 @@ void occ_rwlock::acquire_read()
         count = lintel::unsafe::atomic_fetch_sub(const_cast<unsigned*>(&_active_count), (unsigned)READER) - READER;
         {
             CRITICAL_SECTION(cs, _read_write_mutex);
-            
+
             // nasty race: we could have fooled a writer into sleeping...
             if(count == WRITER) {
                 DO_PTHREAD(pthread_cond_signal(&_write_cond));
             }
-            
+
             while(*&_active_count & WRITER) {
                 DO_PTHREAD(pthread_cond_wait(&_read_cond, &_read_write_mutex));
             }
@@ -1271,11 +1271,11 @@ void occ_rwlock::release_write()
 void occ_rwlock::acquire_write()
 {
     // only one writer allowed in at a time...
-    CRITICAL_SECTION(cs, _read_write_mutex);    
+    CRITICAL_SECTION(cs, _read_write_mutex);
     while(*&_active_count & WRITER) {
         DO_PTHREAD(pthread_cond_wait(&_read_cond, &_read_write_mutex));
     }
-    
+
     // any lurking writers are waiting on the cond var
     unsigned count = lintel::unsafe::atomic_fetch_add(const_cast<unsigned*>(&_active_count), (unsigned)WRITER) + WRITER;
     w_assert1(count & WRITER);
@@ -1445,7 +1445,7 @@ static    void    get_large_file_size(int64_t &max_os_file_size)
  *  sthread_init_t::sthread_init_t()
  *
  *  Initialize the sthread environment. The first time this method
- *  is called, it sets up the environment 
+ *  is called, it sets up the environment
  *
  *********************************************************************/
 #include "sthread_vtable_enum.h"
@@ -1456,19 +1456,19 @@ static    void    get_large_file_size(int64_t &max_os_file_size)
 void  sthread_t::initialize_sthreads_package()
 {   sthread_init_t::do_init(); }
 
-NORET            
+NORET
 sthread_init_t::sthread_init_t() { }
 
 void
 sthread_init_t::do_init()
 {
     // This should not ever get initialized more than once
-    if (sthread_init_t::initialized == 0) 
+    if (sthread_init_t::initialized == 0)
     {
         CRITICAL_SECTION(cs, init_mutex);
 
         // check again
-        if (sthread_init_t::initialized == 0) 
+        if (sthread_init_t::initialized == 0)
         {
             sthread_init_t::initialized ++;
 
@@ -1496,7 +1496,7 @@ sthread_init_t::~sthread_init_t()
     // This should not ever get initialized more than once
     // Could be that it never got initialized.
     w_assert1 (sthread_init_t::initialized <= 1)  ;
-    if (--sthread_init_t::initialized == 0) 
+    if (--sthread_init_t::initialized == 0)
     {
 
         W_COERCE(sthread_t::shutdown());
@@ -1509,7 +1509,7 @@ sthread_init_t::~sthread_init_t()
 
         delete sthread_t::_main_thread; // clean up for valgrind
         sthread_t::_main_thread = 0;
-        
+
         delete sthread_t::_class_list; // clean up for valgrind
         sthread_t::_class_list = 0;
     }

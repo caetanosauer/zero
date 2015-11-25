@@ -725,7 +725,8 @@ void chkpt_restore_tab_log::redo(fixable_page_h*)
         vol->redo_segment_restore(i);
     }
 
-    RestoreBitmap bitmap(vol->num_pages());
+    // CS TODO
+    RestoreBitmap bitmap(vol->num_used_pages());
     bitmap.deserialize(tab->bitmap, tab->firstNotRestored,
             tab->firstNotRestored + tab->bitmapSize);
     // Bitmap of RestoreMgr might have been initialized already
@@ -736,27 +737,23 @@ void chkpt_restore_tab_log::redo(fixable_page_h*)
     }
 }
 
-format_vol_log::format_vol_log(const char* path, shpid_t num_pages, vid_t vid)
+format_vol_log::format_vol_log(const char* path, vid_t vid)
 {
     memcpy(data_ssx(), &vid, sizeof(vid_t));
-    memcpy(data_ssx() + sizeof(vid_t), &num_pages, sizeof(shpid_t));
 
     size_t length = strlen(path);
     w_assert0(length < smlevel_0::max_devname);
-    memcpy(data_ssx() + sizeof(vid_t) + sizeof(shpid_t), path, length);
-    fill(0, length + sizeof(vid_t) + sizeof(shpid_t));
+    memcpy(data_ssx() + sizeof(vid_t), path, length);
+    fill(0, length + sizeof(vid_t));
 }
 
 void format_vol_log::redo(fixable_page_h*)
 {
     vid_t expected_vid = *((vid_t*) data_ssx());
-    shpid_t num_pages = *((shpid_t*) data_ssx() + sizeof(vid_t));
-    const char* dev_name = (const char*) data_ssx() + sizeof(vid_t)
-        + sizeof(shpid_t);
+    const char* dev_name = (const char*) data_ssx() + sizeof(vid_t);
 
     vid_t created_vid;
-    W_COERCE(smlevel_0::vol->sx_format(dev_name, num_pages, created_vid,
-                false));
+    W_COERCE(smlevel_0::vol->sx_format(dev_name, created_vid, false));
     w_assert0(expected_vid == created_vid);
 }
 
@@ -882,38 +879,42 @@ void restore_segment_log::redo(fixable_page_h*)
     volume->redo_segment_restore(segment);
 }
 
-alloc_a_page_log::alloc_a_page_log(vid_t vid, shpid_t pid)
+alloc_page_log::alloc_page_log(vid_t vid, shpid_t pid)
 {
     memcpy(data_ssx(), &vid, sizeof(vid_t));
     memcpy(data_ssx() + sizeof(vid_t), &pid, sizeof(shpid_t));
     fill(lpid_t(vid, 0), sizeof(vid_t) + sizeof(shpid_t));
 }
 
-void alloc_a_page_log::redo(fixable_page_h*)
+void alloc_page_log::redo(fixable_page_h*)
 {
     vid_t vid = *((vid_t*) data_ssx());
     shpid_t shpid = *((shpid_t*) data_ssx() + sizeof(vid_t));
+
+    // CS TODO: update page state
 
     vol_t* volume = smlevel_0::vol->get(vid);
     w_assert0(volume);
     volume->alloc_a_page(shpid, true);
 }
 
-dealloc_a_page_log::dealloc_a_page_log(vid_t vid, shpid_t pid)
+dealloc_page_log::dealloc_page_log(vid_t vid, shpid_t pid)
 {
     memcpy(data_ssx(), &vid, sizeof(vid_t));
     memcpy(data_ssx() + sizeof(vid_t), &pid, sizeof(shpid_t));
     fill(lpid_t(vid, 0), sizeof(vid_t) + sizeof(shpid_t));
 }
 
-void dealloc_a_page_log::redo(fixable_page_h*)
+void dealloc_page_log::redo(fixable_page_h*)
 {
     vid_t vid = *((vid_t*) data_ssx());
     shpid_t shpid = *((shpid_t*) data_ssx() + sizeof(vid_t));
 
+    // CS TODO: update page state
+
     vol_t* volume = smlevel_0::vol->get(vid);
     w_assert0(volume);
-    volume->alloc_a_page(shpid, true);
+    volume->deallocate_page(shpid, true);
 }
 
 page_img_format_t::page_img_format_t (const btree_page_h& page)
@@ -981,7 +982,7 @@ operator<<(ostream& o, const logrec_t& l)
     } else {
         o << "TID=SSX" << ' ';
     }
-    W_FORM(o)("%20s%5s:%1s", l.type_str(), l.cat_str(), rb );
+    o << l.type_str() << ":" << l.cat_str() << ":" << rb;
     o << "  " << l.construct_pid();
     if (l.is_multi_page()) {
         o << " src-" << l.construct_pid2();
@@ -1004,13 +1005,6 @@ operator<<(ostream& o, const logrec_t& l)
                     o << (const char *)l._data;
                 }
                 break;
-
-        case t_store_operation:
-                {
-                    store_operation_param& param = *(store_operation_param*)l._data;
-                    o << ' ' << param;
-                }
-                break;
         case t_page_evict:
                 {
                     page_evict_t* pev = (page_evict_t*) l._data;
@@ -1018,8 +1012,8 @@ operator<<(ostream& o, const logrec_t& l)
                         << pev->_child_lsn;
                     break;
                 }
-        case t_alloc_a_page:
-        case t_dealloc_a_page:
+        case t_alloc_page:
+        case t_dealloc_page:
                 {
                     o << " page: " << *((vid_t*) l.data_ssx()) << "."
                         << *((shpid_t*) (l.data_ssx() + sizeof(vid_t)));
@@ -1070,71 +1064,49 @@ void page_set_to_be_deleted_log::undo(fixable_page_h* page)
     page->unset_to_be_deleted();
 }
 
-store_operation_log::store_operation_log(vid_t vid,
-        const store_operation_param& param)
+create_store_log::create_store_log(lpid_t root_pid, snum_t snum)
 {
-    new (_data) store_operation_param(param);
-    lpid_t dummy(vid, 0);
-    fill(&dummy, param.snum(), 0, param.size());
+    memcpy(data_ssx(), &snum, sizeof(snum_t));
+    memcpy(data_ssx() + sizeof(snum_t), &root_pid.page, sizeof(shpid_t));
+    lpid_t stpage_pid(root_pid.vol(), stnode_page::stpid);
+    fill(&stpage_pid, snum, 0, sizeof(snum_t) + sizeof(shpid_t));
 }
 
-void store_operation_log::redo(fixable_page_h* /*page*/)
+void create_store_log::redo(fixable_page_h* page)
 {
-    store_operation_param& param = *(store_operation_param*)_data;
-    DBG( << "store_operation_log::redo(page=" << pid()
-        << ", param=" << param << ")" );
-    W_COERCE( smlevel_0::vol->get(vid())->store_operation(param, true) );
+    snum_t snum = *((snum_t*) data_ssx());
+    shpid_t root_pid = *((shpid_t*) (data_ssx() + sizeof(snum_t)));
+
+    // CS TODO: update page contents
+
+    vid_t vid = pid().vol();
+    vol_t* volume = smlevel_0::vol->get(vid);
+    w_assert0(volume);
+    W_COERCE(volume->get_stnode_cache()->sx_create_store(
+                root_pid, snum, true));
 }
 
-void store_operation_log::undo(fixable_page_h* /*page*/)
+append_extent_log::append_extent_log(vid_t vid, snum_t snum,
+        extent_id_t ext)
 {
-    store_operation_param& param = *(store_operation_param*)_data;
-    DBG( << "store_operation_log::undo(page=" << shpid() << ", param=" << param << ")" );
+    memcpy(data_ssx(), &snum, sizeof(snum_t));
+    memcpy(data_ssx() + sizeof(snum_t), &ext, sizeof(extent_id_t));
+    lpid_t stpage_pid(vid, stnode_page::stpid);
+    fill(&stpage_pid, snum, 0, sizeof(snum_t) + sizeof(extent_id_t));
+}
 
-    switch (param.op())  {
-        case smlevel_0::t_delete_store:
-            /* do nothing, not undoable */
-            break;
-        case smlevel_0::t_create_store:
-            // TODO implement destroy_store
-            /*
-            {
-                stid_t stid(vid(), param.snum());
-                W_COERCE( smlevel_0::io->destroy_store(stid) );
-            }
-            */
-            break;
-        case smlevel_0::t_set_deleting:
-            switch (param.new_deleting_value())  {
-                case smlevel_0::t_not_deleting_store:
-                case smlevel_0::t_deleting_store:
-                    {
-                        store_operation_param new_param(param.snum(),
-                                smlevel_0::t_set_deleting,
-                                param.old_deleting_value(),
-                                param.new_deleting_value());
-                        W_COERCE( smlevel_0::vol->get(vid())->store_operation(
-                                new_param) );
-                    }
-                    break;
-                case smlevel_0::t_unknown_deleting:
-                    W_FATAL(eINTERNAL);
-                    break;
-            }
-            break;
-        case smlevel_0::t_set_store_flags:
-            {
-                store_operation_param new_param(param.snum(),
-                        smlevel_0::t_set_store_flags,
-                        param.old_store_flags(), param.new_store_flags());
-                W_COERCE( smlevel_0::vol->get(vid())->store_operation(
-                        new_param) );
-            }
-            break;
-        case smlevel_0::t_set_root:
-            /* do nothing, not undoable */
-            break;
-    }
+void append_extent_log::redo(fixable_page_h* page)
+{
+    snum_t snum = *((snum_t*) data_ssx());
+    extent_id_t ext = *((extent_id_t*) (data_ssx() + sizeof(snum_t)));
+
+    // CS TODO: update alloc_page contents
+
+    vid_t vid = pid().vol();
+    vol_t* volume = smlevel_0::vol->get(vid);
+    w_assert0(volume);
+    W_COERCE(volume->get_stnode_cache()->sx_append_extent(
+                snum, ext, true));
 }
 
 #if LOGREC_ACCOUNTING

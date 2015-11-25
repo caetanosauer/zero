@@ -32,6 +32,7 @@ rc_t btree_impl::_sx_create_tree(const stid_t &stid, lpid_t &root_pid)
     W_DO (sxs.end_sys_xct (ret));
     return ret;
 }
+
 rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid)
 {
     w_assert1(root_pid.page != 0);
@@ -51,9 +52,6 @@ rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid
                            0, lsn_t::null,// no foster child
                            infimum, supremum, dummy_chain_high // start from infimum/supremum fence keys
                            ));
-
-    // also register it in stnode_page
-    W_DO(smlevel_0::vol->get(stid.vol)->set_store_root(stid.store, root_pid.page));
 
     return RCOK;
 }

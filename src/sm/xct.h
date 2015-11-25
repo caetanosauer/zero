@@ -659,13 +659,6 @@ private:
     void                        _compensate(const lsn_t&, bool undoable = false);
 
 public:
-    void                        ClearAllStoresToFree();
-    void                        FreeAllStoresToFree();
-    void                        DumpStoresToFree();
-    rc_t                        ConvertAllLoadStoresToRegularStores();
-    void                        ClearAllLoadStores();
-
-
     bool                        is_piggy_backed_single_log_sys_xct() const { return _piggy_backed_single_log_sys_xct;}
     void                        set_piggy_backed_single_log_sys_xct(bool enabled) { _piggy_backed_single_log_sys_xct = enabled;}
 

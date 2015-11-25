@@ -283,7 +283,8 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
 
     // load root pages. root pages are permanently fixed.
     stnode_cache_t *stcache = volume->get_stnode_cache();
-    std::vector<snum_t> stores (stcache->get_all_used_store_ID());
+    std::vector<snum_t> stores;
+    stcache->get_used_stores(stores);
     w_rc_t rc = RCOK;
     w_rc_t preload_rc;
     for (size_t i = 0; i < stores.size(); ++i) {
@@ -510,53 +511,6 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     w_assert1(inserted);
 
     desc->_root_pages[store] = idx;
-    return RCOK;
-}
-
-w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
-    vid_t vid = volume->vid();
-    DBGOUT1(<<"installing volume " << vid << " to MAINMEMORY-DB buffer pool...");
-    for (vid_t v = 1; v < vol_m::MAX_VOLS; ++v) {
-        if (_volumes[v] != NULL) {
-            ERROUT (<<"MAINMEMORY-DB mode allows only one volume to be loaded, but volume " << v << " is already loaded.");
-            return RC(eINTERNAL);
-        }
-    }
-
-    // load all pages. pin them forever
-    bf_idx endidx = volume->num_pages();
-    for (bf_idx idx = volume->first_data_pageid(); idx < endidx; ++idx) {
-        if (volume->is_allocated_page(idx)) {
-            W_DO(volume->read_page(idx, _buffer[idx]));
-            if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
-                return RC(eBADCHECKSUM);
-            }
-            bf_tree_cb_t &cb = get_cb(idx);
-            cb.clear();
-            cb._pid_vol = vid;
-            cb._pid_shpid = idx;
-            cb._rec_lsn = _buffer[idx].lsn.data();
-            w_assert3(_buffer[idx].lsn.hi() > 0);
-            cb._pin_cnt = 0;
-            DBG(<< "Fix root set pin cnt to " << cb._pin_cnt);
-            cb._in_doubt = false;
-            cb._recovery_access = false;
-            cb._used = true;
-            cb._swizzled = true;
-        }
-    }
-    // now freelist is inconsistent, but who cares. this is mainmemory-db experiment FIXME
-
-    bf_tree_vol_t* desc = new bf_tree_vol_t(volume);
-    stnode_cache_t *stcache = volume->get_stnode_cache();
-    std::vector<snum_t> stores (stcache->get_all_used_store_ID());
-    for (size_t i = 0; i < stores.size(); ++i) {
-        snum_t store = stores[i];
-        bf_idx idx = stcache->get_root_pid(store);
-        w_assert1(idx > 0);
-        desc->_root_pages[store] = idx;
-    }
-    _volumes[vid] = desc;
     return RCOK;
 }
 
@@ -1270,11 +1224,6 @@ w_rc_t bf_tree_m::force_all() {
     // Buffer pool flush, it flushes dirty pages
     // It does not flush in_doubt pages
     return _cleaner->force_all();
-}
-w_rc_t bf_tree_m::force_until_lsn(lsndata_t lsn) {
-    // Buffer pool flush, it flushes dirty pages
-    // It does not flush in_doubt pages
-    return _cleaner->force_until_lsn(lsn);
 }
 w_rc_t bf_tree_m::force_volume(vid_t vol) {
     return _cleaner->force_volume(vol);
@@ -3263,7 +3212,8 @@ void WarmupThread::run()
     // CS TODO assuming only one volume
     vol_t* vol = smlevel_0::vol->get(1);
     stnode_cache_t* stcache = vol->get_stnode_cache();
-    vector<snum_t> stids = stcache->get_all_used_store_ID();
+    vector<snum_t> stids;
+    stcache->get_used_stores(stids);
 
     // Load all pages in depth-first until buffer is full or all pages read
     btree_page_h parent;
@@ -3276,5 +3226,5 @@ void WarmupThread::run()
     }
 
     ERROUT(<< "Finished warmup! Pages fixed: " << fixed << " of " << npages <<
-            " with DB size " << vol->get_alloc_cache()->last_used_pageid());
+            " with DB size " << vol->get_alloc_cache()->get_last_allocated_pid());
 }

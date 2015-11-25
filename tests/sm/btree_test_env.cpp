@@ -22,7 +22,6 @@
 #include "btree_test_env.h"
 #include "sm_options.h"
 #include "xct.h"
-#include "backup.h"
 #include "sm_base.h"
 #include "sm_external.h"
 #include "srwlock.h"
@@ -233,7 +232,7 @@ testdriver_thread_t::do_init(ss_m &ssm)
                         quota_in_kb,
                         _functor->_test_volume._vid
                         ));
-        
+
             DBGOUT1(<< "Mounting device: " << _functor->_test_volume._device_name);
             W_DO(ssm.mount_vol(_functor->_test_volume._device_name,
                     _functor->_test_volume._vid));

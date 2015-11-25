@@ -11,101 +11,88 @@
 #include "srwlock.h"
 #include "w_defines.h"
 #include "sm_base.h"
-
-class bf_fixed_m;
-class store_operation_param;
+#include "alloc_page.h"
 
 /**
  * \brief Persistent structure representing metadata for a store.
  *
  * \details
- * Contains the root page ID of the given store, store flags (e.g.,
- * what kind of logging to use, is the store allocated?), and the
- * store's deleting status (e.g., is the store in the process of being
- * deleted?).
- *
+  *
  * These are contained in \ref stnode_page's.
  */
 struct stnode_t {
     /// also okay to initialize via memset
-    stnode_t() {
-        root     = 0;
-        flags    = 0;
-        deleting = 0;
-    }
+    stnode_t() : root(0), last_extent(0)
+    { }
 
-    /// Root page ID of the store; holds 0 *if* the store is not allocated.
+    /**
+     * Root page ID of the store; 0 if the store is not allocated and 1 for
+     * the special store number 0, which is used to keep track of the last
+     * extent allocated which was not assigned to a specific store.
+     */
     shpid_t         root;      // +4 -> 4
-    /// store flags            (holds a smlevel_0::store_flag_t)
-    uint16_t        flags;     // +2 -> 6
-    /// store deleting status  (holds a smlevel_0::store_deleting_t)
-    uint16_t        deleting;  // +2 -> 8
 
-    bool is_allocated() const  { return flags != smlevel_0::st_unallocated; }
+    /**
+     * Last extend occupied by this store; 0 if store does not use exclusive
+     * extents.
+     */
+    extent_id_t     last_extent; // +4 -> 8
+
+    bool is_used() const  { return root != 0; }
 };
 
 
 /**
  * \brief Store-node page that contains one stnode_t for each
  * (possibly deleted or uncreated) store belonging to a given volume.
- *
- * \details
- * The handle class for this class is stnode_page_h.
  */
 class stnode_page : public generic_page_header {
-    friend class stnode_page_h;
+public:
 
     /// max # \ref stnode_t's on a single stnode_page; thus, the
     /// maximum number of stores per volume
-    static const size_t max = (page_sz - sizeof(generic_page_header)) / sizeof(stnode_t);
+    static const size_t max = (page_sz - sizeof(generic_page_header) - sizeof(lsn_t))
+        / sizeof(stnode_t);
+
+    // Page ID used by the stnode page
+    static const shpid_t stpid = shpid_t(1);
+
+    stnode_t get(size_t index) const {
+        w_assert1(index < max);
+        return stnode[index];
+    }
+
+    void set_root(size_t index, shpid_t root) {
+        w_assert1(index < max);
+        stnode[index].root = root;
+    }
+
+    void update_last_extent(size_t index, extent_id_t ext)
+    {
+        w_assert1(index < max);
+        stnode[index].last_extent = ext;
+    }
+
+    lsn_t getBackupLSN() { return backupLSN; }
+
+    void format_empty(vid_t vid) {
+        memset(this, 0, sizeof(generic_page_header));
+        pid = lpid_t(vid, stnode_page::stpid);
+
+        backupLSN = lsn_t(0,0);
+        memset(&stnode, 0, sizeof(stnode_t) * max);
+        update_last_extent(0, 0);
+    }
+
+
+private:
+    // Used for backup files
+    lsn_t backupLSN;
 
     /// stnode[i] is the stnode_t for store # i of this volume
     stnode_t stnode[max];
 };
 BOOST_STATIC_ASSERT(sizeof(stnode_page) == generic_page_header::page_sz);
-
-/**
- * \brief Handle for a stnode_page.
- */
-class stnode_page_h : public generic_page_h {
-    stnode_page *page() const { return reinterpret_cast<stnode_page*>(_pp); }
-
-public:
-    /// format given page with page-ID pid as an stnode_page page then
-    /// return a handle to it.
-    stnode_page_h(generic_page* s, const lpid_t& pid);
-
-    /// construct handle from an existing stnode_page page
-    stnode_page_h(generic_page* s) : generic_page_h(s) {
-    }
-    ~stnode_page_h() {}
-
-
-    /// max # \ref stnode_t's on a single stnode_page; thus, the
-    /// maximum number of stores per volume
-    static const size_t max = stnode_page::max;
-
-    stnode_t& get(size_t index) {
-        // FIXME: it appears we do not ever use the stnode_t for the
-        // store with # 0 as we use that number as a special case to
-        // indicate stnode_page/alloc_page's.  See comment in
-        // stnode_cache_t::get_min_unused_store_ID().  This is
-        // demonstrated by the following assert never triggering:
-        w_assert1(0 < index);
-
-        w_assert1(index < max);
-        return page()->stnode[index];
-    }
-    const stnode_t& get(size_t index) const {
-        // see comment in non-const version of this method
-        w_assert1(0 < index);
-
-        w_assert1(index < max);
-        return page()->stnode[index];
-    }
-};
-
-
 
 /**
  * \brief Store creation/destroy/query interface.
@@ -126,7 +113,7 @@ class stnode_cache_t {
 public:
     /// special_pages here holds the special pages for volume vid, the
     /// last of which should be the stnode_page for that volume
-    stnode_cache_t(vid_t vid, bf_fixed_m* special_pages);
+    stnode_cache_t(stnode_page& stpage);
 
     /**
      * Returns the root page ID of the given store.
@@ -138,159 +125,33 @@ public:
     bool is_allocated(snum_t store) const;
 
     /// Make a copy of the entire stnode_t of the given store.
-    void get_stnode(snum_t store, stnode_t &stnode) const;
-
-    /// Returns the first snum_t that can be used for a new store in
-    /// this volume or stnode_page_h::max if all available stores of
-    /// this volume are already allocated.
-    snum_t get_min_unused_store_ID() const;
+    stnode_t get_stnode(snum_t store) const;
 
     /// Returns the snum_t of all allocated stores in the volume.
-    std::vector<snum_t> get_all_used_store_ID() const;
+    void get_used_stores(std::vector<snum_t>&) const;
 
-    /** Init method is only invoked after volume data is safe on disk, i.e.,
-     * after format or restore in case of a media failure,
-     */
-    void init();
+    rc_t sx_create_store(shpid_t root_pid, snum_t& snum, bool redo = false);
 
+    rc_t sx_append_extent(snum_t snum, extent_id_t ext, bool redo = false);
 
-    /**
-     *  Fix the given stnode_page and perform the given store
-     *  operation *including* logging it.
-     *
-     *  param type is in sm_io.h.
-     *
-     *  It contains:
-     *   typedef smlevel_0::store_operation_t        store_operation_t;
-     *   in sm_base.h
-     *   Operations:
-     *       t_delete_store, <---- when really deleted after space freed
-     *       t_create_store, <---- store is allocated (snum_t is in use)
-     *       t_set_deleting, <---- when transaction deletes store (t_deleting_store)
-     *       t_set_store_flags,
-     *
-     *   typedef smlevel_0::store_flag_t             store_flag_t;
-     *       in sm_base.h:
-     *       logging attribute: regular, tmp, load, insert
-     *
-     *   typedef smlevel_0::store_deleting_t         store_deleting_t;
-     *           t_not_deleting_store = 0,  // must be 0: code assumes it
-     *           t_deleting_store,
-     *           t_unknown_deleting         // for error handling
-     *
-     *  If invoked with redo == true, the method does not generate any log
-     *  records. This is used for redo operations in restart and restore.
-     */
-    rc_t  store_operation(store_operation_param op, bool redo = false);
-
+    vid_t get_vid() const { return _vid; }
 
 private:
     /// all operations in this object except get_root_pid are protected by this latch
-    mutable queue_based_lock_t _spin_lock;
+    mutable queue_based_lock_t _latch;
 
-    const vid_t   _vid;                /// The volume number of the volume we are caching
-    bf_fixed_m*   _special_pages;      /// The buffer manager holding the volume's special pages
-    stnode_page_h _stnode_page;        /// The stnode_page of the volume we are caching
-};
+    // CS TODO: not needed with decoupled propagation (Merge Lucas' branch)
+    stnode_page _stnode_page;        /// The stnode_page of the volume we are caching
 
-class store_operation_param  {
-    friend ostream & operator<<(ostream&, const store_operation_param &);
+    vid_t _vid;
 
-public:
-        typedef smlevel_0::store_operation_t        store_operation_t;
-        typedef smlevel_0::store_flag_t             store_flag_t;
-        typedef smlevel_0::store_deleting_t         store_deleting_t;
+    /// Returns the first snum_t that can be used for a new store in
+    /// this volume or stnode_page::max if all available stores of
+    /// this volume are already allocated.
+    snum_t get_min_unused_store_ID() const;
 
-private:
-        snum_t                _snum;
-        uint16_t               _op;
-        fill2                 _filler; // for purify
-        union {
-            struct {
-                uint16_t      _value1;
-                uint16_t      _value2;
-            } values;
-            shpid_t page;
-        } _u;
-
-
-    public:
-        store_operation_param(snum_t snum, store_operation_t theOp) :
-            _snum(snum), _op(theOp)
-        {
-            w_assert2(_op == smlevel_0::t_delete_store);
-            _u.page=0;
-        };
-        store_operation_param(snum_t snum, store_operation_t theOp,
-                              store_flag_t theFlags) :
-            _snum(snum), _op(theOp)
-        {
-            w_assert2(_op == smlevel_0::t_create_store);
-            _u.values._value1 = theFlags;
-            _u.values._value2 = 0; // unused
-        };
-        store_operation_param(snum_t snum, store_operation_t theOp,
-                              store_deleting_t newValue,
-                              store_deleting_t oldValue = smlevel_0::t_unknown_deleting) :
-            _snum(snum), _op(theOp)
-        {
-            w_assert2(_op == smlevel_0::t_set_deleting);
-            _u.values._value1 = newValue;
-            _u.values._value2 = oldValue;
-        };
-        store_operation_param(snum_t snum, store_operation_t theOp,
-                              store_flag_t newFlags,
-                              store_flag_t oldFlags) :
-            _snum(snum), _op(theOp)
-        {
-            w_assert2(_op == smlevel_0::t_set_store_flags);
-            _u.values._value1 = newFlags;
-            _u.values._value2 = oldFlags;
-        };
-        store_operation_param(snum_t snum, store_operation_t theOp,
-                              shpid_t root) :
-            _snum(snum), _op(theOp)
-        {
-            w_assert2(_op == smlevel_0::t_set_root);
-            _u.page=root;
-        };
-
-
-        snum_t snum()  const { return _snum; };
-        store_operation_t op()  const { return (store_operation_t)_op; };
-        store_flag_t new_store_flags()  const {
-            w_assert2(_op == smlevel_0::t_create_store
-                      || _op == smlevel_0::t_set_store_flags);
-            return (store_flag_t)_u.values._value1;
-        };
-        store_flag_t old_store_flags()  const {
-            w_assert2(_op == smlevel_0::t_set_store_flags);
-            return (store_flag_t)_u.values._value2;
-        };
-        void set_old_store_flags(store_flag_t flag) {
-            w_assert2(_op == smlevel_0::t_set_store_flags);
-            _u.values._value2 = flag;
-        }
-        shpid_t root()  const {
-            w_assert2(_op == smlevel_0::t_set_root);
-            return _u.page;
-        };
-        store_deleting_t new_deleting_value()  const {
-            w_assert2(_op == smlevel_0::t_set_deleting);
-            return (store_deleting_t)_u.values._value1;
-        };
-        store_deleting_t old_deleting_value()  const {
-            w_assert2(_op == smlevel_0::t_set_deleting);
-            return (store_deleting_t)_u.values._value2;
-        };
-        void set_old_deleting_value(store_deleting_t old_value) {
-            w_assert2(_op == smlevel_0::t_set_deleting);
-            _u.values._value2 = old_value;
-        }
-        int size()  const { return sizeof (*this); };
-
-    private:
-        store_operation_param();
+    // CS TODO: not needed with decoupled propagation (Merge Lucas' branch)
+    rc_t write_stnode_page();
 };
 
 #endif // STNODE_PAGE_H

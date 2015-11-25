@@ -13,7 +13,6 @@
 struct volume_hdr_stats_t;
 class alloc_cache_t;
 class stnode_cache_t;
-class bf_fixed_m;
 class RestoreMgr;
 class store_operation_param;
 class sm_options;
@@ -37,7 +36,6 @@ public:
 
     rc_t sx_format(
             const char* devname,
-            shpid_t num_pages,
             vid_t& vid,
             bool logit = false
     );
@@ -58,8 +56,6 @@ public:
             size_t start = 0,
             size_t count = 0
     );
-
-    rc_t force_fixed_buffers();
 
     int num_vols() { return vol_cnt; }
 
@@ -86,33 +82,6 @@ private:
     srwlock_t _mutex;
 };
 
-class volhdr_t {
-public:
-    // For compatibility checking, we record a version number
-    // number of the Shore SM version which formatted the volume.
-    static const uint32_t FORMAT_VERSION = 20;
-
-    volhdr_t(vid_t vid, size_t num_pages, lsn_t backupLSN = lsn_t::null)
-        : version(FORMAT_VERSION), vid(vid), num_pages(num_pages),
-        backupLSN(backupLSN)
-    {}
-
-    volhdr_t() {};
-
-    virtual ~volhdr_t() {}
-
-    uint32_t   version;
-    vid_t      vid;
-    uint32_t   num_pages;
-    lsn_t      backupLSN;
-
-    rc_t             write(int fd);
-    rc_t             read(int fd);
-
-private:
-    static const char*       prolog[]; // string array for volume hdr
-};
-
 /*
 Volume layout:
    volume header
@@ -135,12 +104,10 @@ public:
     const char* devname() const { return _devname; }
     vid_t       vid() const { return _vid; }
     shpid_t     first_data_pageid() const { return _first_data_pageid; }
-    uint32_t    num_pages() const { return _num_pages; }
-    uint32_t    num_used_pages() const;
+    size_t      num_used_pages() const;
 
     alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}
     stnode_cache_t*          get_stnode_cache() {return _stnode_cache;}
-    bf_fixed_m*              get_fixed_bf() {return _fixed_bf;}
 
 
     /**
@@ -151,12 +118,15 @@ public:
      * descriptor to change, resulting in the expected errors in the return
      * code.
      */
-    rc_t                write_page(shpid_t page, generic_page& buf);
     rc_t                write_many_pages(
         shpid_t             first_page,
         const generic_page* buf,
         int                 cnt,
         bool ignoreRestore = false);
+
+    rc_t write_page(shpid_t page, generic_page* buf) {
+        return write_many_pages(page, buf, 1);
+    }
 
     rc_t                read_page(
         shpid_t             page,
@@ -178,18 +148,8 @@ public:
     bool            set_fake_disk_latency(const int adelay);
     void            fake_disk_latency(long start);
 
-    /**
-    * Print out meta info about the volume.
-    *  It is the caller's responsibility to worry about mt-safety of this;
-    *  it is for the use of smsh & debugging
-    *  and is not called from anywhere w/in the ss_m
-    */
-    rc_t                check_disk();
-
     rc_t            alloc_a_page(shpid_t& pid, bool redo = false);
     rc_t            deallocate_page(const shpid_t& pid, bool redo = false);
-    // rc_t            alloc_consecutive_pages(size_t page_count,
-    //                     shpid_t &pid_begin, bool redo = false);
 
     bool                is_allocated_page(shpid_t pid) const;
 
@@ -198,23 +158,12 @@ public:
     /**  Return true if the store "store" is allocated. false otherwise. */
     bool                is_alloc_store(snum_t f) const;
 
-    rc_t            store_operation(const store_operation_param&    param,
-                                    bool redo = false);
     /** Sets root page ID of the specified index. */
     rc_t            set_store_root(snum_t snum, shpid_t root);
     /** Returns root page ID of the specified index. */
     shpid_t         get_store_root(snum_t f) const;
 
-    rc_t            create_store(smlevel_0::store_flag_t, snum_t&);
-
-    rc_t            set_store_flags(
-        snum_t                 fnum,
-        smlevel_0::store_flag_t           flags);
-
-    rc_t            get_store_flags(
-        snum_t                 fnum,
-        smlevel_0::store_flag_t&          flags,
-        bool                   ok_if_deleting = false);
+    rc_t            create_store(lpid_t, snum_t&);
 
     /** Mark device as failed and kick off Restore */
     rc_t            mark_failed(bool evict = false, bool redo = false);
@@ -249,7 +198,7 @@ public:
     void chkpt_restore_progress(chkpt_restore_tab_t* tab);
 
     /** Return largest PID allocated for this volume yet **/
-    shpid_t last_used_pageid() const;
+    shpid_t get_last_allocated_pid() const;
 
 private:
     // variables read from volume header -- remain constant after mount
@@ -257,7 +206,6 @@ private:
     int              _unix_fd;
     vid_t            _vid;
     shpid_t          _first_data_pageid;
-    uint             _num_pages;
 
     mutable srwlock_t _mutex;
 
@@ -268,8 +216,6 @@ private:
 
     alloc_cache_t*   _alloc_cache;
     stnode_cache_t*  _stnode_cache;
-    /** buffer manager for special pages. */
-    bf_fixed_m*      _fixed_bf;
 
     /** Set to simulate a failed device for Restore **/
     bool             _failed;
@@ -301,10 +247,9 @@ private:
      *  (128 bytes are enough since it contains only vid) */
     char _logrec_buf[128];
 
-    /** Methods to create and destroy _alloc_cache, _stnode_cache, and
-     * _fixed_bf */
+    /** Methods to create and destroy _alloc_cache and _stnode_cache */
     void clear_caches();
-    void build_caches();
+    void build_caches(bool virgin);
 
     /** Open backup file descriptor for retore or taking new backup */
     rc_t open_backup();
@@ -313,7 +258,7 @@ private:
     rc_t init_metadata();
 
     /** Initialize metadata region of physical device **/
-    static rc_t write_metadata(int fd, vid_t vid, size_t num_pages);
+    static rc_t write_metadata(int fd, vid_t vid);
 
     // setting failed status only allowed internally (private method)
     void set_failed(bool failed)
@@ -328,7 +273,7 @@ private:
 
 inline bool vol_t::is_valid_store(snum_t f) const
 {
-    return (f < stnode_page_h::max);
+    return (f < stnode_page::max);
 }
 
 #endif          /*</std-footer>*/
