@@ -561,10 +561,6 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
     do {                                              \
         new (logrec) constructor_call;                \
         W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
-        if(!ss_m::log->consume_chkpt_reservation(logrec->length())) { \
-            chkpt_serial_m::write_release();                    \
-            W_FATAL(eOUTOFLOGSPACE);                            \
-        }                                                       \
     } while(0)
 
 
