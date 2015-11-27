@@ -1238,18 +1238,33 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
      * typical workloads maintain a low dirty page ratio, this is not a concern
      * for now.
      */
-    if (is_failed() && !ignoreRestore) {
-        w_assert1(_restore_mgr);
+    // For small buffer pools, the sytem can get stuck because of eviction waiting
+    // for restore waiting for eviction.
+    //
+    // while (is_failed() && !ignoreRestore) {
+    //     w_assert1(_restore_mgr);
 
-        // For each segment involved in this bulk write, request and wait for
-        // it to be restored. The order is irrelevant, since we have to wait
-        // for all segments anyway.
-        int i = 0;
-        while (i < cnt) {
-            _restore_mgr->requestRestore(pnum + i);
-            _restore_mgr->waitUntilRestored(pnum + i);
-            i += _restore_mgr->getSegmentSize();
-        }
+    //     { // pin avoids restore mgr being destructed while we access it
+    //         spinlock_read_critical_section cs(&_mutex);
+    //         if (!_restore_mgr->pin()) { break; }
+    //     }
+
+    //     // For each segment involved in this bulk write, request and wait for
+    //     // it to be restored. The order is irrelevant, since we have to wait
+    //     // for all segments anyway.
+    //     int i = 0;
+    //     while (i < cnt) {
+    //         _restore_mgr->requestRestore(pnum + i);
+    //         _restore_mgr->waitUntilRestored(pnum + i);
+    //         i += _restore_mgr->getSegmentSize();
+    //     }
+
+    //     _restore_mgr->unpin();
+    //     check_restore_finished();
+    //     break;
+    // }
+
+    if (is_failed() && !ignoreRestore) {
         check_restore_finished();
     }
 
