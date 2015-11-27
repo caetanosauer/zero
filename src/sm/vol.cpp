@@ -612,8 +612,8 @@ bool vol_t::check_restore_finished()
         }
 
         // close restore manager
-        w_assert0(_restore_mgr->finished());
-        _restore_mgr->join();
+        _restore_mgr->shutdown();
+
         delete _restore_mgr;
         _restore_mgr = NULL;
 
@@ -989,8 +989,13 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
      * volume into a new file descriptor for the replacement device. The logic
      * for restore, however, would remain the same.
      */
-    if (is_failed()) {
+    while (is_failed()) {
         w_assert1(_restore_mgr);
+
+        { // pin avoids restore mgr being destructed while we access it
+            spinlock_read_critical_section cs(&_mutex);
+            if (!_restore_mgr->pin()) { break; }
+        }
 
         if (!_restore_mgr->isRestored(pnum)) {
             DBG(<< "Page read triggering restore of " << pnum);
@@ -1005,7 +1010,10 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
                 return RCOK;
             }
         }
+
+        _restore_mgr->unpin();
         check_restore_finished();
+        break;
     }
 
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));

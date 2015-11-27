@@ -119,6 +119,8 @@ public:
 
     virtual void run();
 
+    void shutdown();
+
 protected:
     // Two bitmaps are required for asynchronous writing: one to tell which
     // segments were replayed but not yet written (these are not available for
@@ -212,6 +214,29 @@ protected:
      * is made available in the archiver to avoid lost updates.
      */
     lsn_t failureLSN;
+
+    /** \brief Pin mechanism used to avoid the restore manager being destroyed
+     * while other reader or writer thredas may still access it, even if just
+     * to check whether restore finished or not
+     */
+    int32_t pinCount;
+
+    bool pin() {
+        while (true) {
+            int32_t v = pinCount;
+            // if pin count is -1, we are shutting down
+            if (v < 0) { return false; }
+            if (lintel::unsafe::atomic_compare_exchange_strong(
+                        &pinCount, &v, v + 1))
+            {
+                return true;
+            }
+        }
+    }
+
+    void unpin() {
+        lintel::unsafe::atomic_fetch_sub(&pinCount, -1);
+    }
 
     /** \brief Restores metadata by replaying store operation log records
      *

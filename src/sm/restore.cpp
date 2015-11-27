@@ -239,7 +239,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     : smthread_t(t_regular, "Restore Manager"),
     archive(archive), volume(volume), numRestoredPages(0),
     metadataRestored(false), useBackup(useBackup), takeBackup(takeBackup),
-    failureLSN(lsn_t::null)
+    failureLSN(lsn_t::null), pinCount(0)
 {
     w_assert0(archive);
     w_assert0(volume);
@@ -318,17 +318,32 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     replayedBitmap = new RestoreBitmap(lastUsedPid / segmentSize + 1);
 }
 
-RestoreMgr::~RestoreMgr()
+void RestoreMgr::shutdown()
 {
+    while (true) {
+        // Try to set pin from 0 to -1 until we succeed. Only then it is
+        // guaranteed that nobody will access the restore manager anymore.
+        usleep(1000); // 1ms
+        int32_t z = 0;
+        if (lintel::unsafe::atomic_compare_exchange_strong(&pinCount, &z, -1))
+        { break; }
+    }
+
+    w_assert0(finished());
+    join();
+
     if (asyncWriter) {
         asyncWriter->shutdown();
         asyncWriter->join();
-        delete asyncWriter;
     }
 
     backup->finish();
-    delete backup;
+}
 
+RestoreMgr::~RestoreMgr()
+{
+    if (asyncWriter) { delete asyncWriter; }
+    delete backup;
     delete bitmap;
     delete scheduler;
 
