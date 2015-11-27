@@ -250,11 +250,24 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
                     << " slot=" << child_slotid
                     << " (child pid=" << pid.page << ")"
                     << ", OldEMLSN=" << old << " NewEMLSN=" << _buffer[idx].lsn);
+            w_assert1(parent_cb.latch().held_by_me());
             W_COERCE(_sx_update_child_emlsn(parent_h, child_slotid, _buffer[idx].lsn));
             // Note that we are not grabbing EX latch on parent here.
             // This is safe because no one else should be touching these exact bytes,
             // and because EMLSN values are aligned to be "regular register".
             // However, we still need to mark the frame as dirty.
+            //
+            // CS TODO: the SH latch is OK as long as no other thread also
+            // updates the page LSN with an SH latch. It should not be the
+            // case, but I have observed this in experiments, namely an adopt
+            // log record where the page2-prev (i.e, child chain) and a
+            // page_evict on the same page point to the same log record. This
+            // could only happen if the two log records are being generated at
+            // the same time with a race, i.e., the adopt does NOT have an EX
+            // latch on the child! The adopt code has an assertion that child
+            // has EX latch, so I don't know what's happening!
+            // - Perhaps the SH latch release does not issue a memory fence?
+            //    Nope -- it does issue memory fence
             set_dirty(parent);
             w_assert1(parent_h.get_emlsn_general(child_slotid) == _buffer[idx].lsn);
         }
