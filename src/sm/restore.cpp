@@ -113,23 +113,10 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
         options.get_bool_option("sm_restore_sched_singlepass", true);
     onDemand =
         options.get_bool_option("sm_restore_sched_ondemand", true);
-    randomOrder =
-        options.get_bool_option("sm_restore_sched_random", false);
 
     if (!onDemand) {
         // override single-pass option
         trySinglePass = true;
-    }
-
-    if (randomOrder) {
-        // create list of segments in random order
-        size_t numSegments = lastUsedPid / restore->getSegmentSize() + 1;
-        randomSegments.resize(numSegments);
-        for (size_t i = 0; i < numSegments; i++) {
-            randomSegments[i] = i;
-        }
-        std::random_shuffle(randomSegments.begin(), randomSegments.end());
-        currentRandomSegment = 0;
     }
 }
 
@@ -161,25 +148,14 @@ shpid_t RestoreScheduler::next(bool peek)
         }
     }
     else if (trySinglePass) {
-        if (randomOrder) {
-            if (currentRandomSegment >= randomSegments.size()) {
-                return shpid_t(0);
-            }
-
-            next = randomSegments[currentRandomSegment]
-                * restore->getSegmentSize();
-            if (!peek) { currentRandomSegment++; }
+        // if queue is empty, find the first not-yet-restored PID
+        if (next < firstDataPid) { next = firstDataPid; }
+        while (next <= lastUsedPid && restore->isRestored(next)) {
+            // if next pid is already restored, then the whole segment is
+            next = next + restore->getSegmentSize();
         }
-        else {
-            // if queue is empty, find the first not-yet-restored PID
-            if (next < firstDataPid) { next = firstDataPid; }
-            while (next <= lastUsedPid && restore->isRestored(next)) {
-                // if next pid is already restored, then the whole segment is
-                next = next + restore->getSegmentSize();
-            }
-            if (!peek) {
-                firstNotRestored = next + restore->getSegmentSize();
-            }
+        if (!peek) {
+            firstNotRestored = next + restore->getSegmentSize();
         }
 
         if (next < firstDataPid) { next = firstDataPid; }
@@ -495,30 +471,6 @@ void RestoreMgr::restoreMetadata()
     DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
 
     delete merger;
-}
-
-void RestoreMgr::singlePassLoop()
-{
-    stopwatch_t timer;
-
-    // open scan on beginning until EOF
-    lsn_t startLSN = useBackup ? volume->get_backup_lsn() : lsn_t(1,0);
-    lpid_t startPid = lpid_t(volume->vid(), firstDataPid);
-    LogArchiver::ArchiveScanner logScan(archive);
-    LogArchiver::ArchiveScanner::RunMerger* merger =
-        logScan.open(startPid, lpid_t::null, startLSN);
-
-    if (!merger) {
-        // nothing to replay
-        return;
-    }
-
-    unsigned segment = getSegmentForPid(firstDataPid);
-    char* workspace = backup->fix(segment);
-    restoreSegment(workspace, merger, getPidForSegment(segment));
-
-    // signalize that we're done
-    numRestoredPages = lastUsedPid;
 }
 
 void RestoreMgr::restoreSegment(char* workspace,
@@ -900,12 +852,7 @@ void RestoreMgr::run()
     }
 
 
-    if (instantRestore) {
-        restoreLoop();
-    }
-    else {
-        singlePassLoop();
-    }
+    restoreLoop();
 
     w_assert1(bufferedRequests.size() == 0);
 
