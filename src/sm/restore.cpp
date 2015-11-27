@@ -282,18 +282,8 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     reuseRestoredBuffer =
         options.get_bool_option("sm_restore_reuse_buffer", false);
 
-    multipleSegments =
-        options.get_int_option("sm_restore_multiple_segments", 1);
-    if (multipleSegments > 1) {
-        minReadSize =
-            options.get_int_option("sm_restore_min_read_size", 1048576);
-    }
-    else {
-        minReadSize = 0;
-    }
-
-    maxReadSize =
-        options.get_int_option("sm_restore_max_read_size", 1048576 * 2);
+    logReadSize =
+        options.get_int_option("sm_restore_log_read_size", 1048576);
 
     DO_PTHREAD(pthread_mutex_init(&restoreCondMutex, NULL));
     DO_PTHREAD(pthread_cond_init(&restoreCond, NULL));
@@ -484,7 +474,7 @@ void RestoreMgr::restoreMetadata()
     // open scan on pages [0, firstDataPid) to get all metadata operations
     LogArchiver::ArchiveScanner::RunMerger* merger =
         logScan.open(lpid_t(volume->vid(), 0),
-                lpid_t(volume->vid(), firstDataPid), lsn_t::null);
+                lpid_t(volume->vid(), firstDataPid), lsn_t::null, logReadSize);
 
     logrec_t* lr;
     while (merger->next(lr)) {
@@ -543,23 +533,6 @@ void RestoreMgr::restoreSegment(char* workspace,
     size_t redone = 0;
     bool virgin = false;
     unsigned segment = getSegmentForPid(firstPage);
-
-    lpid_t endPID = merger->getEndPID();
-    if (endPID.page - firstPage > segmentSize) {
-        unsigned segCount = (endPID.page - firstPage) / segmentSize;
-        if (endPID.page % segmentSize != 0) { segCount++; }
-
-        if (!endPID.is_null()) {
-            DBG(<< "Restoring " << segCount << " segments with "
-                    << endPID.page - firstPage << " pages from "
-                    << firstPage << " to " << endPID.page);
-        }
-        else {
-            DBG(<< "Segment " << segment
-                    << " being restored with null endPid");
-        }
-        INC_TSTAT(restore_multiple_segments);
-    }
 
     logrec_t* lr;
     while (merger->next(lr)) {
@@ -695,12 +668,6 @@ void RestoreMgr::restoreLoop()
             continue;
         }
 
-        if (firstPage > lastUsedPid) {
-            // CS TODO is this still necessary?
-            w_assert0(false);
-            break;
-        }
-
         if (replayedBitmap->get(segment)) {
             continue;
         }
@@ -734,47 +701,8 @@ void RestoreMgr::restoreLoop()
 
         lsn_t backupLSN = volume->get_backup_lsn();
 
-        /* CS TODO:
-         * This optimization is incompatible with our current scheme of
-         * restoring multiple segments, because the LSN must be determined when
-         * opening the scan, but only after opening the scan do we know if we
-         * are restoring multiple segments or not; so there is a cyclic
-         * dependence. We could just fetch the first segment and use it to
-         * determine the minLN, but if it turns out we can restore multiple
-         * segments, we have to potentially re-fetch an earlier segment. Leave
-         * the optimization out for now and think of a better solution later.
-         */
-#if 0
-        {
-            /*
-             * minLSN is the highest LSN which guarantees that all logs required to
-             * correclty replay updates on the given segment have a higher LSN. It
-             * is used to determine where the log scan should begin. In this "if"
-             * block, we try to increase minLSN by looking at each pageLSN in the
-             * segment. If this is a fairly recent segment, chances are we can
-             * start the scan much later than the given (pessimistic) minLSN.
-             */
-            lsn_t minPageLSN = lsn_t::null;
-            generic_page* page = (generic_page*) workspace;
-            shpid_t p = firstPage;
-            for (size_t i = 0; i < numPages; i++, page++, p++) {
-                // If page ID does not match, we consider it a virgin page
-                if (!volume->is_allocated_page(p)) {
-                    continue;
-                }
-                if (minPageLSN == lsn_t::null || page->lsn < minPageLSN) {
-                    minPageLSN = page->lsn;
-                }
-            }
-            if (minPageLSN > backupLSN) {
-                backupLSN = minPageLSN;
-            }
-        }
-#endif
-
         LogArchiver::ArchiveScanner::RunMerger* merger =
-            logScan.open(startPID, endPID, backupLSN, actualSegmentSize,
-                    multipleSegments, minReadSize, maxReadSize);
+            logScan.open(startPID, endPID, backupLSN, actualSegmentSize);
 
         DBG3(<< "RunMerger opened with " << merger->heapSize() << " runs"
                 << " starting on LSN " << backupLSN);

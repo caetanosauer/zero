@@ -1151,34 +1151,13 @@ LogArchiver::ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory)
 
 LogArchiver::ArchiveScanner::RunMerger*
 LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
-        lsn_t startLSN, size_t segmentSize, size_t maxSegments,
-        size_t minReadSize, size_t maxReadSize)
+        lsn_t startLSN, size_t readSize)
 {
     RunMerger* merger = new RunMerger();
     vector<ProbeResult> probes;
 
     // probe for runs
-    archIndex->probe(probes, startPID, endPID, startLSN, segmentSize,
-            minReadSize, maxReadSize);
-
-    // decide how many segments to restore based on endPid of each probe
-    if (segmentSize > 0 && minReadSize > 0 && maxSegments > 0) {
-        lpid_t maxEndPid = lpid_t::null;
-        shpid_t segmentBegin = (startPID.page / segmentSize) * segmentSize;
-        shpid_t maxRange = maxSegments * segmentSize;
-        for (size_t i = 0; i < probes.size(); i++) {
-            lpid_t end = probes[i].pidEnd;
-            if (end.is_null()) { continue; }
-            w_assert0(end.vol() == startPID.vol());
-            if (end.page - segmentBegin <= maxRange && end > maxEndPid)
-            {
-                maxEndPid = end;
-            }
-        }
-        for (size_t i = 0; i < probes.size(); i++) {
-            probes[i].pidEnd = maxEndPid;
-        }
-    }
+    archIndex->probe(probes, startPID, endPID, startLSN);
 
     // construct one run scanner for each probed run
     for (size_t i = 0; i < probes.size(); i++) {
@@ -1189,7 +1168,7 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
                 probes[i].pidEnd,
                 probes[i].offset,
                 directory,
-                maxReadSize
+                readSize
         );
 
         merger->addInput(runScanner);
@@ -2294,19 +2273,16 @@ size_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
     }
 }
 
-void LogArchiver::ArchiveIndex::probeInRun(ProbeResult& res,
-        size_t segmentSize, size_t minReadSize, size_t maxReadSize)
+void LogArchiver::ArchiveIndex::probeInRun(ProbeResult& res)
 {
     // Assmuptions: mutex is held; run index and pid are set in given result
     size_t index = res.runIndex;
     w_assert1((int) index <= lastFinished);
     RunInfo* run = &runs[index];
 
-    // Step 1) Determine run LSN boundaries (which gives file name)
     res.runBegin = runs[index].firstLSN;
     res.runEnd = runs[index].lastLSN;
 
-    // Step 2) Determine begin and end offsets within the file
     size_t entryBegin = 0;
     if (res.pidBegin.is_null()) {
         res.offset = 0;
@@ -2322,70 +2298,10 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult& res,
             res.offset = run->entries[entryBegin].offset;
         }
     }
-
-    if (res.pidEnd.is_null() || segmentSize == 0 || minReadSize == 0) {
-        // caller does not wish to expand the scan, or it is already to EOF
-        return;
-    }
-    DBG(<< "Run probe start=" << res.pidBegin << " end=" << res.pidEnd <<
-            " segsize=" << segmentSize << " minRead=" << minReadSize <<
-            " maxread=" << maxReadSize);
-
-    // Find index entry for the endPid using a restricted binary search
-    size_t entryEnd = findEntry(run, res.pidEnd, entryBegin,
-                run->entries.size() - 1);
-
-    if (entryEnd >= run->entries.size() - 1) {
-        return;
-    }
-
-    // increase entryEnd until we achieve the minReadSize
-    size_t offsetEnd;
-    do {
-        // end offset must be exclusive (thus +1)
-        entryEnd++;
-        offsetEnd = run->entries[entryEnd].offset;
-    } while (offsetEnd - res.offset < minReadSize &&
-            entryEnd < run->entries.size() - 1);
-
-    // but decrease it if we passed the maxReadSize
-    if (maxReadSize > 0 && entryEnd - entryBegin > 1 &&
-            offsetEnd - res.offset > maxReadSize)
-    {
-        entryEnd--;
-        offsetEnd = run->entries[entryEnd].offset;
-    }
-
-    if (entryEnd >= run->entries.size()) {
-        res.pidEnd = lpid_t::null; // read until EOF
-        return;
-    }
-
-    // now readjust endPID for the expanded read size, but using multiples
-    // of the segment size only
-    if (entryEnd - entryBegin > 1) {
-        res.pidEnd = run->entries[entryEnd].pid;
-        // make sure endPid is multiple of segment size
-        w_assert1(!res.pidEnd.is_null());
-        shpid_t shpid = (res.pidEnd.page / segmentSize) * segmentSize;
-        w_assert1(shpid % segmentSize == 0);
-        w_assert0(res.pidEnd.vol() == res.pidBegin.vol());
-        if (shpid <= res.pidBegin.page) {
-            shpid += segmentSize;
-        }
-        res.pidEnd = lpid_t(res.pidEnd.vol(), shpid);
-    }
-
-    DBG(<< "Run probe on " << index << " adjusted to "
-            << entryEnd - entryBegin << " entries "
-            << " from pid " << res.pidBegin << " to " << res.pidEnd
-            << " read size is " << offsetEnd - res.offset
-            << " of min " << minReadSize);
 }
 
 void LogArchiver::ArchiveIndex::probe(std::vector<ProbeResult>& probes,
-        lpid_t startPID, lpid_t endPID, lsn_t startLSN,
-        size_t segmentSize, size_t minReadSize, size_t maxReadSize)
+        lpid_t startPID, lpid_t endPID, lsn_t startLSN)
 {
     CRITICAL_SECTION(cs, mutex);
 
@@ -2398,8 +2314,7 @@ void LogArchiver::ArchiveIndex::probe(std::vector<ProbeResult>& probes,
             res.pidBegin = startPID;
             res.pidEnd = endPID;
             res.runIndex = index;
-            probeInRun(res, segmentSize, minReadSize, maxReadSize);
-
+            probeInRun(res);
             probes.push_back(res);
         }
         index++;

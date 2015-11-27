@@ -234,9 +234,7 @@ public:
 
         rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
         void probe(std::vector<ProbeResult>& probes,
-                lpid_t startPID, lpid_t endPID, lsn_t startLSN,
-                size_t segmentSize = 0, size_t minReadSize = 0,
-                size_t maxReadSize = 0);
+                lpid_t startPID, lpid_t endPID, lsn_t startLSN);
 
         rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
         rc_t loadRunInfo(const char* fname);
@@ -295,8 +293,7 @@ public:
         size_t bucketSize;
 
         size_t findRun(lsn_t lsn);
-        void probeInRun(ProbeResult&, size_t segmentSize,
-                size_t minReadSize = 0, size_t maxReadSize = 0);
+        void probeInRun(ProbeResult&);
         // binary search
         size_t findEntry(RunInfo* run, lpid_t pid,
                 int from = -1, int to = -1);
@@ -510,8 +507,7 @@ public:
         struct RunMerger;
 
         RunMerger* open(lpid_t startPID, lpid_t endPID, lsn_t startLSN,
-                size_t segmentSize = 0, size_t maxSegments = 1,
-                size_t minReadSize = 0, size_t maxReadSize = 0);
+                size_t readSize);
 
         void close (RunMerger* merger)
         {
