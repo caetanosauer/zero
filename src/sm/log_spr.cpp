@@ -25,7 +25,8 @@ void page_evict_log::redo(fixable_page_h* page) {
     bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
 }
 
-void restart_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn) {
+// CS TODO: why isnt this in restart.cpp??
+void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn) {
     lsn_t master = log->master_lsn();
     o << "Dumping Page LSN Chain for PID=" << pid << ", MAXLSN=" << max_lsn
         << ", MasterLSN=" << master << "..." << std::endl;
@@ -43,14 +44,14 @@ void restart_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const ls
             continue;
         }
 
-        lpid_t log_pid = buf->construct_pid();
-        lpid_t log_pid2 = log_pid;
+        PageID log_pid = buf->pid();
+        PageID log_pid2 = log_pid;
         if (buf->is_multi_page()) {
-            log_pid2.page = buf->data_ssx_multi()->_page2_pid;
+            log_pid2 = buf->data_ssx_multi()->_page2_pid;
         }
 
         // Is this page interesting to us?
-        if (pid != lpid_t::null && pid != log_pid && pid != log_pid2) {
+        if (pid != 0 && pid != log_pid && pid != log_pid2) {
             continue;
         }
 
@@ -80,7 +81,7 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     // First, retrieve the backup page we will be based on.
     // If this backup is enough recent, we have to apply only a few logs.
     w_assert1(p.is_fixed());
-    lpid_t pid = p.pid();
+    PageID pid = p.pid();
     DBGOUT1(<< "Single-Page-Recovery on " << pid << ", EMLSN=" << emlsn);
 
     // CS TODO: because of cleaner bug, we fetch page from disk itself.  In
@@ -91,11 +92,10 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     // necessary (similar to how restore works currently).
 
     if (true)
-    // if (smlevel_0::bk->page_exists(p.vol(), pid.page))
+    // if (smlevel_0::bk->page_exists(p.vol(), pid))
     {
-        // W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
-        W_DO(smlevel_0::vol->read_page(pid.page,
-                    *p.get_generic_page()));
+        // W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid));
+        W_DO(smlevel_0::vol->read_page(pid, *p.get_generic_page()));
         w_assert1(pid == p.pid());
         DBGOUT1(<< "Backup page retrieved. Backup-LSN=" << p.lsn());
         if (p.lsn() > emlsn)
@@ -165,7 +165,7 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
 }
 
 rc_t restart_m::_collect_spr_logs(
-    const lpid_t& pid,         // In: page ID of the page to work on
+    const PageID& pid,         // In: page ID of the page to work on
     const lsn_t& current_lsn,  // In: known last write to the page, where recovery starts
     const lsn_t& emlsn,        // In: starting point of the log chain
     char*& buffer, size_t& buffer_size)
@@ -243,7 +243,7 @@ rc_t restart_m::_collect_spr_logs(
         // STEP 2: Obtain LSN of previous log record on the same page (nxt)
 
         // follow next pointer. This log might touch multi-pages. So, check both cases.
-        if (pid.page == lr->shpid())
+        if (pid == lr->pid())
         {
             // Target pid matches the first page ID in the log recoredd
             nxt = lr->page_prev_lsn();
@@ -254,17 +254,17 @@ rc_t restart_m::_collect_spr_logs(
             // while the 2nd page is the source page
             // In this case, the page we are trying to recover was the source page during
             // a page rebalance operation, follow the proper log chain
-            w_assert0(lr->data_ssx_multi()->_page2_pid == pid.page);
+            w_assert0(lr->data_ssx_multi()->_page2_pid == pid);
             nxt = lr->data_ssx_multi()->_page2_prv;
         }
 
         // In the cases below, the scan can stop since the page is initialized
         // with this log record
         // CS: I think the condition below should be == and not != (like split)
-        if (lr->type() == logrec_t::t_btree_norec_alloc && pid.page != lr->shpid()) {
+        if (lr->type() == logrec_t::t_btree_norec_alloc && pid != lr->pid()) {
             break;
         }
-        if (lr->type() == logrec_t::t_btree_split && pid.page == lr->shpid()) {
+        if (lr->type() == logrec_t::t_btree_split && pid == lr->pid()) {
             break;
         }
         if (lr->type() == logrec_t::t_page_img_format) {

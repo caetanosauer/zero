@@ -531,7 +531,7 @@ private:
     * @pre current_lsn < emlsn
     */
     static rc_t _collect_spr_logs(
-        const lpid_t& pid, const lsn_t &current_lsn, const lsn_t &emlsn,
+        const PageID& pid, const lsn_t &current_lsn, const lsn_t &emlsn,
         char*& log_copy_buffer, size_t& buffer_size);
 
     /**
@@ -552,9 +552,9 @@ public:
     /**
      * \ingroup Single-Page-Recovery
      * Defined in log_spr.cpp.
-     * @copydoc ss_m::dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
+     * @copydoc ss_m::dump_page_lsn_chain(std::ostream&, const PageID &, const lsn_t&)
      */
-    static void dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn);
+    static void dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn);
 
 
     /**
@@ -585,7 +585,7 @@ private:
                                 logrec_t& r,                   // In: Incoming log record
                                 lsn_t &lsn,                    // In: LSN of the incoming log record
                                 const lsn_t &end_logscan_lsn,  // In: This is the current LSN, validation purpose
-                                lpid_t page_updated,           // In: Store ID (vol + store number) + page number
+                                PageID page_updated,           // In: Store ID (vol + store number) + page number
                                                                //      mainly used for multi-page log
                                 bool &redone,                  // Out: did REDO occurred?  Validation purpose
                                 uint32_t &dirty_count);        // Out: dirty page count, validation purpose

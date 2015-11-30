@@ -190,12 +190,11 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
 
         // Step 2: latch parent in SH mode
         generic_page *page = &_buffer[idx];
-        lpid_t pid = page->pid;
-        w_assert1(cb._pin_cnt < 0 ||
-                (pid.vol() == cb._pid_vol && pid.page == cb._pid_shpid));
+        PageID pid = page->pid;
+        w_assert1(cb._pin_cnt < 0 || pid == cb._pid_shpid);
 
         bf_idx_pair idx_pair;
-        bool found = _hashtable->lookup(bf_key(pid.vol(), pid.page), idx_pair);
+        bool found = _hashtable->lookup(pid, idx_pair);
         bf_idx parent_idx = idx_pair.second;
         w_assert1(!found || idx == idx_pair.first);
 
@@ -229,7 +228,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         // it on gdb right after, I guet true. NO IDEA what's happening!
         // w_assert0(parent->tag == t_btree_p);
 
-        general_recordid_t child_slotid = find_page_id_slot(parent, pid.page);
+        general_recordid_t child_slotid = find_page_id_slot(parent, pid);
         // How can this happen if we have latch on both?
         if (child_slotid == GeneralRecordIds::INVALID) {
             DBG3(<< "Eviction failed on slot for " << idx
@@ -248,7 +247,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         if (old < _buffer[idx].lsn) {
             DBGOUT1(<< "Updated EMLSN on page " << parent_h.pid()
                     << " slot=" << child_slotid
-                    << " (child pid=" << pid.page << ")"
+                    << " (child pid=" << pid << ")"
                     << ", OldEMLSN=" << old << " NewEMLSN=" << _buffer[idx].lsn);
             w_assert1(parent_cb.latch().held_by_me());
             W_COERCE(_sx_update_child_emlsn(parent_h, child_slotid, _buffer[idx].lsn));
@@ -275,10 +274,10 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         // eviction finally suceeded
 
         // remove it from hashtable.
-        bool removed = _hashtable->remove(bf_key(pid.vol(), pid.page));
+        bool removed = _hashtable->remove(pid);
         w_assert1(removed);
 
-        DBG3(<< "EVICTED " << idx << " pid " << pid.page);
+        DBG3(<< "EVICTED " << idx << " pid " << pid);
         cb.clear_except_latch();
         // -1 indicates page was evicted (i.e., it's invalid and can be read into)
         cb._pin_cnt = -1;

@@ -7,7 +7,6 @@
 
 #include "w_defines.h"
 #include "bf_idx.h"
-#include "stid_t.h"
 #include <string.h>
 
 class vol_t;
@@ -21,7 +20,7 @@ class vol_t;
  */
 struct bf_tree_vol_t {
     bf_tree_vol_t (vol_t* volume) : _volume (volume) {
-        ::memset(_root_pages, 0, sizeof(bf_idx) * MAX_STORE_COUNT);
+        ::memset(_root_pages, 0, sizeof(bf_idx) * stnode_page::max);
     }
     /**
      * Array of pointers to control block for root pages in this volume.
@@ -40,7 +39,7 @@ struct bf_tree_vol_t {
      * may create a store and another one access it imediately after. In that
      * case, the second thread may see a null root page in the array.
      */
-    bf_idx _root_pages[MAX_STORE_COUNT];
+    bf_idx _root_pages[stnode_page::max];
 
     /**
      * Pointer to the volume object. Used to read and write from this volume.
@@ -51,7 +50,7 @@ struct bf_tree_vol_t {
      * CS: Method used for on-demand loading of root pages, eliminating the
      * need to call install_volume.
      */
-    void add_root_page(snum_t store, bf_idx idx)
+    void add_root_page(StoreID store, bf_idx idx)
     {
         _root_pages[store] = idx;
     }

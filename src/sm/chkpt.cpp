@@ -753,8 +753,8 @@ try
 
         // Each log record contains the following array, while each array element has information
         // for one dirty page
-        w_auto_delete_array_t<lpid_t> pid(new lpid_t[chunk]);     // page lpid
-        w_auto_delete_array_t<snum_t> stores(new snum_t[chunk]);     // page lpid
+        w_auto_delete_array_t<PageID> pid(new PageID[chunk]);     // page lpid
+        w_auto_delete_array_t<StoreID> stores(new StoreID[chunk]);     // page lpid
         w_auto_delete_array_t<lsn_t> rec_lsn(new lsn_t[chunk]);   // initial dirty lsn
         w_auto_delete_array_t<lsn_t> page_lsn(new lsn_t[chunk]);  // last write lsn
         w_assert1(pid && rec_lsn && page_lsn);

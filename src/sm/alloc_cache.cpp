@@ -13,9 +13,9 @@
 const size_t alloc_cache_t::extent_size = alloc_page::bits_held;
 
 alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
-    : stcache(stcache), _vid(stcache.get_vid())
+    : stcache(stcache)
 {
-    vector<snum_t> stores;
+    vector<StoreID> stores;
     stcache.get_used_stores(stores);
 
     last_alloc_page.resize(stores.size() + 1, 0);
@@ -60,7 +60,7 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
 rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, alloc_page& page,
         bool is_last_ext)
 {
-    shpid_t alloc_pid = ext * extent_size;
+    PageID alloc_pid = ext * extent_size;
     W_DO(smlevel_0::vol->read_page(alloc_pid, (generic_page&) page));
 
     spinlock_write_critical_section cs(&_latch);
@@ -70,7 +70,7 @@ rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, alloc_page& page,
         return RCOK;
     }
 
-    snum_t store = page.store;
+    StoreID store = page.store;
 
     size_t last_alloc = 0;
     size_t j = alloc_page::bits_held;
@@ -95,7 +95,7 @@ rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, alloc_page& page,
     return RCOK;
 }
 
-bool alloc_cache_t::is_allocated(shpid_t pid)
+bool alloc_cache_t::is_allocated(PageID pid)
 {
     // No latching required to check if loaded. Any races will be
     // resolved inside load_alloc_page
@@ -112,7 +112,7 @@ bool alloc_cache_t::is_allocated(shpid_t pid)
     // loaded cannot go from true to false, so this is safe
     w_assert0(loaded_extents[ext]);
 
-    shpid_t max_pid = 0;
+    PageID max_pid = 0;
     for (size_t i = 0; i < last_alloc_page.size(); i++) {
         if (last_alloc_page[i] > max_pid) {
             max_pid = last_alloc_page[i];
@@ -121,9 +121,9 @@ bool alloc_cache_t::is_allocated(shpid_t pid)
 
     if (pid > max_pid) { return false; }
 
-    list<shpid_t>::iterator iter;
+    list<PageID>::iterator iter;
     for (size_t i = 0; i < freed_pages.size(); i++) {
-        list<shpid_t>& freed = freed_pages[i];
+        list<PageID>& freed = freed_pages[i];
         for (iter = freed.begin(); iter != freed.end(); iter++) {
             if (*iter == pid) {
                 return false;
@@ -134,11 +134,11 @@ bool alloc_cache_t::is_allocated(shpid_t pid)
     return true;
 }
 
-shpid_t alloc_cache_t::get_last_allocated_pid() const
+PageID alloc_cache_t::get_last_allocated_pid() const
 {
     spinlock_read_critical_section cs(&_latch);
 
-    shpid_t max = 0;
+    PageID max = 0;
     for (size_t i = 0; i < last_alloc_page.size(); i++) {
         if (last_alloc_page[i] > max) {
             max = last_alloc_page[i];
@@ -148,7 +148,7 @@ shpid_t alloc_cache_t::get_last_allocated_pid() const
     return max;
 }
 
-rc_t alloc_cache_t::sx_allocate_page(shpid_t& pid, snum_t store, bool redo)
+rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID store, bool redo)
 {
     spinlock_write_critical_section cs(&_latch);
 
@@ -158,8 +158,8 @@ rc_t alloc_cache_t::sx_allocate_page(shpid_t& pid, snum_t store, bool redo)
             last_alloc_page[store] = pid;
         }
         // if pid is on freed list, remove
-        list<shpid_t>& freed = freed_pages[store];
-        list<shpid_t>::iterator iter = freed.begin();
+        list<PageID>& freed = freed_pages[store];
+        list<PageID>::iterator iter = freed.begin();
         while (iter != freed.end()) {
             if (*iter == pid) {
                 freed.erase(iter);
@@ -170,7 +170,7 @@ rc_t alloc_cache_t::sx_allocate_page(shpid_t& pid, snum_t store, bool redo)
     else {
         pid = last_alloc_page[store] + 1;
         if (pid % extent_size == 0) {
-            shpid_t max = 0;
+            PageID max = 0;
             for (size_t i = 0; i < last_alloc_page.size(); i++) {
                 if (last_alloc_page[i] > max) {
                     max = last_alloc_page[i];
@@ -189,14 +189,14 @@ rc_t alloc_cache_t::sx_allocate_page(shpid_t& pid, snum_t store, bool redo)
         // pointer on the new owner/parent page. To fix this, an SSX to
         // allocate an emptry b-tree child would be the best option.
         sys_xct_section_t ssx(true);
-        W_DO(log_alloc_page(_vid, pid));
+        W_DO(log_alloc_page(pid));
         ssx.end_sys_xct(RCOK);
     }
 
     return RCOK;
 }
 
-rc_t alloc_cache_t::sx_deallocate_page(shpid_t pid, snum_t store, bool redo)
+rc_t alloc_cache_t::sx_deallocate_page(PageID pid, StoreID store, bool redo)
 {
     spinlock_write_critical_section cs(&_latch);
 
@@ -208,7 +208,7 @@ rc_t alloc_cache_t::sx_deallocate_page(shpid_t pid, snum_t store, bool redo)
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        W_DO(log_dealloc_page(_vid, pid));
+        W_DO(log_dealloc_page(pid));
         ssx.end_sys_xct(RCOK);
     }
 

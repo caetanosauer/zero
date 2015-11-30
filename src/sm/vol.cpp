@@ -58,7 +58,7 @@ vol_t::~vol_t() {
 
 rc_t vol_t::sync()
 {
-    W_DO_MSG(me()->fsync(_unix_fd), << "volume id=" << vid());
+    W_DO(me()->fsync(_unix_fd));
     return RCOK;
 }
 
@@ -87,9 +87,6 @@ rc_t vol_t::mount(const char* devname, bool truncate)
         return rc;
     }
 
-    // CS TODO: get rid of multiple logical volumes
-    _vid = 1;
-
     clear_caches();
     build_caches(true);
     W_DO(init_metadata());
@@ -115,7 +112,7 @@ void vol_t::build_caches(bool virgin)
     // caller must hold mutex
     stnode_page stpage;
     if (virgin) {
-        stpage.format_empty(_vid);
+        stpage.format_empty();
     }
     else {
         W_COERCE(read_page(stnode_page::stpid, (generic_page&) stpage));
@@ -136,58 +133,6 @@ rc_t vol_t::init_metadata()
 
     return RCOK;
 }
-
-rc_t vol_t::write_metadata(int /*fd*/, vid_t /*vid*/)
-{
-    // CS TODO: flush pages of stnode and alloc caches
-#if 0
-    /*
-     *  Set up and write the volume header
-     */
-    volhdr_t vhdr(vid, num_pages);
-    W_DO(vhdr.write(fd));
-
-    /*
-     *  Skip first page ... seek to first info page.
-     */
-    W_DO(me()->lseek(fd, sizeof(generic_page), sthread_t::SEEK_AT_SET));
-
-    generic_page buf;
-    // initialize page with zeroes (for valgrind)
-    // ::memset(&buf, 0, sizeof(generic_page));
-
-    {
-        // volume not formatted yet -- write metadata for empty volume
-        shpid_t alloc_pages = alloc_page::num_alloc_pages(num_pages);
-        shpid_t spid = alloc_pages + 1;
-
-        //  Format alloc_page pages
-        for (shpid_t apid = 1; apid <= alloc_pages; ++apid)  {
-            alloc_page_h ap(&buf, lpid_t(vid, apid));  // format page
-            // set bits for the header pages
-            if (apid == 1) {
-                for (shpid_t p = 0; p <= spid; p++)
-                {
-                    ap.set_bit(p);
-                }
-            }
-            buf.checksum = buf.calculate_checksum();
-            W_DO(me()->write(fd, &buf, sizeof(generic_page)));
-        }
-        DBG(<<" done formatting extent region");
-
-        // Format stnode_page
-        DBGTHRD(<<"Formatting stnode_page page " << spid);
-        stnode_page_h fp(&buf, lpid_t(vid, spid));
-        buf.checksum = buf.calculate_checksum();
-        W_DO(me()->write(fd, &buf, sizeof(generic_page)));
-        DBG(<<" done formatting store node region");
-    }
-#endif
-
-    return RCOK;
-}
-
 rc_t vol_t::open_backup()
 {
     // mutex held by caller -- no concurrent backup being added
@@ -255,7 +200,7 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
     lsn_t failureLSN = lsn_t::null;
     if (!redo) {
         // Create and insert logrec manually to get its LSN
-        new (_logrec_buf) restore_begin_log(_vid);
+        new (_logrec_buf) restore_begin_log();
         W_DO(ss_m::log->insert(*((logrec_t*) _logrec_buf), &failureLSN));
         W_DO(ss_m::log->flush(failureLSN));
     }
@@ -350,7 +295,7 @@ inline void vol_t::check_metadata_restored() const
      */
     if (is_failed()) {
         w_assert1(_restore_mgr);
-        _restore_mgr->waitUntilRestored(shpid_t(0));
+        _restore_mgr->waitUntilRestored(PageID(0));
     }
 }
 
@@ -462,7 +407,7 @@ void vol_t::shutdown(bool abrupt)
     W_COERCE(dismount(!abrupt /* uninstall */, abrupt));
 }
 
-rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
+rc_t vol_t::alloc_a_page(PageID& shpid, bool redo)
 {
     // if (!redo) check_metadata_restored();
 
@@ -472,7 +417,7 @@ rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        ssx.end_sys_xct(log_alloc_page(vid(), shpid));
+        ssx.end_sys_xct(log_alloc_page(shpid));
     }
 
     INC_TSTAT(page_alloc_cnt);
@@ -480,7 +425,7 @@ rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
     return RCOK;
 }
 
-rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
+rc_t vol_t::deallocate_page(const PageID& pid, bool redo)
 {
     // if (!redo) check_metadata_restored();
 
@@ -490,7 +435,7 @@ rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        ssx.end_sys_xct(log_dealloc_page(vid(), pid));
+        ssx.end_sys_xct(log_dealloc_page(pid));
     }
 
     INC_TSTAT(page_dealloc_cnt);
@@ -503,19 +448,19 @@ size_t vol_t::num_used_pages() const
     return _alloc_cache->get_last_allocated_pid();
 }
 
-rc_t vol_t::create_store(lpid_t root_pid, snum_t& snum)
+rc_t vol_t::create_store(PageID root_pid, StoreID& snum)
 {
     // check_metadata_restored();
-    return _stnode_cache->sx_create_store(root_pid.page, snum);
+    return _stnode_cache->sx_create_store(root_pid, snum);
 }
 
-bool vol_t::is_alloc_store(snum_t f) const
+bool vol_t::is_alloc_store(StoreID f) const
 {
     // check_metadata_restored();
     return _stnode_cache->is_allocated(f);
 }
 
-shpid_t vol_t::get_store_root(snum_t f) const
+PageID vol_t::get_store_root(StoreID f) const
 {
     // check_metadata_restored();
     return _stnode_cache->get_root_pid(f);
@@ -573,9 +518,9 @@ bool vol_t::set_fake_disk_latency(const int adelay)
  *  Read the page at "pnum" of the volume into the buffer "page".
  *
  *********************************************************************/
-rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
+rc_t vol_t::read_page(PageID pnum, generic_page& page)
 {
-    DBG(<< "Page read: vol " << _vid << " page " << pnum);
+    DBG(<< "Page read " << pnum);
     /*
      * CS: If volume is marked as failed, we must invoke restore manager and
      * wait until the requested page is restored. If we succeed in placing a
@@ -604,7 +549,7 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
 
             if (reqSucceeded) {
                 // page is loaded in buffer pool already
-                w_assert1(page.pid == lpid_t(_vid, pnum));
+                w_assert1(page.pid == pnum);
                 sysevent::log_page_read(pnum);
                 return RCOK;
             }
@@ -645,7 +590,7 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
     }
     else {
         W_DO(err);
-        w_assert1(page.pid == lpid_t(_vid, pnum));
+        w_assert1(page.pid == pnum);
     }
 
     sysevent::log_page_read(pnum);
@@ -653,7 +598,7 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
     return RCOK;
 }
 
-rc_t vol_t::read_backup(shpid_t first, size_t count, void* buf)
+rc_t vol_t::read_backup(PageID first, size_t count, void* buf)
 {
     if (_backup_fd < 0) {
         W_FATAL_MSG(eINTERNAL,
@@ -772,10 +717,10 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     return RCOK;
 }
 
-rc_t vol_t::write_backup(shpid_t first, size_t count, void* buf)
+rc_t vol_t::write_backup(PageID first, size_t count, void* buf)
 {
     w_assert0(_backup_write_fd > 0);
-    w_assert1(first + count <= (shpid_t) num_used_pages());
+    w_assert1(first + count <= (PageID) num_used_pages());
     w_assert1(count > 0);
     size_t offset = size_t(first) * sizeof(generic_page);
 
@@ -795,7 +740,7 @@ rc_t vol_t::write_backup(shpid_t first, size_t count, void* buf)
  *  of the volume.
  *
  *********************************************************************/
-rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt,
+rc_t vol_t::write_many_pages(PageID pnum, const generic_page* const pages, int cnt,
         bool ignoreRestore)
 {
     if (_readonly) {
@@ -848,15 +793,14 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
         check_restore_finished();
     }
 
-    w_assert1(pnum > 0 && pnum < (shpid_t) num_used_pages());
+    w_assert1(pnum > 0 && pnum < (PageID) num_used_pages());
     w_assert1(cnt > 0);
     size_t offset = size_t(pnum) * sizeof(generic_page);
 
 #if W_DEBUG_LEVEL > 2
     for (int j = 1; j < cnt; j++) {
         w_assert1(ignoreRestore ||
-                pages[j].pid.page - 1 == pages[j-1].pid.page);
-        w_assert1(ignoreRestore || pages[j].pid.vol() == _vid);
+                pages[j].pid - 1 == pages[j-1].pid);
         // CS: this assertion should hold, but some test cases fail it
         // e.g., TreeBufferpoolTest.Swizzle in test_bf_tree.cpp
         // w_assert1(pages[j].tag != t_btree_p || pages[j].lsn != lsn_t::null);
@@ -869,7 +813,7 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
     if(_apply_fake_disk_latency) start = gethrtime();
 
     // do the actual write now
-    W_COERCE_MSG(t->pwrite(_unix_fd, pages, sizeof(generic_page)*cnt, offset), << "volume id=" << vid());
+    W_COERCE(t->pwrite(_unix_fd, pages, sizeof(generic_page)*cnt, offset));
 
     fake_disk_latency(start);
     ADD_TSTAT(vol_blks_written, cnt);
@@ -886,7 +830,7 @@ uint32_t vol_t::get_last_allocated_pid() const
     return _alloc_cache->get_last_allocated_pid();
 }
 
-bool vol_t::is_allocated_page(shpid_t pid) const
+bool vol_t::is_allocated_page(PageID pid) const
 {
     w_assert1(_alloc_cache);
     return _alloc_cache->is_allocated(pid);

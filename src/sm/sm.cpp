@@ -1063,7 +1063,7 @@ rc_t ss_m::_truncate_log(bool ignore_chkpt)
 
 void ss_m::set_shutdown_flag(bool clean)
 {
-    // shutdown_clean = clean;
+    shutdown_clean = clean;
 }
 
 // Debugging function
@@ -1553,46 +1553,22 @@ ss_m::get_durable_lsn(lsn_t& anlsn)
 }
 
 void ss_m::dump_page_lsn_chain(std::ostream &o) {
-    dump_page_lsn_chain(o, lpid_t::null, lsn_t::max);
+    dump_page_lsn_chain(o, 0, lsn_t::max);
 }
-void ss_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid) {
+void ss_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid) {
     dump_page_lsn_chain(o, pid, lsn_t::max);
 }
-void ss_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn) {
+void ss_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn) {
     // using static method since restart_m is not guaranteed to be active
     restart_m::dump_page_lsn_chain(o, pid, max_lsn);
 }
 
 
 rc_t ss_m::verify_volume(
-    vid_t vid, int hash_bits, verify_volume_result &result)
+    int hash_bits, verify_volume_result &result)
 {
-    W_DO(btree_m::verify_volume(vid, hash_bits, result));
+    W_DO(btree_m::verify_volume(hash_bits, result));
     return RCOK;
-}
-
-ostream& operator<<(ostream& o, const lpid_t& pid)
-{
-    return o << "p(" << pid.vol() << '.' << pid.page << ')';
-}
-
-istream& operator>>(istream& i, lpid_t& pid)
-{
-    char c[5];
-    memset(c, 0, sizeof(c));
-    i >> c[0]        // p
-        >> c[1]      // (
-        >> pid._vol  // vid
-        >> c[2]      // .
-        >> pid.page  // shpid
-        >> c[3];     // )
-    c[4] = '\0';
-    if (i)  {
-        if (strcmp(c, "p(.)")) {
-            i.clear(ios::badbit|i.rdstate());  // error
-        }
-    }
-    return i;
 }
 
 #if defined(__GNUC__) && __GNUC_MINOR__ > 6
@@ -2003,36 +1979,13 @@ ss_m::_rollback_work(const sm_save_point_t& sp)
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::get_du_statistics()        DU DF
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
-{
-    SM_PROLOGUE_RC(ss_m::get_du_statistics, in_xct, read_only, 0);
-    W_DO(_get_du_statistics(vid, du, audit));
-    return RCOK;
-}
-
-
-/*--------------------------------------------------------------*
- *  ss_m::get_du_statistics()        DU DF                    *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_du_statistics(const stid_t& stid, sm_du_stats_t& du, bool audit)
-{
-    SM_PROLOGUE_RC(ss_m::get_du_statistics, in_xct, read_only, 0);
-    W_DO(_get_du_statistics(stid, du, audit));
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
  *  ss_m::_get_du_statistics()        DU DF                    *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::_get_du_statistics( const stid_t& stpgid, sm_du_stats_t& du, bool audit)
+ss_m::get_du_statistics(StoreID stpgid, sm_du_stats_t& du, bool audit)
 {
     // TODO this should take S lock, not IS
-    lpid_t root_pid;
+    PageID root_pid;
     W_DO(open_store(stpgid, root_pid));
 
     btree_stats_t btree_stats;
@@ -2050,7 +2003,7 @@ ss_m::_get_du_statistics( const stid_t& stpgid, sm_du_stats_t& du, bool audit)
  *  ss_m::_get_du_statistics()  DU DF                           *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
+ss_m::get_du_statistics(sm_du_stats_t& du, bool audit)
 {
     /*
      * Cannot call this during recovery, even for
@@ -2059,26 +2012,13 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
     if(smlevel_0::in_recovery()) {
         return RCOK;
     }
-    W_DO(lm->intent_vol_lock(vid, audit ? okvl_mode::S : okvl_mode::IS));
     sm_du_stats_t new_stats;
-
-    /*********************************************************
-     * First get stats on all the special stores in the volume.
-     *********************************************************/
-
-    stid_t stid;
-
-    /**************************************************
-     * Now get stats on every other store on the volume
-     **************************************************/
 
     rc_t rc;
     // get du stats on every store
-    for (stid_t s(vid, 0); s.store < stnode_page::max; s.store++) {
-        DBG(<<"look at store " << s);
-
-        DBG(<<" getting stats for store " << s << " flags=");
-        rc = _get_du_statistics(s, new_stats, audit);
+    for (StoreID s = 0; s < stnode_page::max; s++) {
+        DBG(<<" getting stats for store " << s);
+        rc = get_du_statistics(s, new_stats, audit);
         if (rc.is_error()) {
             if (rc.err_num() == eBADSTID) {
                 DBG(<<"skipping large object or missing store " << s );
@@ -2101,37 +2041,6 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
     return RCOK;
 }
 
-
-
-/*--------------------------------------------------------------*
- *  ss_m::{enable,disable,set}_fake_disk_latency()              *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::enable_fake_disk_latency(vid_t vid)
-{
-    SM_PROLOGUE_RC(ss_m::enable_fake_disk_latency, not_in_xct, read_only, 0);
-    if (!vol) return RC(eBADVOL);
-    vol->enable_fake_disk_latency();
-    return RCOK;
-}
-
-rc_t
-ss_m::disable_fake_disk_latency(vid_t vid)
-{
-    SM_PROLOGUE_RC(ss_m::disable_fake_disk_latency, not_in_xct, read_only, 0);
-    if (!vol) return RC(eBADVOL);
-    vol->disable_fake_disk_latency();
-    return RCOK;
-}
-
-rc_t
-ss_m::set_fake_disk_latency(vid_t vid, const int adelay)
-{
-    SM_PROLOGUE_RC(ss_m::set_fake_disk_latency, not_in_xct, read_only, 0);
-    if (!vol) return RC(eBADVOL);
-    vol->set_fake_disk_latency(adelay);
-    return RCOK;
-}
 
 /*--------------------------------------------------------------*
  *  ss_m::gather_xct_stats()                            *

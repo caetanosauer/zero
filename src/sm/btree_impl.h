@@ -88,7 +88,7 @@ public:
      * @param[out] leaf the leaf the key should be in (if it exists or if it did exist)
      */
     static rc_t _ux_get_page_and_status
-    (stid_t store,
+    (StoreID store,
      const w_keystr_t& key,
      bool& need_lock, slotid_t& slot, bool& found, bool& took_XN, bool& is_ghost, btree_page_h& leaf);
 
@@ -102,17 +102,17 @@ public:
     * @param[in] elem data of the inserted tuple
     */
     static rc_t                        _ux_insert(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** _ux_insert()'s internal function without retry by itself.*/
     static rc_t                        _ux_insert_core(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** Last half of _ux_insert, after traversing, finding (or not) and ghost determination.*/
     static rc_t _ux_insert_core_tail
-    (stid_t store,
+    (StoreID store,
      const w_keystr_t& key,const cvec_t& el,
      bool& need_lock, slotid_t& slot, bool& found, bool& alreay_took_XN,
      bool& is_ghost, btree_page_h& leaf);
@@ -127,19 +127,19 @@ public:
     * @param[in] elem new data of the tuple
     */
     static rc_t                        _ux_update(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem,
         const bool                        undo);
     /** _ux_update()'s internal function without retry by itself.*/
     static rc_t                        _ux_update_core(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem,
         const bool                        undo);
     /** Last half of _ux_update, after traversing, finding (or not) and ghost determination.*/
     static rc_t _ux_update_core_tail(
-     stid_t store,
+     StoreID store,
      const w_keystr_t& key, const cvec_t& elem,
      bool& need_lock, slotid_t& slot, bool& found, bool& is_ghost,
      btree_page_h& leaf);
@@ -155,13 +155,13 @@ public:
     * @param[in] elem new data of the tuple
     */
     static rc_t                        _ux_put(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** _ux_put()'s internal function without retry by itself.  Uses _ux_insert_core_tail and
         _ux_update_core_tail for the heavy lifting*/
     static rc_t                        _ux_put_core(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
 
@@ -177,13 +177,13 @@ public:
     * @param[in] elen number of bytes to overwrite
     */
     static rc_t                        _ux_overwrite(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&                 key,
         const char *el, smsize_t offset, smsize_t elen,
         const bool undo);
     /** _ux_overwrite()'s internal function without retry by itself.*/
     static rc_t                        _ux_overwrite_core(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&                 key,
         const char *el, smsize_t offset, smsize_t elen,
         const bool undo);
@@ -210,12 +210,12 @@ public:
     * @param[in] key key of the removed tuple
     */
     static rc_t                        _ux_remove(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&   key,
         const bool          undo);
 
     /** _ux_remove()'s internal function without retry by itself.*/
-    static rc_t _ux_remove_core(stid_t store, const w_keystr_t &key, const bool undo);
+    static rc_t _ux_remove_core(StoreID store, const w_keystr_t &key, const bool undo);
 
     /**
     *  \brief Reverses the ghost record of specified key to regular state.
@@ -230,7 +230,7 @@ public:
     * @see btree_ghost_mark_log::undo()
     */
     static rc_t                        _ux_undo_ghost_mark(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&                key);
 
 #ifdef DOXYGEN_HIDE
@@ -293,7 +293,7 @@ public:
     * @param[in] from_undo is true if caller is from an UNDO operation
     */
     static rc_t                 _ux_traverse(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&          key,
         traverse_mode_t            traverse_mode,
         latch_mode_t               leaf_latch_mode,
@@ -323,7 +323,7 @@ public:
         traverse_mode_t            traverse_mode,
         latch_mode_t               leaf_latch_mode,
         btree_page_h&              leaf,
-        shpid_t&                   leaf_pid_causing_failed_upgrade,
+        PageID&                   leaf_pid_causing_failed_upgrade,
         const bool                 from_undo
         );
 
@@ -352,7 +352,7 @@ public:
      * and, false positive is fine. it's just one mutex call overhead.
      * See jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80).
      */
-    static rc_t _ux_traverse_try_eager_adopt(btree_page_h &current, shpid_t next_pid, const bool from_recovery);
+    static rc_t _ux_traverse_try_eager_adopt(btree_page_h &current, PageID next_pid, const bool from_recovery);
 
     /**
      * If next has foster pointer and real-parent wants to adopt it, call this function.
@@ -375,7 +375,7 @@ public:
     * @param[out] elen size of el if !cursor
     */
     static rc_t                 _ux_lookup(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&          key,
         bool&                      found,
         void*                      el,
@@ -383,7 +383,7 @@ public:
         );
     /** _ux_lookup()'s internal function which doesn't rety for locks by itself. */
     static rc_t                 _ux_lookup_core(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&          key,
         bool&                      found,
         void*                      el,
@@ -405,7 +405,7 @@ public:
      * @param[in] page the new page belongs to this page as foster-child.
      * @param[out] new_page_id Page ID of the new page.
      */
-    static rc_t _sx_norec_alloc(btree_page_h &page, lpid_t &new_page_id);
+    static rc_t _sx_norec_alloc(btree_page_h &page, PageID &new_page_id);
 
     /**
      * this version assumes system transaction as the active transaction on current thread.
@@ -414,7 +414,7 @@ public:
      * @pre In SSX
      * @pre In page is EX-latched
      */
-    static rc_t _ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id);
+    static rc_t _ux_norec_alloc_core(btree_page_h &page, PageID &new_page_id);
 
     /**
      * \brief Checks all direct children of parent and, if some child has foster,
@@ -481,12 +481,12 @@ public:
      * is that this function doesn't exactly check children have foster-child.
      * So, this is much faster but some foster-child might be not adopted!
      */
-    static rc_t _sx_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid,
+    static rc_t _sx_adopt_foster_sweep_approximate (btree_page_h &parent, PageID surely_need_child_pid,
                                                             const bool from_recovery);
 
     /** Applies the changes of one adoption on parent node. Used by both usual adoption and REDO. */
     static void _ux_adopt_foster_apply_parent (btree_page_h &parent_arg,
-        shpid_t new_child_pid, lsn_t new_child_emlsn, const w_keystr_t &new_child_key);
+        PageID new_child_pid, lsn_t new_child_emlsn, const w_keystr_t &new_child_key);
     /** Applies the changes of one adoption on child node. Used by both usual adoption and REDO. */
     static void _ux_adopt_foster_apply_child (btree_page_h &child);
 
@@ -507,7 +507,7 @@ public:
      * @param[in] triggering_key the key to be inserted after this split.
      * used to determine split policy.
      */
-    static rc_t                 _sx_split_foster(btree_page_h &page, lpid_t &new_page_id,
+    static rc_t                 _sx_split_foster(btree_page_h &page, PageID &new_page_id,
         const w_keystr_t &triggering_key);
 
     /**
@@ -532,7 +532,7 @@ public:
      * \author Caetano Sauer
      */
     static rc_t                 _sx_split_foster_new(btree_page_h &page,
-            lpid_t &new_page_id, const w_keystr_t &triggering_key);
+            PageID &new_page_id, const w_keystr_t &triggering_key);
 
     /**
      * \brief Splits the given page if we need to do so for inserting the given key.
@@ -566,17 +566,17 @@ public:
     /** Overload to specify how many records we move and the new fence key. */
     static rc_t                 _sx_rebalance_foster(btree_page_h &page,
         btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key,
-        shpid_t new_pid0, lsn_t new_pid0_emlsn);
+        PageID new_pid0, lsn_t new_pid0_emlsn);
 
     /** @see _sx_rebalance_foster() */
     static rc_t                 _ux_rebalance_foster_core(btree_page_h &page,
         btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key,
-        shpid_t new_pid0, lsn_t new_pid0_emlsn, bool &caller_commit, sys_xct_section_t& sxs);
+        PageID new_pid0, lsn_t new_pid0_emlsn, bool &caller_commit, sys_xct_section_t& sxs);
 
     /** @see _ux_rebalance_foster_core() */
     static rc_t                 _ux_rebalance_foster_apply(btree_page_h &page,
         btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key,
-        shpid_t new_pid0, lsn_t new_pid0_emlsn, const bool full_logging = false);
+        PageID new_pid0, lsn_t new_pid0_emlsn, const bool full_logging = false);
 
     /** Special case that changes only fence key (for no-record-split). */
     static rc_t                 _ux_rebalance_foster_norec(btree_page_h &page,
@@ -622,10 +622,10 @@ public:
 
     /** Applies data changes on real-parent for De-Adopt operation. */
     static void _ux_deadopt_foster_apply_real_parent(btree_page_h &real_parent,
-        shpid_t foster_child_id, slotid_t foster_parent_slot);
+        PageID foster_child_id, slotid_t foster_parent_slot);
     /** Applies data changes on foster-parent for De-Adopt operation. */
     static void _ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_parent,
-        shpid_t foster_child_id, lsn_t foster_child_emlsn,
+        PageID foster_child_id, lsn_t foster_child_emlsn,
         const w_keystr_t &low_key, const w_keystr_t &high_key);
 
 #ifdef DOXYGEN_HIDE
@@ -654,7 +654,7 @@ public:
      * @param[in] check_only whether the lock goes away right after grant
      */
     static rc_t _ux_lock_key(
-        const stid_t&      store,
+        const StoreID&      store,
         btree_page_h&      leaf,
         const w_keystr_t&   key,
         latch_mode_t        latch_mode,
@@ -664,7 +664,7 @@ public:
 
     /** raw string and length version. */
     static rc_t _ux_lock_key(
-        const stid_t&      store,
+        const StoreID&      store,
         btree_page_h&      leaf,
         const void         *keystr,
         size_t              keylen,
@@ -675,7 +675,7 @@ public:
 
     // stid_d version, no latch and no retry, used by Log Analysis phase on individual log record
     static rc_t _ux_lock_key(
-        const stid_t&       stid,        // stid of the page which contains the key
+        const StoreID&       stid,        // stid of the page which contains the key
         const w_keystr_t&   key,         // Key to lock
         const okvl_mode&    lock_mode,   // the lock mode to be acquired
         bool                check_only,  // whether the lock goes away right after grant
@@ -708,7 +708,7 @@ public:
      * Used when the exact key is not found and range locking is needed.
      * @see _ux_lock_key()
      */
-    static rc_t _ux_lock_range(const stid_t&     store,
+    static rc_t _ux_lock_range(const StoreID&     store,
                                btree_page_h&     leaf,
                                const w_keystr_t& key,
                                slotid_t          slot,
@@ -718,7 +718,7 @@ public:
                                bool              check_only);
 
     /** raw string version. */
-    static rc_t _ux_lock_range(const stid_t&    store,
+    static rc_t _ux_lock_range(const StoreID&    store,
                                btree_page_h&    leaf,
                                const void*      keystr,
                                size_t           keylen,
@@ -756,12 +756,12 @@ public:
      * @param[in] stid ID of the newly created BTree.
      * @param[out] root_pid ID of the root page of the newly created BTree.
     */
-    static rc_t                        _sx_create_tree(const stid_t &stid, lpid_t &root_pid);
+    static rc_t                        _sx_create_tree(const StoreID &stid, PageID &root_pid);
     /**
      * this version assumes system transaction as the active transaction on current thread.
      * @see _sx_shrink_tree()
      */
-    static rc_t                        _ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid);
+    static rc_t                        _ux_create_tree_core(const StoreID &stid, const PageID &root_pid);
 
     /**
     *  \brief Shrink the tree. Copy the child page over the root page so the
@@ -807,7 +807,7 @@ public:
     * @param[out] consistent whether the BTree is consistent
     */
     static rc_t                        _ux_verify_tree(
-        stid_t store, int hash_bits, bool &consistent);
+        StoreID store, int hash_bits, bool &consistent);
 
 
     /**
@@ -840,10 +840,10 @@ public:
      * @see _ux_verify_tree()
      */
     static rc_t                       _ux_verify_volume(
-        vid_t vid, int hash_bits, verify_volume_result &result);
+        int hash_bits, verify_volume_result &result);
 
     /** initialize context for in-query verification.*/
-    static void inquery_verify_init(stid_t store);
+    static void inquery_verify_init(StoreID store);
     /** checks one page against the given expectation. */
     static void inquery_verify_fact(btree_page_h &page);
     /** adds expectation for next page. */
@@ -870,7 +870,7 @@ public:
     * @param[in] does_merge whether we do merge/rebalance (which might trigger de-adopt as well)
     */
     static rc_t                        _sx_defrag_tree(
-        stid_t store,
+        StoreID store,
         uint16_t inpage_defrag_ghost_threshold = 10,
         uint16_t inpage_defrag_usage_threshold = 50,
         bool does_adopt = true,
@@ -880,7 +880,7 @@ public:
      * @see _sx_defrag_tree()
      */
     static rc_t                        _ux_defrag_tree_core(
-        stid_t store,
+        StoreID store,
         uint16_t inpage_defrag_ghost_threshold,
         uint16_t inpage_defrag_usage_threshold,
         bool does_adopt,
@@ -943,28 +943,28 @@ public:
     static uint8_t s_foster_children_counts[1 << GAC_HASH_BITS];
 
     /** simple modular hashing. this must be cheap. */
-    inline static uint32_t shpid2hash (shpid_t pid) {
+    inline static uint32_t shpid2hash (PageID pid) {
         return pid % GAC_HASH_MOD;
     }
     /** Returns the mutex we should use when the given page is expected to be high-contended. */
-    inline static queue_based_lock_t* mutex_for_high_contention (shpid_t pid) {
+    inline static queue_based_lock_t* mutex_for_high_contention (PageID pid) {
         return s_ex_need_mutex + shpid2hash(pid);
     }
 
     /** Returns if the page should be fixed with EX latch. */
-    inline static bool is_ex_recommended (shpid_t pid) {
+    inline static bool is_ex_recommended (PageID pid) {
         uint32_t hash = shpid2hash(pid);
         w_assert1(hash < (1 << GAC_HASH_BITS));
         return (s_ex_need_counts[hash] > 30);
     }
     /** Returns if the page is likely to have foster-child. */
-    inline static uint8_t get_expected_childrens (shpid_t pid) {
+    inline static uint8_t get_expected_childrens (PageID pid) {
         uint32_t hash = shpid2hash(pid);
         w_assert1(hash < (1 << GAC_HASH_BITS));
         return s_foster_children_counts[hash];
     }
     /** Call this when encountered a failed upgrade. Again, doesn't need to be exact! */
-    inline static void increase_ex_need (shpid_t real_parent_pid) {
+    inline static void increase_ex_need (PageID real_parent_pid) {
         uint32_t hash = shpid2hash(real_parent_pid);
         w_assert1(hash < (1 << GAC_HASH_BITS));
         if (s_ex_need_counts[hash] < 255) {
@@ -972,7 +972,7 @@ public:
         }
     }
     /** Call this when there happened a split. Again, doesn't need to be exact! */
-    inline static void increase_forster_child (shpid_t new_foster_parent_pid) {
+    inline static void increase_forster_child (PageID new_foster_parent_pid) {
         uint32_t hash = shpid2hash(new_foster_parent_pid);
         w_assert1(hash < (1 << GAC_HASH_BITS));
         ++s_foster_children_counts[hash];
@@ -981,13 +981,13 @@ public:
         }
     }
     /** Call this when adopted children under the page.*/
-    inline static void clear_ex_need (shpid_t real_parent_pid) {
+    inline static void clear_ex_need (PageID real_parent_pid) {
         uint32_t hash = shpid2hash(real_parent_pid);
         w_assert1(hash < (1 << GAC_HASH_BITS));
         s_ex_need_counts[hash] = 0;
     }
     /** Call this when you cleared foster status of the page.*/
-    inline static void clear_forster_child (shpid_t foster_parent_pid) {
+    inline static void clear_forster_child (PageID foster_parent_pid) {
         uint32_t hash = shpid2hash(foster_parent_pid);
         w_assert1(hash < (1 << GAC_HASH_BITS));
         s_foster_children_counts[hash] = 0;

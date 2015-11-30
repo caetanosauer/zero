@@ -71,7 +71,7 @@ public:
      * @param[in] forward true if this cursor goes forward from lower bound, false if
      * this cursor goes backwards from upper bound.
      */
-    bt_cursor_t(stid_t store, bool forward);
+    bt_cursor_t(StoreID store, bool forward);
 
     /**
      * Creates a BTree cursor object for the given search conditions.
@@ -85,7 +85,7 @@ public:
      * this cursor goes backwards from upper bound.
      */
     bt_cursor_t(
-        stid_t store,
+        StoreID store,
         const w_keystr_t& lower, bool lower_inclusive,
         const w_keystr_t& upper, bool upper_inclusive,
         bool              forward);
@@ -100,7 +100,7 @@ public:
      * this cursor goes backwards from upper bound.
      */
     bt_cursor_t(
-        stid_t store,
+        StoreID store,
         const w_keystr_t& bound, bool inclusive,
         bool              forward);
 
@@ -127,7 +127,7 @@ public:
 
 private:
     void        _init(
-        stid_t store,
+        StoreID store,
         const w_keystr_t& lower,  bool lower_inclusive,
         const w_keystr_t& upper,  bool upper_inclusive,
         bool              forward);
@@ -167,7 +167,7 @@ private:
     */
     rc_t         _make_rec(const btree_page_h& page);
 
-    stid_t      _store;
+    StoreID      _store;
     w_keystr_t  _lower;
     w_keystr_t  _upper;
     bool        _lower_inclusive;
@@ -190,7 +190,7 @@ private:
     bool        _eof;
 
     /** id of current page. current page has additional pin_count for refix(). */
-    shpid_t     _pid;
+    PageID     _pid;
     /** current page's corresponding slot index in the bufferpool. */
     pin_for_refix_holder _pid_bfidx;
     /** current slot in the current page. */

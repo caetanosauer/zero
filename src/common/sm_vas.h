@@ -116,7 +116,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "basics.h"
 #include "vec_t.h"
 #include "tid_t.h"
-#include "stid_t.h"
 
 #undef SM_SOURCE
 #include "sm.h"

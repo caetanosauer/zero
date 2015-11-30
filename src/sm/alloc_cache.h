@@ -32,20 +32,20 @@ public:
      *                  store-independent area)
      * @param[in] redo If redoing the operation (no log generated)
      */
-    rc_t sx_allocate_page(shpid_t &pid, snum_t store = 0, bool redo = false);
+    rc_t sx_allocate_page(PageID &pid, StoreID store = 0, bool redo = false);
 
     /**
      * Deallocates one page. (System transaction)
      * @param[in] pid page ID to deallocate.
      */
-    rc_t sx_deallocate_page(shpid_t pid, snum_t store = 0, bool redo = false);
+    rc_t sx_deallocate_page(PageID pid, StoreID store = 0, bool redo = false);
 
     /** Returns if the page is already allocated. not quite fast. don't call this so often!. */
-    bool is_allocated (shpid_t pid);
+    bool is_allocated (PageID pid);
 
     rc_t force_pages();
 
-    shpid_t get_last_allocated_pid() const;
+    PageID get_last_allocated_pid() const;
 
 private:
 
@@ -68,8 +68,8 @@ private:
      * managing allocations from both contiguous and non-contiguous space would
      * be the more flexible and robust option.
      */
-    vector<shpid_t> last_alloc_page;
-    vector<list<shpid_t>> freed_pages;
+    vector<PageID> last_alloc_page;
+    vector<list<PageID>> freed_pages;
 
     /**
      * Bitmap of extents whose allocation pages were already loaded. This is
@@ -82,8 +82,6 @@ private:
 
     /** all operations in this object are protected by this lock. */
     mutable srwlock_t _latch;
-
-    vid_t _vid;
 
     static const size_t extent_size;
 

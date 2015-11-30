@@ -109,7 +109,7 @@ void btree_page_data::unset_ghost(int item) {
 
 
 bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
-                shpid_t child, size_t data_length) {
+                PageID child, size_t data_length) {
     w_assert1(item>=0 && item<=nitems);  // use of <= intentional
     w_assert3(_items_are_consistent());
 
@@ -141,7 +141,7 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
 }
 
 bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
-                             shpid_t child, const cvec_t& data) {
+                             PageID child, const cvec_t& data) {
     if (!insert_item(item, ghost, poor, child, data.size())) {
         return false;
     }
@@ -494,4 +494,4 @@ char* btree_page_data::unused_part(size_t& length) {
 }
 
 
-const size_t btree_page_data::max_item_overhead = sizeof(item_head) + sizeof(item_length_t) + sizeof(shpid_t) + _item_align(1)-1;
+const size_t btree_page_data::max_item_overhead = sizeof(item_head) + sizeof(item_length_t) + sizeof(PageID) + _item_align(1)-1;

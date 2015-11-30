@@ -6,10 +6,8 @@
 #define BF_TREE_H
 
 #include "w_defines.h"
-#include "vid_t.h"
 #include "latch.h"
 #include "tatas.h"
-#include "sm_s.h"
 #include "vol.h"
 #include "generic_page.h"
 #include "bf_idx.h"
@@ -43,15 +41,8 @@ enum evict_urgency_t {
 
 /** a swizzled pointer (page ID) has this bit ON. */
 const uint32_t SWIZZLED_PID_BIT = 0x80000000;
-inline bool is_swizzled_pointer (shpid_t shpid) {
+inline bool is_swizzled_pointer (PageID shpid) {
     return (shpid & SWIZZLED_PID_BIT) != 0;
-}
-
-inline uint64_t bf_key(vid_t vid, shpid_t shpid) {
-    return ((uint64_t) vid << 32) + shpid;
-}
-inline uint64_t bf_key(const lpid_t &pid) {
-    return bf_key(pid.vol(), pid.page);
 }
 
 
@@ -223,10 +214,10 @@ public:
     generic_page* get_page(const bf_idx& idx);
 
     /** returns the page ID of the root page (which is already loaded in this bufferpool) in given store. mainly for debugging or approximate purpose. */
-    shpid_t get_root_page_id(stid_t store);
+    PageID get_root_page_id(StoreID store);
 
     /** returns the root-page index of the root page, which is always kept in the volume descriptor:*/
-    bf_idx get_root_page_idx(stid_t store);
+    bf_idx get_root_page_idx(StoreID store);
 
 
     /**
@@ -247,7 +238,7 @@ public:
      *
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, vid_t vol, shpid_t shpid,
+    w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, PageID shpid,
                           latch_mode_t mode, bool conditional, bool virgin_page,
                           const bool from_recovery = false);
 
@@ -266,7 +257,7 @@ public:
      *
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_unsafely_nonroot(generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, q_ticket_t& ticket);
+    w_rc_t fix_unsafely_nonroot(generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, q_ticket_t& ticket);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
@@ -286,7 +277,7 @@ public:
      * @param[in] conditional whether the fix is conditional (returns immediately even if failed).
      * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
      */
-    w_rc_t fix_direct (generic_page*& page, vid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
+    w_rc_t fix_direct (generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, bool virgin_page);
 
     /**
      * Special function for the REDO phase in system Recovery process
@@ -297,7 +288,7 @@ public:
      * @param[out] page the fixed page.
      * @param[in] idx idx of the page.
      */
-    void associate_page(generic_page*&_pp, bf_idx idx, lpid_t page_updated);
+    void associate_page(generic_page*&_pp, bf_idx idx, PageID page_updated);
 
     /**
      * Adds an additional pin count for the given page (which must be already latched).
@@ -324,21 +315,21 @@ public:
      * Implicitly, the latch will be EX and non-conditional.
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_virgin_root (generic_page*& page, stid_t store, shpid_t shpid);
+    w_rc_t fix_virgin_root (generic_page*& page, StoreID store, PageID shpid);
 
     /**
      * Fixes an existing (not virgin) root page for the given store.
      * This method doesn't receive page ID because it's already known by bufferpool.
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_root (generic_page*& page, stid_t store, latch_mode_t mode,
+    w_rc_t fix_root (generic_page*& page, StoreID store, latch_mode_t mode,
                      bool conditional, const bool from_undo = false);
 
     /**
      * Fixes an existing (not virgin) root page for the given store in Q mode.
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_with_Q_root(generic_page*& page, stid_t store, q_ticket_t& ticket);
+    w_rc_t fix_with_Q_root(generic_page*& page, StoreID store, q_ticket_t& ticket);
 
 
     /** returns the current latch mode of the page. */
@@ -425,7 +416,7 @@ public:
      * if it is later than the new_lsn.
      * This function is mainly used when a page format log record was generated
      */
-    void set_initial_rec_lsn(const lpid_t& pid, const lsn_t new_lsn, const lsn_t current_lsn);
+    void set_initial_rec_lsn(PageID pid, const lsn_t new_lsn, const lsn_t current_lsn);
 
     /**
      * Returns true if the page's _used flag is on
@@ -461,7 +452,7 @@ public:
      * The caller must make sure the page itself, old and new parent pages
      * don't go away while this switch (i.e., latch them).
      */
-    void switch_parent (lpid_t, generic_page*);
+    void switch_parent (PageID, generic_page*);
 
     /**
      * Swizzle a child pointer in the parent page to speed-up accesses on the child.
@@ -487,7 +478,7 @@ public:
      * Search in the given page to find the slot that contains the page id as a child.
      * Returns >0 if a normal slot, 0 if pid0, -1 if foster, -2 if not found.
      */
-    general_recordid_t find_page_id_slot (generic_page* page, shpid_t shpid) const;
+    general_recordid_t find_page_id_slot (generic_page* page, PageID shpid) const;
 
     /**
      * Returns if the page is swizzled by parent or the volume descriptor.
@@ -503,7 +494,7 @@ public:
       * identifier as it is.
       * Do NOT call this method without a latch.
       */
-    shpid_t normalize_shpid(shpid_t shpid) const;
+    PageID normalize_shpid(PageID shpid) const;
 
     /** Immediately writes out all dirty pages in the given volume.*/
     w_rc_t force_volume ();
@@ -522,13 +513,13 @@ public:
      * this method is solely for debugging. It's slow and unsafe.
      */
     void  debug_dump_page_pointers (std::ostream &o, generic_page *page) const;
-    void  debug_dump_pointer (std::ostream &o, shpid_t shpid) const;
+    void  debug_dump_pointer (std::ostream &o, PageID shpid) const;
 
     /**
      * Returns the non-swizzled page-ID for the given pointer that might be swizzled.
      * This is NOT safe against concurrent eviction and should be used just for debugging.
      */
-    shpid_t  debug_get_original_pageid (shpid_t shpid) const;
+    PageID  debug_get_original_pageid (PageID shpid) const;
 
     /**
      * Returns if the given page is managed by this bufferpool.
@@ -546,7 +537,7 @@ public:
      *  pages it found, respectively.
      *  'master' and 'current_lsn' are used only for 'in_doubt' pages which are not loaded
     */
-    void get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t* store,
+    void get_rec_lsn(bf_idx &start, uint32_t &count, PageID *pid, StoreID* store,
                      lsn_t *rec_lsn, lsn_t *page_lsn, lsn_t &min_rec_lsn,
                      const lsn_t master, const lsn_t current_lsn,
                      lsn_t last_mount_lsn);
@@ -609,7 +600,7 @@ public:
      * and the last write)
      * update the in_doubt page counter and return the index of the page
      */
-    w_rc_t register_and_mark(bf_idx& ret, lpid_t page_of_interest, snum_t store,
+    w_rc_t register_and_mark(bf_idx& ret, PageID page_of_interest, StoreID store,
            lsn_t first_lsn, lsn_t last_lsn, uint32_t& in_doubt_count);
 
 
@@ -619,17 +610,17 @@ public:
      * but the actual page is not in buffer pool yet
      * Load the actual page into buffer pool
      */
-    w_rc_t load_for_redo(bf_idx idx, vid_t vid, shpid_t shpid);
+    w_rc_t load_for_redo(bf_idx idx, PageID shpid);
 
     size_t get_size() { return _block_cnt; }
 
 private:
 
     /** called when a volume is mounted. */
-    w_rc_t _preload_root_page (bf_tree_vol_t* desc, vol_t* volume, snum_t store, shpid_t shpid, bf_idx idx);
+    w_rc_t _preload_root_page (bf_tree_vol_t* desc, vol_t* volume, StoreID store, PageID shpid, bf_idx idx);
 
     /** fixes a non-swizzled page. */
-    w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, vid_t vol, shpid_t shpid,
+    w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, PageID shpid,
                                latch_mode_t mode, bool conditional, bool virgin_page,
                                const bool from_recovery = false);
 
@@ -649,8 +640,8 @@ private:
      * @param[in] shpid Page ID
      * @param[in] page_emlsn if != 0, it is the page last update LSN identified during Log Analysis
      */
-    w_rc_t _check_read_page(generic_page* parent, generic_page* page, vid_t vol,
-                                 shpid_t shpid, const lsn_t page_emlsn);
+    w_rc_t _check_read_page(generic_page* parent, generic_page* page,
+                                 PageID shpid, const lsn_t page_emlsn);
 
     /**
      * \brief Tries to recover the given page with some issue via Single-Page-Recovery.
@@ -663,8 +654,8 @@ private:
      * did not match). Otherwise, the page is just a little stale and Single-Page-Recovery is more efficient.
      * @param[in] page_emlsn If not NULL, it is the last LSN gathered during Log Analysis
      */
-    w_rc_t _try_recover_page(generic_page* parent, generic_page* page, vid_t vol,
-                             shpid_t shpid, bool corrupted, const lsn_t page_emlsn);
+    w_rc_t _try_recover_page(generic_page* parent, generic_page* page,
+                             PageID shpid, bool corrupted, const lsn_t page_emlsn);
 
     /** used by fix_root and fix_virgin_root. */
     w_rc_t _latch_root_page(generic_page*& page, bf_idx idx, latch_mode_t mode, bool conditional);
@@ -680,7 +671,7 @@ private:
      */
     void   _convert_to_disk_page (generic_page* page) const;
     /** if the shpid is a swizzled pointer, convert it to the original page id. */
-    void   _convert_to_pageid (shpid_t* shpid) const;
+    void   _convert_to_pageid (PageID* shpid) const;
 
     /** finds a free block and returns its index. if free list is empty and 'evict' = true, it evicts some page. */
     w_rc_t _grab_free_block(bf_idx& ret, bool evict = true);
@@ -755,11 +746,11 @@ private:
 
     bool   _compare_dependency_lsn(const bf_tree_cb_t& cb, const bf_tree_cb_t &dependency_cb) const;
 
-    void   _swizzle_child_pointer(generic_page* parent, shpid_t* pointer_addr);
+    void   _swizzle_child_pointer(generic_page* parent, PageID* pointer_addr);
 
     // these are used only in the mainmemory-db experiment
     w_rc_t _install_volume_mainmemorydb(vol_t* volume);
-    w_rc_t _fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
+    w_rc_t _fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, bool virgin_page);
 
 
     /**

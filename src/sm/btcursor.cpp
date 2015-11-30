@@ -17,9 +17,8 @@
 #include "xct.h"
 #include "lock.h"
 #include "sm.h"
-#include "stid_t.h"
 
-bt_cursor_t::bt_cursor_t(stid_t store, bool forward)
+bt_cursor_t::bt_cursor_t(StoreID store, bool forward)
 {
     w_keystr_t infimum, supremum;
     infimum.construct_neginfkey();
@@ -28,7 +27,7 @@ bt_cursor_t::bt_cursor_t(stid_t store, bool forward)
 }
 
 bt_cursor_t::bt_cursor_t(
-    stid_t store,
+    StoreID store,
     const w_keystr_t& bound, bool inclusive,
     bool              forward)
 {
@@ -44,7 +43,7 @@ bt_cursor_t::bt_cursor_t(
 }
 
 bt_cursor_t::bt_cursor_t(
-    stid_t store,
+    StoreID store,
     const w_keystr_t& lower, bool lower_inclusive,
     const w_keystr_t& upper, bool upper_inclusive,
     bool              forward)
@@ -54,7 +53,7 @@ bt_cursor_t::bt_cursor_t(
 }
 
 void bt_cursor_t::_init(
-    stid_t store,
+    StoreID store,
     const w_keystr_t& lower, bool lower_inclusive,
     const w_keystr_t& upper, bool upper_inclusive,
     bool              forward)
@@ -104,7 +103,7 @@ void bt_cursor_t::_set_current_page(btree_page_h &page) {
     }
     w_assert1(_pid == 0);
     w_assert1(_pid_bfidx.idx() == 0);
-    _pid = page.pid().page;
+    _pid = page.pid();
     // pin this page for subsequent refix()
     _pid_bfidx.set(page.pin_for_refix());
     _lsn = page.lsn();
@@ -116,7 +115,7 @@ void bt_cursor_t::_set_current_page(btree_page_h &page) {
 rc_t bt_cursor_t::_locate_first() {
     // at the first access, we get an intent lock on store/volume
     if (_needs_lock) {
-        W_DO(smlevel_0::lm->intent_vol_store_lock(_store, _ex_lock ? okvl_mode::IX : okvl_mode::IS));
+        W_DO(smlevel_0::lm->intent_store_lock(_store, _ex_lock ? okvl_mode::IX : okvl_mode::IS));
     }
 
     if (_lower > _upper || (_lower == _upper && (!_lower_inclusive || !_upper_inclusive))) {
@@ -218,7 +217,7 @@ rc_t bt_cursor_t::_locate_first() {
 rc_t bt_cursor_t::_check_page_update(btree_page_h &p)
 {
     // was the page changed?
-    if (_pid != p.pid().page || p.lsn() != _lsn) {
+    if (_pid != p.pid() || p.lsn() != _lsn) {
         // check if the page still contains the key we are based on
         bool found = false;
         if (p.fence_contains(_key)) {
@@ -273,7 +272,7 @@ rc_t bt_cursor_t::next()
     btree_page_h p;
     W_DO(_refix_current_key(p));
     w_assert3(p.is_fixed());
-    w_assert3(p.pid().page == _pid);
+    w_assert3(p.pid() == _pid);
 
     W_DO(_check_page_update(p));
 

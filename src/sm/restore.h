@@ -41,7 +41,7 @@ public:
      * This method is used to check if a page has already been restored, i.e.,
      * if it can be read from the volume already.
      */
-    bool isRestored(const shpid_t& pid);
+    bool isRestored(const PageID& pid);
 
     /** \brief Request restoration of a given page
      *
@@ -59,7 +59,7 @@ public:
      * returns false. This condition tells the caller it must read the page
      * contents from the restored device.
      */
-    bool requestRestore(const shpid_t& pid, generic_page* addr = NULL);
+    bool requestRestore(const PageID& pid, generic_page* addr = NULL);
 
     /** \brief Blocks until given page is restored
      *
@@ -69,7 +69,7 @@ public:
      * to read the page from the volume. This is basically equivalent to
      * polling on the isRestored() method.
      */
-    bool waitUntilRestored(const shpid_t& pid, size_t timeout_in_ms = 0);
+    bool waitUntilRestored(const PageID& pid, size_t timeout_in_ms = 0);
 
     /** \brief Set single-pass policy on scheduler
      *
@@ -97,11 +97,11 @@ public:
 
     /** \brief Gives the segment number of a certain page ID.
      */
-    unsigned getSegmentForPid(const shpid_t& pid);
+    unsigned getSegmentForPid(const PageID& pid);
 
     /** \brief Gives the first page ID of a given segment number.
      */
-    shpid_t getPidForSegment(unsigned segment);
+    PageID getPidForSegment(unsigned segment);
 
     /** \brief True if all segments have been restored
      *
@@ -111,8 +111,8 @@ public:
     { return metadataRestored && numRestoredPages == lastUsedPid; }
 
     size_t getSegmentSize() { return segmentSize; }
-    shpid_t getFirstDataPid() { return firstDataPid; }
-    shpid_t getLastUsedPid() { return lastUsedPid; }
+    PageID getFirstDataPid() { return firstDataPid; }
+    PageID getLastUsedPid() { return lastUsedPid; }
     RestoreBitmap* getBitmap() { return bitmap; }
     BackupReader* getBackup() { return backup; }
     unsigned getPrefetchWindow() { return prefetchWindow; }
@@ -132,7 +132,7 @@ protected:
     LogArchiver::ArchiveDirectory* archive;
     vol_t* volume;
 
-    std::map<shpid_t, generic_page*> bufferedRequests;
+    std::map<PageID, generic_page*> bufferedRequests;
     srwlock_t requestMutex;
 
     pthread_cond_t restoreCond;
@@ -145,11 +145,11 @@ protected:
 
     /** \brief First page ID to be restored (i.e., skipping metadata pages)
      */
-    shpid_t firstDataPid;
+    PageID firstDataPid;
 
     /** \brief Last page ID to be restored (after that only unused pages)
      */
-    shpid_t lastUsedPid;
+    PageID lastUsedPid;
 
     /** \brief Reader object that abstracts access to backup segments
      */
@@ -269,7 +269,7 @@ protected:
      */
     void restoreSegment(char* workspace,
             LogArchiver::ArchiveScanner::RunMerger* merger,
-            shpid_t firstPage);
+            PageID firstPage);
 
     /** \brief Concludes restore of a segment
      * Processes buffer pool requests when reuse is activated and calls
@@ -341,8 +341,8 @@ public:
     RestoreScheduler(const sm_options& options, RestoreMgr* restore);
     virtual ~RestoreScheduler();
 
-    void enqueue(const shpid_t& pid);
-    shpid_t next(bool peek = false);
+    void enqueue(const PageID& pid);
+    PageID next(bool peek = false);
     void setSinglePass(bool singlePass = true);
     bool hasWaitingRequest();
 
@@ -353,36 +353,36 @@ protected:
     RestoreMgr* restore;
 
     srwlock_t mutex;
-    std::queue<shpid_t> queue;
+    std::queue<PageID> queue;
 
     /// Perform single-pass restore while no requests are available
     bool trySinglePass;
     /// Support on-demand scheduling (if false, trySinglePass must be true)
     bool onDemand;
 
-    shpid_t firstDataPid;
-    shpid_t lastUsedPid;
+    PageID firstDataPid;
+    PageID lastUsedPid;
 
     /** Keep track of first pid not restored to continue single-pass restore.
      * This is just a guess to prune the search for the next not restored.
      */
-    shpid_t firstNotRestored;
+    PageID firstNotRestored;
 };
 
-inline unsigned RestoreMgr::getSegmentForPid(const shpid_t& pid)
+inline unsigned RestoreMgr::getSegmentForPid(const PageID& pid)
 {
     // return (unsigned) (std::max(pid, firstDataPid) - firstDataPid)
     //     / segmentSize;
     return (unsigned) pid / segmentSize;
 }
 
-inline shpid_t RestoreMgr::getPidForSegment(unsigned segment)
+inline PageID RestoreMgr::getPidForSegment(unsigned segment)
 {
-    // return shpid_t(segment * segmentSize) + firstDataPid;
-    return shpid_t(segment * segmentSize);
+    // return PageID(segment * segmentSize) + firstDataPid;
+    return PageID(segment * segmentSize);
 }
 
-inline bool RestoreMgr::isRestored(const shpid_t& pid)
+inline bool RestoreMgr::isRestored(const PageID& pid)
 {
     if (!instantRestore) {
         return false;

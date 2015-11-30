@@ -20,26 +20,26 @@
 #include "restart.h"
 
 
-shpid_t btree_page_h::pid0() const
+PageID btree_page_h::pid0() const
 {
-    shpid_t shpid = page()->btree_pid0;
+    PageID shpid = page()->btree_pid0;
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
     }
     return shpid;
 }
 
-shpid_t btree_page_h::get_foster() const {
-    shpid_t shpid = page()->btree_foster;
+PageID btree_page_h::get_foster() const {
+    PageID shpid = page()->btree_foster;
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
     }
     return shpid;
 }
 
-shpid_t btree_page_h::child(slotid_t slot) const
+PageID btree_page_h::child(slotid_t slot) const
 {
-    shpid_t shpid = child_opaqueptr(slot);
+    PageID shpid = child_opaqueptr(slot);
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
     }
@@ -73,7 +73,7 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
     return *this;
 }
 
-bool btree_page_h::set_foster_child(shpid_t foster_child_pid,
+bool btree_page_h::set_foster_child(PageID foster_child_pid,
         const w_keystr_t& new_fence_high, const w_keystr_t& child_fence_chain)
 {
     page()->btree_foster = foster_child_pid;
@@ -101,7 +101,7 @@ bool btree_page_h::set_foster_child(shpid_t foster_child_pid,
     return true;
 }
 
-void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id, const bool f_redo) {
+void btree_page_h::accept_empty_child(lsn_t new_lsn, PageID new_page_id, const bool f_redo) {
     // If called from Recovery, i.e. btree_norec_alloc_log::redo, do not check for
     // is_single_log_sys_xct(), the transaction flags are not setup properly
 
@@ -131,13 +131,13 @@ void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id, const 
 }
 
 rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the operation that creates this new page
-                                const lpid_t&     pid,             // Destination page pid
-                                snum_t            store,           // Store number
-                                shpid_t           root,
+                                const PageID&     pid,             // Destination page pid
+                                StoreID            store,           // Store number
+                                PageID           root,
                                 int               l,               // Level of the destination page
-                                shpid_t           pid0,            // Destination page pid0 value, non-leaf only
+                                PageID           pid0,            // Destination page pid0 value, non-leaf only
                                 lsn_t             pid0_emlsn,      // Destination page emlsn value, non-leaf only
-                                shpid_t           foster,          // Page ID of the foster-child (if exist)
+                                PageID           foster,          // Page ID of the foster-child (if exist)
                                 lsn_t             foster_emlsn,
                                 const w_keystr_t& fence_low,       // Low fence key of the destination page
                                 const w_keystr_t& fence_high,      // Hig key of the destination page, confusing naming
@@ -194,7 +194,7 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
         cvec_t       stolen_key(steal_src2->get_fence_low_key() + page()->btree_prefix_length,
                             steal_src2->get_fence_low_length() - page()->btree_prefix_length);
         poor_man_key poormkey    = _extract_poor_man_key(stolen_key);
-        shpid_t      stolen_pid0 = steal_src2->pid0();
+        PageID      stolen_pid0 = steal_src2->pid0();
         lsn_t        stolen_pid0_emlsn = steal_src2->get_pid0_emlsn();
         cvec_t v;
         rc_t rc;
@@ -264,14 +264,14 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
 }
 
 rc_t btree_page_h::format_foster_child(btree_page_h& parent,
-        const lpid_t& new_page_id, const w_keystr_t& triggering_key,
+        const PageID& new_page_id, const w_keystr_t& triggering_key,
         w_keystr_t& split_key, int& move_count)
 {
     slotid_t mid_slot;
     parent.suggest_fence_for_split(split_key, mid_slot, triggering_key);
     move_count = parent.nrecs() - mid_slot;
 
-    shpid_t new_pid0 = 0;
+    PageID new_pid0 = 0;
     lsn_t   new_pid0_emlsn = lsn_t::null;
     if (parent.is_node())
     {
@@ -290,7 +290,7 @@ rc_t btree_page_h::format_foster_child(btree_page_h& parent,
     page()->tag = t_btree_p;
     page()->page_flags = 0;
     page()->btree_consecutive_skewed_insertions = 0;
-    page()->btree_root = parent.root().page;
+    page()->btree_root = parent.root();
     page()->btree_pid0 = new_pid0;
     page()->btree_pid0_emlsn = new_pid0_emlsn;
     page()->btree_level = parent.level();
@@ -337,7 +337,7 @@ rc_t btree_page_h::format_foster_child(btree_page_h& parent,
 
         cvec_t         v;
         pack_scratch_t v_scratch;
-        shpid_t        child;
+        PageID        child;
 
         if (is_leaf())
         {
@@ -420,7 +420,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
 
         cvec_t         v;
         pack_scratch_t v_scratch; // this needs to stay in scope until v goes out of scope...
-        shpid_t        child;
+        PageID        child;
 
         // If ask for full logging, generate record movement log records before
         // each insertion
@@ -633,7 +633,7 @@ rc_t btree_page_h::copy_records(const int  rec_count,     // In: number of recor
         // Get the pointer to data field
         bool         is_ghost = false;
         smsize_t     data_length;
-        shpid_t      child = 0;
+        PageID      child = 0;
 
         // Non-leaf node, EMLSN is after the key data, this is garbage if leaf node
         const lsn_t* emlsn_ptr = reinterpret_cast<const lsn_t*>(trunc_key_data + trunc_key_length);
@@ -882,9 +882,9 @@ rc_t btree_page_h::init_fence_keys(
             const bool set_low, const w_keystr_t &low,               // Low fence key
             const bool set_high, const w_keystr_t &high,             // High key (foster)
             const bool set_chain, const w_keystr_t &chain_high,      // Chain high fence key
-            const bool set_pid0, const shpid_t new_pid0,             // pid0, non-leaf node only
+            const bool set_pid0, const PageID new_pid0,             // pid0, non-leaf node only
             const bool set_emlsn, const lsn_t new_pid0_emlsn,        // emlan,  non-leaf node only
-            const bool set_foster, const shpid_t foster_pid0,        // foster page id
+            const bool set_foster, const PageID foster_pid0,        // foster page id
             const bool set_foster_emlsn, const lsn_t foster_emlsn,   // foster page emlsn
             const int remove_count)                                  // Number of records to be removed
                                                                      // Used only if reset fence key
@@ -986,7 +986,7 @@ rc_t btree_page_h::init_fence_keys(
     return replace_fence_rec_nolog_may_defrag(low_fence, high_key, chain_fence_key, prefix_len);
 }
 
-rc_t btree_page_h::norecord_split (shpid_t foster, lsn_t foster_emlsn,
+rc_t btree_page_h::norecord_split (PageID foster, lsn_t foster_emlsn,
                                 const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high) {
     w_assert1(compare_with_fence_low(fence_high) > 0);
     w_assert1(compare_with_fence_low(chain_fence_high) > 0);
@@ -1243,7 +1243,7 @@ void btree_page_h::_update_btree_consecutive_skewed_insertions(slotid_t slot) {
     page()->btree_consecutive_skewed_insertions = val;
 }
 
-rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t child,
+rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, PageID child,
     const lsn_t& child_emlsn) {
     FUNC(btree_page_h::insert);
 
@@ -1816,7 +1816,7 @@ bool btree_page_h::_is_consistent_keyorder() const {
     const size_t lowkey_len = get_fence_low_length();
     const size_t prefix_len = get_prefix_length();
     const size_t chain_high_len = get_chain_fence_high_length();
-    const shpid_t foster = get_foster_opaqueptr();
+    const PageID foster = get_foster_opaqueptr();
     // chain-high must be set if foster link exists.
     if(chain_high_len == 0 && foster != 0) {
         w_assert3(false);
@@ -2002,10 +2002,10 @@ bool btree_page_h::_check_space_for_insert(size_t data_length) {
 }
 
 
-void btree_page_h::_init(lsn_t lsn, lpid_t page_id, snum_t store,
-    shpid_t root_pid,
-    shpid_t pid0, lsn_t pid0_emlsn,          // Non-leaf page only
-    shpid_t foster_pid, lsn_t foster_emlsn,  // If foster child exists for this page
+void btree_page_h::_init(lsn_t lsn, PageID page_id, StoreID store,
+    PageID root_pid,
+    PageID pid0, lsn_t pid0_emlsn,          // Non-leaf page only
+    PageID foster_pid, lsn_t foster_emlsn,  // If foster child exists for this page
     int16_t btree_level,
     const w_keystr_t &low,                   // Low fence key
     const w_keystr_t &high,                  // High key, confusing naming, it is actually the foster key

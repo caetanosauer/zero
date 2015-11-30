@@ -195,7 +195,7 @@ public:
      * @param[in] stid ID of the store to access
      * @param[in] mode lock mode
      */
-    w_rc_t acquire_store_lock(lil_global_table *global_table, const stid_t &stid,
+    w_rc_t acquire_store_lock(lil_global_table *global_table, const StoreID &stid,
             lil_lock_modes_t mode);
 
     /**
@@ -247,7 +247,7 @@ public:
     /**
      * Shortcut method to acquire store and its volume lock in the same mode.
      */
-    w_rc_t acquire_vol_store_lock(lil_global_table *global_table, const stid_t &stid,
+    w_rc_t acquire_vol_store_lock(lil_global_table *global_table, const StoreID &stid,
             lil_lock_modes_t mode);
 
     /**

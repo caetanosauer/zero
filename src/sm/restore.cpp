@@ -106,7 +106,7 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
     : restore(restore)
 {
     w_assert0(restore);
-    firstNotRestored = shpid_t(0);
+    firstNotRestored = PageID(0);
     firstDataPid = restore->getFirstDataPid();
     lastUsedPid = restore->getLastUsedPid();
     trySinglePass =
@@ -124,7 +124,7 @@ RestoreScheduler::~RestoreScheduler()
 {
 }
 
-void RestoreScheduler::enqueue(const shpid_t& pid)
+void RestoreScheduler::enqueue(const PageID& pid)
 {
     spinlock_write_critical_section cs(&mutex);
     queue.push(pid);
@@ -135,11 +135,11 @@ bool RestoreScheduler::hasWaitingRequest()
     return onDemand && queue.size() > 0;
 }
 
-shpid_t RestoreScheduler::next(bool peek)
+PageID RestoreScheduler::next(bool peek)
 {
     spinlock_write_critical_section cs(&mutex);
 
-    shpid_t next = firstNotRestored;
+    PageID next = firstNotRestored;
     if (onDemand && queue.size() > 0) {
         next = queue.front();
         if (!peek) {
@@ -165,7 +165,7 @@ shpid_t RestoreScheduler::next(bool peek)
     }
     else {
         w_assert0(onDemand);
-        next = shpid_t(0); // no next pid for now
+        next = PageID(0); // no next pid for now
     }
 
     /*
@@ -351,7 +351,7 @@ RestoreMgr::~RestoreMgr()
     DO_PTHREAD(pthread_cond_destroy(&restoreCond));
 }
 
-bool RestoreMgr::waitUntilRestored(const shpid_t& pid, size_t timeout_in_ms)
+bool RestoreMgr::waitUntilRestored(const PageID& pid, size_t timeout_in_ms)
 {
     DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
     struct timespec timeout;
@@ -384,7 +384,7 @@ void RestoreMgr::setInstant(bool instant)
     instantRestore = instant;
 }
 
-bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
+bool RestoreMgr::requestRestore(const PageID& pid, generic_page* addr)
 {
     if (pid < firstDataPid || pid > lastUsedPid) {
         return false;
@@ -464,14 +464,12 @@ void RestoreMgr::restoreMetadata()
 
     // open scan on pages [0, firstDataPid) to get all metadata operations
     LogArchiver::ArchiveScanner::RunMerger* merger =
-        logScan.open(lpid_t(volume->vid(), 0),
-                lpid_t(volume->vid(), firstDataPid), lsn_t::null, logReadSize);
+        logScan.open(0, firstDataPid, lsn_t::null, logReadSize);
 
     logrec_t* lr;
     while (merger->next(lr)) {
-        lpid_t lrpid = lr->construct_pid();
-        // w_assert1(lrpid.vol() == volume->vid());
-        w_assert1(lrpid.page < firstDataPid);
+        PageID lrpid = lr->pid();
+        w_assert1(lrpid < firstDataPid);
         lr->redo(NULL);
     }
 
@@ -489,14 +487,14 @@ void RestoreMgr::restoreMetadata()
 }
 
 void RestoreMgr::restoreSegment(char* workspace,
-        LogArchiver::ArchiveScanner::RunMerger* merger, shpid_t firstPage)
+        LogArchiver::ArchiveScanner::RunMerger* merger, PageID firstPage)
 {
     stopwatch_t timer;
 
     generic_page* page = (generic_page*) workspace;
     fixable_page_h fixable;
-    shpid_t current = firstPage;
-    shpid_t prevPage = 0;
+    PageID current = firstPage;
+    PageID prevPage = 0;
     size_t redone = 0;
     bool virgin = false;
     unsigned segment = getSegmentForPid(firstPage);
@@ -505,14 +503,13 @@ void RestoreMgr::restoreSegment(char* workspace,
     while (merger->next(lr)) {
         DBGOUT4(<< "Would restore " << *lr);
 
-        lpid_t lrpid = lr->construct_pid();
-        w_assert1(lrpid.vol() == volume->vid());
-        w_assert1(lrpid.page >= firstPage);
-        w_assert1(lrpid.page >= prevPage);
+        PageID lrpid = lr->pid();
+        w_assert1(lrpid >= firstPage);
+        w_assert1(lrpid >= prevPage);
 
         ADD_TSTAT(restore_log_volume, lr->length());
 
-        while (lrpid.page > current) {
+        while (lrpid > current) {
             // Done with current page -- move to next
             virgin = !volume->is_allocated_page(current);
             if (!virgin) {
@@ -522,7 +519,7 @@ void RestoreMgr::restoreSegment(char* workspace,
             current++;
             page++;
 
-            if (lrpid.page > lastUsedPid || getSegmentForPid(current) != segment) {
+            if (lrpid > lastUsedPid || getSegmentForPid(current) != segment) {
                 // Time to move to a new segment (multiple-segment restore)
                 ADD_TSTAT(restore_time_replay, timer.time_us());
 
@@ -531,12 +528,12 @@ void RestoreMgr::restoreSegment(char* workspace,
                 finishSegment(workspace, segment, count);
                 ADD_TSTAT(restore_time_write, timer.time_us());
 
-                segment = getSegmentForPid(lrpid.page);
+                segment = getSegmentForPid(lrpid);
 
                 // If segment already restored or someone is waiting in the
                 // scheduler, terminate earlier. We also don't have to replay
                 // pages created after the failure.
-                if (!scheduler->isSinglePass() || lrpid.page > lastUsedPid
+                if (!scheduler->isSinglePass() || lrpid > lastUsedPid
                         || replayedBitmap->get(segment)
                         || (preemptive && scheduler->hasWaitingRequest()))
                 {
@@ -556,16 +553,16 @@ void RestoreMgr::restoreSegment(char* workspace,
 
         }
 
-        w_assert1(lrpid.page < firstPage + segmentSize);
+        w_assert1(lrpid < firstPage + segmentSize);
 
         if (virgin) {
             DBG3(<< "Skipped virgin page " << current);
             continue;
         }
 
-        w_assert1(page->pid.page == 0 || page->pid.page == current);
+        w_assert1(page->pid == 0 || page->pid == current);
 
-        if (!fixable.is_fixed() || fixable.pid().page != lrpid.page) {
+        if (!fixable.is_fixed() || fixable.pid() != lrpid) {
             // PID is manually set for virgin pages
             // this guarantees correct redo of multi-page logrecs
             if (page->pid != lrpid) {
@@ -588,7 +585,7 @@ void RestoreMgr::restoreSegment(char* workspace,
         fixable.update_initial_and_last_lsn(lr->lsn_ck());
         fixable.update_clsn(lr->lsn_ck());
 
-        prevPage = lrpid.page;
+        prevPage = lrpid;
         redone++;
 
         virgin = false;
@@ -618,8 +615,8 @@ void RestoreMgr::restoreLoop()
     stopwatch_t timer;
 
     while (numRestoredPages < lastUsedPid) {
-        shpid_t requested = scheduler->next();
-        if (requested == shpid_t(0)) {
+        PageID requested = scheduler->next();
+        if (requested == PageID(0)) {
             // no page available for now
             usleep(2000); // 2 ms
             continue;
@@ -629,7 +626,7 @@ void RestoreMgr::restoreLoop()
 
         // FOR EACH SEGMENT
         unsigned segment = getSegmentForPid(requested);
-        shpid_t firstPage = getPidForSegment(segment);
+        PageID firstPage = getPidForSegment(segment);
 
         if (firstPage + segmentSize <= firstDataPid) {
             continue;
@@ -644,9 +641,8 @@ void RestoreMgr::restoreLoop()
         char* workspace = backup->fix(segment);
         ADD_TSTAT(restore_time_read, timer.time_us());
 
-        lpid_t startPID = lpid_t(volume->vid(), firstPage);
-        lpid_t endPID = preemptive ? lpid_t::null
-                : lpid_t(volume->vid(), firstPage + segmentSize);
+        PageID startPID = firstPage;
+        PageID endPID = preemptive ? 0 : firstPage + segmentSize;
 
         size_t actualSegmentSize = segmentSize;
         if (firstPage < firstDataPid) {
@@ -662,7 +658,7 @@ void RestoreMgr::restoreLoop()
                 INC_TSTAT(restore_skipped_segs);
                 continue;
             }
-            startPID = lpid_t(volume->vid(), firstDataPid);
+            startPID = firstDataPid;
             actualSegmentSize -= firstDataPid % segmentSize;
         }
 
@@ -716,19 +712,19 @@ void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
     if (reuseRestoredBuffer && count > 0) {
         spinlock_write_critical_section cs(&requestMutex);
 
-        shpid_t firstPage = getPidForSegment(segment);
+        PageID firstPage = getPidForSegment(segment);
 
         for (size_t i = 0; i < count; i++) {
-            map<shpid_t, generic_page*>::iterator pos =
+            map<PageID, generic_page*>::iterator pos =
                 bufferedRequests.find(firstPage + i);
 
             if (pos != bufferedRequests.end()) {
                 char* wpage = workspace + (sizeof(generic_page) * i);
 
-                w_assert1(((generic_page*) wpage)->pid.page ==
+                w_assert1(((generic_page*) wpage)->pid ==
                         firstPage + i);
                 memcpy(pos->second, wpage, sizeof(generic_page));
-                w_assert1(pos->second->pid.page == firstPage + i);
+                w_assert1(pos->second->pid == firstPage + i);
 
                 DBGTHRD(<< "Deleting request " << pos->first);
                 bufferedRequests.erase(pos);
@@ -760,7 +756,7 @@ void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
 void RestoreMgr::writeSegment(char* workspace, unsigned segment, size_t count)
 {
     if (count > 0) {
-        shpid_t firstPage = getPidForSegment(segment);
+        PageID firstPage = getPidForSegment(segment);
         w_assert0(count <= segmentSize);
         w_assert1(getPidForSegment(segment+1) > firstDataPid);
 
@@ -799,7 +795,7 @@ void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        log_restore_segment(volume->vid(), segment);
+        log_restore_segment(segment);
         smlevel_0::log->flush(smlevel_0::log->curr_lsn());
         ssx.end_sys_xct(RCOK);
     }
@@ -872,7 +868,7 @@ void RestoreMgr::run()
     w_assert1(bufferedRequests.size() == 0);
 
     sys_xct_section_t ssx(true);
-    log_restore_end(volume->vid());
+    log_restore_end();
     ssx.end_sys_xct(RCOK);
 }
 

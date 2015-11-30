@@ -27,7 +27,7 @@
 const int16_t NOCHECK_ROOT_LEVEL = -1;
 
 rc_t  btree_impl::_ux_verify_tree(
-        stid_t store, int hash_bits, bool &consistent)
+        StoreID store, int hash_bits, bool &consistent)
 {
     verification_context context (hash_bits);
 
@@ -38,8 +38,8 @@ rc_t  btree_impl::_ux_verify_tree(
     supremum.construct_posinfkey();
     btree_page_h rp;
     W_DO( rp.fix_root(store, LATCH_SH));
-    context.add_expectation(rp.pid().page, NOCHECK_ROOT_LEVEL, false, infimum);
-    context.add_expectation(rp.pid().page, NOCHECK_ROOT_LEVEL, true, supremum);
+    context.add_expectation(rp.pid(), NOCHECK_ROOT_LEVEL, false, infimum);
+    context.add_expectation(rp.pid(), NOCHECK_ROOT_LEVEL, true, supremum);
     W_DO (_ux_verify_tree_recurse(rp, context));
     rp.unfix();
     consistent = context.is_bitmap_clean();
@@ -51,7 +51,7 @@ rc_t  btree_impl::_ux_verify_tree(
 rc_t btree_impl::_ux_verify_tree_recurse(
         btree_page_h &parent, verification_context &context)
 {
-    lpid_t org_pid = parent.pid();
+    PageID org_pid = parent.pid();
 
     w_assert1(parent.is_latched());
     // feed this page itself
@@ -61,8 +61,8 @@ rc_t btree_impl::_ux_verify_tree_recurse(
     if (parent.is_node()) {
         for (slotid_t slot = -1; slot < parent.nrecs(); ++slot) {
             btree_page_h child;
-            shpid_t child_pid_opaqueptr = slot == -1 ? parent.pid0_opaqueptr() : parent.child_opaqueptr(slot);
-            W_DO(child.fix_nonroot(parent, parent.vol(), child_pid_opaqueptr, LATCH_SH));
+            PageID child_pid_opaqueptr = slot == -1 ? parent.pid0_opaqueptr() : parent.child_opaqueptr(slot);
+            W_DO(child.fix_nonroot(parent, child_pid_opaqueptr, LATCH_SH));
             W_DO(_ux_verify_tree_recurse (child, context));
         }
     }
@@ -77,7 +77,7 @@ rc_t btree_impl::_ux_verify_tree_recurse(
 
     if (parent.get_foster() != 0) {
         btree_page_h child;
-        W_DO(child.fix_nonroot(parent, parent.vol(), parent.get_foster_opaqueptr(), LATCH_SH));
+        W_DO(child.fix_nonroot(parent, parent.get_foster_opaqueptr(), LATCH_SH));
         parent.unfix();
         W_DO(_ux_verify_tree_recurse (child, context));
     }
@@ -99,26 +99,26 @@ rc_t btree_impl::_ux_verify_feed_page(
     if (!consistent) {
         ++context._pages_inconsistent;
 #if W_DEBUG_LEVEL > 1
-        cout << "verify: found an in-page inconsistency in page:" << page.pid().page << endl;
+        cout << "verify: found an in-page inconsistency in page:" << page.pid() << endl;
 #endif // W_DEBUG_LEVEL
     }
 
     // submit low-fence fact of this page
     int16_t fact_level = page.level();
-    if (page.pid().page == page.root().page) {
+    if (page.pid() == page.root()) {
         fact_level = NOCHECK_ROOT_LEVEL; // this avoids root level check (see _ux_verify_tree)
     }
-    context.add_fact(page.pid().page, fact_level, false,
+    context.add_fact(page.pid(), fact_level, false,
             page.get_fence_low_length(), page.get_fence_low_key());
 
     // then submit high-fence fact of this page, but
     if (page.get_foster()) {
         // in this case, we should submit chain-high-fence
-        context.add_fact(page.pid().page, fact_level, true,
+        context.add_fact(page.pid(), fact_level, true,
             page.get_chain_fence_high_length(), page.get_chain_fence_high_key());
     } else {
         // if this is right-most, the high-fence key is actually the high-fence
-        context.add_fact(page.pid().page, fact_level, true,
+        context.add_fact(page.pid(), fact_level, true,
             page.get_prefix_length(), page.get_prefix_key(),
             page.get_fence_high_length_noprefix(), page.get_fence_high_key_noprefix());
     }
@@ -126,14 +126,14 @@ rc_t btree_impl::_ux_verify_feed_page(
     // add expectation on children
     if (page.is_node()) {
         // check children. add expectation on them
-        lpid_t pid_next = page.pid();
-        pid_next.page = 0;
+        PageID pid_next = page.pid();
+        pid_next = 0;
         int16_t child_level = page.level() - 1;
 
         w_keystr_t key;
 
         w_assert1(page.pid0());
-        pid_next.page = page.pid0();
+        pid_next = page.pid0();
         context.add_expectation (page.pid0(), child_level, false,
                 page.get_fence_low_length(), page.get_fence_low_key());
         if (page.nrecs() == 0) {
@@ -148,15 +148,15 @@ rc_t btree_impl::_ux_verify_feed_page(
         }
 
         for (slotid_t slot = 0; slot < page.nrecs(); ++slot) {
-            pid_next.page = page.child(slot);
+            pid_next = page.child(slot);
             if (slot + 1 < page.nrecs()) {
                 // *next* separator key will be this slot's high and next slot's low
                 page.get_key(slot + 1, key);
-                context.add_expectation (pid_next.page, child_level, true, key);
+                context.add_expectation (pid_next, child_level, true, key);
                 context.add_expectation (page.child(slot + 1), child_level, false, key);
             } else {
                 //last child's high = parent's high
-                context.add_expectation (pid_next.page, child_level, true,
+                context.add_expectation (pid_next, child_level, true,
                     page.get_prefix_length(), page.get_prefix_key(),
                     page.get_fence_high_length_noprefix(), page.get_fence_high_key_noprefix());
             }
@@ -176,7 +176,7 @@ rc_t btree_impl::_ux_verify_feed_page(
 }
 
 
-void btree_impl::inquery_verify_init(stid_t store)
+void btree_impl::inquery_verify_init(StoreID store)
 {
     xct_t *x = xct();
     if (x == NULL || !x->is_inquery_verify())
@@ -194,7 +194,7 @@ void btree_impl::inquery_verify_fact(btree_page_h &page)
     if (x == NULL || !x->is_inquery_verify())
         return;
     inquery_verify_context_t &context = x->inquery_verify_context();
-    if (context.pids_inconsistent.find(page.pid().page) != context.pids_inconsistent.end()) {
+    if (context.pids_inconsistent.find(page.pid()) != context.pids_inconsistent.end()) {
         return;
     }
     ++context.pages_checked;
@@ -205,7 +205,7 @@ void btree_impl::inquery_verify_fact(btree_page_h &page)
     if (context.next_level != -1 && context.next_level != page.level()) {
         inconsistent = true;
     }
-    if (context.next_pid != page.pid().page) {
+    if (context.next_pid != page.pid()) {
         inconsistent = true;
     }
 
@@ -231,7 +231,7 @@ void btree_impl::inquery_verify_fact(btree_page_h &page)
 #if W_DEBUG_LEVEL>0
         cerr << "found an inconsistent page by in-query verification!! " << page.pid() << endl;
 #endif // W_DEBUG_LEVEL>0
-        context.pids_inconsistent.insert(page.pid().page);
+        context.pids_inconsistent.insert(page.pid());
     }
 }
 void btree_impl::inquery_verify_expect(btree_page_h &page, slot_follow_t next_follow)
@@ -294,7 +294,7 @@ verification_context::~verification_context ()
     _bitmap = NULL;
 }
 
-void verification_context::add_fact (shpid_t pid, int16_t level, bool high,
+void verification_context::add_fact (PageID pid, int16_t level, bool high,
     size_t prefix_len, const char* prefix, size_t suffix_len, const char* suffix)
 {
     w_assert1(pid);
@@ -317,7 +317,7 @@ void verification_context::add_fact (shpid_t pid, int16_t level, bool high,
 
 
 void verification_context::add_expectation (
-    shpid_t pid, int16_t level, bool high, size_t prefix_len, const char* prefix, size_t suffix_len, const char* suffix) {
+    PageID pid, int16_t level, bool high, size_t prefix_len, const char* prefix, size_t suffix_len, const char* suffix) {
     add_fact (pid, level, high, prefix_len, prefix, suffix_len, suffix);
 }
 
@@ -358,14 +358,14 @@ bool verification_context::is_bitmap_clean () const
 }
 
 rc_t btree_impl::_ux_verify_volume(
-    vid_t vid, int hash_bits, verify_volume_result &result)
+    int hash_bits, verify_volume_result &result)
 {
     W_DO(ss_m::force_volume()); // this might block if there is a concurrent transaction
     vol_t *vol = ss_m::vol;
     w_assert1(vol);
     generic_page buf;
-    shpid_t endpid = (shpid_t) (vol->num_used_pages());
-    for (shpid_t pid = vol->first_data_pageid(); pid < endpid; ++pid) {
+    PageID endpid = (PageID) (vol->num_used_pages());
+    for (PageID pid = vol->first_data_pageid(); pid < endpid; ++pid) {
         // TODO we should skip large chunks of unused areas to speedup.
         // TODO we should scan more than one page at a time to speedup.
         if (!vol->is_allocated_page(pid)) {
@@ -379,13 +379,13 @@ rc_t btree_impl::_ux_verify_volume(
             verification_context *context = result.get_or_create_context(1, hash_bits);
             W_DO (_ux_verify_feed_page (page, *context));
 
-            if (page.pid().page == page.root().page) {
+            if (page.pid() == page.root()) {
                 // root needs corresponding expectations from outside.
                 w_keystr_t infimum, supremum;
                 infimum.construct_neginfkey();
                 supremum.construct_posinfkey();
-                context->add_expectation(page.root().page, NOCHECK_ROOT_LEVEL, false, infimum);
-                context->add_expectation(page.root().page, NOCHECK_ROOT_LEVEL, true, supremum);
+                context->add_expectation(page.root(), NOCHECK_ROOT_LEVEL, false, infimum);
+                context->add_expectation(page.root(), NOCHECK_ROOT_LEVEL, true, supremum);
             }
         }
     }
@@ -397,7 +397,7 @@ verify_volume_result::verify_volume_result ()
 }
 verify_volume_result::~verify_volume_result()
 {
-    for (std::map<snum_t, verification_context*>::iterator iter = _results.begin();
+    for (std::map<StoreID, verification_context*>::iterator iter = _results.begin();
          iter != _results.end(); ++iter) {
         verification_context *context = iter->second;
         delete context;
@@ -406,7 +406,7 @@ verify_volume_result::~verify_volume_result()
 }
 verification_context*
 verify_volume_result::get_or_create_context (
-    snum_t store_id, int hash_bits)
+    StoreID store_id, int hash_bits)
 {
     verification_context *context = get_context(store_id);
     if (context != NULL) {
@@ -414,13 +414,13 @@ verify_volume_result::get_or_create_context (
     } else {
         // this store_id is first seen. let's create
         context = new verification_context (hash_bits);
-        _results.insert(std::pair<snum_t, verification_context*>(store_id, context));
+        _results.insert(std::pair<StoreID, verification_context*>(store_id, context));
         return context;
     }
 }
-verification_context* verify_volume_result::get_context (snum_t store_id)
+verification_context* verify_volume_result::get_context (StoreID store_id)
 {
-    std::map<snum_t, verification_context*>::const_iterator iter = _results.find(store_id);
+    std::map<StoreID, verification_context*>::const_iterator iter = _results.find(store_id);
     if (iter != _results.end()) {
         return iter->second;
     } else {

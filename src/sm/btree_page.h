@@ -62,13 +62,13 @@ protected:
      * stnode_cache_t associated with the volume pid.vol() by looking
      * up store pid.store().
      */
-    shpid_t btree_root;                         // +4 -> 4
+    PageID btree_root;                         // +4 -> 4
 
     /// First child pointer in non-leaf nodes.
-    shpid_t btree_pid0;                         // +4 -> 8
+    PageID btree_pid0;                         // +4 -> 8
 
     /// Foster link page ID (0 if not linked).
-    shpid_t btree_foster;                       // +4 -> 12
+    PageID btree_foster;                       // +4 -> 12
 
     /**
      * Level of this node in the B-tree, starting from the bottom
@@ -173,7 +173,7 @@ protected:
      * target for atomic operations.
      * @pre this is an interior page
      */
-    shpid_t&      item_child(int item);
+    PageID&      item_child(int item);
 
     /**
      * return a pointer to the variable-length data of the given item
@@ -208,7 +208,7 @@ protected:
      * The new item's variable-length data is allocated but not
      * initialized.
      */
-    bool          insert_item(int item, bool ghost, poor_man_key poor, shpid_t child,
+    bool          insert_item(int item, bool ghost, poor_man_key poor, PageID child,
                               size_t data_length);
 
     /**
@@ -226,7 +226,7 @@ protected:
      * poor_man_key data poor, child child, and variable-length data
      * data.  child must be 0 if this is a leaf page.
      */
-    bool          insert_item(int item, bool ghost, poor_man_key poor, shpid_t child,
+    bool          insert_item(int item, bool ghost, poor_man_key poor, PageID child,
                               const cvec_t& data);
 
     /**
@@ -352,7 +352,7 @@ protected:
     bool         robust_is_leaf()            const;
     int          robust_number_of_items()    const;
     poor_man_key robust_item_poor(int item)  const;
-    shpid_t      robust_item_child(int item) const;
+    PageID      robust_item_child(int item) const;
     /// Robust combo of item_data and item_length
     const char* robust_item_data(int item, size_t& length) const;
 
@@ -449,7 +449,7 @@ private:
                 char          item_data[6];
             } leaf;
             struct {
-                shpid_t       child;
+                PageID       child;
                 item_length_t item_len;
                 /// really of size item_len - sizeof(item_len) - sizeof(child):
                 char          item_data[2];
@@ -470,7 +470,7 @@ private:
         /** Bytes that should be subtracted from item_len for actual data in leaf. */
         leaf_overhead = sizeof(item_length_t),
         /** Bytes that should be subtracted from item_len for actual data in interior. */
-        interior_overhead = sizeof(item_length_t) + sizeof(shpid_t),
+        interior_overhead = sizeof(item_length_t) + sizeof(PageID),
     };
 
     union {
@@ -619,7 +619,7 @@ inline btree_page_data::poor_man_key btree_page_data::item_poor(int item) const 
     return head[item].poor;
 }
 
-inline shpid_t& btree_page_data::item_child(int item) {
+inline PageID& btree_page_data::item_child(int item) {
     w_assert1(item>=0 && item<nitems);
     w_assert1(!is_leaf());
 
@@ -721,7 +721,7 @@ inline btree_page_data::poor_man_key btree_page_data::robust_item_poor(int item)
     return ACCESS_ONCE(head[item].poor);
 }
 
-inline shpid_t btree_page_data::robust_item_child(int item) const {
+inline PageID btree_page_data::robust_item_child(int item) const {
     w_assert1(item>=0 && item<max_heads);
 
     // int type here to avoid overflow issues

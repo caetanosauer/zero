@@ -148,10 +148,10 @@ public:
     /** total count of pages checked (includes checks of same page). */
     int32_t pages_checked;
     /** ID of pages that had some inconsistency. */
-    std::set<shpid_t> pids_inconsistent;
+    std::set<PageID> pids_inconsistent;
 
     /** expected next page id. */
-    shpid_t next_pid;
+    PageID next_pid;
     /** expected next page level. -1 means "don't check" (only for root page). */
     int16_t next_level;
     /** expected next fence-low key. */
@@ -167,10 +167,10 @@ public:
  */
 class stid_list_elem_t  {
     public:
-    stid_t        stid;
+    StoreID        stid;
     w_link_t    _link;
 
-    stid_list_elem_t(const stid_t& theStid)
+    stid_list_elem_t(const StoreID& theStid)
         : stid(theStid)
         {};
     ~stid_list_elem_t()
@@ -457,8 +457,8 @@ public:
     //
     //        Used by I/O layer
     //
-    void                        AddStoreToFree(const stid_t& stid);
-    void                        AddLoadStore(const stid_t& stid);
+    void                        AddStoreToFree(const StoreID& stid);
+    void                        AddLoadStore(const StoreID& stid);
     //        Used by vol.cpp
     void                        set_alloced() { }
 

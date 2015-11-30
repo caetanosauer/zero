@@ -36,11 +36,12 @@ DECLARE_TLS(block_alloc<generic_page>, scratch_space_pool);
  */
 
 struct SprScratchSpace {
-    SprScratchSpace(vid_t vol, snum_t store, shpid_t pid) {
+    SprScratchSpace(StoreID store, PageID pid) {
         p = new (*scratch_space_pool) generic_page();
         ::memset(p, 0, sizeof(generic_page));
         p->tag = t_btree_p;
-        p->pid = lpid_t(stid_t(vol, store), pid);
+        p->store = store;
+        p->pid = pid;
         p->lsn = lsn_t::null;
     }
     ~SprScratchSpace() { scratch_space_pool->destroy_object(p); }
@@ -48,23 +49,23 @@ struct SprScratchSpace {
 };
 
 struct btree_insert_t {
-    shpid_t     root_shpid;
+    PageID     root_shpid;
     uint16_t    klen;
     uint16_t    elen;
     bool        sys_txn;   // True if the insertion was from a page rebalance full logging operation
-    char        data[logrec_t::max_data_sz - sizeof(shpid_t) - 2*sizeof(int16_t) - sizeof(bool)];
+    char        data[logrec_t::max_data_sz - sizeof(PageID) - 2*sizeof(int16_t) - sizeof(bool)];
 
     btree_insert_t(const btree_page_h& page, const w_keystr_t& key,
                    const cvec_t& el, bool is_sys_txn);
-    int size()        { return sizeof(shpid_t) + 2*sizeof(int16_t) + klen + elen + sizeof(bool); }
+    int size()        { return sizeof(PageID) + 2*sizeof(int16_t) + klen + elen + sizeof(bool); }
 };
 
 struct btree_update_t {
-    shpid_t     _root_shpid;
+    PageID     _root_shpid;
     uint16_t    _klen;
     uint16_t    _old_elen;
     uint16_t    _new_elen;
-    char        _data[logrec_t::max_data_sz - sizeof(shpid_t) - 3*sizeof(int16_t)];
+    char        _data[logrec_t::max_data_sz - sizeof(PageID) - 3*sizeof(int16_t)];
 
     btree_update_t(const btree_page_h& page, const w_keystr_t& key,
                    const char* old_el, int old_elen, const cvec_t& new_el) {
@@ -76,15 +77,15 @@ struct btree_update_t {
         ::memcpy (_data + _klen, old_el, old_elen);
         new_el.copy_to(_data + _klen + _old_elen);
     }
-    int size()        { return sizeof(shpid_t) + 3*sizeof(int16_t) + _klen + _old_elen + _new_elen; }
+    int size()        { return sizeof(PageID) + 3*sizeof(int16_t) + _klen + _old_elen + _new_elen; }
 };
 
 struct btree_overwrite_t {
-    shpid_t     _root_shpid;
+    PageID     _root_shpid;
     uint16_t    _klen;
     uint16_t    _offset;
     uint16_t    _elen;
-    char        _data[logrec_t::max_data_sz - sizeof(shpid_t) - 3*sizeof(int16_t)];
+    char        _data[logrec_t::max_data_sz - sizeof(PageID) - 3*sizeof(int16_t)];
 
     btree_overwrite_t(const btree_page_h& page, const w_keystr_t& key,
             const char* old_el, const char *new_el, size_t offset, size_t elen) {
@@ -96,11 +97,11 @@ struct btree_overwrite_t {
         ::memcpy (_data + _klen, old_el + offset, elen);
         ::memcpy (_data + _klen + elen, new_el, elen);
     }
-    int size()        { return sizeof(shpid_t) + 3*sizeof(int16_t) + _klen + _elen * 2; }
+    int size()        { return sizeof(PageID) + 3*sizeof(int16_t) + _klen + _elen * 2; }
 };
 
 struct btree_ghost_t {
-    shpid_t       root_shpid;
+    PageID       root_shpid;
     uint16_t      sys_txn:1,      // 1 if the insertion was from a page rebalance full logging operation
                   cnt:15;
     uint16_t      prefix_offset;
@@ -109,12 +110,12 @@ struct btree_ghost_t {
     // this is analogous to BTree page structure on purpose.
     // by doing so, we can guarantee the total size is <data_sz.
     // because one log should be coming from just one page.
-    char          slot_data[logrec_t::max_data_sz - sizeof(shpid_t)
+    char          slot_data[logrec_t::max_data_sz - sizeof(PageID)
                         - sizeof(uint16_t) * 2 - sizeof(size_t)];
 
     btree_ghost_t(const btree_page_h& p, const vector<slotid_t>& slots, const bool is_sys_txn);
     w_keystr_t get_key (size_t i) const;
-    int size() { return sizeof(shpid_t) + sizeof(uint16_t) * 2 + sizeof(size_t) + total_data_size; }
+    int size() { return sizeof(PageID) + sizeof(uint16_t) * 2 + sizeof(size_t) + total_data_size; }
 };
 
 struct btree_ghost_reserve_t {
@@ -133,8 +134,8 @@ struct btree_ghost_reserve_t {
  */
 struct btree_norec_alloc_t : public multi_page_log_t {
     btree_norec_alloc_t(const btree_page_h &p,
-        shpid_t new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high);
-    shpid_t     _root_pid, _foster_pid;       // +4+4 => 8
+        PageID new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high);
+    PageID     _root_pid, _foster_pid;       // +4+4 => 8
     lsn_t       _foster_emlsn;                // +8   => 16
     uint16_t    _fence_len, _chain_high_len;  // +2+2 => 20
     int16_t     _btree_level;                 // +2   => 22
@@ -154,7 +155,7 @@ struct btree_norec_alloc_t : public multi_page_log_t {
  * This log is \b NOT-self-contained, so it assumes WOD (foster-child is deleted later).
  */
 struct btree_foster_merge_t : multi_page_log_t {
-    shpid_t         _foster_pid0;        // +4 => 4, foster page ID (destination page)
+    PageID         _foster_pid0;        // +4 => 4, foster page ID (destination page)
     lsn_t           _foster_pid0_emlsn;  // +8 => 12, foster emlsn (destination page)
     uint16_t        _high_len;           // +2 => 14, high key length
     uint16_t        _chain_high_len;     // +2 => 16, chain_high key length
@@ -168,8 +169,8 @@ struct btree_foster_merge_t : multi_page_log_t {
     // one log record
     char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 24];
 
-    btree_foster_merge_t(shpid_t page2_id, const w_keystr_t& high, const w_keystr_t& chain_high,
-        shpid_t foster_pid0, lsn_t foster_pid0_emlsn, const int16_t prefix_len,
+    btree_foster_merge_t(PageID page2_id, const w_keystr_t& high, const w_keystr_t& chain_high,
+        PageID foster_pid0, lsn_t foster_pid0_emlsn, const int16_t prefix_len,
         const int32_t move_count, const smsize_t record_data_len, const cvec_t& record_data);
     int size() const { return sizeof(multi_page_log_t) + 24 + _high_len + _chain_high_len + _record_data_len; }
 };
@@ -180,7 +181,7 @@ struct btree_foster_merge_t : multi_page_log_t {
  */
 struct btree_foster_rebalance_t : multi_page_log_t {
     int32_t         _move_count;         // +4 => 4, number of records to move
-    shpid_t         _new_pid0;           // +4 => 8, non-leaf node only
+    PageID         _new_pid0;           // +4 => 8, non-leaf node only
     lsn_t           _new_pid0_emlsn;     // +8 => 16, non-leaf node only
     uint16_t        _fence_len;          // +2 => 18, fence key length
     uint16_t        _high_len;           // +2 => 20, high key length
@@ -194,8 +195,8 @@ struct btree_foster_rebalance_t : multi_page_log_t {
     // space in one log record
     char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 26];
 
-    btree_foster_rebalance_t(shpid_t page2_id, const w_keystr_t& fence,
-            shpid_t new_pid0, lsn_t new_pid0_emlsn, const w_keystr_t& high, const w_keystr_t& chain_high,
+    btree_foster_rebalance_t(PageID page2_id, const w_keystr_t& fence,
+            PageID new_pid0, lsn_t new_pid0_emlsn, const w_keystr_t& high, const w_keystr_t& chain_high,
             const int16_t prefix_len, const int32_t move_count,
             const smsize_t record_data_len, const cvec_t& record_data);
     int size() const { return sizeof(multi_page_log_t) + 26 + _fence_len + _high_len + _chain_high_len + _record_data_len; }
@@ -225,11 +226,11 @@ struct btree_foster_rebalance_norec_t : multi_page_log_t {
  */
 struct btree_foster_adopt_t : multi_page_log_t {
     lsn_t   _new_child_emlsn;   // +8
-    shpid_t _new_child_pid;     // +4
+    PageID _new_child_pid;     // +4
     int16_t _new_child_key_len; // +2
     char    _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 14];
 
-    btree_foster_adopt_t(shpid_t page2_id, shpid_t new_child_pid,
+    btree_foster_adopt_t(PageID page2_id, PageID new_child_pid,
                          lsn_t new_child_emlsn, const w_keystr_t& new_child_key);
     int size() const { return sizeof(multi_page_log_t) + 14 + _new_child_key_len; }
 };
@@ -239,13 +240,13 @@ struct btree_foster_adopt_t : multi_page_log_t {
  * This log is totally \b self-contained, so no WOD assumed.
  */
 struct btree_foster_deadopt_t : multi_page_log_t {
-    shpid_t     _deadopted_pid;         // +4
+    PageID     _deadopted_pid;         // +4
     int32_t     _foster_slot;           // +4
     lsn_t       _deadopted_emlsn;       // +8
     uint16_t    _low_len, _high_len;    // +2+2
     char        _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) + 20];
 
-    btree_foster_deadopt_t(shpid_t page2_id, shpid_t deadopted_pid, lsn_t deadopted_emlsn,
+    btree_foster_deadopt_t(PageID page2_id, PageID deadopted_pid, lsn_t deadopted_emlsn,
     int32_t foster_slot, const w_keystr_t &low, const w_keystr_t &high);
     // CS TODO -- why 12 and not 20???
     int size() const { return sizeof(multi_page_log_t) + 12 + _low_len + _high_len ; }
@@ -262,16 +263,16 @@ struct btree_bulk_delete_t : public multi_page_log_t {
     uint16_t new_chain_len;
     fill2 _fill;
 
-    shpid_t new_foster_child;
+    PageID new_foster_child;
 
     enum {
         fields_sz = sizeof(multi_page_log_t)
             + sizeof(uint16_t) * 4 // 3 uints + fill
-            + sizeof(shpid_t)
+            + sizeof(PageID)
     };
     char _data[logrec_t::max_data_sz - fields_sz];
 
-    btree_bulk_delete_t(shpid_t foster_parent, shpid_t new_foster_child,
+    btree_bulk_delete_t(PageID foster_parent, PageID new_foster_child,
             uint16_t move_count, const w_keystr_t& new_high_fence,
             const w_keystr_t& new_chain)
         :   multi_page_log_t(foster_parent),

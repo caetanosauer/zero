@@ -5,6 +5,7 @@
 #ifndef BF_HASHTABLE_H
 #define BF_HASHTABLE_H
 
+#include "basics.h"
 #include "w_defines.h"
 #include "bf_idx.h"
 #include <utility>
@@ -53,7 +54,7 @@ public:
      * Returns the bf_idx linked to the given key (volume and page ID, see bf_key() in bf_tree.cpp).
      * If the key doesn't exist in this bufferpool, returns 0 (invalid bf_idx).
      */
-    bool      lookup(uint64_t key, T& value) const;
+    bool      lookup(PageID key, T& value) const;
 
     /**
      * Imprecise-but-fast version of lookup().
@@ -61,25 +62,25 @@ public:
      * are possible. The caller must make sure false-positives/negatives won't cause an issue.
      * This is so far used from eviction routine, which doesn't have to be precise.
      */
-    bool      lookup_imprecise(uint64_t key, T& value) const;
+    bool      lookup_imprecise(PageID key, T& value) const;
 
     /**
     * Insert the key in the _table and link it with the given bf_idx.
     * if the given key already exists, this method doesn't change anything and returns false.
     */
-    bool        insert_if_not_exists(uint64_t key, T value);
+    bool        insert_if_not_exists(PageID key, T value);
 
     /**
      * Updates the value associated with the given key. Returns false if key
      * is not found.
      */
-    bool        update(uint64_t key, T value);
+    bool        update(PageID key, T value);
 
     /**
      * Removes the key from the _table.
      * Returns if the pageID existed or not.
      */
-    bool        remove(uint64_t key);
+    bool        remove(PageID key);
 
 private:
     uint32_t            _size;

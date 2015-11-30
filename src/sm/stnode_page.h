@@ -30,7 +30,7 @@ struct stnode_t {
      * the special store number 0, which is used to keep track of the last
      * extent allocated which was not assigned to a specific store.
      */
-    shpid_t         root;      // +4 -> 4
+    PageID         root;      // +4 -> 4
 
     /**
      * Last extend occupied by this store; 0 if store does not use exclusive
@@ -55,14 +55,14 @@ public:
         / sizeof(stnode_t);
 
     // Page ID used by the stnode page
-    static const shpid_t stpid = shpid_t(1);
+    static const PageID stpid = 1;
 
     stnode_t get(size_t index) const {
         w_assert1(index < max);
         return stnode[index];
     }
 
-    void set_root(size_t index, shpid_t root) {
+    void set_root(size_t index, PageID root) {
         w_assert1(index < max);
         stnode[index].root = root;
     }
@@ -75,9 +75,9 @@ public:
 
     lsn_t getBackupLSN() { return backupLSN; }
 
-    void format_empty(vid_t vid) {
+    void format_empty() {
         memset(this, 0, sizeof(generic_page_header));
-        pid = lpid_t(vid, stnode_page::stpid);
+        pid = stnode_page::stpid;
 
         backupLSN = lsn_t(0,0);
         memset(&stnode, 0, sizeof(stnode_t) * max);
@@ -120,21 +120,19 @@ public:
      * If that store isn't allocated, returns 0.
      * @param[in] store Store ID.
      */
-    shpid_t get_root_pid(snum_t store) const;
+    PageID get_root_pid(StoreID store) const;
 
-    bool is_allocated(snum_t store) const;
+    bool is_allocated(StoreID store) const;
 
     /// Make a copy of the entire stnode_t of the given store.
-    stnode_t get_stnode(snum_t store) const;
+    stnode_t get_stnode(StoreID store) const;
 
-    /// Returns the snum_t of all allocated stores in the volume.
-    void get_used_stores(std::vector<snum_t>&) const;
+    /// Returns the StoreID of all allocated stores in the volume.
+    void get_used_stores(std::vector<StoreID>&) const;
 
-    rc_t sx_create_store(shpid_t root_pid, snum_t& snum, bool redo = false);
+    rc_t sx_create_store(PageID root_pid, StoreID& snum, bool redo = false);
 
-    rc_t sx_append_extent(snum_t snum, extent_id_t ext, bool redo = false);
-
-    vid_t get_vid() const { return _vid; }
+    rc_t sx_append_extent(StoreID snum, extent_id_t ext, bool redo = false);
 
 private:
     /// all operations in this object except get_root_pid are protected by this latch
@@ -143,12 +141,10 @@ private:
     // CS TODO: not needed with decoupled propagation (Merge Lucas' branch)
     stnode_page _stnode_page;        /// The stnode_page of the volume we are caching
 
-    vid_t _vid;
-
-    /// Returns the first snum_t that can be used for a new store in
+    /// Returns the first StoreID that can be used for a new store in
     /// this volume or stnode_page::max if all available stores of
     /// this volume are already allocated.
-    snum_t get_min_unused_store_ID() const;
+    StoreID get_min_unused_store_ID() const;
 
     // CS TODO: not needed with decoupled propagation (Merge Lucas' branch)
     rc_t write_stnode_page();

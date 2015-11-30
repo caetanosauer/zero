@@ -5,7 +5,6 @@
 #include "w_defines.h"
 #include "w_base.h"
 #include "basics.h"
-#include "sm_s.h"
 #include "w_hashing.h"
 #include "logbuf_hashtable.h"
 #include "latch.h"
@@ -36,7 +35,7 @@ struct logbuf_hashbucket_chunk_linked {
     logbuf_seg **values;
     uint64_t *keys;
     logbuf_hashbucket_chunk_linked *next_chunk;
-    
+
     void delete_chain() {
         if (next_chunk != NULL) {
             next_chunk->delete_chain();
@@ -57,7 +56,7 @@ struct logbuf_hashbucket_chunk {
     uint64_t keys[HASHBUCKET_INITIAL_CHUNK_SIZE];
     /** chains to next chunk if (as a rare occasion) this chunk is not enough. */
     logbuf_hashbucket_chunk_linked* next_chunk;
-    
+
     void delete_chain() {
         if (next_chunk != NULL) {
             next_chunk->delete_chain();
@@ -85,7 +84,7 @@ private:
     logbuf_hashbucket(); // prohibited (not implemented). this class should be bulk-initialized by memset
 };
 
-logbuf_seg* logbuf_hashbucket::find(uint64_t key) { 
+logbuf_seg* logbuf_hashbucket::find(uint64_t key) {
     spinlock_read_critical_section cs(&_lock);
 
     //first, take a look at initial chunk
@@ -193,7 +192,7 @@ bool logbuf_hashbucket::remove (uint64_t key) {
             cur_chunk->keys[cur_chunk->size - 1] = cur_chunk->next_chunk->keys[0];
         }
     }
-    
+
     if (found) {
         --_used_count;
     }
@@ -212,7 +211,7 @@ logbuf_hashtable::~logbuf_hashtable() {
         }
         delete[] reinterpret_cast<char*>(_table);
     }
-} 
+}
 
 bool logbuf_hashtable::insert_if_not_exists(uint64_t key, logbuf_seg *value) {
     uint32_t hash = logbuf_hash(key);

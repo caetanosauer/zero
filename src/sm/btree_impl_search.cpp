@@ -22,7 +22,7 @@
 #include "xct.h"
 
 rc_t
-btree_impl::_ux_lookup(stid_t store, const w_keystr_t& key, bool& found,
+btree_impl::_ux_lookup(StoreID store, const w_keystr_t& key, bool& found,
                        void* el, smsize_t& elen) {
     FUNC(btree_impl::_ux_lookup);
     INC_TSTAT(bt_find_cnt);
@@ -36,7 +36,7 @@ btree_impl::_ux_lookup(stid_t store, const w_keystr_t& key, bool& found,
 }
 
 rc_t
-btree_impl::_ux_lookup_core(stid_t store, const w_keystr_t& key, 
+btree_impl::_ux_lookup_core(StoreID store, const w_keystr_t& key,
                             bool& found, void* el, smsize_t& elen) {
     bool need_lock     = g_xct_does_need_lock();
     bool ex_for_select = g_xct_does_ex_lock_for_select();
@@ -69,7 +69,7 @@ btree_impl::_ux_lookup_core(stid_t store, const w_keystr_t& key,
             ex_for_select ? create_part_okvl(okvl_mode::X, key) : create_part_okvl(okvl_mode::S, key), false));
     }
 
-    // Copy the element 
+    // Copy the element
     // assume caller provided space
     w_assert1(el != NULL || elen == 0);
     bool ghost;
@@ -86,7 +86,7 @@ btree_impl::_ux_lookup_core(stid_t store, const w_keystr_t& key,
 }
 
 rc_t
-btree_impl::_ux_traverse(stid_t store, const w_keystr_t &key,
+btree_impl::_ux_traverse(StoreID store, const w_keystr_t &key,
                          traverse_mode_t traverse_mode, latch_mode_t leaf_latch_mode,
                          btree_page_h &leaf, bool allow_retry, const bool from_undo) {
     FUNC(btree_impl::_ux_traverse);
@@ -100,7 +100,7 @@ btree_impl::_ux_traverse(stid_t store, const w_keystr_t &key,
         w_assert1(traverse_mode != t_fence_low_match); // surely misuse
     }
 
-    shpid_t leaf_pid_causing_failed_upgrade = 0;
+    PageID leaf_pid_causing_failed_upgrade = 0;
     for (int times = 0; times < 20; ++times) { // arbitrary number
         inquery_verify_init(store); // initialize in-query verification
         btree_page_h root_p;
@@ -109,7 +109,7 @@ btree_impl::_ux_traverse(stid_t store, const w_keystr_t &key,
         // Root page is pre-loaded into buffer pool
         W_DO( root_p.fix_root(store, should_try_ex ? LATCH_EX : LATCH_SH, false, from_undo));
         w_assert1(root_p.is_fixed());
-        
+
         if (root_p.get_foster() != 0) {
             // root page has foster-child!  Let's grow the tree.
             if (root_p.latch_mode() != LATCH_EX) {
@@ -121,7 +121,7 @@ btree_impl::_ux_traverse(stid_t store, const w_keystr_t &key,
             continue;
         }
 
-        rc_t rc = _ux_traverse_recurse (root_p, key, traverse_mode, leaf_latch_mode, leaf, 
+        rc_t rc = _ux_traverse_recurse (root_p, key, traverse_mode, leaf_latch_mode, leaf,
                                         leaf_pid_causing_failed_upgrade, from_undo);
         if (rc.is_error()) {
             if (rc.err_num() == eGOODRETRY) {
@@ -155,14 +155,14 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
                                  btree_impl::traverse_mode_t  traverse_mode,
                                  latch_mode_t                 leaf_latch_mode,
                                  btree_page_h&                leaf,
-                                 shpid_t&                     leaf_pid_causing_failed_upgrade,
+                                 PageID&                     leaf_pid_causing_failed_upgrade,
                                  const bool                   from_undo) {
     FUNC(btree_impl::_ux_traverse_recurse);
     INC_TSTAT(bt_partial_traverse_cnt);
 
     /// cache the flag to avoid calling the functions each time
     bool do_inquery_verify = (xct() != NULL && xct()->is_inquery_verify());
-    
+
     leaf.unfix();
 
     // this part is now loop, not recursion to prevent the stack from growing too long
@@ -177,7 +177,7 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
         slot_follow_t slot_to_follow        = t_follow_invalid;
         _ux_traverse_search(traverse_mode, current, key,
                             this_is_the_leaf_page, slot_to_follow);
-        
+
         // Should be able to search that:
         //  (this_is_the_leaf_page && slot_to_follow==t_follow_invalid) ||
         //  (!this_is_the_leaf_page && slot_to_follow=!=t_follow_invalid)
@@ -188,41 +188,41 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
             if (leaf_latch_mode != LATCH_SH && leaf.latch_mode() != LATCH_EX) {
                 if (!leaf.upgrade_latch_conditional()) {
                     // can't get EX latch, so restart from the root
-                    DBGOUT2(<< ": latch update conflict at " << leaf.pid() 
+                    DBGOUT2(<< ": latch update conflict at " << leaf.pid()
                             << ". need restart from root!");
-                    leaf_pid_causing_failed_upgrade = leaf.pid().page;
+                    leaf_pid_causing_failed_upgrade = leaf.pid();
                     leaf.unfix();
                     return RC(eRETRY);
                 }
             }
             break; // done!
         }
-        
+
         if (do_inquery_verify) {
             inquery_verify_expect(*current, slot_to_follow); // adds expectation
         }
 
         // we only deal with opaque ptr here. Normalizing it to non-opaque version
         // was a few % in overall CPU profile (yes, a bit surprising).
-        shpid_t pid_to_follow_opaqueptr;
+        PageID pid_to_follow_opaqueptr;
         if (slot_to_follow == t_follow_foster) {
             pid_to_follow_opaqueptr = current->get_foster_opaqueptr();
         } else if (slot_to_follow == t_follow_pid0) {
             pid_to_follow_opaqueptr = current->pid0_opaqueptr();
         } else {
             pid_to_follow_opaqueptr = current->child_opaqueptr(slot_to_follow);
-        }    
+        }
 
-        // if worth it, do eager adoption.  If it actually did something, it returns 
+        // if worth it, do eager adoption.  If it actually did something, it returns
         // eGOODRETRY so that we will exit and retry
-        if ((current->level() >= 3 || 
+        if ((current->level() >= 3 ||
              (current->level() == 2 && slot_to_follow == t_follow_foster)) // next will be non-leaf
             && is_ex_recommended(pid_to_follow_opaqueptr)) { // next is VERY hot
             // note: is_ex_recommended is just a hint, so using opaque ptr is okay.
             // in most cases, the pid is always swizzled or always non-swizzled, thus accurate.
             W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow_opaqueptr, from_undo /*from_recovery*/));
         }
-        
+
         bool should_try_ex = false;
         if (leaf_latch_mode == LATCH_EX) {
             if (current->latch_mode() == LATCH_EX) { // we have EX latch; don't SH latch
@@ -241,10 +241,10 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
         }
 
         // Will load the page if page is not in buffer pool already
-        W_DO(next->fix_nonroot(*current, current->vol(), pid_to_follow_opaqueptr, 
+        W_DO(next->fix_nonroot(*current, pid_to_follow_opaqueptr,
                                should_try_ex ? LATCH_EX : LATCH_SH, false /*conditional*/,
                                false /*virgin_page*/, from_undo /*from_recovery*/));
-       
+
         if (slot_to_follow != t_follow_foster && next->get_foster() != 0) {
             // We followed a real-child pointer and found that it has foster... let's adopt it! (but
             // opportunistically).  Same as  eager adoption, retry if eGOODRETRY, otherwise go on
@@ -254,7 +254,7 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
         current->unfix();
         std::swap(current, next);
     }
-        
+
     return RCOK;
 }
 
@@ -299,7 +299,7 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
                 // follow left-most child.
                 slot_to_follow = t_follow_pid0;
             }
-        } else {       
+        } else {
             w_assert2(d > 0); // if d<0 (key<fence-low), we failed something
             if (current->compare_with_fence_high(key) >= 0) {
                 // key is even higher than fence-high, then there must be fostered page
@@ -348,9 +348,9 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
             slot_to_follow = (slot_follow_t) slot;
         }
     }
-} 
-rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current, 
-                                                   shpid_t next_pid, const bool from_recovery) {
+}
+rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current,
+                                                   PageID next_pid, const bool from_recovery) {
     w_assert1(current.is_fixed());
     queue_based_lock_t *mutex = mutex_for_high_contention(next_pid);
     w_assert1(mutex);
@@ -364,9 +364,9 @@ rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current,
             return RCOK;
         }
         btree_page_h next;
-        W_DO(next.fix_nonroot(current, current.vol(), next_pid, LATCH_EX, false /*conditional*/,
+        W_DO(next.fix_nonroot(current, next_pid, LATCH_EX, false /*conditional*/,
                                false /*virgin_page*/, from_recovery /*from_recovery*/));
-        
+
         // okay, now we got EX latch, but..
         if (!is_ex_recommended(next_pid)) {
             // same as above
@@ -378,7 +378,7 @@ rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current,
     }
     return RC(eGOODRETRY); // to be safe, let's restart.  this is anyway rare event
 }
-rc_t btree_impl::_ux_traverse_try_opportunistic_adopt(btree_page_h &current, 
+rc_t btree_impl::_ux_traverse_try_opportunistic_adopt(btree_page_h &current,
                                       btree_page_h &next, const bool from_recovery) {
     w_assert1(current.is_fixed());
     w_assert1(next.is_fixed());
@@ -390,6 +390,6 @@ rc_t btree_impl::_ux_traverse_try_opportunistic_adopt(btree_page_h &current,
         return RC(eGOODRETRY);
     } else {
         return RCOK; // go on
-    }           
-    
+    }
+
 }

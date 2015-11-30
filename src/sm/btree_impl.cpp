@@ -25,7 +25,7 @@
 
 rc_t
 btree_impl::_ux_insert(
-    stid_t store,
+    StoreID store,
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
@@ -42,7 +42,7 @@ btree_impl::_ux_insert(
 }
 rc_t
 btree_impl::_ux_insert_core(
-    stid_t store,
+    StoreID store,
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
@@ -53,7 +53,7 @@ btree_impl::_ux_insert_core(
     w_assert1( leaf.is_fixed());
     w_assert1( leaf.is_leaf());
     w_assert1( leaf.latch_mode() == LATCH_EX);
-    w_assert1( leaf.stid() == store);
+    w_assert1( leaf.store() == store);
 
     bool need_lock = g_xct_does_need_lock();
 
@@ -87,12 +87,12 @@ btree_impl::_ux_insert_core(
     // then, we need to create (or expand) a ghost record for this key as a preparation to insert.
     // first, make sure this page is enough spacious (a bit conservative test).
     while (!leaf.check_space_for_insert_leaf(key, el)
-        || (leaf.is_insertion_extremely_skewed_right() 
+        || (leaf.is_insertion_extremely_skewed_right()
             && leaf.check_chance_for_norecord_split(key)))
     {
         // See if there's room for the insert.
         // here, we start system transaction to split page
-        lpid_t new_page_id;
+        PageID new_page_id;
     DBG(<< "Insert triggering split on page:");
     DBG(<< leaf);
         W_DO( _sx_split_foster(leaf, new_page_id, key) );
@@ -103,8 +103,8 @@ btree_impl::_ux_insert_core(
             // because "leaf" is EX locked beforehand, no one
             // can have any latch on the new page, so we can always get this latch
             btree_page_h another_leaf; // latch coupling
-            w_assert1(leaf.get_foster() == new_page_id.page);
-            W_DO( another_leaf.fix_nonroot(leaf, leaf.vol(), new_page_id.page, LATCH_EX));
+            w_assert1(leaf.get_foster() == new_page_id);
+            W_DO( another_leaf.fix_nonroot(leaf, new_page_id, LATCH_EX));
             w_assert1(another_leaf.is_fixed());
             w_assert2(another_leaf.fence_contains(key));
             leaf = another_leaf;
@@ -124,8 +124,8 @@ btree_impl::_ux_insert_core(
         }
 
         // do it in one-go
-// TODO(Restart)...        
-DBGOUT3( << "&&&& Log for regular insertion, key: " << key);  
+// TODO(Restart)...
+DBGOUT3( << "&&&& Log for regular insertion, key: " << key);
 
 #ifdef USE_ATOMIC_COMMIT
         // Since an undo flag is not available here, this seems to be
@@ -152,7 +152,7 @@ DBGOUT3( << "&&&& Log for regular insertion, key: " << key);
 
 rc_t
 btree_impl::_ux_put(
-    stid_t store,
+    StoreID store,
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
@@ -167,7 +167,7 @@ btree_impl::_ux_put(
 }
 rc_t
 btree_impl::_ux_put_core(
-    stid_t store,
+    StoreID store,
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
@@ -187,7 +187,7 @@ btree_impl::_ux_put_core(
 
 
 rc_t
-btree_impl::_ux_get_page_and_status(stid_t store,
+btree_impl::_ux_get_page_and_status(StoreID store,
                         const w_keystr_t& key,
                                     bool& need_lock, slotid_t& slot, bool& found, bool& took_XN,
                                     bool& is_ghost, btree_page_h& leaf) {
@@ -219,7 +219,7 @@ btree_impl::_ux_get_page_and_status(stid_t store,
     }
     return RCOK;
 }
-rc_t btree_impl::_ux_insert_core_tail(stid_t store,
+rc_t btree_impl::_ux_insert_core_tail(StoreID store,
                                       const w_keystr_t& key, const cvec_t& el,
                                       bool& need_lock, slotid_t& slot, bool& found,
                                       bool& alreay_took_XN, bool& is_ghost, btree_page_h& leaf) {
@@ -243,7 +243,7 @@ rc_t btree_impl::_ux_insert_core_tail(stid_t store,
         || (leaf.is_insertion_extremely_skewed_right() && leaf.check_chance_for_norecord_split(key))) {
         // See if there's room for the insert.
         // here, we start system transaction to split page
-        lpid_t new_page_id;
+        PageID new_page_id;
         W_DO( _sx_split_foster(leaf, new_page_id, key) );
 
         // after split, should the old page contain the new tuple?
@@ -252,7 +252,7 @@ rc_t btree_impl::_ux_insert_core_tail(stid_t store,
             // because "leaf" is EX locked beforehand, no one
             // can have any latch on the new page, so we can always get this latch
             btree_page_h another_leaf; // latch coupling
-            W_DO( another_leaf.fix_nonroot(leaf, leaf.vol(), new_page_id.page, LATCH_EX) );
+            W_DO( another_leaf.fix_nonroot(leaf, new_page_id, LATCH_EX) );
             w_assert1(another_leaf.is_fixed());
             w_assert2(another_leaf.fence_contains(key));
             leaf = another_leaf;
@@ -306,7 +306,7 @@ rc_t btree_impl::_ux_reserve_ghost_core(btree_page_h &leaf, const w_keystr_t &ke
 }
 
 rc_t
-btree_impl::_ux_update(stid_t store, const w_keystr_t &key, const cvec_t &el, const bool undo)
+btree_impl::_ux_update(StoreID store, const w_keystr_t &key, const cvec_t &el, const bool undo)
 {
     while (true) {
         rc_t rc = _ux_update_core (store, key, el, undo);
@@ -319,7 +319,7 @@ btree_impl::_ux_update(stid_t store, const w_keystr_t &key, const cvec_t &el, co
 }
 
 rc_t
-btree_impl::_ux_update_core(stid_t store, const w_keystr_t &key, const cvec_t &el, const bool undo)
+btree_impl::_ux_update_core(StoreID store, const w_keystr_t &key, const cvec_t &el, const bool undo)
 {
     bool need_lock = g_xct_does_need_lock();
     btree_page_h         leaf;
@@ -384,7 +384,7 @@ btree_impl::_ux_update_core(stid_t store, const w_keystr_t &key, const cvec_t &e
 }
 
 rc_t
-btree_impl::_ux_update_core_tail(stid_t store,
+btree_impl::_ux_update_core_tail(StoreID store,
                                  const w_keystr_t &key, const cvec_t &el,
                                  bool& need_lock, slotid_t& slot, bool& found, bool& is_ghost,
                                  btree_page_h& leaf) {
@@ -428,7 +428,7 @@ btree_impl::_ux_update_core_tail(stid_t store,
 }
 
 rc_t btree_impl::_ux_overwrite(
-        stid_t store,
+        StoreID store,
         const w_keystr_t&                 key,
         const char *el, smsize_t offset, smsize_t elen,
         const bool undo)
@@ -444,7 +444,7 @@ rc_t btree_impl::_ux_overwrite(
 }
 
 rc_t btree_impl::_ux_overwrite_core(
-        stid_t store,
+        StoreID store,
         const w_keystr_t& key,
         const char *el, smsize_t offset, smsize_t elen, const bool undo)
 {
@@ -493,7 +493,7 @@ rc_t btree_impl::_ux_overwrite_core(
 }
 
 rc_t
-btree_impl::_ux_remove(stid_t store, const w_keystr_t &key, const bool undo)
+btree_impl::_ux_remove(StoreID store, const w_keystr_t &key, const bool undo)
 {
     FUNC(btree_impl::_ux_remove);
     INC_TSTAT(bt_remove_cnt);
@@ -508,21 +508,21 @@ btree_impl::_ux_remove(stid_t store, const w_keystr_t &key, const bool undo)
 }
 
 rc_t
-btree_impl::_ux_remove_core(stid_t store, const w_keystr_t &key, const bool undo)
+btree_impl::_ux_remove_core(StoreID store, const w_keystr_t &key, const bool undo)
 {
     // If called from 'remove_as_undo' to undo an insert operation, input parameter 'undo' ==  true.
     // This could be either transaction rollback or restart undo.
-    
-    // If the original insert operation was from a page split with full logging, the fence keys 
-    // were changed during page split, so the record we found would come from the destination 
+
+    // If the original insert operation was from a page split with full logging, the fence keys
+    // were changed during page split, so the record we found would come from the destination
     // page, not the source page.
-    // After page rebalance, the record in source page is a ghost and the record in destination page 
+    // After page rebalance, the record in source page is a ghost and the record in destination page
     // is a non-ghost.
     // Page split is a system transaction and we do not undo a system transaction operation,
     // so we should leave both old and the new records intact, do not make any physical change
     // and do not generate new log record during transaction abort/rollback.
     // The insert log record knowns whether the insertion came for page rebalance operation or not
-    // so the 'undo' won't happen for those insertions.   
+    // so the 'undo' won't happen for those insertions.
 
     bool need_lock = g_xct_does_need_lock();
     btree_page_h         leaf;
@@ -543,7 +543,7 @@ btree_impl::_ux_remove_core(stid_t store, const w_keystr_t &key, const bool undo
             W_DO(_ux_lock_range(store, leaf, key, slot,
                         LATCH_SH, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_S, false));
         }
-// TODO(Restart)... 
+// TODO(Restart)...
 DBGOUT3( << "&&&& _ux_remove_core - not found");
 
         return RC(eNOTFOUND);
@@ -557,16 +557,16 @@ DBGOUT3( << "&&&& _ux_remove_core - not found");
     }
 
     // it might be already ghost..
-    if (leaf.is_ghost(slot)) 
+    if (leaf.is_ghost(slot))
     {
-// TODO(Restart)... 
+// TODO(Restart)...
 DBGOUT3( << "&&&& _ux_remove_core - already ghost");
-    
+
         return RC(eNOTFOUND);
     }
     else
     {
-// TODO(Restart)... 
+// TODO(Restart)...
 DBGOUT3( << "&&&& Log for deletion, key: " << key);
 
 #ifdef USE_ATOMIC_COMMIT
@@ -588,18 +588,18 @@ DBGOUT3( << "&&&& Log for deletion, key: " << key);
 }
 
 rc_t
-btree_impl::_ux_undo_ghost_mark(stid_t store, const w_keystr_t &key)
+btree_impl::_ux_undo_ghost_mark(StoreID store, const w_keystr_t &key)
 {
-    // If the original delete operation was from a page split with full logging, the fence keys 
-    // were changed during page split, so the record we found would come from the destination 
+    // If the original delete operation was from a page split with full logging, the fence keys
+    // were changed during page split, so the record we found would come from the destination
     // page, not the source page.
-    // After page rebalance, the record in source page is a ghost and the record in destination page 
+    // After page rebalance, the record in source page is a ghost and the record in destination page
     // is a non-ghost.
     // Page split is a system transaction and we do not undo a system transaction operation,
     // so we should leave both old and the new records intact, do not make any physical change
     // and do not want to generate new log record during transaction abort/rollback.
     // The delete log record knowns whether the insertion came for page rebalance operation or not
-    // so the 'undo' won't happen for those deletions.   
+    // so the 'undo' won't happen for those deletions.
 
     FUNC(btree_impl::_ux_undo_ghost_mark);
     w_assert1(key.is_regular());
@@ -618,7 +618,7 @@ btree_impl::_ux_undo_ghost_mark(stid_t store, const w_keystr_t &key)
 
     // Undo a remove (delete operation), which becomes an insert
     // the ghost (deleted) record is available in page, so we only need to unmark the ghost
-    
+
     // The undo operation (compensation) is used for 1) transaction abort, 2) recovery undo,
     // generate an insert log record for the operation so the REDO phase
     // handles the txn abort behavior correctly
@@ -630,7 +630,7 @@ btree_impl::_ux_undo_ghost_mark(stid_t store, const w_keystr_t &key)
     const char *existing_element = leaf.element(slot, existing_element_len, ghost);
     cvec_t el (existing_element, existing_element_len);
 
-// TODO(Restart)... 
+// TODO(Restart)...
 DBGOUT3( << "&&&& btree_impl::_ux_undo_ghost_mark - undo a remove, key: " << key);
 
 #ifndef USE_ATOMIC_COMMIT

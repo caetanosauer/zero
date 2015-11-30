@@ -45,7 +45,7 @@ template class w_descend_list_t<xct_t, queue_based_lock_t, tid_t>;
 template class w_list_t<stid_list_elem_t, queue_based_lock_t>;
 template class w_list_i<stid_list_elem_t, queue_based_lock_t>;
 template class w_auto_delete_array_t<lockid_t>;
-template class w_auto_delete_array_t<stid_t>;
+template class w_auto_delete_array_t<StoreID>;
 
 #endif /* __GNUG__*/
 
@@ -2696,16 +2696,17 @@ xct_t::rollback(const lsn_t &save_pt)
 #if W_DEBUG_LEVEL > 2
             u_int    was_rsvd = _log_bytes_rsvd;
 #endif
-            lpid_t pid = r.construct_pid();
+            PageID pid = r.pid();
             fixable_page_h page;
 
+            // CS TODO: ALL undo should be logical
             if (! r.is_logical())
             {
                 // Operations such as foster adoption, load balance, etc.
 
                 DBGOUT3 (<<"physical UNDO.. which is not quite good");
                 // tentatively use fix_direct for this. eventually all physical UNDOs should go away
-                rc = page.fix_direct(pid.vol(), pid.page, LATCH_EX);
+                rc = page.fix_direct(pid, LATCH_EX);
                 if(rc.is_error())
                 {
                     goto done;

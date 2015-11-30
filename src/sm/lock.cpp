@@ -39,7 +39,7 @@ lock_m::~lock_m()
 
 
 extern "C" void lock_dump_locks();
-void lock_dump_locks() { 
+void lock_dump_locks() {
     smlevel_0::lm->dump(cerr);
     cerr << flushl;
 }
@@ -140,7 +140,7 @@ rc_t lock_m::lock(uint32_t hash, const okvl_mode &m, bool check_only, xct_t* xd,
     // Acquire lock on the given transaction object
     // No conditional and no RawLock
     // This helper function is only used by lock re-acquisition from Log Analysis phase in restart
-    
+
     w_assert1(NULL != xd);
 
     // First, check the transaction-private hashmap to see if we already have the lock.
@@ -159,7 +159,7 @@ rc_t lock_m::lock(uint32_t hash, const okvl_mode &m, bool check_only, xct_t* xd,
     {
         rc = RC(rce);
     }
-    else 
+    else
     {
         // store the lock queue tag we observed. this is for Safe SX-ELR
         xd->update_read_watermark (xct->read_watermark);
@@ -200,23 +200,7 @@ lil_lock_modes_t to_lil_mode (okvl_mode::element_lock_mode m) {
     return LIL_IS;// shouldn't reach here!
 }
 
-rc_t lock_m::intent_vol_lock(vid_t vid, okvl_mode::element_lock_mode m)
-{
-    lil_lock_modes_t mode = to_lil_mode(m);
-    xct_t *xd = xct();
-    if (xd == NULL) {
-        return RCOK;
-    }
-    
-    lil_global_table *global_table = get_lil_global_table();
-    lil_private_table* private_table = xd->lil_lock_info();
-    lil_private_vol_table *vol_table;
-    W_DO(private_table->acquire_vol_table(global_table, vid, mode, vol_table));
-    
-    return RCOK;
-}
-
-rc_t lock_m::intent_store_lock(const stid_t &stid, okvl_mode::element_lock_mode m)
+rc_t lock_m::intent_store_lock(StoreID stid, okvl_mode::element_lock_mode m)
 {
     lil_lock_modes_t mode = to_lil_mode(m);
     xct_t *xd = xct();
@@ -226,26 +210,14 @@ rc_t lock_m::intent_store_lock(const stid_t &stid, okvl_mode::element_lock_mode 
     lil_global_table *global_table = get_lil_global_table();
     lil_private_table* private_table = xd->lil_lock_info();
     // get volume lock table without requesting locks.
-    lil_private_vol_table *vol_table = private_table->find_vol_table(stid.vol);
+    // CS TODO eliminate volume ids from lock manager
+    lil_private_vol_table *vol_table = private_table->find_vol_table(1);
     // only request store lock
     W_DO(vol_table->acquire_store_lock(global_table, stid, mode));
     return RCOK;
 }
 
-rc_t lock_m::intent_vol_store_lock(const stid_t &stid, okvl_mode::element_lock_mode m)
-{
-    lil_lock_modes_t mode = to_lil_mode(m);
-    xct_t *xd = xct();
-    if (xd == NULL) {
-        return RCOK;
-    }
-    lil_global_table *global_table = get_lil_global_table();
-    lil_private_table* private_table = xd->lil_lock_info();
-    W_DO(private_table->acquire_vol_store_lock(global_table, stid, mode));
-    return RCOK;
-}
-
-/* 
+/*
  * Free all locks of a given duration
  *  release not just those whose
  *     duration matches, but all those which shorter duration also
@@ -255,7 +227,7 @@ rc_t lock_m::unlock_duration(
 {
     xct_t*        xd = xct();
     w_rc_t        rc;        // == RCOK
-    
+
     if (xd)  {
         // First, release intent locks on LIL
         lil_global_table *global_table = get_lil_global_table();

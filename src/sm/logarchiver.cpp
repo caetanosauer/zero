@@ -963,7 +963,7 @@ bool LogArchiver::selection()
             // DBGTHRD(<< "Selecting for output: " << *lr);
             heap->pop();
             // w_assert3(run != heap->topRun() ||
-            //     heap->top()->construct_pid()>= lr->construct_pid());
+            //     heap->top()->pid()>= lr->pid());
         }
         else {
             break;
@@ -1062,7 +1062,7 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
         return false;
     }
 
-    if (firstPID == lpid_t::null) {
+    if (firstPID == 0) {
         firstPID = lr->pid();
     }
 
@@ -1071,10 +1071,10 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
         maxLSNLength = lr->length();
     }
 
-    if (bucketSize > 0 && lr->pid().page / bucketSize >= nextBucket) {
-        shpid_t shpid = (lr->pid().page / bucketSize) * bucketSize;
+    if (bucketSize > 0 && lr->pid() / bucketSize >= nextBucket) {
+        PageID shpid = (lr->pid() / bucketSize) * bucketSize;
         buckets.push_back(
-                pair<lpid_t, size_t>(lpid_t(lr->pid().vol(), shpid), fpos));
+                pair<PageID, size_t>(shpid, fpos));
         nextBucket = shpid / bucketSize + 1;
     }
 
@@ -1098,7 +1098,7 @@ void LogArchiver::BlockAssembly::finish()
             archIndex->newBlock(buckets);
         }
     }
-    firstPID = lpid_t::null;
+    firstPID = 0;
 
     // write block header info
     BlockHeader* h = (BlockHeader*) dest;
@@ -1147,7 +1147,7 @@ LogArchiver::ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory)
 }
 
 LogArchiver::ArchiveScanner::RunMerger*
-LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
+LogArchiver::ArchiveScanner::open(PageID startPID, PageID endPID,
         lsn_t startLSN, size_t readSize)
 {
     RunMerger* merger = new RunMerger();
@@ -1183,7 +1183,7 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
 }
 
 LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
-        lpid_t f, lpid_t l, fileoff_t o, ArchiveDirectory* directory,
+        PageID f, PageID l, fileoff_t o, ArchiveDirectory* directory,
         size_t readSize)
 : runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
     fd(-1), blockCount(0), readSize(readSize), directory(directory)
@@ -1265,7 +1265,7 @@ bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
     }
 
     if (lr->type() == logrec_t::t_skip ||
-                (lastPID != lpid_t::null && lr->pid() >= lastPID))
+                (lastPID != 0 && lr->pid() >= lastPID))
     {
         // end of scan
         return false;
@@ -1284,7 +1284,7 @@ std::ostream& operator<< (ostream& os,
 LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
     : active(true), runScan(runScan)
 {
-    lpid_t startPID = runScan->firstPID;
+    PageID startPID = runScan->firstPID;
     // bring scanner up to starting point
     logrec_t* next = NULL;
     if (runScan->next(next)) {
@@ -1314,7 +1314,7 @@ LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
 void LogArchiver::ArchiveScanner::MergeHeapEntry::moveToNext()
 {
     if (runScan->next(lr)) {
-        pid = lr->construct_pid();
+        pid = lr->pid();
         lsn = lr->lsn_ck();
     }
     else {
@@ -1328,7 +1328,7 @@ void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
     MergeHeapEntry entry(r);
     heap.AddElementDontHeapify(entry);
 
-    if (endPID.is_null()) {
+    if (endPID == 0) {
         endPID = r->lastPID;
     }
     w_assert1(endPID == r->lastPID);
@@ -1423,7 +1423,7 @@ bool LogArchiver::ArchiverHeap::push(logrec_t* lr, bool duplicate)
     slot_t dest = allocate(lr->length());
     if (!dest.address) { return false; }
 
-    lpid_t pid = lr->pid();
+    PageID pid = lr->pid();
     lsn_t lsn = lr->lsn();
     memcpy(dest.address, lr, lr->length());
 
@@ -1437,7 +1437,7 @@ bool LogArchiver::ArchiverHeap::push(logrec_t* lr, bool duplicate)
         // If we have to duplciate the log record, make sure there is room by
         // calling recursively without duplication. Note that the original
         // contents were already saved with the memcpy operation above.
-        lr->set_pid(lr->construct_pid2());
+        lr->set_pid(lr->pid2());
         lr->set_page_prev_lsn(lr->page2_prev_lsn());
         if (!push(lr, false)) {
             // If duplicated did not fit, then insertion of the original must
@@ -1987,7 +1987,7 @@ LogArchiver::ArchiveIndex::~ArchiveIndex()
     // delete[] readBuffer;
 }
 
-void LogArchiver::ArchiveIndex::newBlock(lpid_t firstPID)
+void LogArchiver::ArchiveIndex::newBlock(PageID firstPID)
 {
     CRITICAL_SECTION(cs, mutex);
 
@@ -2000,7 +2000,7 @@ void LogArchiver::ArchiveIndex::newBlock(lpid_t firstPID)
     runs.back().entries.push_back(e);
 }
 
-void LogArchiver::ArchiveIndex::newBlock(const vector<pair<lpid_t, size_t> >&
+void LogArchiver::ArchiveIndex::newBlock(const vector<pair<PageID, size_t> >&
         buckets)
 {
     CRITICAL_SECTION(cs, mutex);
@@ -2045,7 +2045,7 @@ rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
     // lastPID is stored on first block, but we reserve space for it in every
     // block to simplify things
     int entriesPerBlock =
-        (blockSize - sizeof(BlockHeader) - sizeof(lpid_t)) / sizeof(BlockEntry);
+        (blockSize - sizeof(BlockHeader) - sizeof(PageID)) / sizeof(BlockEntry);
     int remaining = run.entries.size();
     int i = 0;
     size_t currEntry = 0;
@@ -2068,7 +2068,7 @@ rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
 
         // copy lastPID into last block (space was reserved above)
         // if (remaining == 0) {
-        //     memcpy(writeBuffer + bpos, &run.lastPID, sizeof(lpid_t));
+        //     memcpy(writeBuffer + bpos, &run.lastPID, sizeof(PageID));
         // }
 
         W_COERCE(me()->pwrite(fd, writeBuffer, blockSize, offset));
@@ -2120,7 +2120,7 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
 
         // if (indexBlockCount == 0) {
         //     // read lasPID from last block
-        //     run.lastPID = *((lpid_t*) (readBuffer + bpos));
+        //     run.lastPID = *((PageID*) (readBuffer + bpos));
         // }
     }
 
@@ -2216,7 +2216,7 @@ size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
 }
 
 size_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
-        lpid_t pid, int from, int to)
+        PageID pid, int from, int to)
 {
     // Assumption: mutex is held by caller
 
@@ -2281,7 +2281,7 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult& res)
     res.runEnd = runs[index].lastLSN;
 
     size_t entryBegin = 0;
-    if (res.pidBegin.is_null()) {
+    if (res.pidBegin == 0) {
         res.offset = 0;
     }
     else {
@@ -2298,7 +2298,7 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult& res)
 }
 
 void LogArchiver::ArchiveIndex::probe(std::vector<ProbeResult>& probes,
-        lpid_t startPID, lpid_t endPID, lsn_t startLSN)
+        PageID startPID, PageID endPID, lsn_t startLSN)
 {
     CRITICAL_SECTION(cs, mutex);
 
@@ -2414,9 +2414,7 @@ rc_t LogArchiver::MergerDaemon::doMerge(int runNumber,
         ERROUT(<< "Merging " << iter->beginLSN << "-" << iter->endLSN);
         ArchiveScanner::RunScanner* runScanner =
             new ArchiveScanner::RunScanner(
-                iter->beginLSN, iter->endLSN, lpid_t::null, lpid_t::null,
-                0 /* offset */, indir
-            );
+                iter->beginLSN, iter->endLSN, 0, 0, 0 /* offset */, indir);
 
         merger.addInput(runScanner);
         iter++;

@@ -8,7 +8,6 @@
 #include "w_defines.h"
 #include "sm_base.h"
 #include "smthread.h"
-#include "vid_t.h"
 #include "bf_idx.h"
 #include "lsn.h"
 #include "vol.h"
@@ -139,8 +138,8 @@ private:
     void _take_interval ();
     w_rc_t _do_work ();
     bool _exists_requested_work();
-    w_rc_t _clean_volume(vid_t vol, const std::vector<bf_idx> &candidates);
-    w_rc_t _flush_write_buffer(vid_t vol, size_t from, size_t consecutive,
+    w_rc_t _clean_volume(const std::vector<bf_idx> &candidates);
+    w_rc_t _flush_write_buffer(size_t from, size_t consecutive,
             unsigned& cleaned_count);
 
     /** parent object. */

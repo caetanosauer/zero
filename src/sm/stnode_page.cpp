@@ -8,11 +8,11 @@
 #include "stnode_page.h"
 
 stnode_cache_t::stnode_cache_t(stnode_page& stpage)
-    : _stnode_page(stpage), _vid(stpage.pid.vol())
+    : _stnode_page(stpage)
 {
 }
 
-shpid_t stnode_cache_t::get_root_pid(snum_t store) const
+PageID stnode_cache_t::get_root_pid(StoreID store) const
 {
     w_assert1(store < stnode_page::max);
 
@@ -28,18 +28,18 @@ shpid_t stnode_cache_t::get_root_pid(snum_t store) const
     return _stnode_page.get(store).root;
 }
 
-stnode_t stnode_cache_t::get_stnode(snum_t store) const
+stnode_t stnode_cache_t::get_stnode(StoreID store) const
 {
     return _stnode_page.get(store);
 }
 
-bool stnode_cache_t::is_allocated(snum_t store) const
+bool stnode_cache_t::is_allocated(StoreID store) const
 {
     CRITICAL_SECTION (cs, _latch);
     return get_stnode(store).is_used();
 }
 
-snum_t stnode_cache_t::get_min_unused_store_ID() const
+StoreID stnode_cache_t::get_min_unused_store_ID() const
 {
     // Caller should hold the latch
 
@@ -53,19 +53,19 @@ snum_t stnode_cache_t::get_min_unused_store_ID() const
     return stnode_page::max;
 }
 
-void stnode_cache_t::get_used_stores(std::vector<snum_t>& ret) const
+void stnode_cache_t::get_used_stores(std::vector<StoreID>& ret) const
 {
     ret.clear();
 
     CRITICAL_SECTION (cs, _latch);
     for (size_t i = 1; i < stnode_page::max; ++i) {
         if (_stnode_page.get(i).is_used()) {
-            ret.push_back((snum_t) i);
+            ret.push_back((StoreID) i);
         }
     }
 }
 
-rc_t stnode_cache_t::sx_create_store(shpid_t root_pid, snum_t& snum, bool redo)
+rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum, bool redo)
 {
     CRITICAL_SECTION (cs, _latch);
 
@@ -79,7 +79,7 @@ rc_t stnode_cache_t::sx_create_store(shpid_t root_pid, snum_t& snum, bool redo)
 
     sys_xct_section_t ssx(true);
     if (!redo) {
-        log_create_store(lpid_t(_vid, root_pid), snum);
+        log_create_store(root_pid, snum);
     }
     // CS TODO: use decoupled propagation
     // W_DO(write_stnode_page());
@@ -88,7 +88,7 @@ rc_t stnode_cache_t::sx_create_store(shpid_t root_pid, snum_t& snum, bool redo)
     return RCOK;
 }
 
-rc_t stnode_cache_t::sx_append_extent(snum_t snum, extent_id_t ext, bool redo)
+rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext, bool redo)
 {
     CRITICAL_SECTION (cs, _latch);
 
@@ -99,7 +99,7 @@ rc_t stnode_cache_t::sx_append_extent(snum_t snum, extent_id_t ext, bool redo)
     sys_xct_section_t ssx(true);
     _stnode_page.update_last_extent(snum, ext);
     if (!redo) {
-        W_DO(log_append_extent(_vid, snum, ext));
+        W_DO(log_append_extent(snum, ext));
     }
     W_DO(write_stnode_page());
     W_DO(ssx.end_sys_xct(RCOK));

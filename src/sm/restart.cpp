@@ -90,16 +90,16 @@ template class Heap<xct_t*, CmpXctUndoLsns>;
 
 typedef uint64_t dp_key_t;
 
-inline dp_key_t dp_key(vid_t vid, shpid_t shpid) {
+inline dp_key_t dp_key(vid_t vid, PageID shpid) {
     return ((dp_key_t) vid << 32) + shpid;
 }
-inline dp_key_t dp_key(const lpid_t &pid) {
-    return dp_key(pid.vol(), pid.page);
+inline dp_key_t dp_key(const PageID &pid) {
+    return dp_key(pid.vol(), pid);
 }
 inline vid_t  dp_vid (dp_key_t key) {
     return key >> 32;
 }
-inline shpid_t  dp_shpid (dp_key_t key) {
+inline PageID  dp_shpid (dp_key_t key) {
     return key & 0xFFFFFFFF;
 }
 
@@ -117,7 +117,7 @@ public:
     ~dirty_pages_tab_t() {}
 
        // Insert an association (pid, lsn) into the table.
-    void                         insert(const lpid_t& pid, lsndata_t lsn) {
+    void                         insert(const PageID& pid, lsndata_t lsn) {
         if (_validCachedMinRecLSN && lsn < _cachedMinRecLSN && lsn != lsndata_null)  {
             _cachedMinRecLSN = lsn;
         }
@@ -126,11 +126,11 @@ public:
     }
 
     // Returns if the page already exists in the table.
-    bool                         exists(const lpid_t& pid) const {
+    bool                         exists(const PageID& pid) const {
         return _dp_lsns.find(dp_key(pid)) != _dp_lsns.end();
     }
     // Returns iterator (pointer) to the page in the table.
-    dp_lsn_iterator              find (const lpid_t& pid) {
+    dp_lsn_iterator              find (const PageID& pid) {
         return _dp_lsns.find(dp_key(pid));
     }
 
@@ -2049,7 +2049,7 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
         xd->set_last_lsn(lsn);       // set the last lsn in the transaction
 
         // Get the associated page
-        lpid_t page_of_interest = r.construct_pid();
+        PageID page_of_interest = r.pid();
         DBGOUT3(<<"analysis (single_log system xct): default " <<  r.type()
                 << " page of interest " << page_of_interest);
 
@@ -2072,8 +2072,7 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
         if (r.type() == logrec_t::t_alloc_page || r.type() == logrec_t::t_dealloc_page)
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
-            uint64_t key = bf_key(page_of_interest.vol(), page_of_interest.page);
-            idx = smlevel_0::bf->lookup_in_doubt(key);
+            idx = smlevel_0::bf->lookup_in_doubt(page_of_interest);
             if (0 != idx)
             {
                 // Page cb is in buffer pool, clear the 'in_doubt' and 'used' flags
@@ -2081,9 +2080,9 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
                 if (true == smlevel_0::bf->is_in_doubt(idx))
                 {
                     if (r.type() == logrec_t::t_alloc_page)
-                        smlevel_0::bf->clear_in_doubt(idx, true, key);    // Page is still used
+                        smlevel_0::bf->clear_in_doubt(idx, true, page_of_interest);    // Page is still used
                     else
-                        smlevel_0::bf->clear_in_doubt(idx, false, key);   // Page is not used
+                        smlevel_0::bf->clear_in_doubt(idx, false, page_of_interest);   // Page is not used
                     w_assert1(0 < in_doubt_count);
                     --in_doubt_count;
                 }
@@ -2100,10 +2099,10 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
                 // If the log record has a valid page ID, the operation affects buffer pool
                 // Register the page cb in buffer pool (if not exist) and mark the in_doubt flag
                 idx = 0;
-                if (0 == page_of_interest.page)
+                if (0 == page_of_interest)
                     W_FATAL_MSG(fcINTERNAL,
                         << "Page # = 0 from a system transaction log record");
-                rc = smlevel_0::bf->register_and_mark(idx, page_of_interest, r.snum(),
+                rc = smlevel_0::bf->register_and_mark(idx, page_of_interest, r.stid(),
                           lsn /*first_lsn*/, lsn /*last_lsn*/, in_doubt_count);
 
                 if (rc.is_error())
@@ -2133,10 +2132,10 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
 
                 if (r.is_multi_page())
                 {
-                    lpid_t page2_of_interest = r.construct_pid2();
+                    PageID page2_of_interest = r.pid2();
                     DBGOUT3(<<" multi-page:" <<  page2_of_interest);
                     idx = 0;
-                    if (0 == page2_of_interest.page)
+                    if (0 == page2_of_interest)
                     {
                         if (r.type() == logrec_t::t_btree_norec_alloc)
                         {
@@ -2150,7 +2149,7 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
                                 << "Page # = 0 from a multi-record system transaction log record");
                         }
                     }
-                    rc = smlevel_0::bf->register_and_mark(idx, page2_of_interest, r.snum(), lsn /*first_lsn*/,
+                    rc = smlevel_0::bf->register_and_mark(idx, page2_of_interest, r.stid(), lsn /*first_lsn*/,
                                                           lsn /*last_lsn*/, in_doubt_count);
                     if (rc.is_error())
                     {
@@ -2204,7 +2203,7 @@ void restart_m::_analysis_ckpt_bf_log(logrec_t& r,              // In: Log recor
         // If it is already in the buffer pool, update the rec_lsn to the earliest LSN
 
         idx = 0;
-        if (0 == dp->brec[i].pid.page)
+        if (0 == dp->brec[i].pid)
             W_FATAL_MSG(fcINTERNAL,
                 << "Page # = 0 from a page in t_chkpt_bf_tab log record");
         rc = smlevel_0::bf->register_and_mark(idx, dp->brec[i].pid, dp->brec[i].store,
@@ -2520,7 +2519,7 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
     bf_idx idx = 0;
     w_rc_t rc = RCOK;
 
-    lpid_t page_of_interest = r.construct_pid();
+    PageID page_of_interest = r.pid();
     DBGOUT3(<<"analysis: default " <<
         r.type() << " tid " << r.tid()
         << " page of interest " << page_of_interest);
@@ -2580,8 +2579,7 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
         if (r.type() == logrec_t::t_alloc_page || r.type() == logrec_t::t_dealloc_page)
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
-            uint64_t key = bf_key(page_of_interest.vol(), page_of_interest.page);
-            idx = smlevel_0::bf->lookup_in_doubt(key);
+            idx = smlevel_0::bf->lookup_in_doubt(page_of_interest);
             if (0 != idx)
             {
                 // Page cb is in buffer pool, clear the 'in_doubt' and 'used'  flags
@@ -2589,9 +2587,9 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
                 if (true == smlevel_0::bf->is_in_doubt(idx))
                 {
                     if (r.type() == logrec_t::t_alloc_page)
-                        smlevel_0::bf->clear_in_doubt(idx, true, key);   // Page is still used
+                        smlevel_0::bf->clear_in_doubt(idx, true, page_of_interest);   // Page is still used
                     else
-                        smlevel_0::bf->clear_in_doubt(idx, false, key);  // Page is not used
+                        smlevel_0::bf->clear_in_doubt(idx, false, page_of_interest);  // Page is not used
                     w_assert1(0 < in_doubt_count);
                     --in_doubt_count;
                 }
@@ -2601,11 +2599,11 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
         {
             // Register the page cb in buffer pool (if not exist) and mark the in_doubt flag
             idx = 0;
-            if (0 == page_of_interest.page)
+            if (0 == page_of_interest)
                 W_FATAL_MSG(fcINTERNAL,
                     << "Page # = 0 from a page in log record, log type = " << r.type());
             rc = smlevel_0::bf->register_and_mark(idx,
-                      page_of_interest, r.snum(),
+                      page_of_interest, r.stid(),
                       lsn /*first_lsn*/, lsn /*last_lsn*/, in_doubt_count);
             if (rc.is_error())
             {
@@ -2660,11 +2658,11 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
         if (r.is_redo())
         {
             idx = 0;
-            if (0 == page_of_interest.page)
+            if (0 == page_of_interest)
                 W_FATAL_MSG(fcINTERNAL,
                     << "Page # = 0 from a page in compensation log record");
             rc = smlevel_0::bf->register_and_mark(idx,
-                      page_of_interest, r.snum(),
+                      page_of_interest, r.stid(),
                       lsn /*first_lsn*/, lsn /*last_lsn*/, in_doubt_count);
             if (rc.is_error())
             {
@@ -3830,7 +3828,7 @@ restart_m::redo_log_pass(
                 // log record but marked as 'cpsn'
 
                 // pid in log record is populated when a log record is filled
-                // null_pid is checking the page numer (shpid_t) recorded in the log record
+                // null_pid is checking the page numer (PageID) recorded in the log record
                 if (r.null_pid())
                 {
                     // Cannot be compensate log record
@@ -3949,7 +3947,7 @@ restart_m::redo_log_pass(
                     // achieve the 'transaction abort' effect during REDO phase, no UNDO for
                     // aborted transaction (aborted txn are not kept in transaction table).
 
-                    _redo_log_with_pid(r, lsn, end_logscan_lsn, r.construct_pid(),
+                    _redo_log_with_pid(r, lsn, end_logscan_lsn, r.pid(),
                                    redone, dirty_count);
                     if (r.is_multi_page())
                     {
@@ -3961,7 +3959,7 @@ restart_m::redo_log_pass(
                         // Note currently only system transaction can affect more than one page, and
                         // in fact it is limited to 2 pages only
 
-                        _redo_log_with_pid(r, lsn, end_logscan_lsn, r.construct_pid2(),
+                        _redo_log_with_pid(r, lsn, end_logscan_lsn, r.pid2(),
                                            redone, dirty_count);
                     }
                 }
@@ -4032,7 +4030,7 @@ void restart_m::_redo_log_with_pid(
                                   // REDO should not generate log record
                                   // and this value should not change
                                   // this is passed in for validation purpose
-    lpid_t page_updated,          // Store ID (vol + store number) + page number
+    PageID page_updated,          // Store ID (vol + store number) + page number
                                   // This is mainly because if the log is a multi-page log
                                   // this will be the information for the 2nd page
     bool &redone,                 // Did REDO occurred, for validation purpose
@@ -4052,15 +4050,14 @@ void restart_m::_redo_log_with_pid(
 
     // 'is_redo()' covers regular transaction but not compensation transaction
     w_assert1(r.is_redo());
-    w_assert1(r.shpid());
+    w_assert1(r.pid());
     w_assert1(false == redone);
 
     // Because we are loading the page into buffer pool directly
     // we cannot have swizzling on
     w_assert1(!smlevel_0::bf->is_swizzling_enabled());
 
-    uint64_t key = bf_key(page_updated.vol(), page_updated.page);
-    bf_idx idx = smlevel_0::bf->lookup_in_doubt(key);
+    bf_idx idx = smlevel_0::bf->lookup_in_doubt(page_updated);
     if (0 != idx)
     {
         // Found the page in hashtable of the buffer pool
@@ -4086,7 +4083,7 @@ void restart_m::_redo_log_with_pid(
         {
             // Unable to acquire write latch, cannot continue, raise an internal error
             DBGOUT3 (<< "Error when acquiring LATCH_EX for a page in buffer pool. pagw ID: "
-                     << page_updated.page << ", rc = " << rc);
+                     << page_updated << ", rc = " << rc);
             W_FATAL_MSG(fcINTERNAL, << "REDO (redo_pass()): unable to EX latch a buffer pool page");
             return;
         }
@@ -4131,9 +4128,9 @@ void restart_m::_redo_log_with_pid(
 
             if (r.type() == logrec_t::t_page_img_format
                 // btree_norec_alloc is a multi-page log. "page2" (so, !=shpid()) is the new page.
-                || (r.type() == logrec_t::t_btree_norec_alloc && page_updated.page != r.shpid())
+                || (r.type() == logrec_t::t_btree_norec_alloc && page_updated != r.pid())
                 // for btree_split, new page is page1 (so, ==shpid())
-                || (r.type() == logrec_t::t_btree_split && page_updated.page == r.shpid())
+                || (r.type() == logrec_t::t_btree_split && page_updated == r.pid())
             )
             {
                 virgin_page = true;
@@ -4148,12 +4145,11 @@ void restart_m::_redo_log_with_pid(
                 //                     We will load reload the root page here but not register it to the
                 //                     hash table (already registered).  Use the same logic to fix up
                 //                     page cb, it does no harm.
-                DBGOUT3 (<< "REDO phase, loading page from disk, page = " << page_updated.page);
+                DBGOUT3 (<< "REDO phase, loading page from disk, page = " << page_updated);
 
                 // If past_end is true, the page does not exist on disk and the buffer pool page
                 // has been zerod out, we cannot apply REDO in this case
-                rc = smlevel_0::bf->load_for_redo(idx, page_updated.vol(),
-                                                  page_updated.page);
+                rc = smlevel_0::bf->load_for_redo(idx, page_updated);
 
                 if (rc.is_error())
                 {
@@ -4163,7 +4159,7 @@ void restart_m::_redo_log_with_pid(
                     {
                         // Corrupted page, allow it to continue and we will
                         // use Single-Page-Recovery to recovery the page
-                        DBGOUT3 (<< "REDO phase, newly loaded page was corrupted, page = " << page_updated.page);
+                        DBGOUT3 (<< "REDO phase, newly loaded page was corrupted, page = " << page_updated);
                         corrupted_page = true;
                     }
                     else
@@ -4171,14 +4167,13 @@ void restart_m::_redo_log_with_pid(
                         // All other errors
                         W_FATAL_MSG(fcINTERNAL,
                                     << "Failed to load physical page into buffer pool in REDO phase, page: "
-                                    << page_updated.page << ", RC = " << rc);
+                                    << page_updated << ", RC = " << rc);
                     }
                 }
 
                 // Just loaded from disk, set the vol and page in cb
-                cb._pid_vol = page_updated.vol();
-                cb._store_num = r.snum();
-                cb._pid_shpid = page_updated.page;
+                cb._store_num = r.stid();
+                cb._pid_shpid = page_updated;
             }
             else if ((true == smlevel_0::bf->is_in_doubt(idx)) && (true == virgin_page))
             {
@@ -4186,9 +4181,8 @@ void restart_m::_redo_log_with_pid(
                 // We have the page cb and hashtable entry for this page already
                 // There is nothing to load from disk, set the vol and page in cb
 
-                cb._pid_vol = page_updated.vol();
-                cb._store_num = r.snum();
-                cb._pid_shpid = page_updated.page;
+                cb._store_num = r.stid();
+                cb._pid_shpid = page_updated;
             }
             else
             {
@@ -4324,7 +4318,7 @@ void restart_m::_redo_log_with_pid(
                     cb.latch().latch_release();
                 W_FATAL_MSG(fcINTERNAL,
                     << "Page LSN > current recovery log LSN, page corruption detected in REDO phase, page: "
-                    << page_updated.page);
+                    << page_updated);
             }
             else
             {
@@ -4389,7 +4383,7 @@ void restart_m::_redo_log_with_pid(
                     cb.latch().latch_release();
                 W_FATAL_MSG(fcINTERNAL,
                     << "Deallocated page should not exist in hashtable in REDO phase, page: "
-                    << page_updated.page);
+                    << page_updated);
             }
             else
             {
@@ -4401,7 +4395,7 @@ void restart_m::_redo_log_with_pid(
                         cb.latch().latch_release();
                     W_FATAL_MSG(fcINTERNAL,
                         << "Incorrect in_doubt and dirty flags in REDO phase, page: "
-                        << page_updated.page);
+                        << page_updated);
                 }
             }
         }
@@ -4427,7 +4421,7 @@ void restart_m::_redo_log_with_pid(
         // even quite likely that we end up in this "else" block with a regular
         // page update log record. The solution should be to simply ignore it.
         DBGOUT3(<< "Skipped logrec " << r.lsn_ck()
-                << " -- page " << r.construct_pid() << " not in doubt");
+                << " -- page " << r.pid() << " not in doubt");
     }
 
     return;
@@ -5015,7 +5009,7 @@ DBGOUT1(<<"Start child thread REDO phase");
         {
             // This is an in_doubt page which has not been loaded into buffer pool memory
             // Make sure it is in the hashtable already
-            uint64_t key = bf_key(cb._pid_vol, cb._pid_shpid);
+            PageID key = cb._pid_shpid;
             bf_idx idx = smlevel_0::bf->lookup_in_doubt(key);
             if (0 == idx)
             {
@@ -5047,10 +5041,8 @@ DBGOUT1(<<"Start child thread REDO phase");
             bool virgin_page = false;
             bool corrupted_page = false;
 
-            vid_t vol = cb._pid_vol;
-            shpid_t shpid = cb._pid_shpid;
-            snum_t store = cb._store_num;
-            stid_t stid = stid_t(vol, store);
+            PageID shpid = cb._pid_shpid;
+            StoreID store = cb._store_num;
 
             // Get the last write lsn on the page, this would be used
             // as emlsn for Single-Page-Recovery if virgin or corrupted page
@@ -5071,7 +5063,7 @@ DBGOUT1(<<"Start child thread REDO phase");
 
             // If past_end is true, the page does not exist on disk and the buffer pool page
             // has been zerod out
-            rc = smlevel_0::bf->load_for_redo(idx, vol, shpid);
+            rc = smlevel_0::bf->load_for_redo(idx, shpid);
 
             if (rc.is_error())
             {
@@ -5104,35 +5096,32 @@ DBGOUT1(<<"Start child thread REDO phase");
             //     including regular page, corrupted page and virgin page
 
             // Associate this buffer pool page with fixable_page data structure
-            // lpid_t: Store ID (volume number + store number) + page number (4+4+4)
+            // PageID: Store ID (volume number + store number) + page number (4+4+4)
             // Re-construct the lpid using several fields in cb
-            vid_t vid(vol);
-            lpid_t store_id(vid, shpid);
             if (true == use_redo_full_logging_restart())
             {
                 // Use full logging, page is buffer pool managed
-                W_COERCE(page.fix_recovery_redo(idx, store_id));
+                W_COERCE(page.fix_recovery_redo(idx, shpid));
             }
             else
             {
                 // Use minimal logging, this is for M2/M4/M5
                 // page is not buffer pool managed before Single-Page-Recovery
                 // only mark the page as buffer pool managed after Single-Page-Recovery
-                W_COERCE(page.fix_recovery_redo(idx, store_id, false /* managed*/));
+                W_COERCE(page.fix_recovery_redo(idx, shpid, false /* managed*/));
             }
 
             // CS: this replaces the old past_end flag on load_for_redo
-            virgin_page = page.pid() == lpid_t::null;
+            virgin_page = page.pid() == 0;
 
             // We rely on pid/tag set correctly in individual redo() functions
             // set for all pages, both virgin and non-virgin
-            page.get_generic_page()->pid = store_id;
+            page.get_generic_page()->pid = shpid;
             page.get_generic_page()->tag = t_btree_p;
 
             if (true == virgin_page)
             {
                 // If virgin page, set the vol, store and page in cb again
-                cb._pid_vol = vol;
                 cb._store_num = store;
                 cb._pid_shpid = shpid;
 
@@ -5161,7 +5150,7 @@ DBGOUT1(<<"Start child thread REDO phase");
             }
 
             // Use Single-Page-Recovery to REDO all in_doubt pages, including virgin and corrupted pages
-            w_assert1(page.pid() == store_id);
+            w_assert1(page.pid() == shpid);
             w_assert1(page.is_fixed());
 
             // Both btree_norec_alloc_log and tree_foster_rebalance_log are multi-page
@@ -5188,7 +5177,7 @@ DBGOUT1(<<"Start child thread REDO phase");
             }
 
             // Using Single-Page-Recovery for the REDO operation, which is based on
-            // page.pid(), page.vol(), page.pid().page and page.lsn()
+            // page.pid(), page.vol(), page.pid() and page.lsn()
             // Call Single-Page-Recovery API
             //   page - fixable_page_h, the page to recover
             //   emlsn - last write to the page, if the page
@@ -5241,7 +5230,7 @@ DBGOUT1(<<"Start child thread REDO phase");
                 // sleep after we recovered the root page (which is needed for tree traversal)
 
                 // Get root-page index if we don't already had it
-                root_idx = smlevel_0::bf->get_root_page_idx(stid);
+                root_idx = smlevel_0::bf->get_root_page_idx(shpid);
             }
         }
         else

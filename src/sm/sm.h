@@ -71,22 +71,11 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sm_base.h>
 #endif
 
-#ifndef SM_DU_STATS_H
 #include <sm_du_stats.h> // declares sm_du_stats_t
-#endif
-
-#ifndef SM_STATS_H
 #include <smstats.h> // declares sm_stats_info_t and sm_config_info_t
-#endif
-
-#ifndef SM_S_H
-#include <sm_s.h>
 #include <lsn.h>
-#endif
-
 #include <string>
 #include "sm_options.h"
-
 #include "sm_external.h"  // Include for caller to find the restart status
 
 /* DOXYGEN Documentation : */
@@ -1147,238 +1136,20 @@ public:
     * @param[in] max_lsn If given, we only dump logs required to recover
     * the page up to this LSN. We omit the logs after that.
     */
-    static void             dump_page_lsn_chain(std::ostream &o, const lpid_t &pid,
+    static void             dump_page_lsn_chain(std::ostream &o, const PageID &pid,
                                                 const lsn_t &max_lsn);
     /**
      * Overload to receive only pid.
      * \ingroup Single-Page-Recovery
-     * @copydoc dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
+     * @copydoc dump_page_lsn_chain(std::ostream&, const PageID &, const lsn_t&)
      */
-    static void             dump_page_lsn_chain(std::ostream &o, const lpid_t &pid);
+    static void             dump_page_lsn_chain(std::ostream &o, const PageID &pid);
     /**
      * Overload to receive neither.
      * \ingroup Single-Page-Recovery
-     * @copydoc dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
+     * @copydoc dump_page_lsn_chain(std::ostream&, const PageID &, const lsn_t&)
      */
     static void             dump_page_lsn_chain(std::ostream &o);
-
-    /*
-     * Device management functions
-     */
-     /**\addtogroup SSMVOL
-      * The storage manager was designed to permit multiple \e volumes
-      * on a \e device, with \e volume analogous to a Unix \e parition and
-      * a \e device analogous to a disk, and the original SHORE contained
-      * symmetric peer servers.
-      * However good that intention, multiple volumes on a device were never
-      * implemented, and times have changed, and the storage manager no
-      * longer has any notion of remote and local volumes.
-      * The notion a volume, separate from a device, remains, but may
-      * some day disappear.
-      *
-      * For the time being, a device contains at most one volume.
-      *
-     * A device is either an operating system file or
-     * an operating system device (e.g., raw disk partition) and
-     * is identified by a path name (absolute or relative).
-     *
-     * A device has a quota.
-     * A device is intended to have multiple volumes on it, but
-     * in the current implementation the maximum number of volumes
-     * is exactly 1.
-     *
-     * A volume is where data are stored.
-     * Each volume is a header and a set of pages. All pages are
-     * the same size (this is a compile-time constant, the default being
-     * 8K and sizes up to 64K permissible).
-     *
-     * A volume is identified uniquely and persistently by a
-     * long volume ID (lvid_t), which is stored in its header.
-     * Volumes can be used whenever the device they are located
-     * on is mounted by the SM.
-     * Volumes have a quota.  The
-     * sum of the quotas of all the volumes on a device cannot
-     * exceed the device quota.
-     *
-     * A volume contains a variety of data structures. All user
-     * data reside in \e stores.  A store is a collection of the
-     * pages on the volume, allocated in \e extents of a size that
-     * is a compile-time constant. (The storage manager has only
-     * been tested with an extent-size of 8 pages. The compile-time constant
-     * can be changed, but it also requires changes elsewhere in the code
-     * to maintain alignment of persistent structures.
-     * See the comments in config/shore.def.) Thus, the minimum size
-     * of a store is one extent's worth of pages.
-     * Larger extents provide better clustering, but more wasted space if
-     * small files and small indexes will be common.
-     *
-     * Stores are identified by a store number (snum_t).
-     *
-     * Each volume contains a few stores that are "overhead":
-     * 0 -- is reserved for an extent map and a store map
-     * 1 -- directory (dir_m)
-     * 2 -- root index
-     *
-     * Beyond that, for each (user) file created, 2 stores are used, one for
-     * small objects, one for large objects, and for each index (btree)
-     * created 1 store is used.
-     *
-     * Each volume is laid out thus:
-     * - volume header, which identifies the number of extents on
-     *   the volume, determined when the volume is formatted.
-     *   This is always in page 1 of the volume.
-     * - store map: some number of pages describing the stores on the volume,
-     *   namely, being the heads of linked-lists of extents that make up
-     *   the stores. The number of such pages is determined when the
-     *   volume is formatted.  The worst case is assumed, which is one
-     *   might fill the volume with one-extent stores.
-     * - extent map: some number of pages of bitmaps, one bitmap for each
-     *   extent,  describe which pages in the extents are allocated or free.
-     * - data pages: the rest of the volume.
-     *
-     */
-
-    /**\brief Mount a volume.
-     * \ingroup SSMVOL
-     * \details
-     * @param[in] device   Operating-system file path of the volume.
-     * @param[inout] vid A local handle to the (only) volume on the device,
-     * to be used when a volume is mounted.  The default, 0,
-     * indicates that the storage manager can chose a value for this.
-     *
-     * \note It is fine to mount a device more than once, as long as device
-     * is always the same (you cannot specify a hard link or soft link to
-     * an entity mounted under a different path).
-     * Device mounts are \b not reference-counted, so a single dismount_dev
-     * renders the volumes on the device unusable.
-     *
-     * \note This method should \b not
-     * be called in the context of a transaction.
-     */
-    static rc_t            mount_vol(
-        const char*            device,
-        vid_t& vid);
-
-    static rc_t            dismount_vol(const char* device);
-
-    /*
-     * Volume management functions
-     */
-
-    /**\brief Change the fake disk latency before I/Os on this volume,
-     * for debugging purposes
-     * \ingroup SSMVOL
-     * \details
-     * @param[in] vid  The ID of the volume of interest.
-     * @param[in] adelay  Nanoseconds to sleep with ::nanosleep()
-     *
-     * This is for debugging only.
-     * Changing the value of the latency for a volume does not enable the
-     * delay.
-     */
-    static rc_t set_fake_disk_latency(vid_t vid, const int adelay);
-
-    /**\brief Enable the fake disk latency before I/Os on this volume, for debugging purposes
-     * \ingroup SSMVOL
-     * \details
-     * @param[in] vid  The ID of the volume of interest.
-     *
-     * This is for debugging only.
-     * When this is enabled, is uses whatever disk latency was set with
-     * ss_m::create_vol() or the last applied ss_m::set_fake_disk_latency().
-     */
-    static rc_t enable_fake_disk_latency(vid_t vid);
-    /**\brief Disable the fake disk latency before I/Os on this volume, for debugging purposes
-     * \ingroup SSMVOL
-     * \details
-     * @param[in] vid  The ID of the volume of interest.
-     *
-     * This is for debugging only.
-     */
-    static rc_t disable_fake_disk_latency(vid_t vid);
-
-    /**\brief Add a volume to a device.
-     * \ingroup SSMVOL
-     * \details
-     * @param[in] device_name   Operating-system file name of the "device".
-     * @param[out] vid The vid used for the created volume
-     *
-     * \note This method should \b not
-     * be called in the context of a transaction.
-     */
-    static rc_t            create_vol(
-        const char*             device_name,
-        vid_t&           vid
-    );
-
-    /**\brief Gets the quotas associated with the volume.
-     * \ingroup SSMVOL
-     * @param[in] lvid  Long volume id by which the volume is known.
-     * @param[out] quota_KB  Quota given when the volume was created.
-     * @param[out] quota_used_KB  Portion of the quota has been used by
-     * allocated extents.
-     */
-    static rc_t            get_volume_quota(
-        const vid_t&              vid,
-        smksize_t&                quota_KB,
-        smksize_t&                quota_used_KB);
-
-
-    /**\brief Analyze a volume and report statistics regarding disk usage.
-     * \ingroup SSMVOL
-     * @param[in] vid The volume of interest.
-     * @param[out] du The structure that will hold the collected statistics.
-     * @param[in] audit If "true", the method acquires a share lock on the
-     * volume and then will check assertions about the
-     * correctness of the data structures on the volume.
-     * If the audit fails an internal fatal error is generated
-     * to facilitate debugging. (It will generate a core file if your
-     * shell permits such.)
-     * If "false" an IS lock is acquired, which means that the
-     * statistics will be fuzzy.
-     *
-     * Using the audit feature is useful for debugging.
-     * It is the only safe way to use this method.
-     * \note The statistics are added to the sm_du_stats_t structure passed in.
-     * This structure is not cleared by the storage manager.
-     */
-    static rc_t            get_du_statistics(
-        vid_t                 vid,
-        sm_du_stats_t&        du,
-        bool                  audit = true);
-
-    /**\brief Analyze a store and report statistics regarding disk usage.
-     * \ingroup SSMVOL
-     * @param[in] stid The store of interest.
-     * @param[out] du The structure that will hold the collected statistics.
-     * @param[in] audit If "true", the method acquires a share lock on the
-     * store and then will check assertions about the
-     * correctness of the data structures on the store.
-     *
-     * Using the audit feature is useful for debugging.
-     * It is the only safe way to use this method.
-     *
-     */
-    static rc_t            get_du_statistics(
-        const stid_t&        stid,
-        sm_du_stats_t&       du,
-        bool                 audit = true);
-
-    /**\brief Analyze  a volume and collect brief statistics about its usage.
-     * \ingroup SSMVOL
-     * @param[in] vid The volume of interest.
-     * @param[out] volume_stats The statistics are written here.
-     * @param[in] cc Indicates whether the volume is to be locked
-     * by this method. Acceptable values are t_cc_none and t_cc_volume.
-     *
-     * If no lock is acquired, the method can fail with eRETRY.
-     *
-     */
-    static rc_t            get_volume_meta_stats(
-        vid_t                vid,
-        SmVolumeMetaStats&   volume_stats,
-        concurrency_t        cc = t_cc_none
-    );
 
     /**
      * \brief Verifies consistency of all BTree indexes in the volume.
@@ -1387,7 +1158,7 @@ public:
      * @see verify_index()
      */
     static rc_t            verify_volume(
-        vid_t vid, int hash_bits, verify_volume_result &result);
+        int hash_bits, verify_volume_result &result);
 
 
 
@@ -1396,7 +1167,7 @@ public:
      * A store is a linked list of extents, and an extent is a
      * contiguous group of pages.  So the store is the structure
      * that holds together an ordered set of pages that can be
-     * used by a server and have an identifier (a store ID or stid_t).
+     * used by a server and have an identifier (a store ID or StoreID).
      *
      * Indexes and files of records are built on stores.
      *
@@ -1410,7 +1181,7 @@ public:
      * - ss_m::get_store_property
      * - ss_m::set_store_property
      * - ss_m::get_store_info
-     * - \ref snum_t
+     * - \ref StoreID
      *
      * When a transaction deletes a file or index, the deletion of the
      * underlying stores is delayed until the transaction commits so that
@@ -1422,48 +1193,6 @@ public:
      * commit.   At commit time, stores that have property t_load_file
      * or t_insert_file are converted to t_regular.
      */
-
-    /**\brief Change the store property of a file or index.
-     * \ingroup SSMSTORE
-     * @param[in] stid   File ID or index ID of the store to change.
-     * @param[in] property   Enumeration store_property_t (alias for
-     *                   smlevel_3::sm_store_property_t, q.v.)
-     *
-     * \details
-     * The possible uses of store properties are described with
-     * smlevel_3::sm_store_property_t.
-     */
-    static rc_t            set_store_property(
-        stid_t                stid,
-        store_property_t      property
-        );
-
-    /**\brief Get the store property of a file or index.
-     * \ingroup SSMSTORE
-     * @param[in] stid   File ID or index ID of the store of interest.
-     * @param[in] property   Reference to enumeration store_property_t
-     *                  (alias for smlevel_3::sm_store_property_t, q.v.)
-     *
-     * \details
-     * The possible uses of store properties are described with
-     * smlevel_3::sm_store_property_t.
-     */
-    static rc_t            get_store_property(
-        stid_t                stid,
-        store_property_t&     property);
-
-    /**\brief Get various store information of a file or index.
-     * \ingroup SSMSTORE
-     * @param[in] stid   File ID or index ID of the store of interest.
-     * @param[out] info  Reference to sm_store_info_t into which to
-     * write the results.
-     *
-     * \details
-     * Get internally stored information about a store.
-     */
-    static rc_t            get_store_info(
-        const stid_t&         stid,
-        sm_store_info_t&      info);
 
     //
     // Functions for B+tree Indexes
@@ -1492,8 +1221,7 @@ public:
      * @param[out] stid New store ID will be returned here.
      */
     static rc_t            create_index(
-                vid_t                 vid,
-                stid_t&               stid
+                StoreID&               stid
     );
 
 
@@ -1502,10 +1230,10 @@ public:
      *
      * @param[in] iid  ID of the index to be destroyed.
      */
-    static rc_t            destroy_index(const stid_t& iid);
+    static rc_t            destroy_index(const StoreID& iid);
 
     /**\cond skip */
-    static rc_t            print_index(stid_t stid);
+    static rc_t            print_index(StoreID stid);
     /**\endcond skip */
 
     /**
@@ -1517,7 +1245,7 @@ public:
      * We traditionally used a cursor to touch all pages, but this one is much more efficient
      * for the purpose.
      */
-    static rc_t            touch_index(stid_t stid, uint64_t &page_count);
+    static rc_t            touch_index(StoreID stid, uint64_t &page_count);
 
     /**
      * \brief Create an entry in a B+-Tree index.
@@ -1533,13 +1261,13 @@ public:
      * max_entry_size.
      */
     static rc_t            create_assoc(
-        stid_t                   stid,
+        StoreID                   stid,
         const w_keystr_t&             key,
         const vec_t&             el
     );
 
     static rc_t            create_assoc(
-        stid_t                   stid,
+        StoreID                   stid,
         const vec_t&             key,
         const vec_t&             el
     );
@@ -1552,7 +1280,7 @@ public:
      * @param[in] el  New element for the association.
      */
     static rc_t            update_assoc(
-        stid_t                   stid,
+        StoreID                   stid,
         const w_keystr_t&        key,
         const vec_t&             el
     );
@@ -1564,7 +1292,7 @@ public:
      * @param[in] el  New element for the association.
      */
     static rc_t            put_assoc(
-        stid_t                   stid,
+        StoreID                   stid,
         const w_keystr_t&        key,
         const vec_t&             el
     );
@@ -1578,7 +1306,7 @@ public:
     * @param[in] elen number of bytes to overwrite
     */
     static rc_t            overwrite_assoc(
-        stid_t                   stid,
+        StoreID                   stid,
         const w_keystr_t&        key,
         const char *el, smsize_t offset, smsize_t elen);
 
@@ -1588,7 +1316,7 @@ public:
      * @param[in] key   Key of the entry to be removed.
      */
     static rc_t            destroy_assoc(
-        stid_t                   stid,
+        StoreID                   stid,
         const w_keystr_t&             key
     );
 
@@ -1608,7 +1336,7 @@ public:
      * element found with the given key will be returned.
      */
     static rc_t            find_assoc(
-        stid_t                  stid,
+        StoreID                  stid,
         const w_keystr_t&            key,
         void*                   el,
         smsize_t&               elen,
@@ -1625,10 +1353,10 @@ public:
     /**
     *  Verifies the integrity of B-Tree index using the fence-key bitmap technique.
      * \ingroup SSMBTREE
-     * @copydetails btree_impl::_ux_verify_tree(const lpid_t&,int,bool&)
+     * @copydetails btree_impl::_ux_verify_tree(const PageID&,int,bool&)
     * @param[in] stid  ID of the index.
     */
-    static rc_t           verify_index(stid_t  stid, int hash_bits, bool &consistent);
+    static rc_t           verify_index(StoreID  stid, int hash_bits, bool &consistent);
 
     /**
      * Starts reading a given store and returns its root page ID.
@@ -1636,17 +1364,17 @@ public:
      * this takes an intent lock on it.
      * @param for_update whether to take IX or IS lock on the store.
      */
-    static rc_t open_store (const stid_t &stid, lpid_t &root_pid,
+    static rc_t open_store (StoreID stid, PageID &root_pid,
                             bool for_update = false);
     /** This version doesn't take a lock. */
-    static rc_t open_store_nolock (const stid_t &stid, lpid_t &root_pid);
+    static rc_t open_store_nolock (StoreID stid, PageID &root_pid);
 
     /*****************************************************************
      * Locking related functions
      *
-     * NOTE: there are standard conversions from lpid_t, and
-     *       stid_t to lockid_t, so wherever a lockid_t parameter is
-     *         specified a lpid_t or stid_t can be used.
+     * NOTE: there are standard conversions from PageID, and
+     *       StoreID to lockid_t, so wherever a lockid_t parameter is
+     *         specified a PageID or StoreID can be used.
      *
      *****************************************************************/
 
@@ -1703,6 +1431,13 @@ public:
 
     static const sm_options& get_options() { return _options; }
 
+    static rc_t get_du_statistics(StoreID stpgid, sm_du_stats_t& du, bool audit);
+
+    // this is for df statistics  DU DF
+    static rc_t            get_du_statistics(
+        sm_du_stats_t&         du,
+        bool                   audit);
+
 private:
 
     static int _instance_cnt;
@@ -1713,11 +1448,11 @@ private:
     void _set_option_logsize();
 
     static rc_t            _set_store_property(
-        stid_t                stid,
+        StoreID                stid,
         store_property_t      property);
 
     static rc_t            _get_store_property(
-        stid_t                stid,
+        StoreID                stid,
         store_property_t&     property);
 
     static rc_t         _begin_xct(
@@ -1747,7 +1482,7 @@ private:
     static rc_t            _rollback_work(const sm_save_point_t&        sp);
 
     static rc_t            _get_store_info(
-        const stid_t  &       stid,
+        const StoreID  &       stid,
         sm_store_info_t&      info);
 
     //
@@ -1759,32 +1494,6 @@ private:
     // static store_property_t    _make_store_property(uint32_t flag);
     // is in dir_vol_m
 
-    // this is for df statistics  DU DF
-    static rc_t            _get_du_statistics(
-        vid_t                  vid,
-        sm_du_stats_t&         du,
-        bool                   audit);
-
-    static rc_t            _get_du_statistics(
-        const stid_t  &        stid,
-        sm_du_stats_t&         du,
-        bool                   audit);
-
-    static rc_t            _get_file_meta_stats(
-        vid_t                  vid,
-        uint32_t      num_files,
-        SmFileMetaStats*       file_stats,
-        bool                   batch_calculate,
-        concurrency_t          cc);
-
-    static rc_t            _create_file(
-        vid_t                 vid,
-        stid_t&               fid,
-        store_property_t     property,
-        shpid_t              cluster_hint = 0
-    );
-
-    static rc_t            _destroy_file(const stid_t& fid);
 };
 
 /**\brief Information about a store that can be queried by the client.
@@ -1799,17 +1508,13 @@ public:
     NORET ~sm_store_info_t() {  }
 
     /// store number
-    snum_t    store;
+    StoreID    store;
 
     /// Root page if this is an index.
-    shpid_t    root;
+    PageID    root;
 };
 
 
-ostream& operator<<(ostream& o, const stid_t& stid);
-istream& operator>>(istream& i, stid_t& stid);
-ostream& operator<<(ostream& o, const lpid_t& pid);
-istream& operator>>(istream& i, lpid_t& pid);
 ostream& operator<<(ostream& o, const sm_stats_info_t& s);
 template<class ostream>
 ostream& operator<<(ostream& o, const sm_config_info_t& s)

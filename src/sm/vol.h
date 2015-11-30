@@ -30,9 +30,8 @@ public:
     void shutdown(bool abrupt);
 
     const char* devname() const { return _devname; }
-    vid_t       vid() const { return _vid; }
     // CS TODO
-    shpid_t     first_data_pageid() const { return 0; }
+    PageID     first_data_pageid() const { return 0; }
     size_t      num_used_pages() const;
 
     alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}
@@ -48,21 +47,21 @@ public:
      * code.
      */
     rc_t                write_many_pages(
-        shpid_t             first_page,
+        PageID             first_page,
         const generic_page* buf,
         int                 cnt,
         bool ignoreRestore = false);
 
-    rc_t write_page(shpid_t page, generic_page* buf) {
+    rc_t write_page(PageID page, generic_page* buf) {
         return write_many_pages(page, buf, 1);
     }
 
     rc_t                read_page(
-        shpid_t             page,
+        PageID             page,
         generic_page&       buf);
 
-    rc_t read_backup(shpid_t first, size_t count, void* buf);
-    rc_t write_backup(shpid_t first, size_t count, void* buf);
+    rc_t read_backup(PageID first, size_t count, void* buf);
+    rc_t write_backup(PageID first, size_t count, void* buf);
 
     /** Add a backup file to be used for restore */
     rc_t sx_add_backup(string path, bool redo = false);
@@ -82,22 +81,22 @@ public:
     bool            set_fake_disk_latency(const int adelay);
     void            fake_disk_latency(long start);
 
-    rc_t            alloc_a_page(shpid_t& pid, bool redo = false);
-    rc_t            deallocate_page(const shpid_t& pid, bool redo = false);
+    rc_t            alloc_a_page(PageID& pid, bool redo = false);
+    rc_t            deallocate_page(const PageID& pid, bool redo = false);
 
-    bool                is_allocated_page(shpid_t pid) const;
+    bool                is_allocated_page(PageID pid) const;
 
-    bool                is_valid_store(snum_t f) const;
+    bool                is_valid_store(StoreID f) const;
 
     /**  Return true if the store "store" is allocated. false otherwise. */
-    bool                is_alloc_store(snum_t f) const;
+    bool                is_alloc_store(StoreID f) const;
 
     /** Sets root page ID of the specified index. */
-    rc_t            set_store_root(snum_t snum, shpid_t root);
+    rc_t            set_store_root(StoreID snum, PageID root);
     /** Returns root page ID of the specified index. */
-    shpid_t         get_store_root(snum_t f) const;
+    PageID         get_store_root(StoreID f) const;
 
-    rc_t            create_store(lpid_t, snum_t&);
+    rc_t            create_store(PageID, StoreID&);
 
     /** Mark device as failed and kick off Restore */
     rc_t            mark_failed(bool evict = false, bool redo = false);
@@ -130,13 +129,12 @@ public:
     void chkpt_restore_progress(chkpt_restore_tab_t* tab);
 
     /** Return largest PID allocated for this volume yet **/
-    shpid_t get_last_allocated_pid() const;
+    PageID get_last_allocated_pid() const;
 
 private:
     // variables read from volume header -- remain constant after mount
     char             _devname[smlevel_0::max_devname];
     int              _unix_fd;
-    vid_t            _vid;
 
     mutable srwlock_t _mutex;
 
@@ -191,9 +189,6 @@ private:
     /** Initialize caches by reading from (restored/healthy) device */
     rc_t init_metadata();
 
-    /** Initialize metadata region of physical device **/
-    static rc_t write_metadata(int fd, vid_t vid);
-
     // setting failed status only allowed internally (private method)
     void set_failed(bool failed)
     {
@@ -205,7 +200,7 @@ private:
     void check_metadata_restored() const;
 };
 
-inline bool vol_t::is_valid_store(snum_t f) const
+inline bool vol_t::is_valid_store(StoreID f) const
 {
     return (f < stnode_page::max);
 }

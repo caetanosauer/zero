@@ -297,7 +297,7 @@ bool bf_tree_cleaner_slave_thread_t::_exists_requested_work()
 
 
 w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
-    vid_t vol, const std::vector<bf_idx> &candidates)
+    const std::vector<bf_idx> &candidates)
 {
     if (_dirty_shutdown_happening()) return RCOK;
 
@@ -336,9 +336,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     for (size_t i = 0; i < candidates.size(); ++i) {
         bf_idx idx = candidates[i];
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
-        if (cb._pid_vol != vol) {
-            continue;
-        }
         w_assert1(cb._pid_shpid >= _parent->_bufferpool->_volume->_volume->first_data_pageid());
         w_assert1(false == cb._in_doubt);
         w_assert1(_parent->_bufferpool->_buffer->lsn.valid());
@@ -353,8 +350,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     // 2) there might be duplicates in _sort_buffer. it can be easily detected because it's sorted.
     size_t write_buffer_from = 0;
     size_t write_buffer_cur = 0;
-    shpid_t prev_idx = 0; // to check duplicates
-    shpid_t prev_shpid = 0; // to check if it's contiguous
+    PageID prev_idx = 0; // to check duplicates
+    PageID prev_shpid = 0; // to check if it's contiguous
     const generic_page* const page_buffer = _parent->_bufferpool->_buffer;
     int rounds = 0;
     while (true) {
@@ -364,7 +361,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 // now the buffer is full. flush it out and also reset the buffer
                 DBGOUT3(<< "Write buffer full. Flushing from " << write_buffer_from
                         << " to " << write_buffer_cur);
-                W_DO(_flush_write_buffer (vol, write_buffer_from,
+                W_DO(_flush_write_buffer (write_buffer_from,
                             write_buffer_cur - write_buffer_from, cleaned_count));
                 write_buffer_from = 0;
                 write_buffer_cur = 0;
@@ -409,8 +406,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                     // if the page contains a swizzled pointer, we need to convert the data back to the original pointer.
                     // we need to do this before releasing SH latch because the pointer might be unswizzled by other threads.
                     _parent->_bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);// convert swizzled data.
-                    w_assert1(_write_buffer[write_buffer_cur].pid.vol() > 0);
-                    w_assert1(_write_buffer[write_buffer_cur].pid.page > 0);
+                    w_assert1(_write_buffer[write_buffer_cur].pid > 0);
                 }
                 cb.latch().latch_release();
             }
@@ -449,15 +445,12 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 sys_xct_section_t sxs(true); // ssx to call free_page
                 W_DO (sxs.check_error_on_start());
                 W_DO (_parent->_bufferpool->_volume->_volume
-                        ->deallocate_page(page_buffer[idx].pid.page));
+                        ->deallocate_page(page_buffer[idx].pid));
                 W_DO (sxs.end_sys_xct (RCOK));
                 // drop the page from bufferpool too
                 _parent->_bufferpool->_delete_block(idx);
             } else {
-                if (_write_buffer[write_buffer_cur].pid.vol() != vol) {
-                    continue;
-                }
-                shpid_t shpid = _write_buffer[write_buffer_cur].pid.page;
+                PageID shpid = _write_buffer[write_buffer_cur].pid;
                 _write_buffer_indexes[write_buffer_cur] = idx;
 
                 // if next page is not consecutive, flush it out
@@ -465,7 +458,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                     // flush up to _previous_ entry (before incrementing write_buffer_cur)
                     DBGOUT3(<< "Next page not consecutive. Flushing from " <<
                             write_buffer_from << " to " << write_buffer_cur);
-                    W_DO(_flush_write_buffer (vol, write_buffer_from,
+                    W_DO(_flush_write_buffer (write_buffer_from,
                                 write_buffer_cur - write_buffer_from, cleaned_count));
                     write_buffer_from = write_buffer_cur;
                 }
@@ -512,7 +505,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     if (write_buffer_cur > write_buffer_from) {
         DBGOUT3(<< "Finished cleaning round. Flushing from " << write_buffer_from
                 << " to " << write_buffer_cur);
-        W_DO(_flush_write_buffer (vol, write_buffer_from,
+        W_DO(_flush_write_buffer (write_buffer_from,
                     write_buffer_cur - write_buffer_from, cleaned_count));
         write_buffer_from = 0; // not required, but to make sure
         write_buffer_cur = 0;
@@ -524,7 +517,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
 }
 
 
-w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol,
+w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(
         size_t from, size_t consecutive, unsigned& cleaned_count)
 {
     if (_dirty_shutdown_happening()) return RCOK;
@@ -554,16 +547,15 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol,
     // }
 
     W_COERCE(_parent->_bufferpool->_volume->_volume->write_many_pages(
-                _write_buffer[from].pid.page, _write_buffer + from,
+                _write_buffer[from].pid, _write_buffer + from,
                 consecutive));
 
     for (size_t i = from; i < from + consecutive; ++i) {
         bf_idx idx = _write_buffer_indexes[i];
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
 
-        w_assert1(_write_buffer[i].pid.vol() == vol);
         if (i > from) {
-            w_assert1(_write_buffer[i].pid.page == _write_buffer[i - 1].pid.page + 1);
+            w_assert1(_write_buffer[i].pid == _write_buffer[i - 1].pid + 1);
         }
 
         // CS bugfix: we have to latch and compare LSNs before marking clean
@@ -639,7 +631,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         }
     }
     if (!_candidates_buffer.empty()) {
-        W_DO(_clean_volume(1, _candidates_buffer));
+        W_DO(_clean_volume(_candidates_buffer));
     }
 
 

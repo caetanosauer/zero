@@ -40,7 +40,7 @@
 #                                                                       #
 #       For every log record type, the perl script generates a class    #
 #       class <type>_log {                                              #
-#           void fill(const lpid_t*p, uint16_t tag, int len);           #
+#           void fill(const PageID*p, uint16_t tag, int len);           #
 #       public:                                                         #
 #           <type>_log(<arg>);                                          #
 #        // and...                                                      #
@@ -103,7 +103,7 @@ comment            1011001 1.0 (const char* msg);
 compensate         1000001 0.0 (const lsn_t& rec_lsn);
 skip               0000000 0.0 ();
 chkpt_begin        0000000 0.0 (const lsn_t &lastMountLSN);
-chkpt_bf_tab       0000000 0.0 (int cnt, const lpid_t* pid, const snum_t* store,
+chkpt_bf_tab       0000000 0.0 (int cnt, const PageID* pid, const StoreID* store,
                             const lsn_t* rec_lsn, const lsn_t* page_lsn);
 chkpt_xct_tab      0000000 0.0 (const tid_t& youngest, 
                             int cnt, const tid_t* tid, 
@@ -126,14 +126,14 @@ xct_end_group      1000000 0.0 (const xct_t** l, int llen);
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################
 # CS TODO -- this should be part of btree empty page allocation
-alloc_page       1110000  1.0  (vid_t vid, shpid_t pid);
-dealloc_page     1110000  1.0  (vid_t vid, shpid_t pid);
-create_store     1110000  1.0  (lpid_t root_pid, snum_t snum);
-append_extent    1110000  1.0  (vid_t vid, snum_t snum, extent_id_t ext);
+alloc_page       1110000  1.0  (PageID pid);
+dealloc_page     1110000  1.0  (PageID pid);
+create_store     1110000  1.0  (PageID root_pid, StoreID snum);
+append_extent    1110000  1.0  (StoreID snum, extent_id_t ext);
 # Instant Restore log records
-restore_begin      1110000 0.0 (vid_t vid);
-restore_segment    1110000 0.0 (vid_t vid, uint32_t segment);
-restore_end        1110000 0.0 (vid_t vid);
+restore_begin      1110000 0.0 ();
+restore_segment    1110000 0.0 (uint32_t segment);
+restore_end        1110000 0.0 ();
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################
@@ -159,7 +159,7 @@ page_evict        1110000 1.0 (const btree_page_h& page,
 #########################################################################
 # page is the foster-parent, page2 is the new foster-child
 btree_norec_alloc  1110110 1.0 (const btree_page_h& page, const btree_page_h& page2,
-    shpid_t new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high);
+    PageID new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high);
 
 # sys_txn is true if the insert log record was from a page rebalance full logging transaction
 btree_insert       1011001 1.42 (const btree_page_h& page,
@@ -182,7 +182,7 @@ btree_ghost_reserve 1110000 1.0  (const btree_page_h& page, const w_keystr_t& ke
 
 # page is real-parent, page2 is real-child. If needed page is already split before this op.
 btree_foster_adopt  1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
-    shpid_t new_child_pid, lsn_t child_emlsn, const w_keystr_t& new_child_key);
+    PageID new_child_pid, lsn_t child_emlsn, const w_keystr_t& new_child_key);
 
 # page is foster-parent (dest), page2 is foster_child (src) which will disappear.
 # Self contained log (not minimal logging). So, page=dest, page2=src.
@@ -195,7 +195,7 @@ btree_foster_adopt  1110100 1.0 (const btree_page_h& page, const btree_page_h& p
 # record_data - self-contain record data for all the moved records
 # record_data_len - size of data in record_data
 btree_foster_merge  1110100 1.42 (const btree_page_h& page, const btree_page_h& page2, 
-    const w_keystr_t& high, const w_keystr_t& chain_high, shpid_t foster_pid0, lsn_t foster_emlsn,
+    const w_keystr_t& high, const w_keystr_t& chain_high, PageID foster_pid0, lsn_t foster_emlsn,
     const int16_t prefix_len, const int32_t move_count, const smsize_t record_buffer_len,
     const cvec_t& record_data);
     
@@ -209,7 +209,7 @@ btree_foster_merge  1110100 1.42 (const btree_page_h& page, const btree_page_h& 
 # record_data - self-contain record data for all the moved records
 # record_data_len - size of data in record_data
 btree_foster_rebalance       1110100 1.42 (const btree_page_h& page, const btree_page_h& page2,
-    const w_keystr_t& fence, shpid_t new_pid0, lsn_t pid0_emlsn, 
+    const w_keystr_t& fence, PageID new_pid0, lsn_t pid0_emlsn, 
     const w_keystr_t& high, const w_keystr_t& chain_high, const int16_t prefix_len,
     const int32_t move_count, const smsize_t record_data_len, const cvec_t& record_data);
 
@@ -218,7 +218,7 @@ btree_foster_rebalance_norec 1110100 1.0 (const btree_page_h& page, const btree_
 
 # "page" is the real-parent. "page2" is the foster-parent.
 btree_foster_deadopt         1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
-    shpid_t deadopted_pid, lsn_t deadopted_emlsn,
+    PageID deadopted_pid, lsn_t deadopted_emlsn,
     int32_t foster_slot, const w_keystr_t& low, const w_keystr_t& high);
 
 # page == foster parent, page2 == foster child

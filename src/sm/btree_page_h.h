@@ -45,7 +45,7 @@ public:
     const w_keystr_t&  key() const    { return _key; }
     const cvec_t&      elem() const     { return _elem; }
     /// returns the opaque version
-    shpid_t            child() const    { return _child; }
+    PageID            child() const    { return _child; }
     const lsn_t&       child_emlsn() const { return _child_emlsn; }
     bool               is_ghost_record() const { return _ghost_record; }
 
@@ -54,7 +54,7 @@ private:
 
     bool            _ghost_record;
     w_keystr_t      _key;
-    shpid_t         _child;  // opaque pointer
+    PageID         _child;  // opaque pointer
     /**
      * Expected child LSN for the _child (only in interior node).
      * \ingroup Single-Page-Recovery
@@ -187,8 +187,8 @@ class btree_page_h : public fixable_page_h {
     // Used for page rebalance log record generation purpose
     union record_info_shpid_convert
     {
-        char	c[sizeof(shpid_t)];// int32 = 4 bytes
-        shpid_t i;
+        char	c[sizeof(PageID)];// int32 = 4 bytes
+        PageID i;
     };
 
 public:
@@ -210,7 +210,7 @@ public:
     //   BEGIN: Header Get/Set functions
     // ======================================================================
 
-    shpid_t                     btree_root() const { return page()->btree_root;}
+    PageID                     btree_root() const { return page()->btree_root;}
     smsize_t                    used_space()  const;
 
     // Total usable space on page
@@ -222,11 +222,11 @@ public:
     /// Returns 1 if leaf, >1 if non-leaf.
     int               level() const;
     /// Returns left-most ptr (used only in non-leaf nodes).
-    shpid_t        pid0() const;
+    PageID        pid0() const;
     /// Returns left-most opaque pointer (used only in non-leaf nodes).
-    shpid_t        pid0_opaqueptr() const;
+    PageID        pid0_opaqueptr() const;
     /// Returns root page; used for recovery
-    lpid_t           root() const;
+    PageID           root() const;
 
     /// Is associated page a leaf?
     bool         is_leaf() const;
@@ -240,9 +240,9 @@ public:
     bool             is_leaf_parent() const;
 
     /// Returns ID of B-link page (0 if not linked).
-    shpid_t         get_foster() const;
+    PageID         get_foster() const;
     /// Returns opaque pointer of B-link page (0 if not linked).
-    shpid_t         get_foster_opaqueptr() const;
+    PageID         get_foster_opaqueptr() const;
 
     /// Returns the prefix which is removed from all entries in this page.
     const char* get_prefix_key() const;
@@ -332,7 +332,7 @@ public:
      * @pre in SSX (thus REDO-only. no worry for compensation log)
      * @pre latch_mode() == EX
      */
-    void accept_empty_child(lsn_t new_lsn, shpid_t new_page_id, const bool f_redo);
+    void accept_empty_child(lsn_t new_lsn, PageID new_page_id, const bool f_redo);
 
     /** \brief Initialize the page as a foster child of the given parent
      *
@@ -341,7 +341,7 @@ public:
      *
      * \author Caetano Sauer
      */
-    rc_t format_foster_child(btree_page_h& parent, const lpid_t& new_page_id,
+    rc_t format_foster_child(btree_page_h& parent, const PageID& new_page_id,
             const w_keystr_t& triggering_key,
             w_keystr_t& split_key, // OUT: actual split key
             int& move_count);
@@ -354,7 +354,7 @@ public:
      *
      * \author Caetano Sauer
      */
-    bool set_foster_child(shpid_t foster_child_pid,
+    bool set_foster_child(PageID foster_child_pid,
         const w_keystr_t& new_fence_high, const w_keystr_t& child_fence_chain);
 
     void delete_range(int from, int to);
@@ -381,13 +381,13 @@ public:
      * ...
      */
     rc_t format_steal(lsn_t                new_lsn,
-                      const lpid_t&        pid,
-                      snum_t               store,
-                      shpid_t              root,
+                      const PageID&        pid,
+                      StoreID               store,
+                      PageID              root,
                       int                  level,
-                      shpid_t              pid0,
+                      PageID              pid0,
                       lsn_t                pid0_emlsn,
-                      shpid_t              foster,
+                      PageID              foster,
                       lsn_t                foster_emlsn,
                       const w_keystr_t&    fence_low,
                       const w_keystr_t&    fence_high,
@@ -420,9 +420,9 @@ public:
     rc_t init_fence_keys(const bool set_low, const w_keystr_t &low,
                            const bool set_high, const w_keystr_t &high,
                            const bool set_chain, const w_keystr_t &chain_fence_high,
-                           const bool set_pid0, const shpid_t new_pid0,
+                           const bool set_pid0, const PageID new_pid0,
                            const bool set_emlsn, const lsn_t new_pid0_emlsn,
-                           const bool set_foster, const shpid_t foster_pid0,
+                           const bool set_foster, const PageID foster_pid0,
                            const bool set_foster_emlsn, const lsn_t foster_emlsn,
                            const int remove_count = 0);
 
@@ -430,7 +430,7 @@ public:
      * Called when we did a split from this page but didn't move any record to new page.
      * This method can't be undone.  Use this only for REDO-only system transactions.
      */
-    rc_t norecord_split (shpid_t foster, lsn_t foster_emlsn,
+    rc_t norecord_split (PageID foster, lsn_t foster_emlsn,
                          const w_keystr_t& fence_high,
                          const w_keystr_t& chain_fence_high);
 
@@ -475,13 +475,13 @@ public:
     bool            copy_element(int slot, char *out_buffer, smsize_t &len, bool &ghost) const;
 
     /// Return the (non-opaque) child pointer of record in slot.
-    shpid_t       child(slotid_t slot) const;
+    PageID       child(slotid_t slot) const;
     /// Return the opaque child pointer of record in slot.
-    shpid_t       child_opaqueptr(slotid_t slot) const;
+    PageID       child_opaqueptr(slotid_t slot) const;
 
 
     /**
-     * Returns a pointer to given page pointer (e.g., shpid_t).
+     * Returns a pointer to given page pointer (e.g., PageID).
      *
      * Offset may be -2 for leaf nodes or [-2,nrecs()-1] for internal
      * nodes.  It denotes:
@@ -496,7 +496,7 @@ public:
      * (This method is used to implement swizzling of page pointers
      * atomically.)
      */
-    shpid_t* page_pointer_address(int offset);
+    PageID* page_pointer_address(int offset);
 
 
     /**
@@ -605,7 +605,7 @@ public:
      */
     rc_t            insert_node(const w_keystr_t&   key,
                                 slotid_t            slot,
-                                shpid_t             child,
+                                PageID             child,
                                 const lsn_t&        child_emlsn);
     /**
      * Mark the given slot to be a ghost record.
@@ -1022,9 +1022,9 @@ private:
     /**
      * Initialize the whole image of this page as an empty page.
      */
-    void            _init(lsn_t lsn, lpid_t page_id, snum_t store,
-        shpid_t root_pid, shpid_t pid0, lsn_t pid0_emlsn,
-        shpid_t foster_pid, lsn_t foster_emlsn, int16_t btree_level,
+    void            _init(lsn_t lsn, PageID page_id, StoreID store,
+        PageID root_pid, PageID pid0, lsn_t pid0_emlsn,
+        PageID foster_pid, lsn_t foster_emlsn, int16_t btree_level,
         const w_keystr_t &low, const w_keystr_t &high,
         const w_keystr_t &chain_fence_high, const bool ghost);
 
@@ -1075,17 +1075,15 @@ public:
 //   BEGIN: Inline function implementations
 // ======================================================================
 
-inline lpid_t btree_page_h::root() const {
-    lpid_t p = pid();
-    p.page = page()->btree_root;
-    return p;
+inline PageID btree_page_h::root() const {
+    return page()->btree_root;
 }
 
 inline int btree_page_h::level() const {
     return page()->btree_level;
 }
 
-inline shpid_t btree_page_h::pid0_opaqueptr() const {
+inline PageID btree_page_h::pid0_opaqueptr() const {
     return page()->btree_pid0;
 }
 
@@ -1101,7 +1099,7 @@ inline bool btree_page_h::is_node() const {
     return ! is_leaf();
 }
 
-inline shpid_t btree_page_h::get_foster_opaqueptr() const {
+inline PageID btree_page_h::get_foster_opaqueptr() const {
     return page()->btree_foster;
 }
 
@@ -1204,7 +1202,7 @@ inline bool btree_page_h::is_insertion_skewed_left() const {
     return page()->btree_consecutive_skewed_insertions < -5;
 }
 
-inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const {
+inline PageID btree_page_h::child_opaqueptr(slotid_t slot) const {
     w_assert1(is_node());
     w_assert1(slot >= 0);
     w_assert1(slot < nrecs());
@@ -1213,7 +1211,7 @@ inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const {
 
 
 
-inline shpid_t* btree_page_h::page_pointer_address(int offset) {
+inline PageID* btree_page_h::page_pointer_address(int offset) {
     if (offset == -2) {
         return &page()->btree_foster;
     }

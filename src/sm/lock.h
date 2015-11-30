@@ -50,9 +50,9 @@ public:
 
     void                         stats(
                                     u_long & buckets_used,
-                                    u_long & max_bucket_len, 
-                                    u_long & min_bucket_len, 
-                                    u_long & mode_bucket_len, 
+                                    u_long & max_bucket_len,
+                                    u_long & min_bucket_len,
+                                    u_long & mode_bucket_len,
                                     float & avg_bucket_len,
                                     float & var_bucket_len,
                                     float & std_bucket_len
@@ -90,23 +90,10 @@ public:
                                            timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT);
 
     /**
-     * Take an intent lock on the given volume.
-     * lock mode must be IS/IX/S/X.
-     */
-    rc_t                        intent_vol_lock(vid_t vid, okvl_mode::element_lock_mode m);
-    /**
      * Take an intent lock on the given store.
      */
-    rc_t                        intent_store_lock(const stid_t &stid, okvl_mode::element_lock_mode m);
-    /**
-     * Take intent locks on the given store and its volume in the same mode.
-     * This is used in usual operations like create_assoc/lookup.
-     * Call intent_vol_lock() and intent_store_lock() for store-wide
-     * operations where you need different lock modes for store and volume.
-     * If you only need volume lock, just use intent_vol_lock().
-     */
-    rc_t                        intent_vol_store_lock(const stid_t &stid, okvl_mode::element_lock_mode m);
-     
+    rc_t                        intent_store_lock(StoreID stid, okvl_mode::element_lock_mode m);
+
     void                        unlock(RawLock* lock, lsn_t commit_lsn = lsn_t::null);
 
     rc_t                        unlock_duration(bool read_lock_only = false, lsn_t commit_lsn = lsn_t::null);
@@ -116,7 +103,7 @@ public:
     static void                 lock_stats(
         u_long&                      locks,
         u_long&                      acquires,
-        u_long&                      cache_hits, 
+        u_long&                      cache_hits,
         u_long&                      unlocks,
         bool                         reset);
 

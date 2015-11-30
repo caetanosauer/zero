@@ -80,15 +80,16 @@ struct baseLogHeader
 
     // Was _pid; broke down to save 2 bytes:
     // May be used ONLY in set_pid() and pid()
-    // lpid_t            _pid;  // page on which action is performed
-    shpid_t             _shpid; // 4 bytes
+    PageID             _pid; // 4 bytes
     /* 4 + 4=8 */
 
 
-    vid_t               _vid;   // 2 bytes
+    // CS TODO: temporary placeholder for old vid
+    uint16_t _fill_vid;
+
     uint16_t             _page_tag; // tag_t 2 bytes
     /* 8 + 4= 12 */
-    snum_t              _snum; // 4 bytes
+    StoreID              _stid; // 4 bytes
     /* 12 + 4= 16*/
 
 
@@ -146,8 +147,8 @@ public:
 
 #include "logtype_gen.h"
     void             fill(
-                            const lpid_t*  pid,
-                            snum_t         store,
+                            const PageID  pid,
+                            StoreID         store,
                             uint16_t        tag,
                             smsize_t       length);
     void             fill_xct_attr(
@@ -169,21 +170,20 @@ public:
     void             redo(fixable_page_h*);
     void             undo(fixable_page_h*);
 
-    void fill(uint16_t tag, smsize_t length)
+    void fill(PageID pid, uint16_t tag, smsize_t length)
     {
-        fill(NULL, 0, tag, length);
+        fill(pid, 0, tag, length);
     }
 
-    void fill(lpid_t pid, smsize_t length)
+    void fill(PageID pid, smsize_t length)
     {
-        fill(&pid, 0, 0, length);
+        fill(pid, 0, 0, length);
     }
 
     void fill(const generic_page_h& p, smsize_t length)
     {
         w_assert3(p.store() != 0);
-        w_assert3(p.vol() != 0);
-        fill(&p.pid(), p.store(), p.tag(), length);
+        fill(p.pid(), p.store(), p.tag(), length);
     }
 
     enum {
@@ -197,17 +197,10 @@ public:
        BOOST_STATIC_ASSERT(hdr_non_ssx_sz == 40);
        BOOST_STATIC_ASSERT(hdr_single_sys_xct_sz == 40 - 16);
 
-       const tid_t&         tid() const;
-       const vid_t&         vid() const;
-       stid_t               stid() const;
-       const snum_t&        snum() const;
-       const shpid_t&       shpid() const;
-       // put construct_pid() here just to make sure we can
-       // easily locate all non-private/non-protected uses of pid()
-       lpid_t               construct_pid() const;
-       /** This returns null page ID unless it's t_multi. */
-       lpid_t               construct_pid2() const;
-       lpid_t               pid() const;
+       const tid_t&   tid() const;
+       StoreID        stid() const;
+       PageID         pid() const;
+       PageID         pid2() const;
 
 public:
     bool                 null_pid() const; // needed in restart.cpp
@@ -229,7 +222,7 @@ public:
     void                 set_xid_prev(const lsn_t &lsn);
     void                 set_clr(const lsn_t& c);
     void                 set_undoable_clr(const lsn_t& c);
-    void                 set_pid(const lpid_t& p);
+    void                 set_pid(const PageID& p);
     kind_t               type() const;
     const char*          type_str() const
     {
@@ -356,12 +349,12 @@ struct multi_page_log_t {
     lsn_t       _page2_prv; // +8
 
     /** Page ID of another page touched by the operation. */
-    shpid_t     _page2_pid; // +4
+    PageID     _page2_pid; // +4
 
     /** for alignment only. */
     uint32_t    _fill4;    // +4.
 
-    multi_page_log_t(shpid_t page2_pid) : _page2_prv(lsn_t::null), _page2_pid(page2_pid) {
+    multi_page_log_t(PageID page2_pid) : _page2_prv(lsn_t::null), _page2_pid(page2_pid) {
     }
 };
 
@@ -393,13 +386,13 @@ inline smsize_t logrec_t::header_size() const
 
 struct chkpt_bf_tab_t {
     struct brec_t {
-    lpid_t    pid;      // +8 -> 8
+    PageID    pid;      // +8 -> 8
     /*
      *  CS: store is required to mark as in-doubt on buffer pool.
      *  Perhaps we can remove the store number from buffer control blocks
      *  (bf_tree_cb_t), provided that they are not required. (TODO)
      */
-    snum_t    store;    // +4 -> 12
+    StoreID    store;    // +4 -> 12
     fill4    fill;      // for purify, +4 -> 16
     lsn_t    rec_lsn;   // +8 -> 24, this is the minimum (earliest) LSN
     lsn_t    page_lsn;  // +8 -> 32, this is the latest (page) LSN
@@ -414,8 +407,8 @@ struct chkpt_bf_tab_t {
     NORET            chkpt_bf_tab_t();
     NORET            chkpt_bf_tab_t(
     int                 cnt,
-    const lpid_t*             p,
-    const snum_t*            s,
+    const PageID*             p,
+    const StoreID*            s,
     const lsn_t*             l,
     const lsn_t*             pl);
 
@@ -424,11 +417,11 @@ struct chkpt_bf_tab_t {
 
 struct prepare_stores_to_free_t
 {
-    enum { max = (logrec_t::max_data_sz - sizeof(uint32_t)) / sizeof(stid_t) };
+    enum { max = (logrec_t::max_data_sz - sizeof(uint32_t)) / sizeof(StoreID) };
     uint32_t            num;
-    stid_t            stids[max];
+    StoreID            stids[max];
 
-    prepare_stores_to_free_t(uint32_t theNum, const stid_t* theStids)
+    prepare_stores_to_free_t(uint32_t theNum, const StoreID* theStids)
     : num(theNum)
     {
         w_assert3(theNum <= max);
@@ -436,7 +429,7 @@ struct prepare_stores_to_free_t
         stids[i] = theStids[i];
     };
 
-    int size() const  { return sizeof(uint32_t) + num * sizeof(stid_t); };
+    int size() const  { return sizeof(uint32_t) + num * sizeof(StoreID); };
 };
 
 /**
@@ -515,22 +508,20 @@ struct chkpt_xct_lock_t {
 struct chkpt_dev_tab_t
 {
     uint16_t count;
-    uint16_t next_vid;
     uint32_t data_size;
     char     data[logrec_t::max_data_sz];
 
     enum {
-        max = (logrec_t::max_data_sz - 2 * sizeof(uint32_t))
+        max = (logrec_t::max_data_sz - 3 * sizeof(uint16_t))
                 / smlevel_0::max_devname
     };
 
     chkpt_dev_tab_t();
 
-    chkpt_dev_tab_t(vid_t next_vid,
-        const std::vector<string>& devices);
+    chkpt_dev_tab_t(const std::vector<string>& devices);
 
     int size() const {
-        return data_size + 2 * sizeof(uint32_t);
+        return data_size + 3 * sizeof(uint16_t);
     }
 
     void read_devnames(std::vector<string>& devnames);
@@ -544,7 +535,7 @@ struct chkpt_backup_tab_t
 
     enum {
         max = (logrec_t::max_data_sz - sizeof(uint32_t) - sizeof(uint16_t))
-                / (smlevel_0::max_devname + sizeof(vid_t))
+                / (smlevel_0::max_devname)
     };
 
     chkpt_backup_tab_t();
@@ -562,13 +553,13 @@ struct chkpt_backup_tab_t
 struct chkpt_restore_tab_t
 {
     enum {
-        maxBitmapSize = logrec_t::max_data_sz - 2*sizeof(shpid_t)
+        maxBitmapSize = logrec_t::max_data_sz - 2*sizeof(PageID)
             - sizeof(uint32_t),
         // one segment for each bit in the bitmap
         maxSegments = maxBitmapSize * 8
     };
 
-    shpid_t firstNotRestored;
+    PageID firstNotRestored;
     uint32_t bitmapSize;
     char bitmap[maxBitmapSize];
 
@@ -578,7 +569,7 @@ struct chkpt_restore_tab_t
 
     size_t length()
     {
-        return sizeof(shpid_t)
+        return sizeof(PageID)
             + sizeof(uint32_t)
             + bitmapSize;
     }
@@ -601,62 +592,36 @@ struct xct_list_t {
     int               size() const;
 };
 
-inline const shpid_t&
-logrec_t::shpid() const
-{
-    return header._shpid;
-}
-
-inline const vid_t&
-logrec_t::vid() const
-{
-    return header._vid;
-}
-
-inline stid_t
-logrec_t::stid() const
-{
-    return stid_t(header._vid, header._snum);
-}
-
-inline const snum_t&
-logrec_t::snum() const
-{
-    return header._snum;
-}
-
-inline lpid_t
+inline PageID
 logrec_t::pid() const
 {
-    return lpid_t(header._vid, header._shpid);
+    return header._pid;
 }
 
-inline lpid_t
-logrec_t::construct_pid() const
+inline StoreID
+logrec_t::stid() const
 {
-// public version of pid(), renamed for grepping
-    return lpid_t(header._vid, header._shpid);
+    return header._stid;
 }
 
-inline lpid_t logrec_t::construct_pid2() const {
-//    w_assert1(header._cat == (t_multi | t_single_sys_xct | t_redo));
+inline PageID logrec_t::pid2() const
+{
     w_assert1(0 != (header._cat & t_multi));
 
     const multi_page_log_t* multi_log = reinterpret_cast<const multi_page_log_t*> (data_ssx());
-    return lpid_t(header._vid, multi_log->_page2_pid);
+    return multi_log->_page2_pid;
 }
 
 inline void
-logrec_t::set_pid(const lpid_t& p)
+logrec_t::set_pid(const PageID& p)
 {
-    header._shpid = p.page;
-    header._vid = p.vol();
+    header._pid = p;
 }
 
 inline bool
 logrec_t::null_pid() const
 {
-    return pid().is_null();
+    return pid() == 0;
 }
 
 inline uint16_t

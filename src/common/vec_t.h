@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -149,7 +149,7 @@ public:
         return reset().put(p, l);
     }
 
-    /// reset, then install {p,l} pairs as needed to capture limit 
+    /// reset, then install {p,l} pairs as needed to capture limit
     /// bytes starting at v + offset
     cvec_t& set(const cvec_t& v, size_t offset, size_t limit)  {
         return reset().put(v, offset, limit);
@@ -163,7 +163,7 @@ public:
 
     /** Write from vector to p, no more than \a limit bytes. */
     size_t copy_to(void* p, size_t limit = 0x7fffffff) const;
-    
+
     /** Write from vector to std::string, no more than \a limit bytes. */
     size_t copy_to(std::basic_string<unsigned char> &buffer, size_t limit = 0x7fffffff) const;
 
@@ -193,18 +193,18 @@ public:
     // vecdelparts() calls delete[] on all parts.
     // delparts() calls delete on all parts.
     // Both leave the vector re-initialized (0 parts)
-    void vecdelparts()      {   while(_cnt-->0) { 
+    void vecdelparts()      {   while(_cnt-->0) {
                                    delete[] _base[_cnt].ptr;
                                    _base[_cnt].ptr = NULL;
                                    _base[_cnt].len = 0;
-                                } 
+                                }
                                 init();
                             }
-    void delparts()         {   while(_cnt-->0) { 
+    void delparts()         {   while(_cnt-->0) {
                                    delete _base[_cnt].ptr;
                                    _base[_cnt].ptr = NULL;
                                    _base[_cnt].len = 0;
-                                } 
+                                }
                                 init();
                             }
 
@@ -229,7 +229,7 @@ private:
     // disabled
     cvec_t(const cvec_t& v);
     // determine if this is a large vector (one where extra space
-    // had to be malloc'd 
+    // had to be malloc'd
     bool _is_large() const {return _base != &_pair[0];}
 
     // determine max number of elements in the vector
@@ -247,7 +247,7 @@ private:
     bool   check_size() const;
 
 public:
-    bool is_zvec() const { 
+    bool is_zvec() const {
 #if W_DEBUG_LEVEL > 2
         if(count()>0) {
             if(_pair[0].ptr == zero_location) {
@@ -264,7 +264,7 @@ public:
 /**\brief  Vector: a set of {pointer,length} pairs for memory manipulation.
  *
  * This class is used throughout the storage manager and in its API
- * for copy-in and copy-out. 
+ * for copy-in and copy-out.
  */
 class vec_t : public cvec_t {
 public:
@@ -289,7 +289,7 @@ public:
         size_t limit,
         size_t offset = 0) const;        // offset tells where
                                 //in the vec to begin to copy
-    
+
     /**\brief Overwrites the data area to which the vector points.
      *
      * Write data from the vector v
@@ -310,10 +310,10 @@ public:
         size_t myoffset = 0);        // offset in this
 
     /// Return the pointer from the {pointer, length} pair at the given index.
-    CADDR_T       ptr(int index) const { return (index >= 0 && index < _cnt) ? 
+    CADDR_T       ptr(int index) const { return (index >= 0 && index < _cnt) ?
                                         _base[index].ptr : (CADDR_T) NULL; }
     /// Return the length from the {pointer, length} pair at the given index.
-    size_t        len(int index) const { return (index >= 0 && index < _cnt) ? 
+    size_t        len(int index) const { return (index >= 0 && index < _cnt) ?
                                         _base[index].len : 0; }
 
     /**\cond skip */
@@ -373,25 +373,6 @@ inline bool operator!=(const cvec_t& v1, const cvec_t& v2)
     return ! (v1 == v2);
 }
 
-/**\brief Helper struct for create_mr_assoc.
- * \ingroup SSMBTREE
- *
- */
-class lpid_t;
-
-struct el_filler {
-    size_t _el_size; // the size of the element
-    vec_t _el; // to give the element if it's already determined (for the 1st design)
-    
-    /* to be used as a callback function during btree insert (for the 2nd and 3rd designs)
-     * @param[out] el  the element, contents to be determined after leaf page is found
-     * @param[in] leaf  leaf page that the insertion will take place for the el  
-     */
-    virtual w_rc_t fill_el(vec_t& /* el */, const lpid_t& /* leaf */) { return RCOK; }
-	 
-    // destructor
-    virtual ~el_filler() {}
-};
 
 /*<std-footer incl-file-exclusion='VEC_T_H'>  -- do not edit anything below this line -- */
 

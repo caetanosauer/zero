@@ -155,7 +155,7 @@ rc_t plog_xct_t::_abort()
             w_assert1(!lr->is_single_sys_xct());
             w_assert1(!lr->is_multi_page()); // All multi-page logs are SSX, so no UNDO.
 
-            lpid_t pid = lr->construct_pid();
+            PageID pid = lr->pid();
             fixable_page_h page;
 
             if (!lr->is_logical())
@@ -164,7 +164,7 @@ rc_t plog_xct_t::_abort()
                 DBGOUT3 (<<"physical UNDO.. which is not quite good");
                 // tentatively use fix_direct for this
                 // eventually all physical UNDOs should go away
-                W_DO(page.fix_direct(pid.vol(), pid.page, LATCH_EX));
+                W_DO(page.fix_direct(pid, LATCH_EX));
                 w_assert1(page.pid() == pid);
             }
 
@@ -275,18 +275,17 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
     // decrement uncommitted counter on page and set PageLSN
     if (!lr->null_pid()) {
         // Later on, we need access to the control block, which the
-        // standard fix procedure does not provide. So for now we have 
+        // standard fix procedure does not provide. So for now we have
         // to use this hack, which is basically a "manual" fix.
         // Of course it would be much better if we could use a proper
         // fix method from fixable_page_h (TODO)
-        lpid_t pid = lr->construct_pid();
-        uint64_t key = bf_key(pid.vol(), pid.page);
+        PageID pid = lr->pid();
         uint16_t* uncommitted_cnt;
         generic_page* page;
         latch_t* latch;
 
         while (true) {
-            bf_idx idx = smlevel_0::bf->lookup_in_doubt(key);
+            bf_idx idx = smlevel_0::bf->lookup_in_doubt(pid);
             if (idx == 0) {
                 // page needs to be fetched
                 // Instead of repeating the logic of the fix method once again,
@@ -294,11 +293,10 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
                 // only to unfix it and fix it manually once again below.
                 // This is again a dirty hack, but at this point this penalty
                 // is acceptable because this event (a page being evicted with
-                // uncommitted updates) is avoided by the page cleaner, and 
+                // uncommitted updates) is avoided by the page cleaner, and
                 // even if we do that later, it should be quite rare.
                 fixable_page_h fetched_page;
-                W_DO(fetched_page.fix_direct(pid.vol(), pid.page, LATCH_SH,
-                            false, false));
+                W_DO(fetched_page.fix_direct(pid, LATCH_SH, false, false));
                 fetched_page.unfix();
                 continue;
             }
@@ -314,7 +312,7 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
 
             // After latching, we have to re-check if the page was not replaced
             // while we performed the lookup and waited for the latch.
-            if (cb._pid_shpid == pid.page) {
+            if (cb._pid_shpid == pid) {
                 break;
             }
         }

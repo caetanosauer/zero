@@ -219,8 +219,8 @@ public:
         virtual ~ArchiveIndex();
 
         struct ProbeResult {
-            lpid_t pidBegin;
-            lpid_t pidEnd;
+            PageID pidBegin;
+            PageID pidEnd;
             lsn_t runBegin;
             lsn_t runEnd;
             size_t offset;
@@ -229,16 +229,16 @@ public:
 
         void init();
 
-        void newBlock(lpid_t firstPID);
-        void newBlock(const vector<pair<lpid_t, size_t> >& buckets);
+        void newBlock(PageID firstPID);
+        void newBlock(const vector<pair<PageID, size_t> >& buckets);
 
         rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
         void probe(std::vector<ProbeResult>& probes,
-                lpid_t startPID, lpid_t endPID, lsn_t startLSN);
+                PageID startPID, PageID endPID, lsn_t startLSN);
 
         rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
         rc_t loadRunInfo(const char* fname);
-        void appendNewEntry(/*lpid_t lastPID*/);
+        void appendNewEntry(/*PageID lastPID*/);
 
         void setLastFinished(int f) { lastFinished = f; }
         size_t getBucketSize() { return bucketSize; }
@@ -248,7 +248,7 @@ public:
     private:
         struct BlockEntry {
             size_t offset;
-            lpid_t pid;
+            PageID pid;
         };
         struct BlockHeader {
             uint32_t entries;
@@ -265,7 +265,7 @@ public:
             lsn_t lastLSN;
 
             // Simple min-max filter for page IDs (min is in 1st entry)
-            lpid_t lastPID;
+            PageID lastPID;
 
             std::vector<BlockEntry> entries;
 
@@ -295,7 +295,7 @@ public:
         size_t findRun(lsn_t lsn);
         void probeInRun(ProbeResult&);
         // binary search
-        size_t findEntry(RunInfo* run, lpid_t pid,
+        size_t findEntry(RunInfo* run, PageID pid,
                 int from = -1, int to = -1);
         rc_t serializeRunInfo(RunInfo&, int fd, fileoff_t);
         rc_t deserializeRunInfo(RunInfo&, const char* fname);
@@ -470,8 +470,8 @@ public:
         size_t pos;
         size_t fpos;
 
-        lpid_t firstPID;
-        // lpid_t lastPID;
+        PageID firstPID;
+        // PageID lastPID;
         lsn_t maxLSNInBlock;
         int maxLSNLength;
         int lastRun;
@@ -480,7 +480,7 @@ public:
         // that will be stored within a bucket (aka restore's segment)
         size_t bucketSize;
         // list of buckets beginning in the current block
-        vector<pair<lpid_t, size_t> > buckets;
+        vector<pair<PageID, size_t> > buckets;
         // number of the nex bucket to be indexed
         size_t nextBucket;
     public:
@@ -506,7 +506,7 @@ public:
 
         struct RunMerger;
 
-        RunMerger* open(lpid_t startPID, lpid_t endPID, lsn_t startLSN,
+        RunMerger* open(PageID startPID, PageID endPID, lsn_t startLSN,
                 size_t readSize);
 
         void close (RunMerger* merger)
@@ -517,8 +517,8 @@ public:
         struct RunScanner {
             const lsn_t runBegin;
             const lsn_t runEnd;
-            const lpid_t firstPID;
-            const lpid_t lastPID;
+            const PageID firstPID;
+            const PageID lastPID;
 
             size_t offset;
             char* buffer;
@@ -531,7 +531,7 @@ public:
             ArchiveDirectory* directory;
             LogScanner* scanner;
 
-            RunScanner(lsn_t b, lsn_t e, lpid_t f, lpid_t l, fileoff_t o,
+            RunScanner(lsn_t b, lsn_t e, PageID f, PageID l, fileoff_t o,
                     ArchiveDirectory* directory, size_t readSize = 0);
             virtual ~RunScanner();
 
@@ -550,7 +550,7 @@ public:
         struct MergeHeapEntry {
             // store pid and lsn here to speed up comparisons
             bool active;
-            lpid_t pid;
+            PageID pid;
             lsn_t lsn;
             logrec_t* lr;
             RunScanner* runScan;
@@ -563,7 +563,7 @@ public:
             virtual ~MergeHeapEntry() {}
 
             void moveToNext();
-            lpid_t lastPIDinBlock();
+            PageID lastPIDinBlock();
 
             friend std::ostream& operator<<(std::ostream& os,
                     const MergeHeapEntry& e)
@@ -592,7 +592,7 @@ public:
         // Scan interface exposed to caller
         struct RunMerger {
             RunMerger()
-                : heap(cmp), started(false), endPID(lpid_t::null)
+                : heap(cmp), started(false), endPID(0)
             {}
 
             virtual ~RunMerger() {}
@@ -603,13 +603,13 @@ public:
             void close();
 
             size_t heapSize() { return heap.NumElements(); }
-            lpid_t getEndPID() { return endPID; }
+            PageID getEndPID() { return endPID; }
 
         private:
             MergeHeapCmp cmp;
             Heap<MergeHeapEntry, MergeHeapCmp> heap;
             bool started;
-            lpid_t endPID;
+            PageID endPID;
         };
     };
 
@@ -662,17 +662,17 @@ public:
 
         struct HeapEntry {
             uint8_t run;
-            lpid_t pid;
+            PageID pid;
             lsn_t lsn;
             mem_mgmt_t::slot_t slot;
 
-            HeapEntry(uint8_t run, lpid_t pid, lsn_t lsn,
+            HeapEntry(uint8_t run, PageID pid, lsn_t lsn,
                     mem_mgmt_t::slot_t slot)
                 : run(run), pid(pid), lsn(lsn), slot(slot)
             {}
 
             HeapEntry()
-                : run(0), pid(lpid_t::null), lsn(lsn_t::null), slot(NULL, 0)
+                : run(0), pid(0), lsn(lsn_t::null), slot(NULL, 0)
             {}
 
             friend std::ostream& operator<<(std::ostream& os,

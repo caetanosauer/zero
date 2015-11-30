@@ -11,7 +11,6 @@
 #include "bf_tree.h"
 
 #include "smthread.h"
-#include "vid_t.h"
 #include "generic_page.h"
 #include <string.h>
 #include "w_findprime.h"
@@ -259,8 +258,6 @@ w_rc_t bf_tree_m::destroy ()
 ///////////////////////////////////   Volume Mount/Unmount BEGIN     ///////////////////////////////////
 w_rc_t bf_tree_m::install_volume(vol_t* volume) {
     w_assert1(volume != NULL);
-    vid_t vid = volume->vid();
-    w_assert1(vid != 0);
 
     // CS: introduced this check for now
     // See comment on io_m::mount and BitBucket ticket #3
@@ -270,25 +267,24 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
     }
 
     w_assert1(_volume == NULL);
-    DBGOUT1(<<"installing volume " << vid << " to buffer pool...");
+    DBGOUT1(<<"installing volume  to buffer pool...");
 
     bf_tree_vol_t* desc = new bf_tree_vol_t(volume);
 
     // load root pages. root pages are permanently fixed.
     stnode_cache_t *stcache = volume->get_stnode_cache();
-    std::vector<snum_t> stores;
+    std::vector<StoreID> stores;
     stcache->get_used_stores(stores);
     w_rc_t rc = RCOK;
     w_rc_t preload_rc;
     for (size_t i = 0; i < stores.size(); ++i) {
-        snum_t store = stores[i];
-        shpid_t shpid = stcache->get_root_pid(store);
+        StoreID store = stores[i];
+        PageID shpid = stcache->get_root_pid(store);
         w_assert1(shpid > 0);
 
-        uint64_t key = bf_key(vid, shpid);
         bf_idx idx = 0;
         bf_idx_pair p;
-        if (_hashtable->lookup(key, p)) {
+        if (_hashtable->lookup(shpid, p)) {
             idx = p.first;
         }
 
@@ -353,9 +349,8 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
                         // In order to use minimal logging for page rebalance operations, the root
                         // page must be unmanaged during Single Page Recover process
                         fixable_page_h page;
-                        lpid_t store_id(vid, shpid);
-                        W_COERCE(page.fix_recovery_redo(idx, store_id, false /* managed*/));
-                        page.get_generic_page()->pid = store_id;
+                        W_COERCE(page.fix_recovery_redo(idx, shpid, false /* managed*/));
+                        page.get_generic_page()->pid = shpid;
                         page.get_generic_page()->tag = t_btree_p;
                         w_assert1(page.is_fixed());
                         if (emlsn != page.lsn())
@@ -409,8 +404,8 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
         if (preload_rc.is_error())
         {
             ERROUT(<<"failed to preload a root page " << shpid
-                   << " of store " << store << " in volume "
-                   << vid << ". to buffer frame " << idx << ". err=" << preload_rc);
+                   << " of store " << store <<
+                    ". to buffer frame " << idx << ". err=" << preload_rc);
             rc = preload_rc;
             _add_free_block(idx);
             break;
@@ -432,9 +427,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
     return RCOK;
 }
 
-w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t store, shpid_t shpid, bf_idx idx) {
-    vid_t vid = volume->vid();
-    DBGOUT2(<<"preloading root page " << shpid << " of store " << store << " in volume " << vid << ". to buffer frame " << idx);
+w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, StoreID store, PageID shpid, bf_idx idx) {
     w_assert1(shpid >= volume->first_data_pageid());
     W_DO(volume->read_page(shpid, _buffer[idx]));
 
@@ -443,8 +436,8 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     // test_restart, test_crash might encounter this scenario, swallow the error
     if (_buffer[idx].checksum == 0) {
         DBGOUT1(<<"empty check sum root page during volume mount. crash happened?"
-            " pid=" << shpid << " of store " << store << " in volume "
-            << vid << ". to buffer frame " << idx);
+            " pid=" << shpid << " of store " << store
+            << ". to buffer frame " << idx);
     }
     else if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
         return RC(eBADCHECKSUM);
@@ -452,7 +445,6 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
 
     bf_tree_cb_t &cb = get_cb(idx);
     cb.clear_except_latch();
-    cb._pid_vol = vid;
     cb._pid_shpid = shpid;
     cb._store_num = store;
 
@@ -478,8 +470,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     cb._used = true; // turn on _used at last
     cb._dependency_lsn = 0;
     // for some type of caller (e.g., redo) we still need hashtable entry for root
-    bool inserted = _hashtable->insert_if_not_exists(bf_key(vid, shpid),
-            bf_idx_pair(idx, 0));
+    bool inserted = _hashtable->insert_if_not_exists(shpid, bf_idx_pair(idx, 0));
     if (!inserted)
     {
         if (smlevel_0::in_recovery())
@@ -538,7 +529,7 @@ w_rc_t bf_tree_m::uninstall_volume(const bool clear_cb)
             {
             continue;
             }
-            _hashtable->remove(bf_key(1, cb._pid_shpid));
+            _hashtable->remove(cb._pid_shpid);
             if (cb._swizzled)
             {
                 --_swizzled_page_count_approximate;
@@ -562,13 +553,13 @@ w_rc_t bf_tree_m::uninstall_volume(const bool clear_cb)
 // NOTE most of the page fix/unfix functions are in bf_tree_inline.h.
 // These functions are here are because called less frequently.
 
-w_rc_t bf_tree_m::fix_direct (generic_page*& page, vid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::fix_direct (generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     // fix_direct is for REDO operation, rollback and cursor re-fix, both root and non-root page, no parent
     // mark it as from Recovery so we do not check access availability
-    return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page, true /*from_recovery*/);
+    return _fix_nonswizzled(NULL, page, shpid, mode, conditional, virgin_page, true /*from_recovery*/);
 }
 
-void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx, lpid_t page_updated)
+void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx, PageID page_updated)
 {
     // Special function for REDO phase of the system Recovery process
     // The physical page is loaded in buffer pool, idx is known but we
@@ -585,7 +576,7 @@ void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx, lpid_t page_update
     return;
 }
 
-w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     bf_idx idx = shpid;
     bf_tree_cb_t &cb = get_cb(idx);
     bf_idx parent_idx = 0;
@@ -601,8 +592,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
         cb._recovery_access = false;
         cb._uncommitted_cnt = 0;
         ++_dirty_page_count_approximate;
-        bf_idx parent_idx = parent - _buffer;
-        cb._pid_vol = get_cb(parent_idx)._pid_vol;
         cb._pid_shpid = idx;
         cb._pin_cnt = 1;
     }
@@ -617,7 +606,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
 }
 
 w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
-                                   vid_t vol, shpid_t shpid,
+                                   PageID shpid,
                                    latch_mode_t mode, bool conditional,
                                    bool virgin_page,
                                    const bool from_recovery)  // True if caller is from recovery UNDO operation
@@ -637,7 +626,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
     // Note in 'restart_m', it does not use this function to load page into buffer pool, because
     // restart_m is driven by in_doubt flag and has different requirements on loading pages.
 
-    w_assert1(vol != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
     bf_tree_vol_t *volume = _volume;
@@ -649,7 +637,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
     // unlike swizzled case, this is complex and inefficient.
     // we need to carefully follow the protocol to make it safe.
-    uint64_t key = bf_key(vol, shpid);
 
     // Force loading the data even if the page is in hash table already, this could happen
     // during Recovery REDO phase, all 'in_doubt' pages are in hash table but not loaded
@@ -673,12 +660,12 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 #endif
         bf_idx_pair p;
         bf_idx idx = 0;
-        if (_hashtable->lookup(key, p)) {
+        if (_hashtable->lookup(shpid, p)) {
             idx = p.first;
             if (p.second != parent - _buffer) {
                 // need to fix update parent pointer
                 p.second = parent - _buffer;
-                _hashtable->update(key, p);
+                _hashtable->update(shpid, p);
             }
         }
 
@@ -737,7 +724,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // STEP 3) register the page on the hashtable, so that only one
             // thread reads it (it may be latched by other concurrent fix)
             bf_idx parent_idx = parent - _buffer;
-            bool registered = _hashtable->insert_if_not_exists(key,
+            bool registered = _hashtable->insert_if_not_exists(shpid,
                     bf_idx_pair(idx, parent_idx));
             if (!registered) {
                 if (!force_load) {
@@ -786,7 +773,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     DBGOUT3(<<"bf_tree_m: error while reading page "
                             << shpid << " to frame " << idx << ". rc=" << read_rc);
 
-                    _hashtable->remove(key);
+                    _hashtable->remove(shpid);
                     cb.latch().latch_release();
 
                     if (!force_load)
@@ -819,7 +806,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     else
                     {
                         // Someone else beat us in recoverying this page, try again
-                        _hashtable->remove(key);
+                        _hashtable->remove(shpid);
                         cb.latch().latch_release();
                         force_load = false;
                         // Sleep a while to give the other thread time to finish its work
@@ -832,21 +819,20 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 }
                 else
                 {
-                    shpid_t root_shpid =
-                        smlevel_0::bf->get_root_page_id(
-                                stid_t(vol, cb._store_num));
+                    PageID root_shpid =
+                        smlevel_0::bf->get_root_page_id(cb._store_num);
                     w_assert0(root_shpid != shpid);
                 }
 
                 w_assert1(page->lsn.hi() > 0);
-                check_rc = _check_read_page(parent, page, vol, shpid, page_emlsn);
+                check_rc = _check_read_page(parent, page, shpid, page_emlsn);
                 if (check_rc.is_error())
                 {
                     // Free the block even if we did not acquire it in the
                     // first place (force load), this is because we are
                     // erroring out
                     _add_free_block(idx);
-                    _hashtable->remove(key);
+                    _hashtable->remove(shpid);
                     cb.latch().latch_release();
                     return check_rc;
                 }
@@ -860,7 +846,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
             cb.clear_except_latch();
             cb._pin_cnt = 0;
-            cb._pid_vol = vol;
             cb._pid_shpid = shpid;
             cb._dependency_lsn = 0;
             cb._rec_lsn = page->lsn.data();
@@ -911,7 +896,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // still there.
             bf_tree_cb_t &cb = get_cb(idx);
 
-            shpid_t root_shpid = smlevel_0::bf->get_root_page_id(stid_t(vol, cb._store_num));
+            PageID root_shpid = smlevel_0::bf->get_root_page_id(cb._store_num);
 
             if ((cb._in_doubt) && (root_shpid != shpid))
             {
@@ -1021,7 +1006,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 return rc;
             }
 
-            if (cb._pin_cnt < 0 || cb._pid_vol != vol || cb._pid_shpid != shpid)
+            if (cb._pin_cnt < 0 || cb._pid_shpid != shpid)
             {
                 // Page was evicted between hash table probe and latching
                 DBG(<< "Page evicted right before latching. Retrying.");
@@ -1399,11 +1384,10 @@ bool bf_tree_m::_check_dependency_still_active(bf_tree_cb_t& cb) {
 
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY END ///////////////////////////////////
 
-void bf_tree_m::switch_parent(lpid_t pid, generic_page* parent)
+void bf_tree_m::switch_parent(PageID pid, generic_page* parent)
 {
-    uint64_t key = bf_key(pid.vol(), pid.page);
     bf_idx_pair p;
-    bool found = _hashtable->lookup(key, p);
+    bool found = _hashtable->lookup(pid, p);
     // if page is not cached, there is nothing to update
     if (!found) { return; }
 
@@ -1415,7 +1399,7 @@ void bf_tree_m::switch_parent(lpid_t pid, generic_page* parent)
     // ERROUT(<< "Parent of " << pid << " updated to " << parent_idx
     //         << " from " << p.second);
     p.second = parent_idx;
-    found = _hashtable->update(key, p);
+    found = _hashtable->update(pid, p);
 
     // page cannot be evicted since first lookup because caller latched it
     w_assert0(found);
@@ -1432,7 +1416,7 @@ void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
     }
 }
 
-void bf_tree_m::_convert_to_pageid (shpid_t* shpid) const {
+void bf_tree_m::_convert_to_pageid (PageID* shpid) const {
     if ((*shpid) & SWIZZLED_PID_BIT) {
         bf_idx idx = (*shpid) ^ SWIZZLED_PID_BIT;
         w_assert1(_is_active_idx(idx));
@@ -1442,7 +1426,7 @@ void bf_tree_m::_convert_to_pageid (shpid_t* shpid) const {
     }
 }
 
-general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const {
+general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, PageID shpid) const {
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
 
     fixable_page_h p;
@@ -1485,25 +1469,24 @@ void bf_tree_m::swizzle_children(generic_page* parent, const general_recordid_t*
         w_assert1(slot >= GeneralRecordIds::PID0); // was w_assert1(slot >= -1);
         w_assert1(slot <= p.max_child_slot());
 
-        shpid_t* addr = p.child_slot_address(slot);
+        PageID* addr = p.child_slot_address(slot);
         if (((*addr) & SWIZZLED_PID_BIT) == 0) {
             _swizzle_child_pointer(parent, addr);
         }
     }
 }
 
-void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* pointer_addr) {
-    shpid_t child_shpid = *pointer_addr;
+void bf_tree_m::_swizzle_child_pointer(generic_page* parent, PageID* pointer_addr) {
+    PageID pid = *pointer_addr;
     //w_assert1((child_shpid & SWIZZLED_PID_BIT) == 0);
-    uint64_t key = bf_key (parent->pid.vol(), child_shpid);
     bf_idx_pair p;
     bf_idx idx = 0;
-    if (_hashtable->lookup(key, p)) {
+    if (_hashtable->lookup(pid, p)) {
         idx = p.first;
     }
     // so far, we don't swizzle a child page if it's not in bufferpool yet.
     if (idx == 0) {
-        DBGOUT1(<< "Unexpected! the child page " << child_shpid << " isn't in bufferpool yet. gave up swizzling it");
+        DBGOUT1(<< "Unexpected! the child page " << pid << " isn't in bufferpool yet. gave up swizzling it");
         // this is still okay. swizzling is best-effort
         return;
     }
@@ -1511,7 +1494,7 @@ void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* pointer_ad
     while (!lintel::unsafe::atomic_compare_exchange_strong(const_cast<bool*>(&(get_cb(idx)._concurrent_swizzling)), &concurrent_swizzling, true))
     { }
 
-    if ((child_shpid & SWIZZLED_PID_BIT) != 0) {
+    if ((pid & SWIZZLED_PID_BIT) != 0) {
         /* another thread swizzled it for us */
         get_cb(idx)._concurrent_swizzling = false;
         return;
@@ -1546,7 +1529,7 @@ bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
     int max_slot = node_p.max_child_slot();
     // skipping foster pointer...
     for (int32_t j = 0; j <= max_slot; ++j) {
-        shpid_t shpid = *node_p.child_slot_address(j);
+        PageID shpid = *node_p.child_slot_address(j);
         if ((shpid & SWIZZLED_PID_BIT) != 0) {
             return true;
         }
@@ -1555,17 +1538,14 @@ bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
 }
 
 w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
-                  lpid_t page_of_interest,
-                  snum_t store,
+                  PageID page_of_interest,
+                  StoreID store,
                   lsn_t first_lsn,             // Initial LSN, the first LSN which makes the page dirty
                   lsn_t last_lsn,              // Last LSN, last write to the page
                   uint32_t& in_doubt_count)
 {
     w_rc_t rc = RCOK;
-    w_assert1(page_of_interest.vol() != 0);
-    w_assert1(page_of_interest.page != 0);
-    vid_t vid = page_of_interest.vol();
-    shpid_t shpid = page_of_interest.page;
+    w_assert1(page_of_interest != 0);
 
     ret = 0;
 
@@ -1580,8 +1560,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
             << smlevel_0::operating_mode);
 
     // Do we have this page in buffer pool already?
-    uint64_t key = bf_key(vid, shpid);
-    bf_idx idx = lookup_in_doubt(key);
+    bf_idx idx = lookup_in_doubt(page_of_interest);
     if (0 != idx)
     {
         // If the page exists in buffer pool - it does not mean the in_doubt flag is on
@@ -1622,9 +1601,8 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         // Initialize control block of the page, mark the in_doubt and used flags,
         // add the rec_lsn which indicates when the page was dirty initially
         bf_tree_cb_t &cb = get_cb(idx);
-        cb._pid_vol = vid;
         cb._store_num = store;
-        cb._pid_shpid = shpid;
+        cb._pid_shpid = page_of_interest;
         cb._dirty = false;
         cb._in_doubt = true;
         cb._recovery_access = false;
@@ -1647,7 +1625,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
 
         // Register the constructed 'key' into hash table so we can find this page cb later
         // CS TODO: parent idx must be set later after redo is triggered
-        bool inserted = _hashtable->insert_if_not_exists(key,
+        bool inserted = _hashtable->insert_if_not_exists(page_of_interest,
                 bf_idx_pair(idx, 0));
         if (false == inserted)
         {
@@ -1668,8 +1646,8 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
     return rc;
 }
 
-w_rc_t bf_tree_m::load_for_redo(bf_idx idx, vid_t vid,
-                  shpid_t shpid)
+w_rc_t bf_tree_m::load_for_redo(bf_idx idx,
+                  PageID shpid)
 {
     // Special function for Recovery REDO phase
     // idx is in hash table already
@@ -1678,10 +1656,9 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, vid_t vid,
     // Caller of this fumction is responsible for acquire and release EX latch on this page
 
     w_rc_t rc = RCOK;
-    w_assert1(vid != 0);
     w_assert1(shpid != 0);
 
-    DBGOUT3(<<"REDO phase: loading page " << vid << "." << shpid
+    DBGOUT3(<<"REDO phase: loading page " << shpid
             << " into buffer pool frame " << idx);
 
     bf_tree_vol_t *volume = _volume;
@@ -1705,11 +1682,9 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, vid_t vid,
     }
 
     // Then, page ID must match, otherwise raise error
-    if (( shpid != _buffer[idx].pid.page) || (vid != _buffer[idx].pid.vol()))
-    {
+    if (shpid != _buffer[idx].pid) {
         W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
-                << vid << "." << shpid << " was " << _buffer[idx].pid.vol()
-                << "." << _buffer[idx].pid.page);
+                << "." << shpid << " was " << _buffer[idx].pid);
     }
 
     return rc;
@@ -1746,8 +1721,8 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     if (child_slot >= (uint32_t) parent.max_child_slot()+1) {
         return false;
     }
-    shpid_t* shpid_addr = parent.child_slot_address(child_slot);
-    shpid_t shpid = *shpid_addr;
+    PageID* shpid_addr = parent.child_slot_address(child_slot);
+    PageID shpid = *shpid_addr;
     if ((shpid & SWIZZLED_PID_BIT) == 0) {
         return false;
     }
@@ -1757,12 +1732,11 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     w_assert1(child_cb._swizzled);
     // in some lazy testcases, _buffer[child_idx] aren't initialized. so these checks are disabled.
     // see the above comments on cache miss
-    // w_assert1(child_cb._pid_shpid == _buffer[child_idx].pid.page);
+    // w_assert1(child_cb._pid_shpid == _buffer[child_idx].pid);
     // w_assert1(_buffer[child_idx].btree_level == 1);
-    w_assert1(child_cb._pid_vol == parent_cb._pid_vol);
     w_assert1(child_cb._pin_cnt >= 1); // because it's swizzled
     bf_idx_pair p;
-    w_assert1(_hashtable->lookup(bf_key (child_cb._pid_vol, child_cb._pid_shpid), p));
+    w_assert1(_hashtable->lookup(child_cb._pid_shpid, p));
     w_assert1(child_idx == p.first);
     child_cb._swizzled = false;
 #ifdef BP_TRACK_SWIZZLED_PTR_CNT
@@ -1789,7 +1763,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
 
     bf_tree_vol_t* vol = _volume;
     if (vol != NULL) {
-        for (uint32_t store = 1; store < MAX_STORE_COUNT; ++store) {
+        for (uint32_t store = 1; store < stnode_page::max; ++store) {
             if (vol->_root_pages[store] != 0) {
                 o << ", " << store << "=" << vol->_root_pages[store];
             }
@@ -1800,7 +1774,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
         o << "  frame[" << idx << "]:";
         bf_tree_cb_t &cb = get_cb(idx);
         if (cb._used) {
-            o << "page-" << cb._pid_vol << "." << cb._pid_shpid;
+            o << "page-" << cb._pid_shpid;
             if (cb._dirty) {
                 o << " (dirty)";
             }
@@ -1844,7 +1818,7 @@ void bf_tree_m::debug_dump_page_pointers(std::ostream& o, generic_page* page) co
     }
     o << std::endl;
 }
-void bf_tree_m::debug_dump_pointer(ostream& o, shpid_t shpid) const
+void bf_tree_m::debug_dump_pointer(ostream& o, PageID shpid) const
 {
     if (shpid & SWIZZLED_PID_BIT) {
         bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
@@ -1855,7 +1829,7 @@ void bf_tree_m::debug_dump_pointer(ostream& o, shpid_t shpid) const
     }
 }
 
-shpid_t bf_tree_m::debug_get_original_pageid (shpid_t shpid) const {
+PageID bf_tree_m::debug_get_original_pageid (PageID shpid) const {
     if (is_swizzled_pointer(shpid)) {
         bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
         return get_cb(idx)._pid_shpid;
@@ -1910,7 +1884,7 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     return RCOK;
 }
 
-void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t* stores,
+void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, PageID *pid, StoreID* stores,
                              lsn_t *rec_lsn, lsn_t *page_lsn, lsn_t &min_rec_lsn,
                              const lsn_t master, const lsn_t current_lsn,
                              lsn_t /*last_mount_lsn*/)
@@ -1959,12 +1933,8 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t*
                 // in_doubt pages are not loaded into buffer pool yet, cannot get information
                 // from page ('_buffer')
 
-                // lpid_t: Store ID (volume number + store number) + page number (4+4+4)
-                // Re-construct the lpid using several fields in cb
-                vid_t vid(cb._pid_vol);
-                lpid_t store_id(vid, cb._pid_shpid);
                 w_assert1(0 != cb._pid_shpid);   // Page number cannot be 0
-                pid[i] = store_id;
+                pid[i] = cb._pid_shpid;
                 // rec_lsn is when the page got dirty initially, since this is an in_doubt page for Log Analysis
                 // use the smaller LSN between cb and checkpoint master
                 rec_lsn[i] = (lsn.data() < master.data())? lsn : master;
@@ -2035,7 +2005,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t*
 
                 // Now we have a page we want to record
                 pid[i] = _buffer[start].pid;
-                w_assert1(0 != pid[i].page);   // Page number cannot be 0
+                w_assert1(0 != pid[i]);   // Page number cannot be 0
                 stores[i] = _buffer[start].store;
 
                 w_assert1(lsn_t::null != lsn);   // Must have a vliad first lsn
@@ -2110,7 +2080,7 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
 }
 
 w_rc_t bf_tree_m::_check_read_page(generic_page* parent, generic_page* page,
-                                   vid_t vol, shpid_t shpid,
+                                   PageID shpid,
                                    const lsn_t page_emlsn) // In: if != 0, it is the last page update LSN identified
                                                            //     during Log Analysis and stored in cb,
                                                            //     it is used to recover the page if parent page
@@ -2137,7 +2107,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, generic_page* page,
 
         // Force a complete recovery
         page->lsn = lsn_t::null;
-        page->pid = lpid_t(vol, shpid);
+        page->pid = shpid;
         page->tag = t_btree_p;
 
         btree_page_h p;
@@ -2163,13 +2133,12 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, generic_page* page,
                 // try the Single Page Recovery in this case even the
                 // parent page is not available
 
-                lpid_t pid = lpid_t(vol, shpid);
 
                 // Wipe out the page so we recover from scratch
                 ::memset(page, '\0', sizeof(generic_page));
                 // Force a complete recovery
                 page->lsn = lsn_t::null;
-                page->pid = pid;
+                page->pid = shpid;
                 page->tag = t_btree_p;
                 btree_page_h p;
                 p.fix_nonbufferpool_page(page);  // Page is marked as not buffer pool managed through this call
@@ -2192,16 +2161,15 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, generic_page* page,
             // Invalid page_emlsn: normal page loading due to user transaction, use emlsn from parent to recover
 
             DBGOUT3(<<"_check_read_page(): Caller is a user transaction, recovery with known parent page");
-            W_DO(_try_recover_page(parent, page, vol, shpid, true, page_emlsn));
+            W_DO(_try_recover_page(parent, page, shpid, true, page_emlsn));
         }
     }
 
     // Then, page ID must match.
     // There should be no case where checksum agrees but page ID doesn't agree.
-    if (page->pid.page != shpid || page->pid.vol() != vol) {
+    if (page->pid != shpid) {
         W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
-            << vol << "." << shpid << " was " << page->pid.vol()
-            << "." << page->pid.page);
+            << shpid << " was " << page->pid);
     }
 
     // Page is valid, but it might be stale...
@@ -2246,7 +2214,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, generic_page* page,
         INC_TSTAT(bf_invoked_spr);
         DBGOUT3(<<"bf_tree_m::_check_read_page: After recovery, target page emlsn < parent emlsn"
                 << ", recover again without page_emlsn (From Log Analysis)");
-        W_DO(_try_recover_page(parent, page, vol, shpid, false /*corrupted*/, lsn_t::null));
+        W_DO(_try_recover_page(parent, page, shpid, false /*corrupted*/, lsn_t::null));
     }
     // else child_emlsn == lsn. we are ok.
 
@@ -2256,8 +2224,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, generic_page* page,
 
 w_rc_t bf_tree_m::_try_recover_page(generic_page* parent,     // In: parent page
                                         generic_page* page,
-                                        vid_t vol,
-                                        shpid_t shpid,
+                                        PageID shpid,
                                         bool corrupted,          // In: true if page was corrupted, need to zero out the page
                                         const lsn_t page_emlsn)  // In: If non-null, it is the page emlsn
                                                                  //     gathered from Log Analysis,
@@ -2265,7 +2232,7 @@ w_rc_t bf_tree_m::_try_recover_page(generic_page* parent,     // In: parent page
     if (corrupted) {
         ::memset(page, '\0', sizeof(generic_page));
         page->lsn = lsn_t::null;
-        page->pid = lpid_t(vol, shpid);
+        page->pid = shpid;
         page->tag = t_btree_p;
     }
     general_recordid_t recordid = find_page_id_slot(parent, shpid);
@@ -2340,7 +2307,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     cb._uncommitted_cnt = 0;
 
     DBGOUT1(<<"delete block: remove page shpid = " << cb._pid_shpid);
-    bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
+    bool removed = _hashtable->remove(cb._pid_shpid);
     w_assert1(removed);
 
     // after all, give back this block to the freelist. other threads can see this block from now on
@@ -2387,24 +2354,24 @@ generic_page* bf_tree_m::get_page(const bf_idx& idx) {
     return _buffer + idx;
 }
 
-shpid_t bf_tree_m::get_root_page_id(stid_t store) {
+PageID bf_tree_m::get_root_page_id(StoreID store) {
     if (_volume == NULL) {
         return 0;
     }
-    bf_idx idx = _volume->_root_pages[store.store];
+    bf_idx idx = _volume->_root_pages[store];
     if (!_is_valid_idx(idx)) {
         return 0;
     }
     generic_page* page = _buffer + idx;
-    return page->pid.page;
+    return page->pid;
 }
 
-bf_idx bf_tree_m::get_root_page_idx(stid_t store) {
+bf_idx bf_tree_m::get_root_page_idx(StoreID store) {
     if (_volume== NULL)
         return 0;
 
     // root-page index is always kept in the volume descriptor:
-    bf_idx idx = _volume->_root_pages[store.store];
+    bf_idx idx = _volume->_root_pages[store];
     if (!_is_valid_idx(idx))
         return 0;
     else
@@ -2431,10 +2398,8 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
 }
 
 w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
-                                     vid_t vol, shpid_t shpid,
-                                     latch_mode_t mode, bool conditional,
-                                     bool virgin_page,
-                                     const bool from_recovery) {
+                                     PageID shpid, latch_mode_t mode, bool conditional,
+                                     bool virgin_page, const bool from_recovery) {
     INC_TSTAT(bf_fix_nonroot_count);
 #ifdef SIMULATE_MAINMEMORYDB
     if (virgin_page) {
@@ -2453,7 +2418,7 @@ w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
 #endif // SIMULATE_MAINMEMORYDB
     w_assert1(parent !=  NULL);
     // if (!is_swizzling_enabled()) {
-        return _fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page, from_recovery);
+        return _fix_nonswizzled(parent, page, shpid, mode, conditional, virgin_page, from_recovery);
     // }
     w_assert0(false);
 
@@ -2461,7 +2426,7 @@ w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
     w_assert1(latch_mode(parent) == LATCH_SH || latch_mode(parent) == LATCH_EX);
     if((shpid & SWIZZLED_PID_BIT) == 0) {
         // non-swizzled page. or even worse it might not exist in bufferpool yet!
-        W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page, from_recovery));
+        W_DO (_fix_nonswizzled(parent, page, shpid, mode, conditional, virgin_page, from_recovery));
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider a more advanced policy.
@@ -2509,9 +2474,8 @@ w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
         w_assert1 (_is_active_idx(idx));
         w_assert1(cb._pin_cnt > 0);
-        w_assert1(cb._pid_vol == vol);
         w_assert1(false == cb._in_doubt);
-        w_assert1(cb._pid_shpid == _buffer[idx].pid.page);
+        w_assert1(cb._pid_shpid == _buffer[idx].pid);
 
         // We limit the maximum value of the refcount by BP_MAX_REFCOUNT to avoid the scalability
         // bottleneck caused by excessive cache coherence traffic (cacheline ping-pongs between sockets).
@@ -2532,7 +2496,7 @@ w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
     return RCOK;
 }
 
-w_rc_t bf_tree_m::fix_unsafely_nonroot(generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, q_ticket_t& ticket) {
+w_rc_t bf_tree_m::fix_unsafely_nonroot(generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, q_ticket_t& ticket) {
     w_assert1((shpid & SWIZZLED_PID_BIT) != 0);
 
     INC_TSTAT(bf_fix_nonroot_count);
@@ -2574,31 +2538,14 @@ w_rc_t bf_tree_m::fix_unsafely_nonroot(generic_page*& page, shpid_t shpid, latch
 }
 
 
-w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, stid_t store, shpid_t shpid) {
-    w_assert1(store.vol != vid_t(0));
-    w_assert1(store.store != 0);
+w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, StoreID store, PageID shpid) {
+    w_assert1(store != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
     w_assert1(_volume != NULL);
-    w_assert1(_volume->_root_pages[store.store] == 0);
+    w_assert1(_volume->_root_pages[store] == 0);
 
     bf_idx idx;
-
-#ifdef SIMULATE_MAINMEMORYDB
-    idx = shpid;
-    _volume->_root_pages[store.store] = idx;
-    bf_tree_cb_t &cb = get_cb(idx);
-    cb.clear();
-    cb._pid_vol = store.vol;
-    cb._store_num = store.store;
-    cb._pid_shpid = shpid;
-    cb.pin_cnt_set(1); // root page's pin count is always positive
-    cb._used = true;
-    cb._dirty = true;
-    cb._uncommitted_cnt = 0;
-    get_cb(idx)._in_doubt = false;
-    if (true) return _latch_root_page(page, idx, LATCH_EX, false);
-#endif // SIMULATE_MAINMEMORYDB
 
     // this page will be the root page of a new store.
     W_DO(_grab_free_block(idx));
@@ -2608,9 +2555,8 @@ w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, stid_t store, shpid_t sh
 
     w_assert1(get_cb(idx).latch().held_by_me());
     get_cb(idx).clear_except_latch();
-    get_cb(idx)._pid_vol = store.vol;
     get_cb(idx)._pid_shpid = shpid;
-    get_cb(idx)._store_num = store.store;
+    get_cb(idx)._store_num = store;
 
     // no races on pin since we have EX latch
     w_assert1(get_cb(idx)._pin_cnt == 0);
@@ -2625,19 +2571,17 @@ w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, stid_t store, shpid_t sh
     ++_dirty_page_count_approximate;
     get_cb(idx)._swizzled = true;
 
-    bool inserted = _hashtable->insert_if_not_exists(bf_key(store.vol, shpid),
-            bf_idx_pair(idx, 0));
+    bool inserted = _hashtable->insert_if_not_exists(shpid, bf_idx_pair(idx, 0));
     w_assert0(inserted);
 
-    _volume->_root_pages[store.store] = idx;
+    _volume->_root_pages[store] = idx;
 
     return RCOK;
 }
 
-w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
+w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
                                    latch_mode_t mode, bool conditional, const bool from_undo) {
-    w_assert1(store.vol != vid_t(0));
-    w_assert1(store.store != 0);
+    w_assert1(store != 0);
 
     if (!_volume) {
         /*
@@ -2648,7 +2592,7 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
     w_assert1(_volume);
 
     // root-page index is always kept in the volume descriptor:
-    bf_idx idx = _volume->_root_pages[store.store];
+    bf_idx idx = _volume->_root_pages[store];
     if (!_is_valid_idx(idx)) {
         /*
          * CS: During restore, root page is not pre-loaded. As with any other
@@ -2667,13 +2611,13 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
         // assumption, because god knows who might be looking into the CB and
         // the page. Note that not even the old pin mechanism solved this
         // completely, because it was subject to the ABA problem.
-        shpid_t root_shpid = _volume->_volume->get_store_root(store.store);
+        PageID root_shpid = _volume->_volume->get_store_root(store);
         W_DO(_grab_free_block(idx));
         W_DO(_latch_root_page(page, idx, mode, conditional));
-        W_DO(_preload_root_page(_volume, _volume->_volume, store.store,
+        W_DO(_preload_root_page(_volume, _volume->_volume, store,
                     root_shpid, idx));
-        w_assert1(_buffer[idx].pid == lpid_t(store.vol, root_shpid));
-        _volume->add_root_page(store.store, idx);
+        w_assert1(_buffer[idx].pid == root_shpid);
+        _volume->add_root_page(store, idx);
     }
     else {
         W_DO(_latch_root_page(page, idx, mode, conditional));
@@ -2681,7 +2625,6 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
 
     w_assert1(_is_valid_idx(idx));
     w_assert1(_is_active_idx(idx));
-    w_assert1(get_cb(idx)._pid_vol == vid_t(store.vol));
     w_assert1(get_cb(idx)._used);
 
     // Root page is pre-loaded into buffer pool when loading volume
@@ -2734,7 +2677,7 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
 #else // SIMULATE_NO_SWIZZLING
     if (!is_swizzling_enabled()) {
         bf_idx_pair p;
-        w_assert1(_hashtable->lookup(bf_key(store.vol, get_cb(volume->_root_pages[store.store])._pid_shpid), p));
+        w_assert1(_hashtable->lookup(bf_key(store.vol, get_cb(volume->_root_pages[store])._pid_shpid), p));
         w_assert1(idx == p.first);
     }
 #endif // SIMULATE_NO_SWIZZLING
@@ -2781,13 +2724,12 @@ w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch_mode_t
     return RCOK;
 }
 
-w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, stid_t store, q_ticket_t& ticket) {
-    w_assert1(store.vol != vid_t(0));
-    w_assert1(store.store != 0);
+w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, StoreID store, q_ticket_t& ticket) {
+    w_assert1(store != 0);
     w_assert1(_volume != NULL);
 
     // root-page index is always kept in the volume descriptor:
-    bf_idx idx = _volume->_root_pages[store.store];
+    bf_idx idx = _volume->_root_pages[store];
     w_assert1(_is_valid_idx(idx));
 
     // later we will acquire the latch in Q mode <<<>>>
@@ -2989,7 +2931,7 @@ bf_idx bf_tree_m::lookup_in_doubt(const int64_t key) const
     return 0;
 }
 
-void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
+void bf_tree_m::set_initial_rec_lsn(PageID pid,
                        const lsn_t new_lsn,       // In-coming LSN
                        const lsn_t current_lsn)   // Current log LSN
 {
@@ -3001,9 +2943,8 @@ void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
     // Reset the _rec_lsn in page cb (when the page was dirtied initially) if
     // it is later than the new_lsn, we want the earliest lsn in _rec_lsn
 
-    uint64_t key = bf_key(pid.vol(), pid.page);
     bf_idx_pair p;
-    if (_hashtable->lookup(key, p)) {
+    if (_hashtable->lookup(pid, p)) {
         // Page exists in buffer pool hash table
         bf_tree_cb_t &cb = smlevel_0::bf->get_cb(p.first);
 
@@ -3111,31 +3052,31 @@ void pin_for_refix_holder::release() {
 }
 
 
-shpid_t bf_tree_m::normalize_shpid(shpid_t shpid) const {
+PageID bf_tree_m::normalize_shpid(PageID shpid) const {
     generic_page* page;
 #ifdef SIMULATE_MAINMEMORYDB
     bf_idx idx = shpid;
     page = &_buffer[idx];
-    return page->pid.page;
+    return page->pid;
 #else
     // if (is_swizzling_enabled()) {
         if (is_swizzled_pointer(shpid)) {
             bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
             page = &_buffer[idx];
-            return page->pid.page;
+            return page->pid;
         }
     // }
     return shpid;
 #endif
 }
 
-bool pidCmp(const shpid_t& a, const shpid_t& b) { return a < b; }
+bool pidCmp(const PageID& a, const PageID& b) { return a < b; }
 
 void WarmupThread::fixChildren(btree_page_h& parent, size_t& fixed, size_t max)
 {
     btree_page_h page;
     if (parent.get_foster() > 0) {
-        page.fix_nonroot(parent, 1, parent.get_foster(), LATCH_SH);
+        page.fix_nonroot(parent, parent.get_foster(), LATCH_SH);
         fixed++;
         fixChildren(page, fixed, max);
         page.unfix();
@@ -3145,7 +3086,7 @@ void WarmupThread::fixChildren(btree_page_h& parent, size_t& fixed, size_t max)
         return;
     }
 
-    page.fix_nonroot(parent, 1, parent.pid0(), LATCH_SH);
+    page.fix_nonroot(parent, parent.pid0(), LATCH_SH);
     fixed++;
     fixChildren(page, fixed, max);
     page.unfix();
@@ -3155,8 +3096,8 @@ void WarmupThread::fixChildren(btree_page_h& parent, size_t& fixed, size_t max)
         if (fixed >= max) {
             return;
         }
-        shpid_t pid = parent.child(j);
-        page.fix_nonroot(parent, 1, pid, LATCH_SH);
+        PageID pid = parent.child(j);
+        page.fix_nonroot(parent, pid, LATCH_SH);
         fixed++;
         fixChildren(page, fixed, max);
         page.unfix();
@@ -3168,15 +3109,15 @@ void WarmupThread::run()
     size_t npages = smlevel_0::bf->get_size();
     vol_t* vol = smlevel_0::vol;
     stnode_cache_t* stcache = vol->get_stnode_cache();
-    vector<snum_t> stids;
+    vector<StoreID> stids;
     stcache->get_used_stores(stids);
 
     // Load all pages in depth-first until buffer is full or all pages read
     btree_page_h parent;
-    vector<shpid_t> pids;
+    vector<PageID> pids;
     size_t fixed = 0;
     for (size_t i = 0; i < stids.size(); i++) {
-        parent.fix_root(stid_t(1, stids[i]), LATCH_SH);
+        parent.fix_root(stids[i], LATCH_SH);
         fixed++;
         fixChildren(parent, fixed, npages);
     }
