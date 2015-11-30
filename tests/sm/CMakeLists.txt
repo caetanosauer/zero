@@ -3,7 +3,7 @@ include(../testutil.cmake)
 ENABLE_TESTING()
 
 add_library(btree_test_env STATIC ${CMAKE_CURRENT_SOURCE_DIR}/btree_test_env.cpp)
-target_link_libraries(btree_test_env gtest common fc sthread sm)
+target_link_libraries(btree_test_env gtest common sm)
 
 # CS: think of better solution -- see comment at the bottom (TODO)
 # add_library(btree_test_env_plog STATIC ${CMAKE_CURRENT_SOURCE_DIR}/btree_test_env.cpp)

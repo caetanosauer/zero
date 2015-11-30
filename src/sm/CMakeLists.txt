@@ -69,7 +69,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/vtable_xct.cpp)
 
 add_library(sm STATIC ${sm_STAT_SRCS})
-target_link_libraries(sm fc sthread common numa)
+target_link_libraries(sm common numa)
 
 # CS: target that uses plog_xct, i.e., atomic commit protocol
 add_library(sm_plog STATIC ${sm_STAT_SRCS})
