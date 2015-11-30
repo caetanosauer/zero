@@ -139,7 +139,7 @@ private:
     mutable queue_based_lock_t _latch;
 
     // CS TODO: not needed with decoupled propagation (Merge Lucas' branch)
-    stnode_page _stnode_page;        /// The stnode_page of the volume we are caching
+    stnode_page* _stnode_page;        /// The stnode_page of the volume we are caching
 
     /// Returns the first StoreID that can be used for a new store in
     /// this volume or stnode_page::max if all available stores of

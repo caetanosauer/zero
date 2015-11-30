@@ -7,9 +7,12 @@
 
 #include "stnode_page.h"
 
+#define IO_ALIGN 512
+
 stnode_cache_t::stnode_cache_t(stnode_page& stpage)
-    : _stnode_page(stpage)
 {
+    int r = posix_memalign((void**) &_stnode_page, IO_ALIGN, sizeof(stnode_page));
+    w_assert0(r == 0);
 }
 
 PageID stnode_cache_t::get_root_pid(StoreID store) const
@@ -25,12 +28,12 @@ PageID stnode_cache_t::get_root_pid(StoreID store) const
     //
     // JIRA: ZERO-168 notes that DROP INDEX/TABLE currently are not
     // implemented and to fix this routine once they are.
-    return _stnode_page.get(store).root;
+    return _stnode_page->get(store).root;
 }
 
 stnode_t stnode_cache_t::get_stnode(StoreID store) const
 {
-    return _stnode_page.get(store);
+    return _stnode_page->get(store);
 }
 
 bool stnode_cache_t::is_allocated(StoreID store) const
@@ -46,7 +49,7 @@ StoreID stnode_cache_t::get_min_unused_store_ID() const
     // Let's start from 1, not 0.  All user store ID's will begin with 1.
     // Store-ID 0 will be a special store-ID for stnode_page/alloc_page's
     for (size_t i = 1; i < stnode_page::max; ++i) {
-        if (!_stnode_page.get(i).is_used()) {
+        if (!_stnode_page->get(i).is_used()) {
             return i;
         }
     }
@@ -59,7 +62,7 @@ void stnode_cache_t::get_used_stores(std::vector<StoreID>& ret) const
 
     CRITICAL_SECTION (cs, _latch);
     for (size_t i = 1; i < stnode_page::max; ++i) {
-        if (_stnode_page.get(i).is_used()) {
+        if (_stnode_page->get(i).is_used()) {
             ret.push_back((StoreID) i);
         }
     }
@@ -74,8 +77,8 @@ rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum, bool redo)
         return RC(eSTCACHEFULL);
     }
 
-    _stnode_page.set_root(snum, root_pid);
-    _stnode_page.update_last_extent(snum, 0);
+    _stnode_page->set_root(snum, root_pid);
+    _stnode_page->update_last_extent(snum, 0);
 
     sys_xct_section_t ssx(true);
     if (!redo) {
@@ -97,7 +100,7 @@ rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext, bool redo)
     }
 
     sys_xct_section_t ssx(true);
-    _stnode_page.update_last_extent(snum, ext);
+    _stnode_page->update_last_extent(snum, ext);
     if (!redo) {
         W_DO(log_append_extent(snum, ext));
     }
@@ -139,5 +142,5 @@ rc_t stnode_cache_t::write_stnode_page()
     // Caller must hold latch
 
     return smlevel_0::vol->write_page(stnode_page::stpid,
-            (generic_page*) &_stnode_page);
+            (generic_page*) _stnode_page);
 }

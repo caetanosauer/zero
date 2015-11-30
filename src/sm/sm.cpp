@@ -399,11 +399,6 @@ ss_m::_construct_once()
         W_FATAL(eOUTOFMEMORY);
     }
 
-    vol = new vol_t(_options);
-    if (!vol) {
-        W_FATAL(eOUTOFMEMORY);
-    }
-
     /*
      *  Level 1
      */
@@ -443,6 +438,11 @@ ss_m::_construct_once()
         errlog->clog << warning_prio <<
         "WARNING: Running without logging! Do so at YOUR OWN RISK. "
         << flushl;
+    }
+
+    vol = new vol_t(_options);
+    if (!vol) {
+        W_FATAL(eOUTOFMEMORY);
     }
 
     smlevel_0::statistics_enabled = _options.get_bool_option("sm_statistics", true);
