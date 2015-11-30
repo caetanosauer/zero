@@ -587,7 +587,6 @@ chkpt_xct_lock_log::chkpt_xct_lock_log(
 
 chkpt_backup_tab_t::chkpt_backup_tab_t(
         int cnt,
-        const vid_t* vids,
         const string* paths)
     : count(cnt)
 {

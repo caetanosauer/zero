@@ -113,7 +113,7 @@ void vol_t::build_caches(bool virgin)
         stpage.format_empty();
     }
     else {
-        W_COERCE(read_page(stnode_page::stpid, (generic_page&) stpage));
+        W_COERCE(read_page(stnode_page::stpid, (generic_page*) &stpage));
     }
 
     _stnode_cache = new stnode_cache_t(stpage);
@@ -529,10 +529,10 @@ rc_t vol_t::read_page(PageID pnum, generic_page* const buf)
  *  of the volume.
  *
  *********************************************************************/
-rc_t vol_t::read_many_pages(shpid_t first_page, generic_page* const buf, int cnt,
+rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
         bool ignoreRestore)
 {
-    DBG(<< "Page read: vol " << _vid << " from page " << first_page << " to " << first_page + cnt);
+    DBG(<< "Page read: from " << first_page << " to " << first_page + cnt);
 
     #ifdef ZERO_INIT
     /*
@@ -590,8 +590,8 @@ rc_t vol_t::read_many_pages(shpid_t first_page, generic_page* const buf, int cnt
                     w_assert1(_restore_mgr->isRestored(first_page));
                     if (reqSucceeded) {
                         // page is loaded in buffer pool already
-                        w_assert1(buf->pid == lpid_t(_vid, first_page + i));
-                        sysevent::log_page_read(pnum);
+                        w_assert1(buf->pid == first_page + i);
+                        sysevent::log_page_read(first_page + i);
                         return RCOK;
                     }
                 }
@@ -603,7 +603,6 @@ rc_t vol_t::read_many_pages(shpid_t first_page, generic_page* const buf, int cnt
         }
     }
 
-    w_assert1(first_page > 0 && first_page < (shpid_t)(_num_pages));
     w_assert1(cnt > 0);
     size_t offset = size_t(first_page) * sizeof(generic_page);
 
@@ -842,7 +841,7 @@ rc_t vol_t::write_many_pages(PageID first_page, const generic_page* const buf, i
         check_restore_finished();
     }
 
-    w_assert1(pnum > 0 && pnum < (PageID) num_used_pages());
+    w_assert1(first_page > 0 && first_page < (PageID) num_used_pages());
     w_assert1(cnt > 0);
     size_t offset = size_t(first_page) * sizeof(generic_page);
 

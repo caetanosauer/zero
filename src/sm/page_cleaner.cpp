@@ -47,8 +47,8 @@ bool CleanerControl::activate(bool wait)
         DBGTHRD(<< "Activating cleaner thread");
         activated = true;
         DO_PTHREAD(pthread_cond_signal(&activateCond));
-        DO_PTHREAD(pthread_mutex_unlock(&mutex));   
-    }    
+        DO_PTHREAD(pthread_mutex_unlock(&mutex));
+    }
 
     /*
      * Returning true only indicates that signal was sent, and not that the
@@ -140,22 +140,24 @@ void page_cleaner_slave::run() {
 
         DBGTHRD(<< "Cleaner thread activated from " << completed_lsn);
 
-        lpid_t first_page = lpid_t(volume->vid(), volume->first_data_pageid());
+        PageID first_page = volume->first_data_pageid();
         LogArchiver::ArchiveScanner logScan(master->archive);
-        LogArchiver::ArchiveScanner::RunMerger* merger = logScan.open(first_page, lpid_t::null, completed_lsn);
+        // CS TODO block size
+        LogArchiver::ArchiveScanner::RunMerger* merger = logScan.open(first_page, 0,
+                completed_lsn, 1048576);
 
         generic_page* page = NULL;
         logrec_t* lr;
         while (merger != NULL && merger->next(lr)) {
 
-            lpid_t lrpid = lr->construct_pid();
+            PageID lrpid = lr->pid();
 
             if(page != NULL && page->pid != lrpid) {
                 page->checksum = page->calculate_checksum();
             }
 
             if(!workspace_empty
-                && workspace[workspace_size-1].pid != lpid_t::null
+                && workspace[workspace_size-1].pid != 0
                 && workspace[workspace_size-1].pid < lrpid) {
                 w_assert0(workspace[workspace_size-1].pid >= page->pid);
                 flush_workspace();
@@ -166,7 +168,7 @@ void page_cleaner_slave::run() {
 
             if(workspace_empty) {
                 /* true for ignoreRestore */
-                w_rc_t err = volume->read_many_pages(lrpid.page, workspace, workspace_size, true);
+                w_rc_t err = volume->read_many_pages(lrpid, workspace, workspace_size, true);
                 if(err.err_num() == eVOLFAILED) {
                     DBGOUT(<<"Trying to clean pages, but device is failed. Cleaner deactivating.");
                     control.activated = false;
@@ -180,8 +182,8 @@ void page_cleaner_slave::run() {
                 page = &workspace[0];
             }
             else {
-                shpid_t base_pid = workspace[0].pid.page;
-                page = &workspace[lrpid.page - base_pid];
+                PageID base_pid = workspace[0].pid;
+                page = &workspace[lrpid - base_pid];
             }
 
             if(page->lsn >= lr->lsn_ck()) {
@@ -229,14 +231,13 @@ w_rc_t page_cleaner_slave::flush_workspace() {
         return RCOK;
     }
 
-    shpid_t first_pid = workspace[0].pid.page;
+    PageID first_pid = workspace[0].pid;
     DBGOUT1(<<"Flushing write buffer from page "<<first_pid << " to page " << first_pid + workspace_size-1);
     W_COERCE(volume->write_many_pages(first_pid, workspace, workspace_size));
 
     for(uint i=0; i<workspace_size; ++i) {
         generic_page& flushed = workspace[i];
-        uint64_t key = bf_key(flushed.pid);
-        bf_idx idx = master->bufferpool->lookup_in_doubt(key);
+        bf_idx idx = master->bufferpool->lookup_in_doubt(flushed.pid);
         if(idx != 0) {
             //page is in the buffer
             bf_tree_cb_t& cb = master->bufferpool->get_cb(idx);
@@ -254,7 +255,7 @@ w_rc_t page_cleaner_slave::flush_workspace() {
                 if (buffered.lsn == flushed.lsn && cb._dirty) {
                     cb._dirty = false;
                     master->bufferpool->_dirty_page_count_approximate--;
-                    DBGOUT1(<<"Setting page " << flushed.pid.page << " clean.");
+                    DBGOUT1(<<"Setting page " << flushed.pid << " clean.");
                 }
                 // CS TODO: why are in_doubt and recovery_access set here???
                 cb._in_doubt = false;
@@ -288,24 +289,22 @@ page_cleaner_mgr::page_cleaner_mgr( bf_tree_m* _bufferpool, LogArchiver::Archive
 page_cleaner_mgr::~page_cleaner_mgr() {
 }
 
-w_rc_t page_cleaner_mgr::install_cleaner(vid_t vid) {
-    w_assert0(bufferpool->_volumes[vid] != NULL);
-    cleaners[vid] = new page_cleaner_slave(this, bufferpool->_volumes[vid]->_volume, buffer_size, mode, sleep_time);
-    cleaners[vid]->fork();
+w_rc_t page_cleaner_mgr::install_cleaner() {
+    w_assert0(bufferpool->_volume != NULL);
+    cleaners[1] = new page_cleaner_slave(this, bufferpool->_volume->_volume, buffer_size, mode, sleep_time);
+    cleaners[1]->fork();
     return RCOK;
 }
 
-w_rc_t page_cleaner_mgr::uninstall_cleaner(vid_t vid) {
-    cleaners[vid]->shutdown();
-    cleaners[vid]->join();
-    delete cleaners[vid];
+w_rc_t page_cleaner_mgr::uninstall_cleaner() {
+    cleaners[1]->shutdown();
+    cleaners[1]->join();
+    delete cleaners[1];
     return RCOK;
 }
 
-w_rc_t page_cleaner_mgr::wakeup_cleaners() {
-    for (unsigned id = 1; id < vol_m::MAX_VOLS; ++id) {
-        _wakeup_a_cleaner(id);
-    }
+w_rc_t page_cleaner_mgr::wakeup_cleaner() {
+    _wakeup_a_cleaner(1);
     return RCOK;
 }
 
@@ -317,9 +316,9 @@ w_rc_t page_cleaner_mgr::force_all() {
         ss_m::logArchiver->requestFlushSync(ss_m::log->durable_lsn());
 
         // We do this for reasons
-        W_DO (smlevel_0::vol->force_fixed_buffers());
+        // W_DO (smlevel_0::vol->force_fixed_buffers());
 
-        wakeup_cleaners();
+        wakeup_cleaner();
 
         bool all_clean = true;
         bf_idx block_cnt = bufferpool->_block_cnt;
@@ -339,8 +338,7 @@ w_rc_t page_cleaner_mgr::force_all() {
 }
 
 bool page_cleaner_mgr::_wakeup_a_cleaner(uint id) {
-    w_assert1(id > 0 && id <= vol_m::MAX_VOLS);
-    if (bufferpool->_volumes[id] != NULL) {
+    if (bufferpool->_volume != NULL) {
         return cleaners[id]->activate();
     }
     return false;

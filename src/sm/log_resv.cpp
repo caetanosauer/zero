@@ -291,8 +291,7 @@ long log_resv::max_chkpt_size() const
     long bf_tab_size = smlevel_0::bf->get_block_cnt()*sizeof(chkpt_bf_tab_t::brec_t);
     long xct_tab_size = GUESS_MAX_XCT_COUNT*sizeof(chkpt_xct_tab_t::xrec_t);
     long xct_lock_size = GUESS_EACH_XCT_LOCK_COUNT*GUESS_MAX_XCT_COUNT*sizeof(chkpt_xct_lock_t::lockrec_t);
-    long dev_tab_size = sizeof(chkpt_dev_tab_t);
-    return FUDGE + bf_tab_size + xct_tab_size + xct_lock_size + dev_tab_size;
+    return FUDGE + bf_tab_size + xct_tab_size + xct_lock_size;
 }
 
 rc_t

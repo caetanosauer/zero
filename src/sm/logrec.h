@@ -510,14 +510,14 @@ struct chkpt_backup_tab_t
     char     data[logrec_t::max_data_sz];
 
     enum {
-        max = (logrec_t::max_data_sz - sizeof(uint32_t) - sizeof(uint16_t))
+        max = (logrec_t::max_data_sz - 2 * sizeof(uint32_t))
                 / (smlevel_0::max_devname)
     };
 
     chkpt_backup_tab_t(
         const std::vector<string>& paths);
 
-    chkpt_backup_tab_t(int cnt, const vid_t* vids, const string* paths);
+    chkpt_backup_tab_t(int cnt, const string* paths);
 
     int size() const {
         return data_size + sizeof(uint32_t) * 2;

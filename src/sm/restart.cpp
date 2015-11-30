@@ -493,7 +493,7 @@ restart_m::restart(
             // Note this buffer pool flush is only in serial mode, but not in concurrent
             // mode (open database after Log Analysis)
 
-            W_COERCE(bf->wakeup_cleaner());
+            W_COERCE(bf->wakeup_cleaners());
         }
 
         struct timeval tm_after;
@@ -652,19 +652,9 @@ void restart_m::log_analysis(
         }
     }
 
-    //Re-mount devices
-    smlevel_0::vol->set_next_vid(v_chkpt.next_vid);
-    for (dev_tab_t::iterator it  = v_chkpt.dev_tab.begin();
-                             it != v_chkpt.dev_tab.end(); ++it) {
-        smlevel_0::vol->sx_mount(it->first.c_str(), false /* log */);
-    }
-
     //Re-add backups
-    for (bkp_tab_t::iterator it  = v_chkpt.bkp_tab.begin();
-                             it != v_chkpt.bkp_tab.end(); ++it) {
-        smlevel_0::vol->sx_add_backup(it->first,
-                                      it->second.bkp_path, false /* log */);
-    }
+    // CS TODO only works for one backup
+    smlevel_0::vol->sx_add_backup(v_chkpt.bkp_tab.bkp_path, true);
 }
 
 

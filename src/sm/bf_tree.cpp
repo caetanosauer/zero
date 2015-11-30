@@ -250,10 +250,6 @@ void bf_tree_m::set_cleaner(LogArchiver* _archiver, const sm_options& _options) 
 w_rc_t bf_tree_m::init ()
 {
     W_DO(_cleaner->start_cleaners());
-    if(_dcleaner != NULL) {
-        W_DO(_cleaner->request_stop_cleaners());
-        W_DO(_cleaner->join_cleaners());
-    }
     return RCOK;
 }
 
@@ -264,8 +260,8 @@ w_rc_t bf_tree_m::destroy ()
     }
 
     if(_dcleaner == NULL) {
-        W_DO(_cleaner->request_stop_cleaners());
-        W_DO(_cleaner->join_cleaners());
+        W_DO(_cleaner->request_stop_cleaner());
+        W_DO(_cleaner->join_cleaner());
     }
 
     return RCOK;
@@ -1223,9 +1219,11 @@ w_rc_t bf_tree_m::force_volume() {
     }
     return _cleaner->force_volume();
 }
+
+// CS TODO use templace for cleaner
 w_rc_t bf_tree_m::wakeup_cleaners() {
     if(_dcleaner != NULL) {
-        return _dcleaner->wakeup_cleaners();
+        return _dcleaner->wakeup_cleaner();
     }
     return _cleaner->wakeup_cleaner();
 }

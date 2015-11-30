@@ -324,7 +324,7 @@ void chkpt_m::synch_take()
             take(t_chkpt_sync, dummy_heap);
             w_assert1(0 == dummy_heap.NumElements());
         }
-        
+
     }
     return;
 }
@@ -360,7 +360,6 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
     new_chkpt.begin_lsn = begin_lsn;
     new_chkpt.min_xct_lsn = begin_lsn;
     new_chkpt.min_rec_lsn = begin_lsn;
-    new_chkpt.next_vid = 1;
 
     if (master_lsn == lsn_t::null) {
         // The only possibility that we have a NULL as master lsn is due to a brand new
@@ -459,33 +458,6 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
             case logrec_t::t_chkpt_begin:
                 break;
 
-            case logrec_t::t_chkpt_dev_tab:
-                if (num_chkpt_end_handled == 0)
-                {
-                    // Process it only if we have seen a matching 'end checkpoint' log record
-                    // meaning we are processing the last completed checkpoint
-                    chkpt_dev_tab_t* tab = (chkpt_dev_tab_t*) r->data();
-                    std::vector<string> dnames;
-                    tab->read_devnames(dnames);
-                    w_assert0(tab->count == dnames.size());
-                    for (int i = 0; i < tab->count; i++) {
-                        if(new_chkpt.dev_tab.count(dnames[i]))  {
-                            // volume is already in the list and it is safe to
-                            // ignore information about it from the previous chkpt,
-                            // since it is guaranteed to be out-dated
-                        }
-                        else {
-                            new_chkpt.dev_tab[dnames[i]].dev_mounted = true;
-                            new_chkpt.dev_tab[dnames[i]].dev_lsn = lsn_t::null;
-                            // dev_lsn = null, because any further log record
-                            // about this device is going to be more recent
-                        }
-                    }
-                    //-1 because next_vid already starts at 1
-                    new_chkpt.next_vid += (tab->next_vid - 1);
-                }
-                break;
-
             case logrec_t::t_chkpt_backup_tab:
                 if (num_chkpt_end_handled == 0)
                 {
@@ -555,54 +527,10 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
                 num_chkpt_end_handled++;
                 break;
 
-            case logrec_t::t_mount_vol:
-                {
-                    string dev = (const char*)(r->data_ssx());
-                    if(new_chkpt.dev_tab.count(dev)) {
-                        // volume exists already ...
-                        if(new_chkpt.dev_tab[dev].dev_lsn < r->lsn()) {
-                            // ... but the log record is more recent
-                            new_chkpt.dev_tab[dev].dev_mounted = true;
-                            new_chkpt.dev_tab[dev].dev_lsn = r->lsn();
-                        }
-                    }
-                    else {
-                        // volume does not exist yet
-                        new_chkpt.dev_tab[dev].dev_mounted = true;
-                        new_chkpt.dev_tab[dev].dev_lsn = r->lsn();
-                    }
-                }
-                break;
-
-            case logrec_t::t_format_vol:
-                new_chkpt.next_vid++;
-                break;
-
-            case logrec_t::t_dismount_vol:
-                {
-                    string dev = (const char*)(r->data_ssx());
-                    if(new_chkpt.dev_tab.count(dev)) {
-                        // volume exists already ...
-                        if(new_chkpt.dev_tab[dev].dev_lsn < r->lsn()) {
-                            // ... but the log record is more recent
-                            new_chkpt.dev_tab[dev].dev_mounted = false;
-                            new_chkpt.dev_tab[dev].dev_lsn = r->lsn();
-                        }
-                    }
-                    else {
-                        // volume does not exist yet
-                        new_chkpt.dev_tab[dev].dev_mounted = false;
-                        new_chkpt.dev_tab[dev].dev_lsn = r->lsn();
-                    }
-                }
-                break;
-
             case logrec_t::t_add_backup:
                 {
-                    vid_t vid = *((vid_t*) (r->data_ssx()));
-                    const char* dev_name = (const char*)(r->data_ssx() + sizeof(vid_t));
-
-                    new_chkpt.bkp_tab[vid].bkp_path = dev_name;
+                    const char* dev_name = (const char*)(r->data_ssx());
+                    new_chkpt.bkp_tab.bkp_path = dev_name;
                 }
                 break;
 
@@ -642,11 +570,11 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
 
             case logrec_t::t_page_write:
                 {
-                    lpid_t* pid_begin = (lpid_t*)(r->data());
-                    uint32_t* count = (uint32_t*)(r->data() + sizeof(lpid_t));
+                    PageID* pid_begin = (PageID*)(r->data());
+                    uint32_t* count = (uint32_t*)(r->data() + sizeof(PageID));
                     for(uint i=0; i<*count; i++) {
-                        lpid_t pid = *pid_begin;
-                        pid.page += i;
+                        PageID pid = *pid_begin;
+                        pid += i;
 
                         if(new_chkpt.buf_tab.count(pid)) {
                             // Page exists in bf_table, we mark it as !dirty
@@ -668,7 +596,6 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
                 break;
 
             case logrec_t::t_compensate:
-            case logrec_t::t_store_operation:
             case logrec_t::t_page_set_to_be_deleted:
             case logrec_t::t_page_img_format:
             case logrec_t::t_btree_norec_alloc:
@@ -731,17 +658,6 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
 
     // Done with forward log scan, check the compensation list
     _analysis_process_compensation_map(mapCLR, new_chkpt);
-
-    // Remove non-mounted devices
-    for(dev_tab_t::iterator it  = new_chkpt.dev_tab.begin();
-                            it != new_chkpt.dev_tab.end(); ){
-        if(it->second.dev_mounted == false) {
-            new_chkpt.dev_tab.erase(it++);
-        }
-        else {
-            ++it;
-        }
-    }
 
     // Remove non-dirty pages
     for(buf_tab_t::iterator it  = new_chkpt.buf_tab.begin();
@@ -822,7 +738,6 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
     new_chkpt.begin_lsn = begin_lsn;
     new_chkpt.min_xct_lsn = begin_lsn;
     new_chkpt.min_rec_lsn = begin_lsn;
-    new_chkpt.next_vid = 1;
 
     if (master_lsn == lsn_t::null) {
         // The only possibility that we have a NULL as master lsn is due to a brand new
@@ -1043,81 +958,10 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                 }
                 break;
 
-            case logrec_t::t_chkpt_dev_tab:
-                if (num_chkpt_end_handled == 1)
-                {
-                    // Process it only if we have seen a matching 'end checkpoint' log record
-                    // meaning we are processing the last completed checkpoint
-                    chkpt_dev_tab_t* tab = (chkpt_dev_tab_t*) r.data();
-                    std::vector<string> dnames;
-                    tab->read_devnames(dnames);
-                    w_assert0(tab->count == dnames.size());
-                    for (int i = 0; i < tab->count; i++) {
-                        if( new_chkpt.dev_tab.count(dnames[i]) ) {
-                            // volume is already in the list and it is safe to
-                            // ignore information about it from the previous chkpt,
-                            // since it is guaranteed to be out-dated
-                        }
-                        else {
-                            new_chkpt.dev_tab[dnames[i]].dev_mounted = true;
-                            new_chkpt.dev_tab[dnames[i]].dev_lsn = lsn_t::null;
-                            // dev_lsn = null, because any further log record
-                            // about this device is going to be more recent
-                        }
-                    }
-                    //-1 because next_vid already starts at 1
-                    new_chkpt.next_vid += (tab->next_vid - 1);
-                }
-                break;
-
-            case logrec_t::t_mount_vol:
-                {
-                    string dev = (const char*)(r.data_ssx());
-                    if(new_chkpt.dev_tab.count(dev)) {
-                        // volume exists already ...
-                        if(new_chkpt.dev_tab[dev].dev_lsn < lsn) {
-                            // ... but the log record is more recent
-                            new_chkpt.dev_tab[dev].dev_mounted = true;
-                            new_chkpt.dev_tab[dev].dev_lsn = lsn;
-                        }
-                    }
-                    else {
-                        // volume does not exist yet
-                        new_chkpt.dev_tab[dev].dev_mounted = true;
-                        new_chkpt.dev_tab[dev].dev_lsn = lsn;
-                    }
-                }
-                break;
-
-            case logrec_t::t_format_vol:
-                new_chkpt.next_vid++;
-                break;
-
-            case logrec_t::t_dismount_vol:
-                {
-                    string dev = (const char*)(r.data_ssx());
-                    if(new_chkpt.dev_tab.count(dev)) {
-                        // volume exists already ...
-                        if(new_chkpt.dev_tab[dev].dev_lsn < lsn) {
-                            // ... but the log record is more recent
-                            new_chkpt.dev_tab[dev].dev_mounted = false;
-                            new_chkpt.dev_tab[dev].dev_lsn = lsn;
-                        }
-                    }
-                    else {
-                        // volume does not exist yet
-                        new_chkpt.dev_tab[dev].dev_mounted = false;
-                        new_chkpt.dev_tab[dev].dev_lsn = lsn;
-                    }
-                }
-                break;
-
             case logrec_t::t_add_backup:
                 {
-                    vid_t vid = *((vid_t*) (r.data_ssx()));
-                    const char* dev = (const char*)(r.data_ssx() + sizeof(vid_t));
-
-                    new_chkpt.bkp_tab[vid].bkp_path = dev;
+                    const char* dev = (const char*)(r.data_ssx());
+                    new_chkpt.bkp_tab.bkp_path = dev;
                 }
             break;
 
@@ -1204,7 +1048,6 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                 break;
 
             case logrec_t::t_compensate:
-            case logrec_t::t_store_operation:
             case logrec_t::t_page_set_to_be_deleted:
             case logrec_t::t_page_img_format:
             case logrec_t::t_btree_norec_alloc:
@@ -1265,18 +1108,18 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                 // CS TODO - IMPLEMENT!
                 break;
 
-            case logrec_t::t_alloc_a_page:
-            case logrec_t::t_dealloc_a_page:
+            case logrec_t::t_alloc_page:
+            case logrec_t::t_dealloc_page:
                 // do nothing -- page replay will reallocate if necessary
                 break;
 
             case logrec_t::t_page_write:
                 {
-                    lpid_t* pid_begin = (lpid_t*)(r.data());
-                    uint32_t* count = (uint32_t*)(r.data() + sizeof(lpid_t));
+                    PageID* pid_begin = (PageID*)(r.data());
+                    uint32_t* count = (uint32_t*)(r.data() + sizeof(PageID));
                     for(uint i=0; i<*count; i++) {
-                        lpid_t pid = *pid_begin;
-                        pid.page += i;
+                        PageID pid = *pid_begin;
+                        pid += i;
 
                         if(new_chkpt.buf_tab.count(pid)) {
                             // Page exists in bf_table, we mark it as !dirty
@@ -1340,17 +1183,6 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
 
     // Done with backward log scan, check the compensation list
     _analysis_process_compensation_map(mapCLR, new_chkpt);
-
-    // Remove non-mounted devices
-    for(dev_tab_t::iterator it  = new_chkpt.dev_tab.begin();
-                            it != new_chkpt.dev_tab.end(); ){
-        if(it->second.dev_mounted == false) {
-            new_chkpt.dev_tab.erase(it++);
-        }
-        else {
-            ++it;
-        }
-    }
 
     // Remove non-dirty pages
     for(buf_tab_t::iterator it  = new_chkpt.buf_tab.begin();
@@ -1451,7 +1283,7 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt) // In: Log r
         new_chkpt.xct_tab[tid_t::Max].first_lsn = lsn;
 
         // Get the associated page
-        lpid_t page_of_interest = r.construct_pid();
+        PageID page_of_interest = r.pid();
         //DBGOUT3(<<"analysis (single_log system xct): default " <<  r.type()
         //        << " page of interest " << page_of_interest);
 
@@ -1471,7 +1303,7 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt) // In: Log r
         //        clear the in_doubt bit and remove the page from hash table so the page
         //        slot is available for a different page
 
-        if (r.type() == logrec_t::t_alloc_a_page || r.type() == logrec_t::t_dealloc_a_page)
+        if (r.type() == logrec_t::t_alloc_page || r.type() == logrec_t::t_dealloc_page)
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
             if(new_chkpt.buf_tab.count(page_of_interest))
@@ -1502,7 +1334,7 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt) // In: Log r
             {
                 // If the log record has a valid page ID, the operation affects buffer pool
                 // Register the page cb in buffer pool (if not exist) and mark the in_doubt flag
-                if (0 == page_of_interest.page)
+                if (0 == page_of_interest)
                     W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a system transaction log record");
 
                 if(new_chkpt.buf_tab.count(page_of_interest)) {   // page is already in bf_table
@@ -1515,10 +1347,10 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt) // In: Log r
                         new_chkpt.buf_tab[page_of_interest].dirty = true;
                     }
 
-                    new_chkpt.buf_tab[page_of_interest].store = r.snum();
+                    new_chkpt.buf_tab[page_of_interest].store = r.stid();
                 }
                 else {  // page is not present in buffer table
-                    new_chkpt.buf_tab[page_of_interest].store = r.snum();
+                    new_chkpt.buf_tab[page_of_interest].store = r.stid();
                     new_chkpt.buf_tab[page_of_interest].rec_lsn = lsn;
                     new_chkpt.buf_tab[page_of_interest].page_lsn = lsn;
                     new_chkpt.buf_tab[page_of_interest].dirty = true;
@@ -1541,9 +1373,9 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt) // In: Log r
 
                 if (r.is_multi_page())
                 {
-                    lpid_t page2_of_interest = r.construct_pid2();
+                    PageID page2_of_interest = r.pid2();
                     //DBGOUT3(<<" multi-page:" <<  page2_of_interest);
-                    if (0 == page2_of_interest.page)
+                    if (0 == page2_of_interest)
                     {
                         if (r.type() == logrec_t::t_btree_norec_alloc)
                         {
@@ -1568,10 +1400,10 @@ bool chkpt_m::_analysis_system_log(logrec_t& r, chkpt_t& new_chkpt) // In: Log r
                             new_chkpt.buf_tab[page2_of_interest].dirty = true;
                         }
 
-                        new_chkpt.buf_tab[page2_of_interest].store = r.snum();
+                        new_chkpt.buf_tab[page2_of_interest].store = r.stid();
                     }
                     else {
-                        new_chkpt.buf_tab[page2_of_interest].store = r.snum();
+                        new_chkpt.buf_tab[page2_of_interest].store = r.stid();
                         new_chkpt.buf_tab[page2_of_interest].rec_lsn = lsn;
                         new_chkpt.buf_tab[page2_of_interest].page_lsn = lsn;
                         new_chkpt.buf_tab[page2_of_interest].dirty = true;
@@ -1615,10 +1447,10 @@ void chkpt_m::_analysis_ckpt_bf_log(logrec_t& r,           // In: Log record to 
         // if it is not in buffer pool, register and mark it.
         // If it is already in the buffer pool, update the rec_lsn to the earliest LSN
 
-        if (0 == dp->brec[i].pid.page)
+        if (0 == dp->brec[i].pid)
             W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a page in t_chkpt_bf_tab log record");
 
-        lpid_t pid = dp->brec[i].pid;
+        PageID pid = dp->brec[i].pid;
         if(new_chkpt.buf_tab.count(pid)) {
 
             // This page is already in the bf_table but marked as !dirty,
@@ -1902,11 +1734,11 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
 
 {
     lsn_t lsn = r.get_lsn_ck();
-    lpid_t page_of_interest = r.construct_pid();
+    PageID page_of_interest = r.pid();
     //DBGOUT3(<<"analysis: default " <<
     //    r.type() << " tid " << r.tid()
     //    << " page of interest " << page_of_interest);
-    if (r.is_page_update() && r.type() != logrec_t::t_store_operation)
+    if (r.is_page_update())
     {
         // Log record affects buffer pool, and it is not a compensation log record
         //DBGOUT3(<<"is page update " );
@@ -1959,7 +1791,7 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
         //                   non-logged operation, we don't want to re-format the page
         // De-allocation of a page (t_dealloc_a_page, t_page_set_to_be_deleted) -
         //                   clear the in_doubt bit, so the page can be evicted if needed.
-        if (r.type() == logrec_t::t_alloc_a_page || r.type() == logrec_t::t_dealloc_a_page)
+        if (r.type() == logrec_t::t_alloc_page || r.type() == logrec_t::t_dealloc_page)
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
             if(new_chkpt.buf_tab.count(page_of_interest))
@@ -1985,7 +1817,7 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
         else
         {
             // Register the page cb in buffer pool (if not exist) and mark the in_doubt flag
-            if (0 == page_of_interest.page)
+            if (0 == page_of_interest)
                 W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a page in log record, log type = " << r.type());
 
             if(new_chkpt.buf_tab.count(page_of_interest)) {
@@ -1998,10 +1830,10 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
                     new_chkpt.buf_tab[page_of_interest].dirty = true;
                 }
 
-                new_chkpt.buf_tab[page_of_interest].store = r.snum();
+                new_chkpt.buf_tab[page_of_interest].store = r.stid();
             }
             else {
-                new_chkpt.buf_tab[page_of_interest].store = r.snum();
+                new_chkpt.buf_tab[page_of_interest].store = r.stid();
                 new_chkpt.buf_tab[page_of_interest].rec_lsn = lsn;
                 new_chkpt.buf_tab[page_of_interest].page_lsn = lsn;
                 new_chkpt.buf_tab[page_of_interest].dirty = true;
@@ -2049,7 +1881,7 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
         // Register the page cb in buffer pool (if not exist) and mark the in_doubt flag
         if (r.is_redo())
         {
-            if (0 == page_of_interest.page)
+            if (0 == page_of_interest)
                 W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a page in compensation log record");
 
             if(new_chkpt.buf_tab.count(page_of_interest)) {
@@ -2062,29 +1894,20 @@ void chkpt_m::_analysis_other_log(logrec_t& r,               // In: log record
                     new_chkpt.buf_tab[page_of_interest].dirty = true;
                 }
 
-                new_chkpt.buf_tab[page_of_interest].store = r.snum();
+                new_chkpt.buf_tab[page_of_interest].store = r.stid();
             }
             else {
-                new_chkpt.buf_tab[page_of_interest].store = r.snum();
+                new_chkpt.buf_tab[page_of_interest].store = r.stid();
                 new_chkpt.buf_tab[page_of_interest].rec_lsn = lsn;
                 new_chkpt.buf_tab[page_of_interest].page_lsn = lsn;
                 new_chkpt.buf_tab[page_of_interest].dirty = true;
             }
         }
     }
-    else if (r.type()!=logrec_t::t_store_operation)   // Store operation (sm)
-    {
+    else {
         // Retrieve a log buffer which we don't know how to handle
         // Raise error
         W_FATAL_MSG(fcINTERNAL, << "Unexpected log record type: " << r.type());
-    }
-    else  // logrec_t::t_store_operation
-    {
-        // Store operation, such as create or delete a store, set store parameters, etc.
-        // Transaction should not be created for this log because there is no tid
-        if(lsn < new_chkpt.min_rec_lsn) {
-            new_chkpt.min_rec_lsn = lsn;
-        }
     }
 
     if ((r.tid() != tid_t::null) && (new_chkpt.xct_tab.count(r.tid())))
@@ -2523,7 +2346,7 @@ void chkpt_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log reco
             break;
         default:
             {
-                if(r.type() != logrec_t::t_page_img_format && r.type() != logrec_t::t_store_operation)
+                if(r.type() != logrec_t::t_page_img_format)
                     W_FATAL_MSG(fcINTERNAL, << "restart_m::_analysis_acquire_lock_log - Unexpected log record type: " << r.type());
             }
             break;
@@ -2789,49 +2612,22 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
     DBGOUT1(<<"new_chkpt.begin_lsn = " << new_chkpt.begin_lsn);
     DBGOUT1(<<"new_chkpt.min_rec_lsn = " << new_chkpt.min_rec_lsn);
     DBGOUT1(<<"new_chkpt.min_xct_lsn = " << new_chkpt.min_xct_lsn);
-    DBGOUT1(<<"new_chkpt.next_vid = " << new_chkpt.next_vid);
 
     uint chunk;
 
-    // Serialize dev_tab
-    chunk = vol_m::MAX_VOLS > (int)chkpt_dev_tab_t::max ? (int)chkpt_dev_tab_t::max : vol_m::MAX_VOLS;
-    vector<string> dev_paths;
-    for(dev_tab_t::iterator it=new_chkpt.dev_tab.begin(); it!=new_chkpt.dev_tab.end(); ++it) {
-        DBGOUT1(<<"dev_paths[]=" << it->first);
-        dev_paths.push_back(it->first);
-        if(dev_paths.size()==chunk || &*it==&*new_chkpt.dev_tab.rbegin()) {
-            // We filled a chunk OR we reached the last element, so we write
-            // a log record:
-            LOG_INSERT(chkpt_dev_tab_log(dev_paths.size(),
-                                        new_chkpt.next_vid,
-                                        (const string*)(&dev_paths[0])), 0);
-            dev_paths.clear();
-        }
-    }
-
     // Serialize bkp_tab
-    chunk = vol_m::MAX_VOLS > (int)chkpt_backup_tab_t::max ? (int)chkpt_backup_tab_t::max : vol_m::MAX_VOLS;
-    vector<vid_t> backup_vids;
+    chunk = (int)chkpt_backup_tab_t::max;
     vector<string> backup_paths;
-    for(bkp_tab_t::iterator it=new_chkpt.bkp_tab.begin(); it!=new_chkpt.bkp_tab.end(); ++it) {
-        DBGOUT1(<<"backup_vids[]="<<it->first<<" , "<<"backup_paths[]="<<it->second.bkp_path);
-        backup_vids.push_back(it->first);
-        backup_paths.push_back(it->second.bkp_path);
-        if(backup_vids.size()==chunk || &*it==&*new_chkpt.bkp_tab.rbegin()) {
-            LOG_INSERT(chkpt_backup_tab_log(backup_vids.size(),
-                                        (const vid_t*)(&backup_vids[0]),
-                                        (const string*)(&backup_paths[0])), 0);
-            backup_vids.clear();
-            backup_paths.clear();
-        }
-    }
+    backup_paths.push_back(new_chkpt.bkp_tab.bkp_path);
+    LOG_INSERT(chkpt_backup_tab_log(backup_paths.size(),
+                (const string*)(&backup_paths[0])), 0);
 
     //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
 
     // Serialize buf_tab
     chunk = chkpt_bf_tab_t::max;
-    vector<lpid_t> pid;
-    vector<snum_t> store;
+    vector<PageID> pid;
+    vector<StoreID> store;
     vector<lsn_t> rec_lsn;
     vector<lsn_t> page_lsn;
     for(buf_tab_t::iterator it=new_chkpt.buf_tab.begin(); it!=new_chkpt.buf_tab.end(); ++it) {
@@ -2844,8 +2640,8 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
         rec_lsn.push_back(it->second.rec_lsn);
         page_lsn.push_back(it->second.page_lsn);
          if(pid.size()==chunk || &*it==&*new_chkpt.buf_tab.rbegin()) {
-            LOG_INSERT(chkpt_bf_tab_log(pid.size(), (const lpid_t*)(&pid[0]),
-                                                    (const snum_t*)(&store[0]),
+            LOG_INSERT(chkpt_bf_tab_log(pid.size(), (const PageID*)(&pid[0]),
+                                                    (const StoreID*)(&store[0]),
                                                     (const lsn_t*)(&rec_lsn[0]),
                                                     (const lsn_t*)(&page_lsn[0])), 0);
             pid.clear();
@@ -2924,9 +2720,7 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
     {
         DBGOUT1(<<"chkpt_m::take ABORTED due to dirty shutdown, "
                 << ", dirty page count = " << pid.size()
-                << ", total txn count = " << tid.size()
-                << ", total backup count = " << backup_vids.size()
-                << ", total vol count = " << dev_paths.size());
+                << ", total txn count = " << tid.size());
     }
     else
     {
@@ -3984,7 +3778,7 @@ chkpt_thread_t::run()
 
         // No need to acquire checkpoint mutex before calling the checkpoint operation
         // Asynch checkpoint should never record lock information
-        
+
         if(ss_m::chkpt->decoupled) {
             ss_m::chkpt->dcpld_take(chkpt_m::t_chkpt_async);
         }

@@ -28,7 +28,7 @@ public:
     w_rc_t install_cleaner();
     w_rc_t uninstall_cleaner();
 
-    w_rc_t wakeup_cleaners (); // async clean
+    w_rc_t wakeup_cleaner(); // async clean
     w_rc_t force_all();        // sync clean
 
 private:

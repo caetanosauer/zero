@@ -92,7 +92,7 @@ struct bkp_tab_entry_t {
 };
 
 struct buf_tab_entry_t {
-  snum_t store;
+  StoreID store;
   lsn_t rec_lsn;              // initial dirty lsn
   lsn_t page_lsn;             // last write lsn
   bool dirty;                 //this flag is only used to filter non-dirty pages
@@ -110,9 +110,7 @@ struct xct_tab_entry_t {
   lsn_t first_lsn;              // first lsn of the txn
 };
 
-typedef map<string, dev_tab_entry_t>       dev_tab_t;
-typedef map<vid_t, bkp_tab_entry_t>        bkp_tab_t;
-typedef map<lpid_t, buf_tab_entry_t>       buf_tab_t;
+typedef map<PageID, buf_tab_entry_t>       buf_tab_t;
 typedef map<tid_t, list<lck_tab_entry_t> > lck_tab_t;
 typedef map<tid_t, xct_tab_entry_t>        xct_tab_t;
 
@@ -121,12 +119,8 @@ struct chkpt_t{
   lsn_t min_rec_lsn;
   lsn_t min_xct_lsn;
 
-  //Volume Table
-  vid_t next_vid;
-  dev_tab_t dev_tab;
-
   //Backup Table
-  bkp_tab_t bkp_tab;
+  bkp_tab_entry_t bkp_tab;
 
   //Dirty Page Table
   buf_tab_t buf_tab;
