@@ -1223,7 +1223,8 @@ w_rc_t bf_tree_m::force_volume() {
 // CS TODO use templace for cleaner
 w_rc_t bf_tree_m::wakeup_cleaners() {
     if(_dcleaner != NULL) {
-        return _dcleaner->wakeup_cleaner();
+        _dcleaner->wakeup_cleaner();
+        return RCOK;
     }
     return _cleaner->wakeup_cleaner();
 }

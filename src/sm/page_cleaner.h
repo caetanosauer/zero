@@ -28,20 +28,18 @@ public:
     w_rc_t install_cleaner();
     w_rc_t uninstall_cleaner();
 
-    w_rc_t wakeup_cleaner(); // async clean
+    bool wakeup_cleaner(); // async clean
     w_rc_t force_all();        // sync clean
 
 private:
     bf_tree_m* bufferpool;
     LogArchiver::ArchiveDirectory* archive;
 
-    page_cleaner_slave* cleaners[1];
+    page_cleaner_slave* cleaner;
 
     cleaner_mode_t mode;
     uint sleep_time;
     uint buffer_size;
-
-    bool _wakeup_a_cleaner(uint id);
 
     const static int DFT_BUFFER_SIZE = 16;      // in pages
     const static bool DFT_EAGER = false;

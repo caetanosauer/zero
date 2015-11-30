@@ -274,16 +274,18 @@ w_rc_t page_cleaner_slave::flush_workspace() {
 }
 
 page_cleaner_mgr::page_cleaner_mgr( bf_tree_m* _bufferpool, LogArchiver::ArchiveDirectory* _archive, const sm_options& options)
-    : bufferpool(_bufferpool), archive(_archive) {
-        bool eager = options.get_bool_option("sm_decoupled_cleaner_mode", DFT_EAGER);
-        if(eager) {
-            mode = EAGER;
-        }
-        else {
-            mode = NORMAL;
-        }
-        sleep_time = options.get_int_option("sm_decoupled_cleaner_interval", DFT_SLEEP_TIME);
-        buffer_size = options.get_int_option("sm_decoupled_cleaner_bufsize", DFT_BUFFER_SIZE);
+    : bufferpool(_bufferpool), archive(_archive)
+{
+    bool eager = options.get_bool_option("sm_decoupled_cleaner_mode", DFT_EAGER);
+    if(eager) {
+        mode = EAGER;
+    }
+    else {
+        mode = NORMAL;
+    }
+    sleep_time = options.get_int_option("sm_decoupled_cleaner_interval", DFT_SLEEP_TIME);
+    buffer_size = options.get_int_option("sm_decoupled_cleaner_bufsize", DFT_BUFFER_SIZE);
+    cleaner = NULL;
 }
 
 page_cleaner_mgr::~page_cleaner_mgr() {
@@ -291,20 +293,17 @@ page_cleaner_mgr::~page_cleaner_mgr() {
 
 w_rc_t page_cleaner_mgr::install_cleaner() {
     w_assert0(bufferpool->_volume != NULL);
-    cleaners[1] = new page_cleaner_slave(this, bufferpool->_volume->_volume, buffer_size, mode, sleep_time);
-    cleaners[1]->fork();
+    cleaner = new page_cleaner_slave(this, bufferpool->_volume->_volume, buffer_size, mode, sleep_time);
+    cleaner->fork();
     return RCOK;
 }
 
 w_rc_t page_cleaner_mgr::uninstall_cleaner() {
-    cleaners[1]->shutdown();
-    cleaners[1]->join();
-    delete cleaners[1];
-    return RCOK;
-}
-
-w_rc_t page_cleaner_mgr::wakeup_cleaner() {
-    _wakeup_a_cleaner(1);
+    if (cleaner) {
+        cleaner->shutdown();
+        cleaner->join();
+        delete cleaner;
+    }
     return RCOK;
 }
 
@@ -337,9 +336,9 @@ w_rc_t page_cleaner_mgr::force_all() {
     return RCOK;
 }
 
-bool page_cleaner_mgr::_wakeup_a_cleaner(uint id) {
+bool page_cleaner_mgr::wakeup_cleaner() {
     if (bufferpool->_volume != NULL) {
-        return cleaners[id]->activate();
+        return cleaner->activate();
     }
     return false;
 }
