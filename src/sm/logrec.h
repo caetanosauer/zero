@@ -550,14 +550,13 @@ struct chkpt_backup_tab_t
     chkpt_backup_tab_t();
 
     chkpt_backup_tab_t(
-        const std::vector<vid_t>& vids,
         const std::vector<string>& paths);
 
     int size() const {
         return data_size + sizeof(uint32_t) * 2;
     }
 
-    void read(std::vector<vid_t>& vids, std::vector<string>& paths);
+    void read(std::vector<string>& paths);
 };
 
 struct chkpt_restore_tab_t
@@ -569,19 +568,17 @@ struct chkpt_restore_tab_t
         maxSegments = maxBitmapSize * 8
     };
 
-    vid_t vid;
     shpid_t firstNotRestored;
     uint32_t bitmapSize;
     char bitmap[maxBitmapSize];
 
-    chkpt_restore_tab_t(vid_t vid)
-        : vid(vid), firstNotRestored(0), bitmapSize(0)
+    chkpt_restore_tab_t()
+        : firstNotRestored(0), bitmapSize(0)
     {}
 
     size_t length()
     {
-        return sizeof(vid_t)
-            + sizeof(shpid_t)
+        return sizeof(shpid_t)
             + sizeof(uint32_t)
             + bitmapSize;
     }

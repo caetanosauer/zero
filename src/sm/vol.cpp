@@ -31,278 +31,9 @@
 // Needed to get LSN of restore_begin log record
 #include "logdef_gen.cpp"
 
-const int vol_m::MAX_VOLS;
-
-vol_m::vol_m(const sm_options&)
-    : vol_cnt(0), _next_vid(1)
-{
-    for (uint32_t i = 0; i < MAX_VOLS; i++)  {
-        volumes[i] = NULL;
-    }
-}
-
-vol_m::~vol_m()
-{
-}
-
-/*
- * CS TODO -- index volume array by vid, since max vid is also MAX_VOLS
- */
-
-void vol_m::shutdown(bool abrupt)
-{
-    spinlock_write_critical_section cs(&_mutex);
-
-    for (int i = 0; i < MAX_VOLS; i++) {
-        if (volumes[i]) {
-            volumes[i]->shutdown(abrupt);
-            delete volumes[i];
-            volumes[i] = NULL;
-        }
-    }
-}
-
-vol_t* vol_m::get(const char* path)
-{
-    spinlock_read_critical_section cs(&_mutex);
-
-    for (uint32_t i = 0; i < MAX_VOLS; i++)  {
-        if (volumes[i] && strcmp(volumes[i]->devname(), path) == 0) {
-            return volumes[i];
-        }
-    }
-    return NULL;
-}
-
-vol_t* vol_m::get(vid_t vid)
-{
-    spinlock_read_critical_section cs(&_mutex);
-
-    if (vid == vid_t(0)) return NULL;
-
-    // vid N is mounted at index N-1
-    return volumes[size_t(vid) - 1];
-}
-
-rc_t vol_m::sx_format(
-    const char* devname,
-    vid_t& vid,
-    bool logit)
-{
-    spinlock_write_critical_section cs(&_mutex);
 
 
-    sys_xct_section_t ssx(true);
-
-    // CS TODO -- WHY LOG OFF???
-    /*
-     *  No log needed.
-     *  WHOLE FUNCTION is a critical section
-     */
-    // xct_log_switch_t log_off(smlevel_0::OFF);
-
-    if (_next_vid > MAX_VOLS) {
-        W_RETURN_RC_MSG(eINTERNAL,
-            << "Maximum number of volumes already reached: " << MAX_VOLS);
-    }
-
-    vid = _next_vid++;
-
-    // CS TODO: remove support for multiple volumes
-    w_assert0(vid == 1);
-
-    DBG( << "formating volume " << devname << ">" );
-    int flags = smthread_t::OPEN_CREATE | smthread_t::OPEN_RDWR
-        | smthread_t::OPEN_TRUNC | smthread_t::OPEN_SYNC;
-    int fd;
-    W_DO(me()->open(devname, flags, 0666, fd));
-    W_DO(vol_t::write_metadata(fd, vid));
-    W_DO(me()->close(fd));
-    DBG(<<"format_vol: done" );
-
-    /*
-     * In principle, logging volume formats should not be required, since we
-     * force the folume header before returning from this method.  The only
-     * reason why we log is because of the _next_vid variable, which is part of
-     * persistent server state and therefore must be logged and checkpointed.
-     */
-    if (logit) {
-        log_format_vol(devname, vid);
-    }
-    W_DO (ssx.end_sys_xct(RCOK));
-
-    return RCOK;
-}
-
-rc_t vol_m::sx_mount(const char* device, const bool logit)
-{
-    spinlock_write_critical_section cs(&_mutex);
-
-    /**
-     * Mounts cannot occur while a checkpoint is being taken, because if the
-     * checkpoint log record is generated before the volume is added to the
-     * list of mounted volumes but after a mount log record was generated, then
-     * the mount will not be replayed if there is a crash. However, instead of
-     * acquiring the checkpoint mutex, we rely on the fact that checkpoints
-     * call list_volumes, which acquire the volume spinlock as well. Therefore,
-     * checkpoints and mounts/dismounts end up being implicitly serialized by
-     * the volume spinklock.
-     */
-
-    sys_xct_section_t ssx (true);
-
-    DBG( << "sx_mount(" << device << ")");
-
-    vol_t* v = new vol_t();
-    W_DO(v->mount(device));
-    size_t index = v->vid() - 1;
-
-    if (volumes[index]) {
-        return RC(eALREADYMOUNTED);
-    }
-
-    volumes[index] = v;
-    ++vol_cnt;
-
-    if (logit)  {
-        log_mount_vol(v->devname());
-    }
-
-    W_DO (ssx.end_sys_xct(RCOK));
-
-    return RCOK;
-}
-
-rc_t vol_m::sx_dismount(const char* device, bool logit)
-{
-    DBG( << "_dismount(" << device << ")");
-    vol_t* vol = get(device);
-    w_assert0(vol);
-
-    // lock after get() to avoid deadlock
-    // checkpoints also serialized -- see comment on sx_mount
-    spinlock_write_critical_section cs(&_mutex);
-
-    sys_xct_section_t ssx (true);
-
-    W_DO(vol->dismount());
-
-    for (int i = 0; i < MAX_VOLS; i++) {
-        if (volumes[i] == vol) {
-            delete volumes[i];
-            volumes[i] = 0;
-        }
-    }
-    --vol_cnt;
-
-    if (logit) {
-        log_dismount_vol(device);
-    }
-
-    W_DO (ssx.end_sys_xct(RCOK));
-
-    DBG( << "_dismount done.");
-    return RCOK;
-}
-
-rc_t vol_m::sx_add_backup(vid_t vid, string path, bool logit)
-{
-    vol_t* vol = get(vid);
-    w_assert0(vol);
-
-    // Make sure backup volume header matches this volume
-    stnode_page stpage;
-    {
-        int fd = -1;
-        int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC;
-        rc_t rc = me()->open(path.c_str(), open_flags, 0666, fd);
-        if (rc.is_error())  {
-            W_IGNORE(me()->close(fd));
-            return RC_AUGMENT(rc);
-        }
-        rc = me()->read(fd, &stpage, sizeof(generic_page));
-        if (rc.is_error())  {
-            W_IGNORE(me()->close(fd));
-            return RC_AUGMENT(rc);
-        }
-
-        W_DO(me()->close(fd));
-    }
-
-    lsn_t backupLSN = stpage.getBackupLSN();
-
-    // will change vol_t state -- start critical section
-    // Multiple adds of the same backup file are weird, but not an error.
-    // The mutex is just ot protect against mounts and checkpoints
-    spinlock_write_critical_section cs(&_mutex);
-
-    // mount/dismount may occur before we acquire mutex
-    if (vol != volumes[size_t(vid) - 1]) {
-        W_RETURN_RC_MSG(eRETRY, << "Volume changed while adding backup file");
-    }
-
-    if (logit) {
-        sys_xct_section_t ssx(true);
-        W_DO(log_add_backup(vid, path.c_str()));
-        W_DO(ssx.end_sys_xct(RCOK));
-    }
-
-    vol->add_backup(path, backupLSN);
-
-    return RCOK;
-}
-
-rc_t vol_m::list_volumes(
-    std::vector<string>& names,
-    std::vector<vid_t>& vids,
-    size_t start,
-    size_t count)
-{
-    spinlock_read_critical_section cs(&_mutex);
-
-    w_assert0(names.size() == vids.size());
-
-    if (count == 0) {
-        count = MAX_VOLS;
-    }
-
-    for (size_t i = 0, j = start; i < MAX_VOLS && j < count; i++)  {
-        if (volumes[i])  {
-            vids.push_back(volumes[i]->vid());
-            names.push_back(volumes[i]->devname());
-            j++;
-        }
-    }
-    return RCOK;
-}
-
-rc_t vol_m::list_backups(
-    std::vector<string>& backups,
-    std::vector<vid_t>& vids,
-    size_t start,
-    size_t count)
-{
-    spinlock_read_critical_section cs(&_mutex);
-
-    w_assert0(backups.size() == vids.size());
-
-    if (count == 0) {
-        count = MAX_VOLS;
-    }
-
-    for (size_t i = 0, j = start; i < MAX_VOLS && j < count; i++)  {
-        if (volumes[i])  {
-            for (size_t k = 0; k < volumes[i]->_backups.size(); k++) {
-                vids.push_back(volumes[i]->vid());
-                backups.push_back(volumes[i]->_backups[k]);
-                j++;
-            }
-        }
-    }
-    return RCOK;
-}
-
-vol_t::vol_t()
+vol_t::vol_t(const sm_options& options)
              : _unix_fd(-1),
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
@@ -310,7 +41,11 @@ vol_t::vol_t()
                _failed(false), _readonly(false),
                _restore_mgr(NULL), _backup_fd(-1),
                _current_backup_lsn(lsn_t::null), _backup_write_fd(-1)
-{}
+{
+    string dbfile = options.get_string_option("sm_dbfile", "db");
+    bool truncate = options.get_bool_option("sm_truncate", false);
+    W_COERCE(mount(dbfile.c_str(), truncate));
+}
 
 vol_t::~vol_t() {
     clear_caches();
@@ -327,7 +62,7 @@ rc_t vol_t::sync()
     return RCOK;
 }
 
-rc_t vol_t::mount(const char* devname)
+rc_t vol_t::mount(const char* devname, bool truncate)
 {
     spinlock_write_critical_section cs(&_mutex);
 
@@ -341,7 +76,10 @@ rc_t vol_t::mount(const char* devname)
 
     w_rc_t rc;
     int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC
-        | smthread_t::OPEN_DIRECT;
+        | smthread_t::OPEN_DIRECT | smthread_t::OPEN_CREATE;
+    if (truncate) {
+        open_flags |= smthread_t::OPEN_TRUNC;
+    }
 
     rc = me()->open(devname, open_flags, 0666, _unix_fd);
     if (rc.is_error()) {
@@ -509,7 +247,7 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
     // evict device pages from buffer pool
     if (evict) {
         w_assert0(smlevel_0::bf);
-        W_DO(smlevel_0::bf->uninstall_volume(_vid, true));
+        W_DO(smlevel_0::bf->uninstall_volume(true));
         // no need to call install because root pages are loaded on demand in
         // bf_tree_m::fix_root
     }
@@ -632,7 +370,7 @@ rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
 
     w_assert1(_unix_fd >= 0);
     if (bf_uninstall && smlevel_0::bf) { // might have shut down already
-        W_DO(smlevel_0::bf->uninstall_volume(_vid, !abrupt /* clear_cb */));
+        W_DO(smlevel_0::bf->uninstall_volume(!abrupt /* clear_cb */));
     }
 
     if (!abrupt) {
@@ -667,12 +405,55 @@ unsigned vol_t::num_backups() const
     return _backups.size();
 }
 
-void vol_t::add_backup(string path, lsn_t backupLSN)
+void vol_t::list_backups(
+    std::vector<string>& backups)
 {
+    spinlock_read_critical_section cs(&_mutex);
+
+    for (size_t k = 0; k < _backups.size(); k++) {
+        backups.push_back(_backups[k]);
+    }
+}
+
+rc_t vol_t::sx_add_backup(string path, bool redo)
+{
+    // Make sure backup volume header matches this volume
+    stnode_page stpage;
+    {
+        int fd = -1;
+        int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC;
+        rc_t rc = me()->open(path.c_str(), open_flags, 0666, fd);
+        if (rc.is_error())  {
+            W_IGNORE(me()->close(fd));
+            return RC_AUGMENT(rc);
+        }
+        rc = me()->read(fd, &stpage, sizeof(generic_page));
+        if (rc.is_error())  {
+            W_IGNORE(me()->close(fd));
+            return RC_AUGMENT(rc);
+        }
+
+        W_DO(me()->close(fd));
+    }
+
+    lsn_t backupLSN = stpage.getBackupLSN();
+
+    // will change vol_t state -- start critical section
+    // Multiple adds of the same backup file are weird, but not an error.
+    // The mutex is just ot protect against mounts and checkpoints
     spinlock_write_critical_section cs(&_mutex);
+
     _backups.push_back(path);
     _backup_lsns.push_back(backupLSN);
     w_assert1(_backups.size() == _backup_lsns.size());
+
+    if (!redo) {
+        sys_xct_section_t ssx(true);
+        W_DO(log_add_backup(path.c_str()));
+        W_DO(ssx.end_sys_xct(RCOK));
+    }
+
+    return RCOK;
 }
 
 void vol_t::shutdown(bool abrupt)
@@ -978,7 +759,7 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     // W_DO(vhdr.write(_backup_write_fd));
 
     // At this point, new backup is fully written
-    add_backup(path, backupLSN);
+    // add_backup(path, backupLSN);
     {
         // critical section to guarantee visibility of the fd update
         spinlock_write_critical_section cs(&_mutex);

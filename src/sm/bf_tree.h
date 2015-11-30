@@ -453,7 +453,7 @@ public:
      * Called when a volume is unmounted.
      * Like install_volume(), this method is indirectly protected too.
      */
-    w_rc_t uninstall_volume (vid_t vid, const bool clear_cb = true);
+    w_rc_t uninstall_volume (const bool clear_cb = true);
 
     /**
      * Whenever the parent of a page is changed (adoption or de-adoption),
@@ -506,13 +506,11 @@ public:
     shpid_t normalize_shpid(shpid_t shpid) const;
 
     /** Immediately writes out all dirty pages in the given volume.*/
-    w_rc_t force_volume (vid_t vol);
+    w_rc_t force_volume ();
     /** Immediately writes out all dirty pages.*/
     w_rc_t force_all ();
     /** Wakes up all cleaner threads, starting them if not started yet. */
     w_rc_t wakeup_cleaners ();
-    /** Wakes up the cleaner thread assigned to the given volume. */
-    w_rc_t wakeup_cleaner_for_volume (vid_t vol);
 
     /**
      * Dumps all contents of this bufferpool.
@@ -782,21 +780,7 @@ private:
     /** count of blocks (pages) in this bufferpool. */
     bf_idx               _block_cnt;
 
-    /**
-     * Array of pointers to root page descriptors of all currently mounted volumes.
-     * The array index is volume ID.
-     *
-     * All pointers are initially NULL.
-     * When a volume is mounted, a bf_tree_vol_t is instantiated
-     * in this array. When the volume is unmounted, the object is revoked
-     * and the pointer is reset to NULL.
-     *
-     * Because there is no race condition in loading a volume,
-     * this array does not have to be protected by mutex or spinlocks.
-     *
-     * +1 because vid N is accessed on array index N
-     */
-    bf_tree_vol_t*       _volumes[vol_m::MAX_VOLS + 1];
+    bf_tree_vol_t*       _volume;
 
     /** Array of control blocks. array size is _block_cnt. index 0 is never used (means NULL). */
     bf_tree_cb_t*        _control_blocks;

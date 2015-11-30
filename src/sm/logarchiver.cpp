@@ -378,11 +378,8 @@ void LogArchiver::initLogScanner(LogScanner* logScanner)
     logScanner->setIgnore(logrec_t::t_chkpt_begin);
     logScanner->setIgnore(logrec_t::t_chkpt_bf_tab);
     logScanner->setIgnore(logrec_t::t_chkpt_xct_tab);
-    logScanner->setIgnore(logrec_t::t_chkpt_dev_tab);
     logScanner->setIgnore(logrec_t::t_chkpt_backup_tab);
     logScanner->setIgnore(logrec_t::t_chkpt_end);
-    logScanner->setIgnore(logrec_t::t_mount_vol);
-    logScanner->setIgnore(logrec_t::t_dismount_vol);
     logScanner->setIgnore(logrec_t::t_xct_abort);
     logScanner->setIgnore(logrec_t::t_xct_end);
     logScanner->setIgnore(logrec_t::t_xct_freeing_space);

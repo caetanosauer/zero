@@ -61,7 +61,7 @@ rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, alloc_page& page,
         bool is_last_ext)
 {
     shpid_t alloc_pid = ext * extent_size;
-    W_DO(smlevel_0::vol->get(_vid)->read_page(alloc_pid, (generic_page&) page));
+    W_DO(smlevel_0::vol->read_page(alloc_pid, (generic_page&) page));
 
     spinlock_write_critical_section cs(&_latch);
 

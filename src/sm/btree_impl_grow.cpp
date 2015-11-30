@@ -25,7 +25,7 @@ rc_t btree_impl::_sx_create_tree(const stid_t &stid, lpid_t &root_pid)
 {
     FUNC(btree_impl::_sx_create_tree);
     root_pid._vol = stid.vol;
-    W_DO(smlevel_0::vol->get(stid.vol)->alloc_a_page(root_pid.page));
+    W_DO(smlevel_0::vol->alloc_a_page(root_pid.page));
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());
     rc_t ret = _ux_create_tree_core(stid, root_pid);
@@ -133,7 +133,7 @@ btree_impl::_sx_grow_tree(btree_page_h& rp)
     lpid_t new_pid;
     // allocate a page as separate system transaction
     new_pid._vol = rp.vol();
-    W_DO(smlevel_0::vol->get(rp.vol())->alloc_a_page(new_pid.page));
+    W_DO(smlevel_0::vol->alloc_a_page(new_pid.page));
 
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());
@@ -145,7 +145,7 @@ btree_impl::_sx_grow_tree(btree_page_h& rp)
 
     if (rp.get_foster () == 0) {
         // other concurrent thread might have done it
-        W_DO(smlevel_0::vol->get(rp.vol())->deallocate_page(new_pid.page));
+        W_DO(smlevel_0::vol->deallocate_page(new_pid.page));
         return RCOK;
     }
     DBGOUT1("TREE grow");

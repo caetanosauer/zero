@@ -24,9 +24,9 @@ rc_t ss_m::create_index(vid_t vid, stid_t &stid)
 
     // CS TODO: page allocation should transfer ownership to stnode
     shpid_t root;
-    W_DO(smlevel_0::vol->get(vid)->alloc_a_page(root));
+    W_DO(vol->alloc_a_page(root));
 
-    W_DO(vol->get(vid)->create_store(lpid_t(vid, root), stid.store));
+    W_DO(vol->create_store(lpid_t(vid, root), stid.store));
     stid.vol = vid;
 
     W_DO(bt->create(stid_t(vid, stid.store), lpid_t(vid, root)));
@@ -136,7 +136,7 @@ rc_t ss_m::open_store (const stid_t &stid, lpid_t &root_pid, bool for_update)
 }
 rc_t ss_m::open_store_nolock (const stid_t &stid, lpid_t &root_pid)
 {
-    shpid_t shpid = vol->get(stid.vol)->get_store_root(stid.store);
+    shpid_t shpid = vol->get_store_root(stid.store);
     root_pid = lpid_t (stid.vol, shpid); // use nolock version
     if (root_pid.page == 0) {
         return RC(eBADSTID);

@@ -151,7 +151,7 @@ smlevel_0::fileoff_t        smlevel_0::chkpt_displacement = 0;
 static srwlock_t          _begin_xct_mutex;
 
 BackupManager* smlevel_0::bk = 0;
-vol_m* smlevel_0::vol = 0;
+vol_t* smlevel_0::vol = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_m* smlevel_0::log = 0;
 log_core* smlevel_0::clog = 0;
@@ -399,7 +399,7 @@ ss_m::_construct_once()
         W_FATAL(eOUTOFMEMORY);
     }
 
-    vol = new vol_m(_options);
+    vol = new vol_t(_options);
     if (!vol) {
         W_FATAL(eOUTOFMEMORY);
     }
@@ -852,7 +852,7 @@ ss_m::_destruct_once()
         // w/o logging turned on.
         // That happens below.
 
-        W_COERCE( bf->force_all() );
+        W_COERCE(bf->force_volume());
         me()->check_actual_pin_count(0);
 
         // Take a synch checkpoint (blocking) after buffer pool flush but before shutting down
@@ -1459,12 +1459,8 @@ ss_m::activate_archiver()
     return RCOK;
 }
 
-rc_t ss_m::force_buffers() {
-    return bf->force_all();
-}
-
-rc_t ss_m::force_volume(vid_t vol) {
-    return bf->force_volume(vol);
+rc_t ss_m::force_volume() {
+    return bf->force_volume();
 }
 
 /*--------------------------------------------------------------*
@@ -1567,54 +1563,6 @@ void ss_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &
     restart_m::dump_page_lsn_chain(o, pid, max_lsn);
 }
 
-/*--------------------------------------------------------------*
- *  DEVICE and VOLUME MANAGEMENT                        *
- *--------------------------------------------------------------*/
-
-rc_t
-ss_m::mount_vol(const char* path, vid_t& vid)
-{
-    SM_PROLOGUE_RC(ss_m::mount_vol, not_in_xct, read_only, 0);
-
-    spinlock_write_critical_section cs(&_begin_xct_mutex);
-
-    DBG(<<"mount_vol " << path);
-
-    W_DO(vol->sx_mount(path));
-    vid = vol->get(path)->vid();
-
-    return RCOK;
-}
-
-rc_t
-ss_m::dismount_vol(const char* path)
-{
-    SM_PROLOGUE_RC(ss_m::mount_vol, not_in_xct, read_only, 0);
-
-    spinlock_write_critical_section cs(&_begin_xct_mutex);
-
-    DBG(<<"dismount_vol " << path);
-
-    W_DO(vol->sx_dismount(path));
-
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::create_vol()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::create_vol(const char* dev_name, vid_t& vid)
-{
-    SM_PROLOGUE_RC(ss_m::create_vol, not_in_xct, read_only, 0);
-
-    // CS TODO: why??
-    spinlock_write_critical_section cs(&_begin_xct_mutex);
-
-    W_DO(vol->sx_format(dev_name, vid));
-
-    return RCOK;
-}
 
 rc_t ss_m::verify_volume(
     vid_t vid, int hash_bits, verify_volume_result &result)
@@ -2162,9 +2110,8 @@ rc_t
 ss_m::enable_fake_disk_latency(vid_t vid)
 {
     SM_PROLOGUE_RC(ss_m::enable_fake_disk_latency, not_in_xct, read_only, 0);
-    vol_t* v = vol->get(vid);
-    if (!v) return RC(eBADVOL);
-    v->enable_fake_disk_latency();
+    if (!vol) return RC(eBADVOL);
+    vol->enable_fake_disk_latency();
     return RCOK;
 }
 
@@ -2172,9 +2119,8 @@ rc_t
 ss_m::disable_fake_disk_latency(vid_t vid)
 {
     SM_PROLOGUE_RC(ss_m::disable_fake_disk_latency, not_in_xct, read_only, 0);
-    vol_t* v = vol->get(vid);
-    if (!v) return RC(eBADVOL);
-    v->disable_fake_disk_latency();
+    if (!vol) return RC(eBADVOL);
+    vol->disable_fake_disk_latency();
     return RCOK;
 }
 
@@ -2182,9 +2128,8 @@ rc_t
 ss_m::set_fake_disk_latency(vid_t vid, const int adelay)
 {
     SM_PROLOGUE_RC(ss_m::set_fake_disk_latency, not_in_xct, read_only, 0);
-    vol_t* v = vol->get(vid);
-    if (!v) return RC(eBADVOL);
-    v->set_fake_disk_latency(adelay);
+    if (!vol) return RC(eBADVOL);
+    vol->set_fake_disk_latency(adelay);
     return RCOK;
 }
 

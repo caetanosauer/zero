@@ -111,15 +111,10 @@ chkpt_xct_tab      0000000 0.0 (const tid_t& youngest,
                             const lsn_t* last_lsn, const lsn_t* undo_nxt, const lsn_t* first_lsn);               
 # per active transaction granted lock log
 chkpt_xct_lock      0000000 0.0 (const tid_t& tid, int cnt, const okvl_mode* lock_mode, const uint32_t* lock_hash);
-chkpt_dev_tab      0010000 0.0 (vid_t next_vid, const std::vector<string>& devnames);
-chkpt_backup_tab   0010000 0.0 (const std::vector<vid_t>& vids,
-                                const std::vector<string>& paths);
-chkpt_restore_tab  0010000 0.0 (vid_t vid);
+chkpt_backup_tab   0010000 0.0 (const std::vector<string>& paths);
+chkpt_restore_tab  0010000 0.0 ();
 chkpt_end          0000000 0.0 (const lsn_t& master, const lsn_t& min_rec_lsn, const lsn_t& min_xct_lsn);
-mount_vol          1110000 0.0 (const char* dev_name);
-dismount_vol       1110000 0.0 (const char* dev_name);
-format_vol         1110000 0.0 (const char* dev_name, vid_t vid);
-add_backup         1110000 0.0 (vid_t vid, const char* dev_name);
+add_backup         1110000 0.0 (const char* dev_name);
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################

@@ -699,61 +699,26 @@ try
     // Note that mounting a device would preload the root page, which might be
     // in-doubt page itself, we need to take care of this special case in Recovery
 
-    // Checkpoint the dev mount table
-    {
-        // Log the mount table in "max loggable size" chunks.
-        // casts due to enums
-        const int chunk = vol_m::MAX_VOLS > (int)chkpt_dev_tab_t::max
-            ? (int)chkpt_dev_tab_t::max : vol_m::MAX_VOLS;
-        total_dev_cnt = smlevel_0::vol->num_vols();
-
-        int    i;
-        std::vector<string> names;
-        std::vector<vid_t> vids;
-
-        for (i = 0; i < total_dev_cnt; i += chunk)
-        {
-            W_COERCE(smlevel_0::vol->list_volumes(names, vids, i, chunk));
-            if (names.size() > 0)
-            {
-                // Write a Checkpoint Device Table Log
-                LOG_INSERT(chkpt_dev_tab_log(
-                            smlevel_0::vol->get_next_vid(), names), 0);
-            }
-        }
-    }
-
     // Checkpoint backups
     {
-        // Log the mount table in "max loggable size" chunks.
-        // casts due to enums
-        const int chunk = vol_m::MAX_VOLS > (int)chkpt_backup_tab_t::max
-            ? (int)chkpt_backup_tab_t::max : vol_m::MAX_VOLS;
-        int vol_cnt = smlevel_0::vol->num_vols();
-
-        int    i;
-        std::vector<vid_t> vids;
         std::vector<string> paths;
 
-        for (i = 0; i < vol_cnt; i += chunk)
-        {
-            W_COERCE(smlevel_0::vol->list_backups(paths, vids, i, chunk));
+        if (smlevel_0::vol) {
+            smlevel_0::vol->list_backups(paths);
             if (paths.size() > 0)
             {
                 // Write a Checkpoint Device Table Log
-                LOG_INSERT(chkpt_backup_tab_log(vids, paths), 0);
+                LOG_INSERT(chkpt_backup_tab_log(paths), 0);
             }
+            backup_cnt = paths.size();
         }
-        backup_cnt = paths.size();
     }
 
     // State of restore bitmap (if restore is in progress)
     {
-        for (int i = 0; i < vol_m::MAX_VOLS; i++) {
-            vol_t* vol = smlevel_0::vol->get(i);
-            if (vol && vol->is_failed()) {
-                LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
-            }
+        vol_t* vol = smlevel_0::vol;
+        if (vol && vol->is_failed()) {
+            LOG_INSERT(chkpt_restore_tab_log(), 0);
         }
     }
 

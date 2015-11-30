@@ -88,7 +88,7 @@ class sm_stats_info_t;
 class xct_t;
 class xct_i;
 
-class vol_m;
+class vol_t;
 class BackupManager;
 class bf_tree_m;
 class comm_m;
@@ -568,7 +568,7 @@ public:
     static void  add_from_global_stats(sm_stats_info_t &to);
 
     static BackupManager* bk;
-    static vol_m* vol;
+    static vol_t* vol;
     static bf_tree_m* bf;
     static lock_m* lm;
 

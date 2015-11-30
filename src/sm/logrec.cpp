@@ -585,74 +585,12 @@ chkpt_xct_lock_log::chkpt_xct_lock_log(
                                          lock_hash))->size());
 }
 
-
-
-/*********************************************************************
- *
- *  chkpt_dev_tab_log
- *
- *  Data log to save devices mounted at checkpoint.
- *  Contains, for each device mounted, its devname and vid.
- *
- *********************************************************************/
-chkpt_dev_tab_t::chkpt_dev_tab_t(vid_t next_vid,
-        const std::vector<string>& devnames)
-    : count(devnames.size()), next_vid(next_vid)
-{
-    std::stringstream ss;
-    for (uint i = 0; i < count; i++) {
-        ss << devnames[i];
-    }
-    data_size = ss.tellp();
-    w_assert0(data_size <= logrec_t::max_data_sz);
-    ss.read(data, data_size);
-}
-
-void chkpt_dev_tab_t::read_devnames(std::vector<string>& devnames)
-{
-    std::string s;
-    std::stringstream ss;
-    ss.write(data, data_size);
-
-    for (uint i = 0; i < count; i++) {
-        ss >> s;
-        devnames.push_back(s);
-    }
-}
-
-chkpt_dev_tab_log::chkpt_dev_tab_log(vid_t next_vid,
-        const std::vector<string>& devnames)
-{
-    fill(0, (new (_data) chkpt_dev_tab_t(next_vid, devnames))->size());
-}
-
-/**
- * Instead of processing chkpt_dev_tab by parsing all devices and mounting
- * them individually, simply make it a redoable log record and perform all
- * mounts in the redo method.
- */
-void chkpt_dev_tab_log::redo(fixable_page_h*)
-{
-    chkpt_dev_tab_t* tab = (chkpt_dev_tab_t*) _data;
-    std::vector<string> dnames;
-    tab->read_devnames(dnames);
-    w_assert0(tab->count == dnames.size());
-
-    for (int i = 0; i < tab->count; i++) {
-        W_COERCE(smlevel_0::vol->sx_mount(dnames[i].c_str(), false /* log */));
-    }
-    smlevel_0::vol->set_next_vid(tab->next_vid);
-}
-
 chkpt_backup_tab_t::chkpt_backup_tab_t(
-        const std::vector<vid_t>& vids,
         const std::vector<string>& paths)
-    : count(vids.size())
+    : count(paths.size())
 {
-    w_assert0(vids.size() == paths.size());
     std::stringstream ss;
     for (uint i = 0; i < count; i++) {
-        ss << vids[i] << endl;
         ss << paths[i] << endl;
     }
     data_size = ss.tellp();
@@ -661,50 +599,42 @@ chkpt_backup_tab_t::chkpt_backup_tab_t(
 }
 
 void chkpt_backup_tab_t::read(
-        std::vector<vid_t>& vids,
         std::vector<string>& paths)
 {
-    vid_t vid;
     std::string s;
     std::stringstream ss;
     ss.write(data, data_size);
 
     for (uint i = 0; i < count; i++) {
-        ss >> vid;
-        vids.push_back(vid);
         ss >> s;
         paths.push_back(s);
     }
 }
 
 chkpt_backup_tab_log::chkpt_backup_tab_log(
-        const std::vector<vid_t>& vids,
         const std::vector<string>& paths)
 {
-    fill(0, (new (_data) chkpt_backup_tab_t(vids, paths))->size());
+    fill(0, (new (_data) chkpt_backup_tab_t(paths))->size());
 }
 
 void chkpt_backup_tab_log::redo(fixable_page_h*)
 {
     chkpt_backup_tab_t* tab = (chkpt_backup_tab_t*) _data;
-    std::vector<vid_t> vids;
     std::vector<string> paths;
-    tab->read(vids, paths);
-    w_assert0(tab->count == vids.size());
+    tab->read(paths);
     w_assert0(tab->count == paths.size());
 
     for (size_t i = 0; i < tab->count; i++) {
-        W_COERCE(smlevel_0::vol->sx_add_backup(vids[i], paths[i], false /* log */));
+        W_COERCE(smlevel_0::vol->sx_add_backup(paths[i], false /* log */));
     }
 }
 
-chkpt_restore_tab_log::chkpt_restore_tab_log(vid_t vid)
+chkpt_restore_tab_log::chkpt_restore_tab_log()
 {
-    vol_t* vol = smlevel_0::vol->get(vid);
     chkpt_restore_tab_t* tab =
-        new (_data) chkpt_restore_tab_t(vid);
+        new (_data) chkpt_restore_tab_t();
 
-    vol->chkpt_restore_progress(tab);
+    smlevel_0::vol->chkpt_restore_progress(tab);
     fill(0, tab->length());
 }
 
@@ -712,7 +642,7 @@ void chkpt_restore_tab_log::redo(fixable_page_h*)
 {
     chkpt_restore_tab_t* tab = (chkpt_restore_tab_t*) _data;
 
-    vol_t* vol = smlevel_0::vol->get(tab->vid);
+    vol_t* vol = smlevel_0::vol;
 
     w_assert0(vol);
     if (!vol->is_failed()) {
@@ -737,68 +667,18 @@ void chkpt_restore_tab_log::redo(fixable_page_h*)
     }
 }
 
-format_vol_log::format_vol_log(const char* path, vid_t vid)
-{
-    memcpy(data_ssx(), &vid, sizeof(vid_t));
-
-    size_t length = strlen(path);
-    w_assert0(length < smlevel_0::max_devname);
-    memcpy(data_ssx() + sizeof(vid_t), path, length);
-    fill(0, length + sizeof(vid_t));
-}
-
-void format_vol_log::redo(fixable_page_h*)
-{
-    vid_t expected_vid = *((vid_t*) data_ssx());
-    const char* dev_name = (const char*) data_ssx() + sizeof(vid_t);
-
-    vid_t created_vid;
-    W_COERCE(smlevel_0::vol->sx_format(dev_name, created_vid, false));
-    w_assert0(expected_vid == created_vid);
-}
-
-mount_vol_log::mount_vol_log(const char* dev_name)
+add_backup_log::add_backup_log(const char* dev_name)
 {
     size_t length = strlen(dev_name);
     w_assert0(length < smlevel_0::max_devname);
     memcpy(data_ssx(), dev_name, length);
     fill(0, length);
-}
-
-void mount_vol_log::redo(fixable_page_h*)
-{
-    const char* dev_name = (const char*) data_ssx();
-    W_COERCE(smlevel_0::vol->sx_mount(dev_name, false));
-}
-
-dismount_vol_log::dismount_vol_log(const char* dev_name)
-{
-    size_t length = strlen(dev_name);
-    w_assert0(length < smlevel_0::max_devname);
-    memcpy(data_ssx(), dev_name, length);
-    fill(0, length);
-}
-
-void dismount_vol_log::redo(fixable_page_h*)
-{
-    const char* dev_name = (const char*) data_ssx();
-    W_COERCE(smlevel_0::vol->sx_dismount(dev_name, false));
-}
-
-add_backup_log::add_backup_log(vid_t vid, const char* dev_name)
-{
-    memcpy(data_ssx(), &vid, sizeof(vid_t));
-    size_t length = strlen(dev_name);
-    w_assert0(length < smlevel_0::max_devname);
-    memcpy(data_ssx() + sizeof(vid_t), dev_name, length);
-    fill(0, sizeof(vid_t) + length);
 }
 
 void add_backup_log::redo(fixable_page_h*)
 {
-    vid_t vid = *((vid_t*) data_ssx());
-    const char* dev_name = (const char*) data_ssx() + sizeof(vid_t);
-    W_COERCE(smlevel_0::vol->sx_add_backup(vid, dev_name, false));
+    const char* dev_name = (const char*) data_ssx();
+    W_COERCE(smlevel_0::vol->sx_add_backup(dev_name, false));
 }
 
 restore_begin_log::restore_begin_log(vid_t vid)
@@ -816,7 +696,7 @@ restore_begin_log::restore_begin_log(vid_t vid)
 void restore_begin_log::redo(fixable_page_h*)
 {
     vid_t vid = *((vid_t*) _data);
-    vol_t* volume = smlevel_0::vol->get(vid);
+    vol_t* volume = smlevel_0::vol;
     // volume must be mounted
     w_assert0(volume);
 
@@ -840,7 +720,7 @@ restore_end_log::restore_end_log(vid_t vid)
 void restore_end_log::redo(fixable_page_h*)
 {
     vid_t vid = *((vid_t*) _data);
-    vol_t* volume = smlevel_0::vol->get(vid);
+    vol_t* volume = smlevel_0::vol;
     // volume must be mounted and failed
     w_assert0(volume && volume->is_failed());
 
@@ -870,7 +750,7 @@ restore_segment_log::restore_segment_log(vid_t vid, uint32_t segment)
 void restore_segment_log::redo(fixable_page_h*)
 {
     vid_t vid = *((vid_t*) _data);
-    vol_t* volume = smlevel_0::vol->get(vid);
+    vol_t* volume = smlevel_0::vol;
     // volume must be mounted and failed
     w_assert0(volume && volume->is_failed());
 
@@ -893,7 +773,7 @@ void alloc_page_log::redo(fixable_page_h*)
 
     // CS TODO: update page state
 
-    vol_t* volume = smlevel_0::vol->get(vid);
+    vol_t* volume = smlevel_0::vol;
     w_assert0(volume);
     volume->alloc_a_page(shpid, true);
 }
@@ -912,7 +792,7 @@ void dealloc_page_log::redo(fixable_page_h*)
 
     // CS TODO: update page state
 
-    vol_t* volume = smlevel_0::vol->get(vid);
+    vol_t* volume = smlevel_0::vol;
     w_assert0(volume);
     volume->deallocate_page(shpid, true);
 }
@@ -1080,7 +960,7 @@ void create_store_log::redo(fixable_page_h* page)
     // CS TODO: update page contents
 
     vid_t vid = pid().vol();
-    vol_t* volume = smlevel_0::vol->get(vid);
+    vol_t* volume = smlevel_0::vol;
     w_assert0(volume);
     W_COERCE(volume->get_stnode_cache()->sx_create_store(
                 root_pid, snum, true));
@@ -1103,7 +983,7 @@ void append_extent_log::redo(fixable_page_h* page)
     // CS TODO: update alloc_page contents
 
     vid_t vid = pid().vol();
-    vol_t* volume = smlevel_0::vol->get(vid);
+    vol_t* volume = smlevel_0::vol;
     w_assert0(volume);
     W_COERCE(volume->get_stnode_cache()->sx_append_extent(
                 snum, ext, true));

@@ -360,8 +360,8 @@ bool verification_context::is_bitmap_clean () const
 rc_t btree_impl::_ux_verify_volume(
     vid_t vid, int hash_bits, verify_volume_result &result)
 {
-    W_DO(ss_m::force_buffers()); // this might block if there is a concurrent transaction
-    vol_t *vol = ss_m::vol->get(vid);
+    W_DO(ss_m::force_volume()); // this might block if there is a concurrent transaction
+    vol_t *vol = ss_m::vol;
     w_assert1(vol);
     generic_page buf;
     shpid_t endpid = (shpid_t) (vol->num_used_pages());

@@ -81,7 +81,8 @@ rc_t stnode_cache_t::sx_create_store(shpid_t root_pid, snum_t& snum, bool redo)
     if (!redo) {
         log_create_store(lpid_t(_vid, root_pid), snum);
     }
-    W_DO(write_stnode_page());
+    // CS TODO: use decoupled propagation
+    // W_DO(write_stnode_page());
     W_DO(ssx.end_sys_xct(RCOK));
 
     return RCOK;
@@ -137,6 +138,6 @@ rc_t stnode_cache_t::write_stnode_page()
 {
     // Caller must hold latch
 
-    return smlevel_0::vol->get(_vid)->write_page(stnode_page::stpid,
+    return smlevel_0::vol->write_page(stnode_page::stpid,
             (generic_page*) &_stnode_page);
 }

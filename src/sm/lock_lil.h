@@ -26,7 +26,7 @@
 #include "vol.h"
 
 /** max number of volumes overall. */
-const uint16_t MAX_VOL_GLOBAL = vol_m::MAX_VOLS;
+const uint16_t MAX_VOL_GLOBAL = 1;
 
 /** max number of volumes one transaction can access at a time. */
 const uint16_t MAX_VOL_PER_XCT = 4;
@@ -140,7 +140,7 @@ public:
  */
 class lil_global_table {
 public:
-    lil_global_vol_table _vol_tables[MAX_VOL_GLOBAL];
+    lil_global_vol_table _vol_tables[MAX_VOL_GLOBAL+1];
 
     lil_global_table() {
         clear();

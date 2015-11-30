@@ -190,7 +190,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     _hashtable = new bf_hashtable<bf_idx_pair>(buckets);
     w_assert0(_hashtable != NULL);
 
-    ::memset (_volumes, 0, sizeof(bf_tree_vol_t*) * vol_m::MAX_VOLS);
+    _volume = NULL;
 
     // initialize page cleaner
     _cleaner = new bf_tree_cleaner (this, npgwriters,
@@ -246,13 +246,11 @@ w_rc_t bf_tree_m::init ()
 
 w_rc_t bf_tree_m::destroy ()
 {
-    for (vid_t vid = 1; vid < vol_m::MAX_VOLS; ++vid) {
-        if (_volumes[vid] != NULL) {
-            W_DO (uninstall_volume(vid));
-        }
+    if (_volume != NULL) {
+        W_DO (uninstall_volume());
     }
-    W_DO(_cleaner->request_stop_cleaners());
-    W_DO(_cleaner->join_cleaners());
+    W_DO(_cleaner->request_stop_cleaner());
+    W_DO(_cleaner->join_cleaner());
     return RCOK;
 }
 
@@ -263,21 +261,16 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
     w_assert1(volume != NULL);
     vid_t vid = volume->vid();
     w_assert1(vid != 0);
-    w_assert1(vid <= vol_m::MAX_VOLS);
 
     // CS: introduced this check for now
     // See comment on io_m::mount and BitBucket ticket #3
-    if (_volumes[vid] != NULL) {
+    if (_volume != NULL) {
         // already mounted
         return RCOK;
     }
 
-    w_assert1(_volumes[vid] == NULL);
+    w_assert1(_volume == NULL);
     DBGOUT1(<<"installing volume " << vid << " to buffer pool...");
-#ifdef SIMULATE_MAINMEMORYDB
-    W_DO(_install_volume_mainmemorydb(volume));
-    if (true) return RCOK;
-#endif // SIMULATE_MAINMEMORYDB
 
     bf_tree_vol_t* desc = new bf_tree_vol_t(volume);
 
@@ -434,10 +427,9 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
         }
         delete desc;
         return rc;
-    } else {
-        _volumes[vid] = desc;
-        return RCOK;
     }
+    _volume = desc;
+    return RCOK;
 }
 
 w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t store, shpid_t shpid, bf_idx idx) {
@@ -514,16 +506,12 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     return RCOK;
 }
 
-w_rc_t bf_tree_m::uninstall_volume(vid_t vid,
-                                     const bool clear_cb)
+w_rc_t bf_tree_m::uninstall_volume(const bool clear_cb)
 {
     // assuming this thread is the only thread working on this volume,
 
     // first, clean up all dirty pages
-    DBGOUT1(<<"uninstalling volume " << vid << " from buffer pool...");
-    bf_tree_vol_t* desc = _volumes[vid];
-    if (desc == NULL) {
-        DBGOUT0(<<"this volume is already uninstalled: " << vid);
+    if (_volume == NULL) {
         return RCOK;
     }
 
@@ -546,11 +534,11 @@ w_rc_t bf_tree_m::uninstall_volume(vid_t vid,
         for (bf_idx idx = 1; idx < _block_cnt; ++idx)
         {
             bf_tree_cb_t &cb = get_cb(idx);
-            if (!cb._used || cb._pid_vol != vid)
+            if (!cb._used)
             {
             continue;
             }
-            _hashtable->remove(bf_key(vid, cb._pid_shpid));
+            _hashtable->remove(bf_key(1, cb._pid_shpid));
             if (cb._swizzled)
             {
                 --_swizzled_page_count_approximate;
@@ -564,8 +552,8 @@ w_rc_t bf_tree_m::uninstall_volume(vid_t vid,
         DBGOUT3(<<"bf_tree_m::uninstall_volume: no buffer pool cleanup");
     }
 
-    _volumes[vid] = NULL;
-    delete desc;
+    delete _volume;
+    _volume = NULL;
     return RCOK;
 }
 ///////////////////////////////////   Volume Mount/Unmount END       ///////////////////////////////////
@@ -652,9 +640,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
     w_assert1(vol != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
-    bf_tree_vol_t *volume = _volumes[vol];
+    bf_tree_vol_t *volume = _volume;
     w_assert1(volume != NULL);
-    w_assert1(shpid >= volume->_volume->first_data_pageid());
 #ifdef SIMULATE_MAINMEMORYDB
     W_DO (_fix_nonswizzled_mainmemorydb(parent, page, shpid, mode, conditional, virgin_page));
     if (true) return RCOK;
@@ -1220,19 +1207,11 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 ///////////////////////////////////   Page fix/unfix END         ///////////////////////////////////
 
 ///////////////////////////////////   Dirty Page Cleaner BEGIN       ///////////////////////////////////
-w_rc_t bf_tree_m::force_all() {
-    // Buffer pool flush, it flushes dirty pages
-    // It does not flush in_doubt pages
-    return _cleaner->force_all();
-}
-w_rc_t bf_tree_m::force_volume(vid_t vol) {
-    return _cleaner->force_volume(vol);
+w_rc_t bf_tree_m::force_volume() {
+    return _cleaner->force_volume();
 }
 w_rc_t bf_tree_m::wakeup_cleaners() {
-    return _cleaner->wakeup_cleaners();
-}
-w_rc_t bf_tree_m::wakeup_cleaner_for_volume(vid_t vol) {
-    return _cleaner->wakeup_cleaner_for_volume(vol);
+    return _cleaner->wakeup_cleaner();
 }
 
 void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t &new_rlsn) {
@@ -1705,7 +1684,7 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, vid_t vid,
     DBGOUT3(<<"REDO phase: loading page " << vid << "." << shpid
             << " into buffer pool frame " << idx);
 
-    bf_tree_vol_t *volume = _volumes[vid];
+    bf_tree_vol_t *volume = _volume;
     w_assert1(volume != NULL);
     w_assert1(shpid >= volume->_volume->first_data_pageid());
 
@@ -1808,17 +1787,14 @@ void bf_tree_m::debug_dump(std::ostream &o) const
     o << "dumping the bufferpool contents. _block_cnt=" << _block_cnt << "\n";
     o << "  _freelist_len=" << _freelist_len << ", HEAD=" << FREELIST_HEAD << "\n";
 
-    for (vid_t vid = 1; vid < vol_m::MAX_VOLS; ++vid) {
-        bf_tree_vol_t* vol = _volumes[vid];
-        if (vol != NULL) {
-            o << "  volume[" << vid << "] root pages(stnum=bf_idx):";
-            for (uint32_t store = 1; store < MAX_STORE_COUNT; ++store) {
-                if (vol->_root_pages[store] != 0) {
-                    o << ", " << store << "=" << vol->_root_pages[store];
-                }
+    bf_tree_vol_t* vol = _volume;
+    if (vol != NULL) {
+        for (uint32_t store = 1; store < MAX_STORE_COUNT; ++store) {
+            if (vol->_root_pages[store] != 0) {
+                o << ", " << store << "=" << vol->_root_pages[store];
             }
-            o << std::endl;
         }
+        o << std::endl;
     }
     for (bf_idx idx = 1; idx < _block_cnt && idx < 1000; ++idx) {
         o << "  frame[" << idx << "]:";
@@ -1900,18 +1876,7 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
 
     // first, flush out all dirty pages. we assume there is no concurrent transaction
     // which produces dirty pages from here on. if there is, booomb.
-    W_DO(force_all());
-
-    // remember what volumes are loaded.
-    typedef vol_t* volptr;
-    volptr installed_volumes[vol_m::MAX_VOLS];
-    for (vid_t i = 1; i < vol_m::MAX_VOLS; ++i) {
-        if (_volumes[i] == NULL) {
-            installed_volumes[i] = NULL;
-        } else {
-            installed_volumes[i] = _volumes[i]->_volume;
-        }
-    }
+    W_DO(force_volume());
 
     // clear all properties. could call uninstall_volume for each of them,
     // but nuking them all is faster.
@@ -1931,17 +1896,14 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     int buckets = w_findprime(1024 + (_block_cnt / 4));
     _hashtable = new bf_hashtable<bf_idx_pair>(buckets);
     w_assert0(_hashtable != NULL);
-    ::memset (_volumes, 0, sizeof(bf_tree_vol_t*) * vol_m::MAX_VOLS);
     _dirty_page_count_approximate = 0;
 
     // finally switch the property
     _enable_swizzling = enabled;
 
     // then, reload volumes
-    for (vid_t i = 1; i < vol_m::MAX_VOLS; ++i) {
-        if (installed_volumes[i] != NULL) {
-            W_DO(install_volume(installed_volumes[i]));
-        }
+    if (_volume != NULL) {
+        W_DO(install_volume(_volume->_volume));
     }
 
     DBGOUT1 (<< "changing the pointer swizzling setting done. ");
@@ -2426,10 +2388,10 @@ generic_page* bf_tree_m::get_page(const bf_idx& idx) {
 }
 
 shpid_t bf_tree_m::get_root_page_id(stid_t store) {
-    if (_volumes[store.vol] == NULL) {
+    if (_volume == NULL) {
         return 0;
     }
-    bf_idx idx = _volumes[store.vol]->_root_pages[store.store];
+    bf_idx idx = _volume->_root_pages[store.store];
     if (!_is_valid_idx(idx)) {
         return 0;
     }
@@ -2438,11 +2400,11 @@ shpid_t bf_tree_m::get_root_page_id(stid_t store) {
 }
 
 bf_idx bf_tree_m::get_root_page_idx(stid_t store) {
-    if (_volumes[store.vol] == NULL)
+    if (_volume== NULL)
         return 0;
 
     // root-page index is always kept in the volume descriptor:
-    bf_idx idx = _volumes[store.vol]->_root_pages[store.store];
+    bf_idx idx = _volume->_root_pages[store.store];
     if (!_is_valid_idx(idx))
         return 0;
     else
@@ -2617,15 +2579,14 @@ w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, stid_t store, shpid_t sh
     w_assert1(store.store != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
-    bf_tree_vol_t *volume = _volumes[store.vol];
-    w_assert1(volume != NULL);
-    w_assert1(volume->_root_pages[store.store] == 0);
+    w_assert1(_volume != NULL);
+    w_assert1(_volume->_root_pages[store.store] == 0);
 
     bf_idx idx;
 
 #ifdef SIMULATE_MAINMEMORYDB
     idx = shpid;
-    volume->_root_pages[store.store] = idx;
+    _volume->_root_pages[store.store] = idx;
     bf_tree_cb_t &cb = get_cb(idx);
     cb.clear();
     cb._pid_vol = store.vol;
@@ -2668,7 +2629,7 @@ w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, stid_t store, shpid_t sh
             bf_idx_pair(idx, 0));
     w_assert0(inserted);
 
-    volume->_root_pages[store.store] = idx;
+    _volume->_root_pages[store.store] = idx;
 
     return RCOK;
 }
@@ -2678,19 +2639,16 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
     w_assert1(store.vol != vid_t(0));
     w_assert1(store.store != 0);
 
-    bf_tree_vol_t *volume = _volumes[store.vol];
-    if (!volume) {
+    if (!_volume) {
         /*
          * CS: Install volume on demand. See below.
          */
-        vol_t* vol = smlevel_0::vol->get(store.vol);
-        volume = new bf_tree_vol_t(vol);
-        _volumes[store.vol] = volume;
+        _volume = new bf_tree_vol_t(smlevel_0::vol);
     }
-    w_assert1(volume);
+    w_assert1(_volume);
 
     // root-page index is always kept in the volume descriptor:
-    bf_idx idx = volume->_root_pages[store.store];
+    bf_idx idx = _volume->_root_pages[store.store];
     if (!_is_valid_idx(idx)) {
         /*
          * CS: During restore, root page is not pre-loaded. As with any other
@@ -2701,7 +2659,7 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
          * This code eliminates the need to call install_volume.
          */
         // currently, only restore should get into this if-block
-        w_assert0(volume->_volume->is_failed());
+        w_assert0(_volume->_volume->is_failed());
 
         // CS TODO -- why don't we need a latch here?
         // We assume that no one else will touch that idx, because
@@ -2709,13 +2667,13 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
         // assumption, because god knows who might be looking into the CB and
         // the page. Note that not even the old pin mechanism solved this
         // completely, because it was subject to the ABA problem.
-        shpid_t root_shpid = volume->_volume->get_store_root(store.store);
+        shpid_t root_shpid = _volume->_volume->get_store_root(store.store);
         W_DO(_grab_free_block(idx));
         W_DO(_latch_root_page(page, idx, mode, conditional));
-        W_DO(_preload_root_page(volume, volume->_volume, store.store,
+        W_DO(_preload_root_page(_volume, _volume->_volume, store.store,
                     root_shpid, idx));
         w_assert1(_buffer[idx].pid == lpid_t(store.vol, root_shpid));
-        volume->add_root_page(store.store, idx);
+        _volume->add_root_page(store.store, idx);
     }
     else {
         W_DO(_latch_root_page(page, idx, mode, conditional));
@@ -2826,11 +2784,10 @@ w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch_mode_t
 w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, stid_t store, q_ticket_t& ticket) {
     w_assert1(store.vol != vid_t(0));
     w_assert1(store.store != 0);
-    bf_tree_vol_t *volume = _volumes[store.vol];
-    w_assert1(volume != NULL);
+    w_assert1(_volume != NULL);
 
     // root-page index is always kept in the volume descriptor:
-    bf_idx idx = volume->_root_pages[store.store];
+    bf_idx idx = _volume->_root_pages[store.store];
     w_assert1(_is_valid_idx(idx));
 
     // later we will acquire the latch in Q mode <<<>>>
@@ -3209,8 +3166,7 @@ void WarmupThread::fixChildren(btree_page_h& parent, size_t& fixed, size_t max)
 void WarmupThread::run()
 {
     size_t npages = smlevel_0::bf->get_size();
-    // CS TODO assuming only one volume
-    vol_t* vol = smlevel_0::vol->get(1);
+    vol_t* vol = smlevel_0::vol;
     stnode_cache_t* stcache = vol->get_stnode_cache();
     vector<snum_t> stids;
     stcache->get_used_stores(stids);

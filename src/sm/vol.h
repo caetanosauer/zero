@@ -10,100 +10,29 @@
 #include <list>
 #include <stdlib.h>
 
-struct volume_hdr_stats_t;
 class alloc_cache_t;
 class stnode_cache_t;
 class RestoreMgr;
 class store_operation_param;
 class sm_options;
-class vol_t;
 class chkpt_restore_tab_t;
 
 #include "stnode_page.h"
 
-class vol_m {
-public:
-    vol_m(const sm_options& options);
-    virtual ~vol_m();
-
-    void shutdown(bool abrupt);
-
-    vol_t* get(vid_t vid);
-    vol_t* get(const char* path);
-
-    rc_t sx_mount(const char* device, bool logit = true);
-    rc_t sx_dismount(const char* device, bool logit = true);
-
-    rc_t sx_format(
-            const char* devname,
-            vid_t& vid,
-            bool logit = false
-    );
-
-    /** Add a backup file to be used for restore */
-    rc_t sx_add_backup(vid_t vid, string path, bool redo = false);
-
-    rc_t list_volumes(
-            std::vector<string>& names,
-            std::vector<vid_t>& vids,
-            size_t start = 0,
-            size_t count = 0
-    );
-
-    rc_t list_backups(
-            std::vector<string>& backups,
-            std::vector<vid_t>& vids,
-            size_t start = 0,
-            size_t count = 0
-    );
-
-    int num_vols() { return vol_cnt; }
-
-    bool is_mounted(vid_t vid) { return get(vid) != NULL; }
-
-    vid_t get_next_vid() {
-        // TODO must be in mutual exclusion with create_vol
-        return _next_vid;
-    }
-
-    void set_next_vid(vid_t vid) {
-        // TODO must be in mutual exclusion with create_vol
-        _next_vid = vid;
-    }
-
-    static const int MAX_VOLS = 32;
-
-private:
-    int    vol_cnt;
-    // index N on the array is saved for volume N+1
-    vol_t* volumes[MAX_VOLS];
-    vid_t _next_vid;
-
-    srwlock_t _mutex;
-};
-
-/*
-Volume layout:
-   volume header
-   alloc_page pages -- Starts on page 1.
-   stnode_page -- only one page
-   data pages -- rest of volume
-*/
 class vol_t
 {
     friend class vol_m;
 
 public:
-    vol_t();
+    vol_t(const sm_options&);
     virtual ~vol_t();
 
     void shutdown(bool abrupt);
-    rc_t mount(const char* devname);
-    rc_t dismount(bool bf_uninstall = true, bool abrupt = false);
 
     const char* devname() const { return _devname; }
     vid_t       vid() const { return _vid; }
-    shpid_t     first_data_pageid() const { return _first_data_pageid; }
+    // CS TODO
+    shpid_t     first_data_pageid() const { return 0; }
     size_t      num_used_pages() const;
 
     alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}
@@ -134,6 +63,11 @@ public:
 
     rc_t read_backup(shpid_t first, size_t count, void* buf);
     rc_t write_backup(shpid_t first, size_t count, void* buf);
+
+    /** Add a backup file to be used for restore */
+    rc_t sx_add_backup(string path, bool redo = false);
+
+    void list_backups(std::vector<string>& backups);
 
     rc_t            sync();
 
@@ -167,8 +101,6 @@ public:
 
     /** Mark device as failed and kick off Restore */
     rc_t            mark_failed(bool evict = false, bool redo = false);
-
-    void add_backup(string path, lsn_t backupLSN);
 
     lsn_t get_backup_lsn();
 
@@ -205,7 +137,6 @@ private:
     char             _devname[smlevel_0::max_devname];
     int              _unix_fd;
     vid_t            _vid;
-    shpid_t          _first_data_pageid;
 
     mutable srwlock_t _mutex;
 
@@ -246,6 +177,9 @@ private:
     /** Buffer to create restore_begin lorec manually
      *  (128 bytes are enough since it contains only vid) */
     char _logrec_buf[128];
+
+    rc_t mount(const char* devname, bool truncate = false);
+    rc_t dismount(bool bf_uninstall = true, bool abrupt = false);
 
     /** Methods to create and destroy _alloc_cache and _stnode_cache */
     void clear_caches();

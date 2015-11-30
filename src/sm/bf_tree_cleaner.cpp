@@ -21,8 +21,6 @@
 #include "sm.h"
 #include "xct.h"
 
-typedef bf_tree_cleaner_slave_thread_t* slave_ptr;
-
 
 bool _dirty_shutdown_happening() {
     return (ss_m::shutting_down && !ss_m::shutdown_clean);
@@ -35,9 +33,6 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads
     uint32_t cleaner_write_buffer_pages,
     bool initially_wakeup_workers) :
     _bufferpool(bufferpool),
-    _requested_lsn(lsndata_null),
-    _slave_threads(new slave_ptr[cleaner_threads]),
-    _slave_threads_size (cleaner_threads),
     _cleaner_interval_millisec_min (cleaner_interval_millisec_min),
     _cleaner_interval_millisec_max (cleaner_interval_millisec_max),
     _cleaner_write_buffer_pages (cleaner_write_buffer_pages),
@@ -45,215 +40,86 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads
 {
     w_assert0(cleaner_threads >= 1);
 
-    // assign volumes to workers in a round robin fashion.
-    // this assignment is totally static.
-    // CS: It would be easier to just do a mod operation to get the cleaner
-    // responsible for a volume. E.g.: (TODO)
-    // cleaner_id_for_vol = vol_id % _slave_threads_size;
-
-    for (int i = 0; i < vol_m::MAX_VOLS; i++) {
-        _requested_volumes[i] = false;
-    }
-
-    for (unsigned id = 0; id < _slave_threads_size; ++id) {
-        _slave_threads[id] = new bf_tree_cleaner_slave_thread_t (this, id);
-    }
+    _slave_thread = new bf_tree_cleaner_slave_thread_t (this);
 
    _error_happened = false;
 }
 
 bf_tree_cleaner::~bf_tree_cleaner()
 {
-    for (unsigned id = 0; id < _slave_threads_size; ++id) {
-        delete _slave_threads[id];
-        _slave_threads[id] = NULL;
-    }
-    delete[] _slave_threads;
-    _slave_threads = NULL;
+    delete _slave_thread;
+    _slave_thread = NULL;
 }
 
 w_rc_t bf_tree_cleaner::start_cleaners()
 {
-    DBGOUT1(<<"bf_tree_cleaner: starting " << (_slave_threads_size - 1) << " cleaner threads.. _initially_wakeup_workers=" << _initially_wakeup_workers);
-    for (unsigned id = 0; id < _slave_threads_size; ++id) {
-        w_assert1(_slave_threads[id] != NULL);
-        _slave_threads[id]->_start_requested = _initially_wakeup_workers;
-        W_DO(_slave_threads[id]->fork());
-        _slave_threads[id]->_running = true; // otherwise it races with thread start...
-    }
+    w_assert1(_slave_thread != NULL);
+    _slave_thread->_start_requested = _initially_wakeup_workers;
+    W_DO(_slave_thread->fork());
+    _slave_thread->_running = true; // otherwise it races with thread start...
     DBGOUT1(<<"bf_tree_cleaner: started cleaner threads");
     return RCOK;
 }
 
-w_rc_t bf_tree_cleaner::wakeup_cleaners()
+w_rc_t bf_tree_cleaner::wakeup_cleaner()
 {
-    DBGOUT2(<<"bf_tree_cleaner: waking up all cleaner threads");
-    for (unsigned id = 0; id < _slave_threads_size; ++id) {
-        W_DO(_wakeup_a_cleaner (id));
-    }
-    return RCOK;
-}
-
-unsigned bf_tree_cleaner::get_cleaner_for_vol(vid_t vid)
-{
-    // CS: simplified assignment by using mod operation instead of list
-    // -1 because of reserved slot
-    w_assert1(vid > 0 && vid <= vol_m::MAX_VOLS);
-    return vid % _slave_threads_size;
-}
-
-w_rc_t bf_tree_cleaner::wakeup_cleaner_for_volume(vid_t vol)
-{
-    DBGOUT2(<<"bf_tree_cleaner: waking up the cleaner for volume:" << vol);
-    unsigned id = get_cleaner_for_vol(vol);
-    W_DO(_wakeup_a_cleaner (id));
-    return RCOK;
-}
-
-w_rc_t bf_tree_cleaner::_wakeup_a_cleaner(unsigned id)
-{
-    DBGOUT3(<<"bf_tree_cleaner: waking up cleaner " << id);
-    w_assert1(id < _slave_threads_size);
-    w_assert1(_slave_threads[id] != NULL);
+    w_assert1(_slave_thread != NULL);
     lintel::atomic_thread_fence(lintel::memory_order_consume);
-    if (!_slave_threads[id]->_running) {
-        DBGOUT1(<<"bf_tree_cleaner: cleaner " << id << " has already shut down. didn't wake it up");
+    if (!_slave_thread->_running) {
         return RCOK;
     }
     lintel::atomic_thread_fence(lintel::memory_order_consume);
-    if (_slave_threads[id]->_start_requested == false) {
-        DBGOUT1(<<"bf_tree_cleaner: wakeup_cleaners: cleaner thread " << id << " hasn't been activated. it's now activated");
-        _slave_threads[id]->_start_requested = true;
+    if (_slave_thread->_start_requested == false) {
+        _slave_thread->_start_requested = true;
         lintel::atomic_thread_fence(lintel::memory_order_release);
     }
 
-    _slave_threads[id]->wakeup();
+    _slave_thread->wakeup();
     return RCOK;
 }
 
-w_rc_t bf_tree_cleaner::request_stop_cleaners()
+w_rc_t bf_tree_cleaner::request_stop_cleaner()
 {
-    for (unsigned id = 0; id < _slave_threads_size; ++id) {
-        _slave_threads[id]->_stop_requested = true;
-        lintel::atomic_thread_fence(lintel::memory_order_release);
-        lintel::atomic_thread_fence(lintel::memory_order_consume);
-        if (_slave_threads[id]->_running) {
-            W_DO(_wakeup_a_cleaner (id));
-        }
+    _slave_thread->_stop_requested = true;
+    lintel::atomic_thread_fence(lintel::memory_order_release);
+    lintel::atomic_thread_fence(lintel::memory_order_consume);
+    if (_slave_thread->_running) {
+        W_DO(wakeup_cleaner());
     }
     return RCOK;
 }
 
 
-w_rc_t bf_tree_cleaner::join_cleaners(uint32_t max_wait_millisec)
+w_rc_t bf_tree_cleaner::join_cleaner(uint32_t max_wait_millisec)
 {
-    for (unsigned id = 0; id < _slave_threads_size; ++id) {
-        if (_slave_threads[id]->_running) {
-            if (max_wait_millisec == 0) {
-                W_DO(_slave_threads[id]->join(sthread_base_t::WAIT_FOREVER));
-            } else {
-                W_DO(_slave_threads[id]->join(max_wait_millisec));
-            }
+    if (_slave_thread->_running) {
+        if (max_wait_millisec == 0) {
+            W_DO(_slave_thread->join(sthread_base_t::WAIT_FOREVER));
+        } else {
+            W_DO(_slave_thread->join(max_wait_millisec));
         }
     }
     return RCOK;
 }
-/*
-w_rc_t bf_tree_cleaner::kill_cleaners()
-{
-    for (unsigned id = 0; id < _slave_threads_size; ++id) {
-        if (_slave_threads[id]->_running) {
-            _slave_threads[id]->
-        }
-    }
-
-}
-*/
 
 const uint32_t FORCE_SLEEP_MS_MIN = 10;
 const uint32_t FORCE_SLEEP_MS_MAX = 1000;
 
-#if 0
-w_rc_t bf_tree_cleaner::force_all()
+w_rc_t bf_tree_cleaner::force_volume()
 {
-    for (int i = 0; i < vol_m::MAX_VOLS; i++) {
-        _requested_volumes[i] = true;
-    }
-    lintel::atomic_thread_fence(lintel::memory_order_seq_cst);
-
-    W_DO(wakeup_cleaners());
-    while (true) {
-        usleep(10000); // 10 ms
-
-        bool remains = false;
-        for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
-            lintel::atomic_thread_fence(lintel::memory_order_seq_cst);
-            cout << _requested_volumes[vol] << endl;
-            if (_requested_volumes[vol]) {
-                remains = true;
-                break;
-            }
-        }
-        if (!remains) {
-            break;
-        }
-    }
-
-    return RCOK;
-}
-#endif
-
-w_rc_t bf_tree_cleaner::force_all()
-{
-    // CS TODO: force alloc and stnode caches
-
-    for (int i = 0; i < vol_m::MAX_VOLS; i++) {
-        _requested_volumes[i] = true;
-    }
-
-    uint32_t interval = FORCE_SLEEP_MS_MIN;
-    while (!_dirty_shutdown_happening() && !_error_happened) {
-        W_DO(wakeup_cleaners());
-        DBGOUT2(<< "waiting in force_all...");
-        usleep(interval * 1000);
-        interval *= 2;
-        if (interval >= FORCE_SLEEP_MS_MAX) {
-            interval = FORCE_SLEEP_MS_MAX;
-        }
-        bool remains = false;
-        for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
-            if (_requested_volumes[vol]) {
-                remains = true;
-                break;
-            }
-        }
-        if (!remains) {
-            break;
-        }
-    }
-    if (_dirty_shutdown_happening()) {
-        DBGOUT1(<< "joining all cleaner threads up to 100ms...");
-        W_DO(join_cleaners(100));
-    }
-    DBGOUT2(<< "done force_all!");
-    return RCOK;
-}
-
-w_rc_t bf_tree_cleaner::force_volume(vid_t vol)
-{
-    if (_bufferpool->_volumes[vol] == NULL) {
-        DBGOUT2(<< "volume " << vol << " is not mounted");
+    if (_bufferpool->_volume == NULL) {
+        DBGOUT2(<< "volume is not mounted");
         return RCOK;
     }
 
     // CS TODO: force pages of stnode and alloc caches
 
     while (true) {
-        _requested_volumes[vol] = true;
+        _requested_volume = true;
         lintel::atomic_thread_fence(lintel::memory_order_release);
-        W_DO(wakeup_cleaner_for_volume(vol));
+        W_DO(wakeup_cleaner());
         uint32_t interval = FORCE_SLEEP_MS_MIN;
-        while (_requested_volumes[vol] && !_dirty_shutdown_happening() && !_error_happened) {
+        while (_requested_volume && !_dirty_shutdown_happening() && !_error_happened) {
             DBGOUT2(<< "waiting in force_volume...");
             usleep(interval * 1000);
             interval *= 2;
@@ -285,7 +151,7 @@ w_rc_t bf_tree_cleaner::force_volume(vid_t vol)
 
     if (_dirty_shutdown_happening()) {
         DBGOUT1(<< "joining all cleaner threads up to 100ms...");
-        W_DO(join_cleaners(100));
+        W_DO(join_cleaner(100));
     }
     DBGOUT2(<< "done force_volume!");
     return RCOK;
@@ -294,17 +160,13 @@ w_rc_t bf_tree_cleaner::force_volume(vid_t vol)
 
 const int INITIAL_SORT_BUFFER_SIZE = 64;
 
-bf_tree_cleaner_slave_thread_t::bf_tree_cleaner_slave_thread_t(bf_tree_cleaner* parent, unsigned id)
-    : _parent(parent), _id(id), _start_requested(false), _running(false), _stop_requested(false), _wakeup_requested(false),
-    _interval_millisec(parent->_cleaner_interval_millisec_min),  _completed_lsn(lsndata_null),
+bf_tree_cleaner_slave_thread_t::bf_tree_cleaner_slave_thread_t(bf_tree_cleaner* parent)
+    : _parent(parent), _start_requested(false), _running(false), _stop_requested(false), _wakeup_requested(false),
+    _interval_millisec(parent->_cleaner_interval_millisec_min),
     _sort_buffer (new uint64_t[INITIAL_SORT_BUFFER_SIZE]), _sort_buffer_size(INITIAL_SORT_BUFFER_SIZE)
 {
     ::pthread_mutex_init(&_interval_mutex, NULL);
     ::pthread_cond_init(&_interval_cond, NULL);
-    for (vid_t vol = 0; vol < vol_m::MAX_VOLS; ++vol) {
-        _candidates_buffer.push_back (std::vector<bf_idx>());
-    }
-    w_assert1(_candidates_buffer.size() == vol_m::MAX_VOLS);
 
     // use posix_memalign because the write buffer might be used for raw disk I/O
     void *buf = NULL;
@@ -393,14 +255,12 @@ void bf_tree_cleaner_slave_thread_t::wakeup()
 
 void bf_tree_cleaner_slave_thread_t::run()
 {
-    DBGOUT1(<<"bf_tree_cleaner_slave_thread_t: cleaner- " << _id << " has been created");
     lintel::atomic_thread_fence(lintel::memory_order_consume);
     while (!_start_requested) {
         _take_interval();
         lintel::atomic_thread_fence(lintel::memory_order_consume);
     }
 
-    DBGOUT1(<<"bf_tree_cleaner_slave_thread_t: cleaner- " << _id << " starts up");
     lintel::atomic_thread_fence(lintel::memory_order_consume);
     while (!_stop_requested && !_parent->_error_happened) {
         if (_dirty_shutdown_happening()) {
@@ -421,22 +281,14 @@ void bf_tree_cleaner_slave_thread_t::run()
     }
 
     _running = false;
-    DBGOUT1(<<"bf_tree_cleaner_slave_thread_t: cleaner- " << _id << " shuts down");
 }
 
 bool bf_tree_cleaner_slave_thread_t::_exists_requested_work()
 {
-    // the cleaner is requested to make a checkpoint. we need to immediately start it
-    if (_parent->_requested_lsn > _completed_lsn) {
-        return true;
-    }
-
     // the cleaner is requested to flush out all dirty pages for assigned volume. let's do it immediately
-    for (vid_t vol = 1; vol <= vol_m::MAX_VOLS; ++vol) {
-        lintel::atomic_thread_fence(lintel::memory_order_consume);
-        if (_parent->get_cleaner_for_vol(vol) == _id && _parent->_requested_volumes[vol]) {
-            return true;
-        }
+    lintel::atomic_thread_fence(lintel::memory_order_consume);
+    if (_parent->_requested_volume) {
+        return true;
     }
 
     // otherwise let's take a sleep
@@ -445,8 +297,7 @@ bool bf_tree_cleaner_slave_thread_t::_exists_requested_work()
 
 
 w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
-    vid_t vol, const std::vector<bf_idx> &candidates,
-    bool requested_volume, lsndata_t requested_lsn)
+    vid_t vol, const std::vector<bf_idx> &candidates)
 {
     if (_dirty_shutdown_happening()) return RCOK;
 
@@ -469,10 +320,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
         return RCOK;
 
     // TODO this method should separate dirty pages that have dependency and flush them after others.
-    DBGOUT1(<<"_clean_volume(cleaner=" << _id << "): volume " << vol);
     if (_sort_buffer_size < candidates.size()) {
         size_t new_buffer_size = 2 * candidates.size();
-        DBGOUT2(<<"_clean_volume(cleaner=" << _id << "): resize sort buffer " << _sort_buffer_size << "->" << new_buffer_size);
         uint64_t* new_sort_buffer = new uint64_t[new_buffer_size];
         if (new_sort_buffer == NULL) {
             return RC(eOUTOFMEMORY);
@@ -488,18 +337,15 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
         bf_idx idx = candidates[i];
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
         if (cb._pid_vol != vol) {
-            DBGOUT1(<<"_clean_volume(cleaner=" << _id << "): volume " << vol << ". this candidate has changed its volume? idx=" << idx << ". current vol=" << cb._pid_vol);
             continue;
         }
-        w_assert1(cb._pid_shpid >= _parent->_bufferpool->_volumes[vol]->_volume->first_data_pageid());
+        w_assert1(cb._pid_shpid >= _parent->_bufferpool->_volume->_volume->first_data_pageid());
         w_assert1(false == cb._in_doubt);
         w_assert1(_parent->_bufferpool->_buffer->lsn.valid());
         _sort_buffer[sort_buf_used] = (((uint64_t) cb._pid_shpid) << 32) + ((uint64_t) idx);
         ++sort_buf_used;
     }
-    DBGOUT2(<<"_clean_volume(cleaner=" << _id << "): sorting " << sort_buf_used << " entries..");
     std::sort(_sort_buffer, _sort_buffer + sort_buf_used);
-    DBGOUT2(<<"_clean_volume(cleaner=" << _id << "): done sorting");
 
     // now, write them out as sequentially as possible.
     // Note that
@@ -602,15 +448,13 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 // this operation requires a xct for logging. we create a ssx for this reason.
                 sys_xct_section_t sxs(true); // ssx to call free_page
                 W_DO (sxs.check_error_on_start());
-                W_DO (_parent->_bufferpool->_volumes[vol]->_volume
+                W_DO (_parent->_bufferpool->_volume->_volume
                         ->deallocate_page(page_buffer[idx].pid.page));
                 W_DO (sxs.end_sys_xct (RCOK));
                 // drop the page from bufferpool too
                 _parent->_bufferpool->_delete_block(idx);
             } else {
                 if (_write_buffer[write_buffer_cur].pid.vol() != vol) {
-                    DBGOUT1(<<"_clean_volume(cleaner=" << _id << "): oops, this page now has a different volume?? "
-                        << _write_buffer[write_buffer_cur].pid << " isn't in volume " << vol);
                     continue;
                 }
                 shpid_t shpid = _write_buffer[write_buffer_cur].pid.page;
@@ -631,8 +475,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 prev_shpid = shpid;
             }
         }
-        if (skipped_something &&
-                (requested_volume && requested_lsn != lsndata_null))
+        if (skipped_something)
         {
             // CS: TODO instead of waiting forever, cleaner should have a
             // "best effort" approach, meaning that it cannot guarantee either:
@@ -677,7 +520,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
 
     DBG(<< "Cleaner round done. Pages cleaned: " << cleaned_count);
 
-    DBGOUT1(<<"_clean_volume(cleaner=" << _id << "): done volume " << vol);
     return RCOK;
 }
 
@@ -689,9 +531,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol,
     if (consecutive == 0) {
         return RCOK;
     }
-    DBGOUT2(<<"_flush_write_buffer(cleaner=" << _id
-            << "): writing " << consecutive << " consecutive pages "
-            << " from pid " << _write_buffer[from].pid);
 
     // CS: flushing the log only once for each round (see _clean_volume)
     // we'll compute the highest lsn of the pages, and do one log flush to that lsn.
@@ -714,7 +553,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol,
     //     W_COERCE( smlevel_0::log->flush(lsn_t(max_page_lsn)) );
     // }
 
-    W_COERCE(_parent->_bufferpool->_volumes[vol]->_volume->write_many_pages(
+    W_COERCE(_parent->_bufferpool->_volume->_volume->write_many_pages(
                 _write_buffer[from].pid.page, _write_buffer + from,
                 consecutive));
 
@@ -758,39 +597,21 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol,
 w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
 {
     if (_dirty_shutdown_happening()) return RCOK;
-    // copies parent's _requested_lsn and _requested_volumes first.
-    lsndata_t requested_lsn = _parent->_requested_lsn; // this is an atomic copy
-    if (requested_lsn <= _completed_lsn) {
-        requested_lsn = lsndata_null;
-    }
-    bool requested_volumes[vol_m::MAX_VOLS];
-    lintel::atomic_thread_fence(lintel::memory_order_consume);
-    for (int i = 0; i < vol_m::MAX_VOLS; i++) {
-        requested_volumes[i] = _parent->_requested_volumes[i];
-    }
-    DBGOUT1(<<"_do_work(cleaner=" << _id << "): requested_lsn=" << lsn_t(requested_lsn));
 
-    for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
-        // I'm hoping this doesn't revoke the buffer, leaving the capacity for reuse.
-        // but in some STL implementation this might make the capacity zero. even in that case it shouldn't be a big issue..
-        _candidates_buffer[vol].clear();
-    }
+    // I'm hoping this doesn't revoke the buffer, leaving the capacity for reuse.
+    // but in some STL implementation this might make the capacity zero. even in that case it shouldn't be a big issue..
+    _candidates_buffer.clear();
 
     // if the dirty page's lsn is same or smaller than durable lsn,
     // we can write it out without log flush overheads.
-    lsndata_t durable_lsn = smlevel_0::log == NULL ? lsndata_null : smlevel_0::log->durable_lsn().data();
-
     bf_idx block_cnt = _parent->_bufferpool->_block_cnt;
 
     // do we have lots of dirty pages? (note, these are approximate statistics)
     if (_parent->_bufferpool->_dirty_page_count_approximate < 0) {// so, even this can happen.
         _parent->_bufferpool->_dirty_page_count_approximate = 0;
     }
-    bool in_hurry = (unsigned)_parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 3 * 2);
-    bool in_real_hurry = (unsigned)_parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 4 * 3);
 
     // list up dirty pages
-    generic_page* pages = _parent->_bufferpool->_buffer;
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
         // If page is not dirty or not in use, no need to flush
@@ -803,62 +624,27 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
             continue;
         }
 
-        // the following check is approximate (without latch).
-        // we check for real later, so that's fine.
-        vid_t vol = cb._pid_vol;
-        if (vol == 0 || vol >= vol_m::MAX_VOLS ||
-                _parent->get_cleaner_for_vol(vol) != _id) {
-            continue;
-        }
-        bool clean_it = false;
-        if (cb._rec_lsn < requested_lsn) {
-            clean_it = true;
-        } else if (requested_volumes[vol]) {
-            clean_it = true;
-        } else if (in_real_hurry) {
-            clean_it = true;
-        } else if (in_hurry && pages[idx].lsn.data() <= durable_lsn) {
-            clean_it = true;
-        }
-        if (clean_it) {
-            _candidates_buffer[vol].push_back (idx);
-            // DBGOUT3(<< "Picked page for cleaning: idx = " << idx
-            //         << " vol = " << cb._pid_vol
-            //         << " shpid = " << cb._pid_shpid);
+        _candidates_buffer.push_back (idx);
+        // DBGOUT3(<< "Picked page for cleaning: idx = " << idx
+        //         << " vol = " << cb._pid_vol
+        //         << " shpid = " << cb._pid_shpid);
 
-            // also add dependent pages. note that this might cause a duplicate. we deal with duplicates in _clean_volume()
-            bf_idx didx = cb._dependency_idx;
-            if (didx != 0) {
-                bf_tree_cb_t &dcb = _parent->_bufferpool->get_cb(didx);
-                if (dcb._dirty && dcb._used && dcb._rec_lsn <= cb._dependency_lsn) {
-                    DBGOUT2(<<"_do_work(cleaner=" << _id << "): added dependent dirty page: idx=" << didx << ": pid=" << dcb._pid_vol << "." << dcb._pid_shpid);
-                    _candidates_buffer[vol].push_back (didx);
-                }
+        // also add dependent pages. note that this might cause a duplicate. we deal with duplicates in _clean_volume()
+        bf_idx didx = cb._dependency_idx;
+        if (didx != 0) {
+            bf_tree_cb_t &dcb = _parent->_bufferpool->get_cb(didx);
+            if (dcb._dirty && dcb._used && dcb._rec_lsn <= cb._dependency_lsn) {
+                _candidates_buffer.push_back (didx);
             }
         }
     }
-    for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
-        if (!_candidates_buffer[vol].empty()) {
-            W_DO(_clean_volume(vol, _candidates_buffer[vol], requested_volumes[vol], requested_lsn));
-        }
+    if (!_candidates_buffer.empty()) {
+        W_DO(_clean_volume(1, _candidates_buffer));
     }
 
 
-    if (requested_lsn != lsndata_null) {
-        w_assert1(_completed_lsn < requested_lsn);
-        _completed_lsn = requested_lsn;
-        DBGOUT1(<<"_do_work(cleaner=" << _id << "): flushed until lsn=" << lsn_t(requested_lsn));
-    }
-    for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
-        if (_parent->get_cleaner_for_vol(vol) == _id && requested_volumes[vol]) {
-            _parent->_requested_volumes[vol] = false;
-            lintel::atomic_thread_fence(lintel::memory_order_release);
-            if (_parent->_bufferpool->_volumes[vol] != NULL) {
-                DBGOUT1(<<"_do_work(cleaner=" << _id << "): flushed volume " << vol);
-            }
-        }
-    }
-    DBGOUT1(<<"_do_work(cleaner=" << _id << "): done");
+    _parent->_requested_volume = false;
+    lintel::atomic_thread_fence(lintel::memory_order_release);
     return RCOK;
 }
 

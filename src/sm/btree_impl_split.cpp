@@ -37,7 +37,7 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
     w_assert1 (page.latch_mode() == LATCH_EX);
 
     shpid_t shpid;
-    W_DO(smlevel_0::vol->get(page.vol())->alloc_a_page(shpid));
+    W_DO(smlevel_0::vol->alloc_a_page(shpid));
     new_page_id = lpid_t(page.vol(), shpid);
     btree_page_h new_page;
     w_rc_t rc;
@@ -45,8 +45,7 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
 
     if (rc.is_error()) {
         // if failed for any reason, we release the allocated page.
-        W_DO(smlevel_0::vol->get(page.vol())
-                ->deallocate_page(new_page_id.page));
+        W_DO(smlevel_0::vol ->deallocate_page(new_page_id.page));
         return rc;
     }
 
@@ -159,7 +158,7 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
      * Step 1: Allocate a new page for the foster child
      */
     new_page_id._vol = page.vol();
-    W_DO(smlevel_0::vol->get(page.vol())->alloc_a_page(new_page_id.page));
+    W_DO(smlevel_0::vol->alloc_a_page(new_page_id.page));
 
     /*
      * Step 2: Create new foster child and move records into it, logging its
@@ -169,8 +168,7 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
     rc_t rc = new_page.fix_nonroot(page, page.vol(), new_page_id.page,
             LATCH_EX, false, true);
     if (rc.is_error()) {
-        W_DO(smlevel_0::vol->get(page.vol())
-                ->deallocate_page(new_page_id.page));
+        W_DO(smlevel_0::vol ->deallocate_page(new_page_id.page));
         return rc;
     }
 

@@ -481,7 +481,7 @@ restart_m::restart(
             // Note this buffer pool flush is only in serial mode, but not in concurrent
             // mode (open database after Log Analysis)
 
-            W_COERCE(bf->force_all());
+            W_COERCE(bf->force_volume());
         }
 
         struct timeval tm_after;
@@ -895,7 +895,6 @@ restart_m::analysis_pass_forward(
             }
             break;
 
-        case logrec_t::t_chkpt_dev_tab:
         case logrec_t::t_chkpt_backup_tab:
             if (num_chkpt_end_handled == 0)
             {
@@ -907,20 +906,11 @@ restart_m::analysis_pass_forward(
                 // code is temporary, since a proper fix should also apply to
                 // the individual log records (see below).  CS TODO
                 // r.redo(0);
-                if (r.type() == logrec_t::t_chkpt_dev_tab) {
-                    devtab = new char[logrec_t::max_sz];
-                    memcpy(devtab, &r, r.length());
-                }
-                else {
-                    bkptab = new char[logrec_t::max_sz];
-                    memcpy(bkptab, &r, r.length());
-                }
+                bkptab = new char[logrec_t::max_sz];
+                memcpy(bkptab, &r, r.length());
             }
             break;
 
-        case logrec_t::t_format_vol:
-        case logrec_t::t_dismount_vol:
-        case logrec_t::t_mount_vol:
         case logrec_t::t_add_backup:
             r.redo(0);
             break;
@@ -1659,7 +1649,6 @@ restart_m::analysis_pass_backward(
             }
             break;
 
-        case logrec_t::t_chkpt_dev_tab:
         case logrec_t::t_chkpt_backup_tab:
             if (num_chkpt_end_handled == 1)
             {
@@ -1671,64 +1660,8 @@ restart_m::analysis_pass_backward(
                 // code is temporary, since a proper fix should also apply to
                 // the individual log records (see below).  CS TODO
                 // r.redo(0);
-                if (r.type() == logrec_t::t_chkpt_dev_tab) {
-                    devtab = new char[logrec_t::max_sz];
-                    memcpy(devtab, &r, r.length());
-                }
-                else {
-                    bkptab = new char[logrec_t::max_sz];
-                    memcpy(bkptab, &r, r.length());
-                }
-            }
-            break;
-
-        case logrec_t::t_dismount_vol:
-        case logrec_t::t_mount_vol:
-        case logrec_t::t_format_vol:
-            // Perform all mounts and dismounts up to the minimum redo lsn,
-            // so that the system has the right volumes mounted during
-            // the redo phase.  The only time this should be redone is
-            // when no dirty pages were in the checkpoint and a
-            // mount/dismount occurs before the first page is dirtied after
-            // the checkpoint.  The case of the first dirty page occuring
-            // before the checkpoint is handled by undoing mounts/dismounts
-            // back to the min dirty page lsn in the analysis_pass
-            // after the log has been scanned.
-
-            // mount & dismount shouldn't happen during a checkpoint but
-            // checkpoint is a non-blocking operation, need to handle it just
-            // in case
-            // redo_lsn was initialized to NULL, and only set to the minimum lsn
-            // from 'end checkpoint' when we encounter it during log scan
-            // Only redo, no undo for mount & dismount
-
-            // Due to backward scan, we might see these log records before the
-            // 'end checkpoint' log records, therefore we might not have a valid redo_lsn
-            // at this point.  Record the lsn information in a heap and delay the 'redo' until
-            // after we are done with the backward log scan.  This is a very corner
-            // scenario.
-            //
-            {
-                // CS TODO -- this does not have to be a heap, since all we
-                // have to do is replay the mounts/dismount in inverse order,
-                // i.e., a stack or list would do just fine
-                logrec_t*  mount_log_rec_buf = new logrec_t; // auto-del at the end
-                if (! mount_log_rec_buf)
-                {
-                    W_FATAL(eOUTOFMEMORY);
-                }
-                memcpy(mount_log_rec_buf, &r, r.length());
-
-                comp_mount_log_t* mount_heap_elem = new comp_mount_log_t;
-                if (! mount_heap_elem)
-                {
-                    W_FATAL(eOUTOFMEMORY);
-                }
-                mount_heap_elem->lsn = lsn;
-                mount_heap_elem->mount_log_rec_buf = mount_log_rec_buf;
-
-                // Insert the entry into heapMount
-                heapMount.AddElement(mount_heap_elem);
+                bkptab = new char[logrec_t::max_sz];
+                memcpy(bkptab, &r, r.length());
             }
             break;
 
@@ -3955,13 +3888,9 @@ restart_m::redo_log_pass(
                             // Regular transaction without a valid txn id
                             // It must be a mount or dismount log record
 
-                            w_assert3(r.type() == logrec_t::t_dismount_vol     ||
-                                      r.type() == logrec_t::t_mount_vol        ||
-                                      r.type() == logrec_t::t_chkpt_dev_tab    ||
+                            w_assert3(
                                       r.type() == logrec_t::t_chkpt_backup_tab ||
-                                      r.type() == logrec_t::t_format_vol       ||
                                       r.type() == logrec_t::t_add_backup);
-                            DBGOUT3(<<"redo - no page, no xct, this is a device log record (redo already done by analysis)");
 
                             //r.redo(0);
                             // CS TODO

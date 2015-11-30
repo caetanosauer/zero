@@ -62,45 +62,29 @@ public:
     /**
      * Wakes up the cleaner thread assigned to the given volume.
      */
-    w_rc_t wakeup_cleaner_for_volume (vid_t vol);
+    w_rc_t wakeup_cleaner();
 
     /**
      * Gracefully request all cleaners to stop.
      */
-    w_rc_t request_stop_cleaners ();
+    w_rc_t request_stop_cleaner ();
     /**
      * Waits until all cleaner threads stop. Should be used after request_stop_cleaners.
      * @param max_wait_millisec maximum milliseconds to wait for join. zero for forever.
      */
-    w_rc_t join_cleaners (uint32_t max_wait_millisec = 0);
-
-    /*
-    **
-    * Forcefully and immediately kills all cleaner threads. This method should be avoided if possible.
-    *
-    w_rc_t kill_cleaners ();
-    */
+    w_rc_t join_cleaner (uint32_t max_wait_millisec = 0);
 
     /** Immediately writes out all dirty pages in the given volume.*/
-    w_rc_t force_volume (vid_t vol);
+    w_rc_t force_volume();
 
     /** Immediately writes out all dirty pages.*/
     w_rc_t force_all ();
 
-    /** Immediately writes out all dirty pages up to the given LSN. */
-    w_rc_t force_until_lsn (lsndata_t lsn);
-
 private:
-    bool _is_force_until_lsn_done(lsndata_t lsn) const;
-    /**
-     * Wakes up the specified cleaner thread, starting it if not started yet.
-     */
-    w_rc_t _wakeup_a_cleaner(unsigned id);
-
     /** the buffer pool this cleaner deals with. */
     bf_tree_m*                  _bufferpool;
 
-    unsigned get_cleaner_for_vol(vid_t);
+    unsigned get_cleaner();
 
     /**
      * _volume_requests[vol] indicates whether the volume is requested
@@ -108,32 +92,12 @@ private:
      * When the corresponding worker observes this flag and completes
      * flushing all dirty pages in the volume, the worker turns off the flag.
      */
-    volatile bool               _requested_volumes[vol_m::MAX_VOLS];
+    bool               _requested_volume;
 
     /** whether any unexpected error happened in some cleaner. */
     bool                        _error_happened;
 
-    /**
-     * The LSN up to which all cleaners are requested to flush out all dirty pages.
-     * Used while checkpointing.
-     * Accesses to this variable are NOT synchronized because, even if an unlucky event
-     * happens, the requesting thread will just request again until all slaves
-     * have _completed_lsn as large as they need.
-     * This simplification assumes the read/write of lsndata_t is atomic or at least regular,
-     * which should be true as it's a 64-bits integer.
-     */
-    lsndata_t _requested_lsn;
-
-    /**
-     * An array of slave threads indexed by the slave-id.
-     * Index-zero is always NULL because slave-id=0 means no worker.
-     */
-    bf_tree_cleaner_slave_thread_t** _slave_threads;
-
-    /**
-     * Size of _slave_threads including the dummy slave-id=0 entry.
-     */
-    const unsigned _slave_threads_size;
+    bf_tree_cleaner_slave_thread_t* _slave_thread;
 
     const uint32_t _cleaner_interval_millisec_min;
     const uint32_t _cleaner_interval_millisec_max;
@@ -162,7 +126,7 @@ private:
 class bf_tree_cleaner_slave_thread_t : public smthread_t {
     friend class bf_tree_cleaner;
 public:
-    bf_tree_cleaner_slave_thread_t (bf_tree_cleaner* parent, unsigned id);
+    bf_tree_cleaner_slave_thread_t (bf_tree_cleaner* parent);
     ~bf_tree_cleaner_slave_thread_t ();
 
     void run();
@@ -175,15 +139,12 @@ private:
     void _take_interval ();
     w_rc_t _do_work ();
     bool _exists_requested_work();
-    w_rc_t _clean_volume(vid_t vol, const std::vector<bf_idx> &candidates, bool requested_volume, lsndata_t requested_lsn);
+    w_rc_t _clean_volume(vid_t vol, const std::vector<bf_idx> &candidates);
     w_rc_t _flush_write_buffer(vid_t vol, size_t from, size_t consecutive,
             unsigned& cleaned_count);
 
     /** parent object. */
     bf_tree_cleaner*            _parent;
-
-    /** ID of this thread. */
-    const unsigned _id;
 
     /** @todo at some point the flags below should probably become std::atomic_flag's (or lintel
         should be updated to include that type). I also think memory_order_consume would
@@ -206,15 +167,8 @@ private:
     pthread_mutex_t             _interval_mutex;
     pthread_cond_t              _interval_cond;
 
-    /**
-     * The LSN up to which this thread has flushed out all dirty pages.
-     * Used while checkpointing.
-     * Only one thread (this) is writing and access to lsndata_t (64 bits integer) is atomic, so always safe.
-     */
-    lsndata_t _completed_lsn;
-
-    /** reused buffer of dirty page's indexes for each volume. */
-    std::vector<std::vector<bf_idx> >         _candidates_buffer;
+    /** reused buffer of dirty page's indexes . */
+    std::vector<bf_idx>         _candidates_buffer;
     /** reused buffer for sorting dirty page's indexes. */
     uint64_t*                   _sort_buffer;
     /** size of _sort_buffer. */

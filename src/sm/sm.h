@@ -1052,23 +1052,11 @@ public:
     static rc_t            checkpoint_sync();
 
     /**
-     * \brief Force the buffer pool to flush its pages to disk.
-     * \ingroup SSMBUFPOOL
-     * \attention Do not call force_buffers with anything pinned.
-     * You may cause latch-latch deadlocks, as this method has
-     * to scan the entire buffer pool and possibly EX-latch pages to prevent
-     * others from updating while it forces to disk.
-     * Since the page-order is essentially random, we cannot
-     * preclude latch-latch deadlocks with other threads.
-     */
-    static rc_t            force_buffers();
-
-    /**
      * \brief Force the buffer pool to flush to disk all pages for the given volume.
      * \ingroup SSMBUFPOOL
      * @param[in] vol Volume whose pages are to be flushed.
      */
-    static rc_t            force_volume(vid_t vol);
+    static rc_t            force_volume();
 
     /**\cond skip
      * Do not document. Very un-thread-safe.
