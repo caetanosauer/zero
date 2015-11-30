@@ -605,40 +605,10 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
 
     w_assert1(cnt > 0);
     size_t offset = size_t(first_page) * sizeof(generic_page);
-
-#ifdef ZERO_INIT
-    /*
-     * When a write into the buffer pool of potentially uninitialized
-     * memory occurs (such as padding)
-     * there is a purify/valgrind supression to keep the SM from being gigged
-     * for the SM-using application's legitimate behavior.  However, this
-     * uninitialized memory writes to a page in the buffer pool
-     * colors the corresponding bytes in the buffer pool with the
-     * "uninitialized" memory color.  When a new page is read in from
-     * disk, nothing changes the color of the page back to "initialized",
-     * and you suddenly see UMR or UMC errors from valid buffer pool pages.
-     */
-    memset(buf, '\0', cnt * sizeof(generic_page));
-#endif
-
     memset(buf, '\0', cnt * sizeof(generic_page));
     int read_count = 0;
-    W_DO(me()->pread_short(_unix_fd, (char *) &buf, cnt * sizeof(generic_page),
+    W_DO(me()->pread_short(_unix_fd, (char *) buf, cnt * sizeof(generic_page),
                 offset, read_count));
-
-    //w_rc_t err = t->pread(_unix_fd, (char *) &pages, cnt * sizeof(generic_page), offset);
-    //if(err.err_num() == stSHORTIO) {
-        /*
-         * If we read past the end of the file, this means it is a virgin page,
-         * so we simply fill the buffer with zeroes. Note that we can't read
-         * past the logical size of the device due to the assert above.
-         */
-    //    memset(&page, 0, sizeof(page));
-    //}
-    //else {
-    //    w_assert1(page.pid == lpid_t(_vid, pnum));
-    //}
-    //W_DO(err);
 
     sysevent::log_page_read(first_page, cnt);
 
@@ -841,7 +811,6 @@ rc_t vol_t::write_many_pages(PageID first_page, const generic_page* const buf, i
         check_restore_finished();
     }
 
-    w_assert1(first_page > 0 && first_page < (PageID) num_used_pages());
     w_assert1(cnt > 0);
     size_t offset = size_t(first_page) * sizeof(generic_page);
 

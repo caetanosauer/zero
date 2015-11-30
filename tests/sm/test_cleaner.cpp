@@ -10,9 +10,9 @@ const size_t BLOCK_SIZE = 1024 * 1024;
 char HUNDRED_BYTES[100];
 
 btree_test_env *test_env;
-stid_t stid;
-lpid_t root_pid;
-vol_m* volMgr;
+StoreID stid;
+PageID root_pid;
+vol_t* volMgr;
 
 void init() {
     volMgr = smlevel_0::vol;
@@ -73,8 +73,8 @@ TEST (CleanerTest, cleaner) {
     options.set_bool_option("sm_decoupled_cleaner", true);
     options.set_bool_option("sm_decoupled_cleaner_mode", true);
     options.set_bool_option("sm_archiver_eager", true);
-    options.set_string_option("sm_archdir", "/var/tmp/lucas/btree_test_env/archive");
-    options.set_string_option("sm_logdir", "/var/tmp/lucas/btree_test_env/log");
+    // options.set_string_option("sm_archdir", "/var/tmp/lucas/btree_test_env/archive");
+    // options.set_string_option("sm_logdir", "/var/tmp/lucas/btree_test_env/log");
     EXPECT_EQ(test_env->runBtreeTest(cleaner, options), 0);
 }
 
