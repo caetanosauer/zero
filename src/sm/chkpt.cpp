@@ -368,7 +368,7 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
 
         // LL: we have to guarantee that this is the first chkpt ever being taken.
         // In this case, the chkpt begin lsn must be the very first one.
-        w_assert0(begin_lsn == lsn_t(1,0));
+        // w_assert0(begin_lsn == lsn_t(1,0));
 
         DBGOUT3( << "NULL master_lsn, nothing to scan");
         return;
@@ -387,8 +387,10 @@ void chkpt_m::forward_scan_log(const lsn_t master_lsn,
 
     int num_chkpt_end_handled = 0;
 
-    // Assert first record is Checkpoint Begin Log
-    if(cons->next(r) && r->type() != logrec_t::t_chkpt_begin) {
+    while(cons->next(r) && (r->type() == logrec_t::t_tick_sec || r->type() == logrec_t::t_tick_msec)){}
+
+     // Assert first record is Checkpoint Begin Log
+    if(r->type() != logrec_t::t_chkpt_begin) {
             DBGOUT1( << setiosflags(ios::right) << r->lsn()
                      << resetiosflags(ios::right) << " R: " << *r);
             W_FATAL_MSG(fcINTERNAL, << "First log record in Log Analysis is not a begin checkpoint log: " << r->type());
