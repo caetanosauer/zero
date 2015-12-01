@@ -523,67 +523,6 @@ void ss_m::_do_restart()
         // Make surethe current operating state is before recovery
         smlevel_0::operating_mode = t_not_started;
         restart.restart(master, verify_lsn, redo_lsn, last_lsn, in_doubt_count);
-
-        // CS TODO: Why did we have to mount and dismount all devices here?
-#if 0
-        // Perform the low level dismount, remount in higher level
-        // and dismount again steps.
-        // If running in serial mode, everything is fine.
-        // If running in concurrent mode, no final higher level dismount.
-        // Special case: the mount operation pre-loads the root page as
-        // a side effect, if the root page does not exist on disk (e.g., B-tree
-        // has only one page worth of data and was never flushed before crash),
-        // the mount operation would detect 'page not exist' condition and zero
-        // out the root page, this is bad because if the root page was marked as
-        // an in_doubt during Log Analysis, this information would be erased
-        // when the page got zero out.  This is handled in bf_tree_m::_preload_root_page
-        // to put the in_doubt flag back to the root page.
-
-        // contain the scope of dname[]
-        // record all the mounted volumes after recovery.
-
-        std::vector<string> dnames;
-        std::vector<vid_t> vids;
-        W_COERCE( io->get_vols(0, max_vols, dnames, vids) );
-
-        DBG(<<"Dismount all volumes " << dnames.size());
-        // now dismount all of them at the io level, the level where they
-        // were mounted during recovery.
-        if (true == smlevel_0::use_serial_restart())
-            W_COERCE( io->dismount_all(true /*flush*/) );
-        else
-            W_COERCE( io->dismount_all(true /*flush*/, false /*clear_cb*/) ); // do not clear cb if in concurrent recovery mode
-        // now mount all the volumes properly at the sm level.
-        // then dismount them and free temp files only if there
-        // are no locks held.
-        for (int i = 0; i < dnames.size(); i++)
-        {
-            rc_t rc;
-            DBG(<<"Remount volume " << dname[i]);
-            rc =  mount_vol(dname[i], vid[i]) ;
-            if (rc.is_error())
-            {
-                ss_m::errlog->clog  << warning_prio
-                << "Volume on device " << dname[i]
-                << " was only partially formatted; cannot be recovered."
-                << flushl;
-            }
-            else
-            {
-                // Dismount only if running in serial mode
-                if (true == smlevel_0::use_serial_restart()) {
-                    // CS: switched to volume dismount after removing device manager
-                    /* W_COERCE( _dismount_dev(dname[i])); */
-                    W_COERCE(io->dismount(vid[i]));
-                }
-            }
-        }
-        delete [] vid;
-        for (i = 0; i < max_vols; i++) {
-            delete [] dname[i];
-        }
-        delete [] dname;
-#endif
     }
 
     // Pure on-demand mode must be the same for REDO and UNDO phases
