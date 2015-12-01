@@ -303,6 +303,8 @@ public:
 
     std::string str();
 
+    bool is_null() const { return _data == 0; }
+
 
 /*
  * This is the SM's idea of on-disk and in-structure

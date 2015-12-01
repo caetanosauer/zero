@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -72,7 +72,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * \note The two-part nature comes from the days before 64-bit architectures,
  * and it's retained for the purpose of printing transaction ids.
  * They are output in the form "hi.low", which is more readable than
- * printing as a 64-bit value.  
+ * printing as a 64-bit value.
  * In no other way need we maintain high and low parts.
  */
 class tid_t {
@@ -93,7 +93,7 @@ public:
         return *this;
     }
 
-    bool invalid() const { return _data == 0; }
+    bool is_null() const { return _data == 0; }
 
     datum_t atomic_incr() {
         return lintel::unsafe::atomic_fetch_add(&_data, 1)+1;
@@ -108,7 +108,7 @@ public:
 		break;
 	    }
 	} while (!lintel::unsafe::atomic_compare_exchange_strong(static_cast<uint64_t*>(&_data), &old_value, new_value));
-	
+
         return *this;
     }
     tid_t &atomic_assign_min(const tid_t &tid) {
@@ -154,7 +154,7 @@ private:
 
 /* XXX yes, this is disgusting, but at least it allows it to
    be a shore.def option.  In reality, this specification should
-   be revisited.    These fixed length objects have caused a 
+   be revisited.    These fixed length objects have caused a
    fair amount of problems, and it might be time to rethink the
    issue a bit. */
 #ifdef COMMON_GTID_LENGTH
@@ -193,7 +193,7 @@ inline istream& operator>>(istream& i, tid_t& t)
  * \brief Global transaction Identifier used for Two-Phase Commit
  */
 typedef opaque_quantity<max_gtid_len> gtid_t;
-/**\typedef opaque_quantity<max_server_handle_len> server_handle_t; 
+/**\typedef opaque_quantity<max_server_handle_len> server_handle_t;
  * \brief Coordinator Handle used for Two-Phase Commit
  * */
 typedef opaque_quantity<max_server_handle_len> server_handle_t;
