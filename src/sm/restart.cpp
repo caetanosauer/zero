@@ -588,13 +588,13 @@ void restart_m::log_analysis(
      * the other data structures. */
     smlevel_0::chkpt->backward_scan_log(master, last_lsn, v_chkpt, restart_with_lock);
 
-    redo_lsn = v_chkpt.min_rec_lsn;
-    undo_lsn = v_chkpt.min_xct_lsn;
-    if(v_chkpt.min_xct_lsn == master) {
+    redo_lsn = v_chkpt.get_min_rec_lsn();
+    undo_lsn = v_chkpt.get_min_xct_lsn();
+    if(undo_lsn == master) {
         commit_lsn = lsn_t::null;
     }
     else{
-        commit_lsn = v_chkpt.min_xct_lsn; // or master?
+        commit_lsn = undo_lsn;
     }
 
     //Re-load buffer
@@ -654,7 +654,7 @@ void restart_m::log_analysis(
 
     //Re-add backups
     // CS TODO only works for one backup
-    smlevel_0::vol->sx_add_backup(v_chkpt.bkp_tab.bkp_path, true);
+    smlevel_0::vol->sx_add_backup(v_chkpt.bkp_path, true);
 }
 
 /*********************************************************************

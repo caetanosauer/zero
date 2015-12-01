@@ -75,21 +75,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <algorithm>
 #include <limits>
 
- typedef std::map<uint64_t, signed int> tid_CLR_map;
-
 // For checkpoint to gather lock information into heap if asked
 struct comp_lock_info_t;
 class CmpXctLockTids;
 typedef class Heap<comp_lock_info_t*, CmpXctLockTids> XctLockHeap;
-
-struct dev_tab_entry_t {
-  bool dev_mounted;
-  lsn_t dev_lsn;
-};
-
-struct bkp_tab_entry_t {
-  string bkp_path;
-};
 
 struct buf_tab_entry_t {
   StoreID store;
@@ -114,23 +103,28 @@ typedef map<PageID, buf_tab_entry_t>       buf_tab_t;
 typedef map<tid_t, list<lck_tab_entry_t> > lck_tab_t;
 typedef map<tid_t, xct_tab_entry_t>        xct_tab_t;
 
-struct chkpt_t{
-  lsn_t begin_lsn;
-  lsn_t min_rec_lsn;
-  lsn_t min_xct_lsn;
+struct chkpt_t {
+    lsn_t begin_lsn;
+    tid_t youngest;
 
-  //Backup Table
-  bkp_tab_entry_t bkp_tab;
+    buf_tab_t buf_tab;
+    lck_tab_t lck_tab;
+    xct_tab_t xct_tab;
+    string bkp_path;
 
-  //Dirty Page Table
-  buf_tab_t buf_tab;
+    void init(lsn_t begin_lsn);
+    void mark_page_dirty(PageID pid, lsn_t lsn, StoreID store);
+    void mark_page_clean(PageID pid, lsn_t lsn);
+    void mark_xct_active(tid_t tid, lsn_t lsn, lsn_t undo_nxt);
+    void mark_xct_ended(tid_t tid);
+    bool is_xct_active(tid_t tid);
+    void update_first_lsn(tid_t tid, lsn_t lsn);
+    void delete_xct(tid_t tid);
+    void add_backup(const char* path);
+    void cleanup();
 
-  //Lock Table
-  lck_tab_t lck_tab;
-
-  //Transaction Table
-  tid_t youngest;
-  xct_tab_t xct_tab;
+    lsn_t get_min_rec_lsn() const;
+    lsn_t get_min_xct_lsn() const;
 };
 
 
@@ -181,14 +175,10 @@ private:
     lsn_t            _chkpt_last;
     LogArchiver::LogConsumer* cons;
 
-    bool             _analysis_system_log(logrec_t& r, chkpt_t& new_chkpt);
     void             _analysis_ckpt_bf_log(logrec_t& r,  chkpt_t& new_chkpt);
-    void             _analysis_ckpt_xct_log(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR);
+    void             _analysis_ckpt_xct_log(logrec_t& r, chkpt_t& new_chkpt);
     void             _analysis_ckpt_lock_log(logrec_t& r, chkpt_t& new_chkpt);
-    void             _analysis_other_log(logrec_t& r, chkpt_t& new_chkpt);
-    void             _analysis_process_lock(logrec_t& r, chkpt_t& new_chkpt, tid_CLR_map& mapCLR);
     void             _analysis_acquire_lock_log(logrec_t& r, chkpt_t& new_chkpt);
-    void             _analysis_process_compensation_map(tid_CLR_map& mapCLR, chkpt_t& new_chkpt);
     void             _analysis_process_txn_table(chkpt_t& new_chkpt);
 
 
