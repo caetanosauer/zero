@@ -626,17 +626,17 @@ void restart_m::log_analysis(
                         false,                    // single_log_sys_xct
                         it->first,
                         it->second.last_lsn,      // last_LSN
-                        it->second.undo_nxt,      // next_undo
+                        it->second.last_lsn,      // next_undo == last_lsn
                         true);                    // loser_xct, set to true for recovery
 
         xd->set_first_lsn(it->second.first_lsn); // Set the first LSN of the in-flight transaction
         xd->set_last_lsn(it->second.last_lsn);   // Set the last lsn in the transaction
 
         // Loser transaction
-        if (true == use_serial_restart())
+        if (use_serial_restart())
             loser_heap.AddElementDontHeapify(xd);
     }
-    if (true == use_serial_restart()) {
+    if (use_serial_restart()) {
         loser_heap.Heapify();
     }
 

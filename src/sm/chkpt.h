@@ -85,6 +85,9 @@ struct buf_tab_entry_t {
   lsn_t rec_lsn;              // initial dirty lsn
   lsn_t page_lsn;             // last write lsn
   bool dirty;                 //this flag is only used to filter non-dirty pages
+
+  buf_tab_entry_t() :
+      store(0), rec_lsn(lsn_t::null), page_lsn(lsn_t::null), dirty(true) {}
 };
 
 struct lck_tab_entry_t {
@@ -95,8 +98,10 @@ struct lck_tab_entry_t {
 struct xct_tab_entry_t {
   smlevel_0::xct_state_t state;
   lsn_t last_lsn;               // most recent log record
-  lsn_t undo_nxt;               // undo next
   lsn_t first_lsn;              // first lsn of the txn
+
+  xct_tab_entry_t() :
+      state(xct_t::xct_active), last_lsn(lsn_t::null), first_lsn(lsn_t::null) {}
 };
 
 typedef map<PageID, buf_tab_entry_t>       buf_tab_t;
@@ -113,13 +118,14 @@ struct chkpt_t {
     string bkp_path;
 
     void init(lsn_t begin_lsn);
-    void mark_page_dirty(PageID pid, lsn_t lsn, StoreID store);
+    void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn,
+            StoreID store);
     void mark_page_clean(PageID pid, lsn_t lsn);
-    void mark_xct_active(tid_t tid, lsn_t lsn, lsn_t undo_nxt);
+    void mark_xct_active(tid_t tid, lsn_t first_lsn, lsn_t last_lsn);
     void mark_xct_ended(tid_t tid);
-    bool is_xct_active(tid_t tid);
-    void update_first_lsn(tid_t tid, lsn_t lsn);
+    bool is_xct_active(tid_t tid) const;
     void delete_xct(tid_t tid);
+    void add_lock(tid_t tid, okvl_mode mode, uint32_t hash);
     void add_backup(const char* path);
     void cleanup();
 
@@ -157,15 +163,16 @@ public:
     };
 
 public:
-    void             wakeup_and_take();
-    void             spawn_chkpt_thread();
-    void             retire_chkpt_thread();
-    void             synch_take();
-    void             synch_take(XctLockHeap& lock_heap);  // Record lock information in heap
-    void             take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap, const bool record_lock = false);
-    void             dcpld_take(chkpt_mode_t chkpt_mode);
-    void             backward_scan_log(const lsn_t master_lsn, const lsn_t begin_lsn, chkpt_t& new_chkpt, const bool restart_with_lock);
-    void             forward_scan_log(const lsn_t master_lsn, const lsn_t begin_lsn, chkpt_t& new_chkpt, const bool restart_with_lock);
+    void wakeup_and_take();
+    void spawn_chkpt_thread();
+    void retire_chkpt_thread();
+    void synch_take();
+    void synch_take(XctLockHeap& lock_heap);
+    void take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap,
+            bool acquire_locks = false);
+    void dcpld_take(chkpt_mode_t chkpt_mode);
+    void backward_scan_log(lsn_t master_lsn, lsn_t begin_lsn,
+            chkpt_t& new_chkpt, bool acquire_locks);
 
     bool decoupled;
 
@@ -173,18 +180,9 @@ private:
     chkpt_thread_t*  _chkpt_thread;
     long             _chkpt_count;
     lsn_t            _chkpt_last;
-    LogArchiver::LogConsumer* cons;
 
-    void             _analysis_ckpt_bf_log(logrec_t& r,  chkpt_t& new_chkpt);
-    void             _analysis_ckpt_xct_log(logrec_t& r, chkpt_t& new_chkpt);
-    void             _analysis_ckpt_lock_log(logrec_t& r, chkpt_t& new_chkpt);
-    void             _analysis_acquire_lock_log(logrec_t& r, chkpt_t& new_chkpt);
-    void             _analysis_process_txn_table(chkpt_t& new_chkpt);
+    void             _acquire_lock(logrec_t& r, chkpt_t& new_chkpt);
 
-
-public:
-    // These functions are for the use of chkpt -- to serialize
-    // logging of chkpt and prepares
 };
 
 /*<std-footer incl-file-exclusion='CHKPT_H'>  -- do not edit anything below this line -- */

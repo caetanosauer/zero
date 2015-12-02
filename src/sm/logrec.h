@@ -454,7 +454,6 @@ struct chkpt_xct_tab_t {
     struct xrec_t {
     tid_t                 tid;
     lsn_t                last_lsn;
-    lsn_t                undo_nxt;
     lsn_t                first_lsn;
     smlevel_0::xct_state_t        state;
     };
@@ -474,7 +473,6 @@ struct chkpt_xct_tab_t {
     const tid_t*             tid,
     const smlevel_0::xct_state_t* state,
     const lsn_t*             last_lsn,
-    const lsn_t*             undo_nxt,
     const lsn_t*             first_lsn);
     int             size() const;
 };

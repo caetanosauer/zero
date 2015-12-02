@@ -108,7 +108,7 @@ chkpt_bf_tab       0000000 0.0 (int cnt, const PageID* pid, const StoreID* store
 chkpt_xct_tab      0000000 0.0 (const tid_t& youngest, 
                             int cnt, const tid_t* tid, 
                             const smlevel_0::xct_state_t* state,
-                            const lsn_t* last_lsn, const lsn_t* undo_nxt, const lsn_t* first_lsn);               
+                            const lsn_t* last_lsn, const lsn_t* first_lsn);               
 # per active transaction granted lock log
 chkpt_xct_lock      0000000 0.0 (const tid_t& tid, int cnt, const okvl_mode* lock_mode, const uint32_t* lock_hash);
 chkpt_restore_tab  0010000 0.0 ();

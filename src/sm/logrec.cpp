@@ -516,7 +516,6 @@ chkpt_bf_tab_log::chkpt_bf_tab_log(
  *
  *  Data log to save transaction table at checkpoint.
  *  Contains, for each active xct, its id, state, last_lsn
- *  and undo_nxt lsn.
  *
  *********************************************************************/
 chkpt_xct_tab_t::chkpt_xct_tab_t(
@@ -525,7 +524,6 @@ chkpt_xct_tab_t::chkpt_xct_tab_t(
     const tid_t*                         tid,
     const smlevel_0::xct_state_t*         state,
     const lsn_t*                         last_lsn,
-    const lsn_t*                         undo_nxt,
     const lsn_t*                         first_lsn)
     : youngest(_youngest), count(cnt)
 {
@@ -534,7 +532,6 @@ chkpt_xct_tab_t::chkpt_xct_tab_t(
         xrec[i].tid = tid[i];
         xrec[i].state = state[i];
         xrec[i].last_lsn = last_lsn[i];
-        xrec[i].undo_nxt = undo_nxt[i];
         xrec[i].first_lsn = first_lsn[i];
     }
 }
@@ -545,11 +542,10 @@ chkpt_xct_tab_log::chkpt_xct_tab_log(
     const tid_t*                         tid,
     const smlevel_0::xct_state_t*         state,
     const lsn_t*                         last_lsn,
-    const lsn_t*                         undo_nxt,
     const lsn_t*                         first_lsn)
 {
     fill((PageID) 0, (new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
-                                         last_lsn, undo_nxt, first_lsn))->size());
+                                         last_lsn, first_lsn))->size());
 }
 
 

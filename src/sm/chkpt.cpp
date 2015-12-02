@@ -201,7 +201,6 @@ chkpt_m::chkpt_m(bool _decoupled)
     if(_chkpt_last == lsn_t::null) {
         _chkpt_last = lsn_t(1,0);
     }
-    cons = new LogArchiver::LogConsumer(_chkpt_last, BLOCK_SIZE, false);
 }
 
 /*********************************************************************
@@ -218,8 +217,6 @@ chkpt_m::~chkpt_m()
     {
         retire_chkpt_thread();
     }
-
-    cons->shutdown();
 
     // Destruct the chkpt_m thresd (itself), if it is a simulated crash,
     // the system might be in the middle of taking a checkpoint, and
@@ -360,7 +357,7 @@ void chkpt_m::synch_take(XctLockHeap& lock_heap)
 void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                                 const lsn_t begin_lsn,
                                 chkpt_t& new_chkpt,
-                                const bool restart_with_lock)
+                                const bool acquire_locks)
 {
     w_assert0(begin_lsn >= master_lsn);
     new_chkpt.init(begin_lsn);
@@ -383,10 +380,6 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
     lsn_t         lsn;   // LSN of the retrieved log record
 
     bool insideChkpt = false;
-
-    // Boolean to indicate whether we need to acquire non-read lock for the current log record
-    // no lock acquisition on a finished (commit or aborted) user transaction
-    bool acquire_lock = true;
     bool scan_done = false;
     lsn_t chkpt_begin = master_lsn;
 
@@ -396,34 +389,30 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
             continue;
         }
 
-        acquire_lock = true; // New log record, reset the flag
-
         if (!r.tid().is_null()) {
-            new_chkpt.mark_xct_active(r.tid(), lsn, r.xid_prev());
-            // if this assert and the one below always pass, then we can
-            // combine the if's and remove the is_page_update flag
-            w_assert0(r.is_page_update());
-        }
-
-        if (r.is_page_update()) {
-            w_assert0(r.is_redo() && !r.null_pid());
-            new_chkpt.mark_page_dirty(r.pid(), lsn, r.stid());
-
-            if (r.is_multi_page()) {
-                w_assert0(r.pid2() != 0);
-                new_chkpt.mark_page_dirty(r.pid2(), lsn, r.stid());
-            }
-
-            w_assert0(!r.tid().is_null());
-            new_chkpt.update_first_lsn(r.tid(), lsn);
-
-            if (new_chkpt.is_xct_active(r.tid()) && restart_with_lock) {
-                _analysis_acquire_lock_log(r, new_chkpt);
+            if (r.tid() > new_chkpt.youngest) {
+                new_chkpt.youngest = r.tid();
             }
 
             if (r.xid_prev().is_null()) {
                 // We won't see this xct again -- delete it
                 new_chkpt.delete_xct(r.tid());
+            }
+            else {
+                new_chkpt.mark_xct_active(r.tid(), lsn, lsn);
+                if (acquire_locks) {
+                    _acquire_lock(r, new_chkpt);
+                }
+            }
+        }
+
+        if (r.is_page_update()) {
+            w_assert0(r.is_redo() && !r.null_pid());
+            new_chkpt.mark_page_dirty(r.pid(), lsn, lsn, r.stid());
+
+            if (r.is_multi_page()) {
+                w_assert0(r.pid2() != 0);
+                new_chkpt.mark_page_dirty(r.pid2(), lsn, lsn, r.stid());
             }
         }
 
@@ -439,20 +428,37 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
 
             case logrec_t::t_chkpt_bf_tab:
                 if (insideChkpt) {
-                    _analysis_ckpt_bf_log(r, new_chkpt);
+                    const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
+                    for (uint i = 0; i < dp->count; i++) {
+                        w_assert0(dp->brec[i].pid != 0);
+                        new_chkpt.mark_page_dirty(dp->brec[i].pid, dp->brec[i].page_lsn,
+                                dp->brec[i].rec_lsn, dp->brec[i].store);
+                    }
                 }
                 break;
 
 
             case logrec_t::t_chkpt_xct_lock:
-                if (insideChkpt && restart_with_lock) {
-                    _analysis_ckpt_lock_log(r, new_chkpt);
+                if (insideChkpt && acquire_locks) {
+                    const chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r.data();
+                    if (new_chkpt.is_xct_active(dp->tid)) {
+                        for (uint i = 0; i < dp->count; i++) {
+                            new_chkpt.add_lock(dp->tid,
+                                    dp->xrec[i].lock_mode, dp->xrec[i].lock_hash);
+                        }
+                    }
                 }
                 break;
 
             case logrec_t::t_chkpt_xct_tab:
                 if (insideChkpt) {
-                    _analysis_ckpt_xct_log(r, new_chkpt);
+                    const chkpt_xct_tab_t* dp = (chkpt_xct_tab_t*) r.data();
+                    for (size_t i = 0; i < dp->count; ++i) {
+                        tid_t tid = dp->xrec[i].tid;
+                        w_assert1(!tid.is_null());
+                        new_chkpt.mark_xct_active(tid, dp->xrec[i].first_lsn,
+                                dp->xrec[i].last_lsn);
+                    }
                 }
                 break;
 
@@ -529,8 +535,6 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
     w_assert0(chkpt_begin >= master_lsn);
 
     new_chkpt.cleanup();
-
-    return;
 }
 
 void chkpt_t::init(lsn_t begin_lsn)
@@ -542,25 +546,15 @@ void chkpt_t::init(lsn_t begin_lsn)
     bkp_path.clear();
 }
 
-void chkpt_t::mark_page_dirty(PageID pid, lsn_t lsn, StoreID store)
+void chkpt_t::mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn,
+        StoreID store)
 {
-    // CS TODO use iterator to perform a single lookup
-    if (buf_tab.count(pid) > 0) {   // page is already in bf_table
-        if (buf_tab[pid].rec_lsn > lsn) {
-            buf_tab[pid].rec_lsn = lsn;
-        }
-
-        if (buf_tab[pid].page_lsn < lsn) {
-            buf_tab[pid].page_lsn = lsn;
-            buf_tab[pid].dirty = true;
-        }
-    }
-    else {  // page is not present in buffer table
-        buf_tab[pid].rec_lsn = lsn;
-        buf_tab[pid].page_lsn = lsn;
-        buf_tab[pid].dirty = true;
-    }
-    buf_tab[pid].store = store;
+    // operator[] adds an empty dirty entry if key is not found
+    buf_tab_entry_t e = buf_tab[pid];
+    if (page_lsn > e.page_lsn) { e.page_lsn = page_lsn; }
+    if (rec_lsn < e.rec_lsn) { e.rec_lsn = rec_lsn; }
+    // CS TODO: why do we need the store?
+    e.store = store;
 }
 
 void chkpt_t::mark_page_clean(PageID pid, lsn_t lsn)
@@ -581,29 +575,21 @@ void chkpt_t::mark_page_clean(PageID pid, lsn_t lsn)
     }
 }
 
-void chkpt_t::update_first_lsn(tid_t tid, lsn_t lsn)
+bool chkpt_t::is_xct_active(tid_t tid) const
 {
-    xct_tab[tid].first_lsn = lsn;
-}
-
-bool chkpt_t::is_xct_active(tid_t tid)
-{
-    return xct_tab[tid].state != xct_t::xct_ended;
-}
-
-void chkpt_t::mark_xct_active(tid_t tid, lsn_t lsn, lsn_t undo_nxt)
-{
-    // add to table
-    xct_tab[tid].state = xct_t::xct_active;
-    xct_tab[tid].last_lsn = lsn;
-    xct_tab[tid].undo_nxt = undo_nxt;
-    xct_tab[tid].first_lsn = lsn;
-
-    // Youngest tid is the largest tid, it is used to generate
-    // next unique transaction id
-    if (tid > youngest) {
-        youngest = tid;
+    xct_tab_t::const_iterator iter = xct_tab.find(tid);
+    if (iter == xct_tab.end()) {
+        return false;
     }
+    return iter->second.state;
+}
+
+void chkpt_t::mark_xct_active(tid_t tid, lsn_t first_lsn, lsn_t last_lsn)
+{
+    // operator[] adds an empty active entry if key is not found
+    xct_tab_entry_t e = xct_tab[tid];
+    if (last_lsn > e.last_lsn) { e.last_lsn = last_lsn; }
+    if (first_lsn < e.first_lsn) { e.first_lsn = first_lsn; }
 }
 
 void chkpt_t::mark_xct_ended(tid_t tid)
@@ -620,6 +606,14 @@ void chkpt_t::delete_xct(tid_t tid)
 void chkpt_t::add_backup(const char* path)
 {
     bkp_path = path;
+}
+
+void chkpt_t::add_lock(tid_t tid, okvl_mode mode, uint32_t hash)
+{
+    lck_tab_entry_t entry;
+    entry.lock_mode = mode;
+    entry.lock_hash = hash;
+    lck_tab[tid].push_back(entry);
 }
 
 void chkpt_t::cleanup()
@@ -670,7 +664,6 @@ lsn_t chkpt_t::get_min_rec_lsn() const
     for(buf_tab_t::const_iterator it = buf_tab.begin();
             it != buf_tab.end(); ++it)
     {
-
         if(it->second.dirty && min_rec_lsn > it->second.rec_lsn) {
             min_rec_lsn = it->second.rec_lsn;
         }
@@ -678,266 +671,6 @@ lsn_t chkpt_t::get_min_rec_lsn() const
     if (min_rec_lsn == lsn_t::max) { return lsn_t::null; }
     return min_rec_lsn;
 }
-
-/*********************************************************************
- *
- *  chkpt_m::_analysis_ckpt_bf_log(r, in_doubt_count)
- *
- *  Helper function to process the chkpt_bf_tab log record, called by both
- *  analysis_pass_forward and analysis_pass_backward
- *
- *  System is not opened during Log Analysis phase
- *
- *********************************************************************/
-void chkpt_m::_analysis_ckpt_bf_log(logrec_t& r,           // In: Log record to process
-                                    chkpt_t& new_chkpt)    // In/Out:
-{
-    const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
-
-    for (uint i = 0; i < dp->count; i++)
-    {
-        // For each entry in log,
-        // if it is not in buffer pool, register and mark it.
-        // If it is already in the buffer pool, update the rec_lsn to the earliest LSN
-
-        if (0 == dp->brec[i].pid)
-            W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a page in t_chkpt_bf_tab log record");
-
-        PageID pid = dp->brec[i].pid;
-        if(new_chkpt.buf_tab.count(pid)) {
-
-            // This page is already in the bf_table but marked as !dirty,
-            // meaning there was a more recent t_page_write log record referring
-            // to it. We ignore the information from the chkpt_bf_tab
-            if(new_chkpt.buf_tab[pid].dirty == false) continue;
-
-            if(new_chkpt.buf_tab[pid].rec_lsn > dp->brec[i].rec_lsn.data()) {
-                new_chkpt.buf_tab[pid].rec_lsn = dp->brec[i].rec_lsn.data();
-            }
-
-            if(new_chkpt.buf_tab[pid].page_lsn < dp->brec[i].page_lsn.data()) {
-                new_chkpt.buf_tab[pid].page_lsn = dp->brec[i].page_lsn.data();
-            }
-        }
-        else {
-            new_chkpt.buf_tab[pid].store =  dp->brec[i].store;
-            new_chkpt.buf_tab[pid].rec_lsn = dp->brec[i].rec_lsn.data();
-            new_chkpt.buf_tab[pid].page_lsn = dp->brec[i].page_lsn.data();
-            new_chkpt.buf_tab[pid].dirty = true;
-        }
-    }
-    return;
-}
-
-
-/*********************************************************************
- *
- *  chkpt_m::_analysis_ckpt_xct_log(r, lsn)
- *
- *  Helper function to process the t_chkpt_xct_tab log record, called by
- *  analysis_pass_backward only
- *
- *  System is not opened during Log Analysis phase
- *
- *********************************************************************/
-void chkpt_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log record
-                                     chkpt_t& new_chkpt)
-{
-    // Received a t_chkpt_xct_tab log record from backward log scan
-    // and there was a matching end checkpoint log record,
-    // meaning we are processing the last completed checkpoint
-    // go ahead and process this log record
-
-    lsn_t lsn = r.get_lsn_ck();
-
-    w_assert1(lsn.valid());
-    const chkpt_xct_tab_t* dp = (chkpt_xct_tab_t*) r.data();
-
-    // Pick up the youngest (largest) tid from checkpoint, we will have this value
-    // even if there is no transaction entry in the log record
-    if (dp->youngest > new_chkpt.youngest)
-        new_chkpt.youngest = dp->youngest;
-
-    // For each entry in the log, it is possible we do not have any transaction entry
-    uint iCount = 0;
-    uint iTotal = dp->count;
-    for (iCount = 0; iCount < iTotal; ++iCount)
-    {
-        w_assert1(tid_t::null != dp->xrec[iCount].tid);
-        tid_t tid = dp->xrec[iCount].tid;
-
-        // We know the transaction was active when the checkpoint was taken,
-        // but we do not know whether the transaction was in the middle of
-        // normal processing or rollback, or already ended by the time checkpoint
-        // finished (because checkpoint is a non-blocking operation).
-        // If a transaction object did not exsit in the transaction table at this point,
-        // create a transaction for it.  If the transacter did not end during the checkpoint
-        // mark it as a loser transaction.  If the transaction ended during checkpoint,
-        // mark it as a winner transaction.  No need to update mapCLR in either case.
-        // If a transaction object exists in the transaction table at this point,
-        // it should be a loser transaction, update to the mapCLR to make sure
-        // this is a loser transaction
-
-        if (new_chkpt.xct_tab.count(tid) == 0)
-        {
-            // Not found in the transaction table
-
-            // The t_chkpt_xct_tab log record was generated by checkpoint, while
-            // checkpoint is a non-blocking operation and might take some time
-            // to finish the operation.
-
-            // Two cases:
-            // 1. Normal case: An in-flight transaction when the checkpoint was taken,
-            //      but no activity between checkpoint and system crash
-            //      Need to insert this in-flight (loser) transaction into transaction table
-            //
-            // 2. Corner case: A transaction was active when the checkpoint was
-            //      gathering transaction information, it is possible an active transaction ended
-            //      before the checkpoint finished its work (it could take some time to gather
-            //      transaction information, especially if there are many active transactions),
-            //      therefore the 'end transaction' log record for this transaction would be generated
-            //      before the checkpoint transaction log record.
-            //      If a transaction ended before this checkpoint transaction log record was written,
-            //      the 'end transaction' log record can only occur between 'begin checkpoint'
-            //      log record and the current checkpoint transaction log record.
-            //      For backward log scan (this function), we will see the 'end transaction' log
-            //      record after this checkpoint transaction log record and will be able to mark
-            //      the transaction status (winner or loser) correctly.  Therefore if a transaction
-            //      does not exist in transaction table currently (no activity after the current checkpoint
-            //      transaction log record), insert the transaction as a loser transaction into
-            //      the transaction table, which is the correct transaction status.
-
-            // Checkpoint thinks this is an in-flight transaction (including transaction
-            // in the middle of commiting or aborting) but we have not seen
-            // any log record from this in-flight transaction during the backward
-            // log scan so far
-            w_assert1((xct_t::xct_active == dp->xrec[iCount].state) ||
-                      (xct_t::xct_chaining == dp->xrec[iCount].state) ||
-                      (xct_t::xct_t::xct_committing == dp->xrec[iCount].state) ||
-                      (xct_t::xct_t::xct_aborting == dp->xrec[iCount].state));
-
-            // Since the transaction does not exist in transaction yet
-            // create it into the transaction table first
-            new_chkpt.xct_tab[tid].state = dp->xrec[iCount].state;
-            new_chkpt.xct_tab[tid].last_lsn = dp->xrec[iCount].last_lsn;
-            new_chkpt.xct_tab[tid].undo_nxt = dp->xrec[iCount].undo_nxt;
-            new_chkpt.xct_tab[tid].first_lsn = dp->xrec[iCount].first_lsn;
-
-            if (dp->xrec[iCount].tid > new_chkpt.youngest)
-                new_chkpt.youngest = dp->xrec[iCount].tid;
-
-            // No log record on this transaction after this checkpoint was taken,
-            // but we know this transaction was active when the checkpoint
-            // started and it did not end after the checkpoint finished.
-            // Mark this transaction as a loser transaction regardless whether
-            // the transaction was in the middle of rolling back or not
-
-            //DBGOUT3(<<"add xct " << dp->xrec[iCount].tid
-            //        << " state " << dp->xrec[iCount].state
-            //        << " last lsn " << dp->xrec[iCount].last_lsn
-            //        << " undo " << dp->xrec[iCount].undo_nxt
-            //        << ", first lsn " << dp->xrec[iCount].first_lsn);
-        }
-        else
-        {
-           // Found in the transaction table, it must be marked as:
-           // undecided in-flight transaction (active) - active transaction during checkpoint
-           //                                                                     and was either active when system crashed or
-           //                                                                     in the middle of aborting when system crashed,
-           //                                                                     in other words, we did not see end transaction
-           //                                                                     log record for this transaction.  We might have
-           //                                                                     seen compensation log records from this transaction
-           //                                                                     due to transaction abort or savepoint partial rollback.
-           //                                                                     The undeicded in-flight transaction requires special
-           //                                                                     handling to determine whether it is a loser or winner.
-           // winner transaction - transaction ended after the checkpoint but
-           //                                                                     before system crash
-
-           w_assert1((xct_t::xct_active == new_chkpt.xct_tab[tid].state) ||
-                     (xct_t::xct_ended == new_chkpt.xct_tab[tid].state));
-        }
-    }
-
-    if (iCount != dp->count)
-    {
-        // Failed to process all the transactions in log record, error out
-        W_FATAL_MSG(fcINTERNAL, << "restart_m::_analysis_ckpt_xct_log: log record has "
-                    << dp->count << " transactions but only processed "
-                    << iCount << " transactions");
-    }
-    return;
-}
-
-/*********************************************************************
-*
-*  chkpt_m::_analysis_ckpt_lock_log(r, xd, lock_heap)
-*
-*  Helper function to process lock re-acquisition for an active transaction in
-*  a checkpoint log record
-*  called by analysis_pass_backward only
-*
-*  System is not opened during Log Analysis phase
-*
-*********************************************************************/
-void chkpt_m::_analysis_ckpt_lock_log(logrec_t& r,            // In: log record
-                                              chkpt_t& new_chkpt)     // In/Out: checkpoint being generated
-{
-    // A special function to re-acquire non-read locks for an active transaction
-    // in a checkpoint log record and add acquired lock information to the associated
-    // transaction object.
-
-    // Called during Log Analysis phase for backward log scan, the
-    // buffer pool pages were not loaded into buffer pool and the system
-    // was not opened for user transactions, therefore it is safe to access lock
-    // manager during Log Analysis phase, no latch would be held when
-    // accessing lock manager to re-acqure non-read locks.
-    // It should not encounter lock conflicts during lock re-acquisition, because
-    // if any conflicts, pre-crash transaction processing would have found them
-
-    const chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r.data();
-
-
-    // If the transaction tid specified in the log record exists in transaction table and
-    // it is an in-flight transaction, re-acquire locks on it
-    if(new_chkpt.xct_tab.count(dp->tid)) {
-        // Transaction exists and in-flight
-        if(new_chkpt.xct_tab[dp->tid].state == xct_t::xct_active) {
-
-            // Re-acquire locks:
-
-            if (0 == dp->count) {
-                return; // No lock to process
-            }
-            else {
-                // Go through all the locks and re-acquire them on the transaction object
-                for (uint i = 0; i < dp->count; i++) {
-                    DBGOUT3(<<"_analysis_acquire_ckpt_lock_log - acquire key lock, hash: " << dp->xrec[i].lock_hash
-                            << ", key lock mode: " << dp->xrec[i].lock_mode.get_key_mode());
-                    lck_tab_entry_t entry;
-                    entry.lock_mode = dp->xrec[i].lock_mode;
-                    entry.lock_hash = dp->xrec[i].lock_hash;
-
-                    new_chkpt.lck_tab[dp->tid].push_back(entry);
-                }
-
-                return;
-            }
-        }
-    }
-    else {
-        // Due to backward log scan, we should process the
-        // associated t_chkpt_xct_tab log record (contain multiple
-        // active transactions) before we get to the individual
-        // t_chkpt_xct_lock log record (one transaction per log record
-        // while a transaction might generate multiple t_chkpt_xct_lock
-        // log records), therefore the transaction should exists in the
-        // transaction table (either winer or loser) at this point.
-        // If we do not find the associated transaction in transaction
-        // table, this is unexpected situation, raise an error
-        W_FATAL_MSG(fcINTERNAL, << "Log record t_chkpt_xct_lock contains a transaction which does not exist, tid:" << dp->tid);
-    }
-}
-
 
 /*********************************************************************
 *
@@ -949,218 +682,91 @@ void chkpt_m::_analysis_ckpt_lock_log(logrec_t& r,            // In: log record
 *  System is not opened during Log Analysis phase
 *
 *********************************************************************/
-void chkpt_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log record
+void chkpt_m::_acquire_lock(logrec_t& r,            // In: log record
                                          chkpt_t& new_chkpt)
 {
-    // A special function to re-acquire non-read locks based on a log record,
-    // when acquiring lock on key, it sets the intent mode on key also,
-    // and add acquired lock information to the associated transaction object.
-
-    // Called during Log Analysis phase for backward log scan, the
-    // buffer pool pages were not loaded into buffer pool and the system
-    // was not opened for user transactions, therefore it is safe to access lock
-    // manager during Log Analysis phase, no latch would be held when
-    // accessing lock manager to re-acqure non-read locks.
-    // It should not encounter lock conflicts during lock re-acquisition, because
-    // if any conflicts, pre-crash transaction processing would have found them
-
-    w_assert1(xct_t::xct_ended != new_chkpt.xct_tab[r.tid()].state);  // In-flight transaction
-    w_assert1(false == r.is_single_sys_xct());   // Not a system transaction
-    w_assert1(false == r.is_multi_page());       // Not a multi-page log record (system transaction)
-    w_assert1(false == r.is_cpsn());             // Not a compensation log record
-    w_assert1(false == r.null_pid());            // Has a valid pid, affecting buffer pool
-    w_assert1(r.is_page_update());               // It is a log recode affecting record data (not read)
-
-    // There are 3 types of intent locks
-    // 1. Intent lock on the given volume (intent_vol_lock) -
-    // 2. Intent lock on the given store (intent_store_lock) - store wide operation
-    //                where need different lock modes for store and volum, for example,
-    //                create or destory an index, _get_du_statistics
-    // 3. Intent locks on the given store and its volume in the same mode (intent_vol_store_lock) -
-    //                this is used in usual operations like create_assoc (open_store/index) and
-    //                cursor lookup upon the first access
-    // No re-acquisition on the intent locks since no log records were generated for
-    // these operations
-
-    // Qualified log types:
-    //    logrec_t::t_btree_insert
-    //    logrec_t::t_btree_insert_nonghost
-    //    logrec_t::t_btree_update
-    //    logrec_t::t_btree_overwrite
-    //    logrec_t::t_btree_ghost_mark
-    //    logrec_t::t_btree_ghost_reserve
+    w_assert1(new_chkpt.is_xct_active(r.tid()));
+    w_assert1(!r.is_single_sys_xct());
+    w_assert1(!r.is_multi_page());
+    w_assert1(!r.is_cpsn());
+    w_assert1(!r.null_pid());
+    w_assert1(r.is_page_update());
 
     switch (r.type())
     {
         case logrec_t::t_btree_insert:
-            {
-                // Insert a record which has an existing ghost record with matching key
-
-                btree_insert_t* dp = (btree_insert_t*) r.data();
-                w_assert1(false == dp->sys_txn);
-
-                // Get the key
-                w_keystr_t key;
-                key.construct_from_keystr(dp->data, dp->klen);
-                // Lock re-acquisition
-                //DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for INSERT, key: " << key);
-                okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
-
-                lck_tab_entry_t entry;
-                entry.lock_mode = mode;
-                entry.lock_hash = lid.hash();
-
-                w_assert0(new_chkpt.xct_tab.count(r.tid()) == 1);
-
-                new_chkpt.lck_tab[r.tid()].push_back(entry);
-            }
-            break;
         case logrec_t::t_btree_insert_nonghost:
             {
-                // Insert a new distinct key, the original operation only need to test whether
-                // a key range lock exists, the key range lock is not needed for potential
-                // rollback operation therefore it is not held for the remainder of the user transaction.
-                // Note that in order to acquire a key range lock, we will need to access data page
-                // for the neighboring key, but the buffer pool page is not loaded during Log
-                // Analysis phase, luckily we do not need key range lock for this scenario in Restart
-
-                // In Restart, only need to re-acquire key lock, not key range lock
-
                 btree_insert_t* dp = (btree_insert_t*) r.data();
-                if (true == dp->sys_txn)
-                {
-                    // The insertion log record was generated by a page rebalance full logging operation
-                    // Do not acquire locks on this log record
-                }
-                else
-                {
-                    // Get the key
-                    w_keystr_t key;
-                    key.construct_from_keystr(dp->data, dp->klen);
-                    // Lock re-acquisition
-                    //DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for NON_GHOST_INSERT, key: " << key);
-                    okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                    lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
 
-                    lck_tab_entry_t entry;
-                    entry.lock_mode = mode;
-                    entry.lock_hash = lid.hash();
+                w_keystr_t key;
+                key.construct_from_keystr(dp->data, dp->klen);
 
-                    w_assert0(new_chkpt.xct_tab.count(r.tid()) == 1);
+                okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
+                lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
+                        key.get_length_as_keystr());
 
-                    new_chkpt.lck_tab[r.tid()].push_back(entry);
-                }
+                new_chkpt.add_lock(r.tid(), mode, lid.hash());
             }
             break;
         case logrec_t::t_btree_update:
             {
                 btree_update_t* dp = (btree_update_t*) r.data();
 
-                // Get the key
                 w_keystr_t key;
                 key.construct_from_keystr(dp->_data, dp->_klen);
-                // Lock re-acquisition
-                //DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for UPDATE, key: " << key);
+
                 okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+                lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
+                        key.get_length_as_keystr());
 
-                lck_tab_entry_t entry;
-                entry.lock_mode = mode;
-                entry.lock_hash = lid.hash();
-
-                w_assert0(new_chkpt.xct_tab.count(r.tid()) == 1);
-
-                new_chkpt.lck_tab[r.tid()].push_back(entry);
+                new_chkpt.add_lock(r.tid(), mode, lid.hash());
             }
             break;
         case logrec_t::t_btree_overwrite:
             {
                 btree_overwrite_t* dp = (btree_overwrite_t*) r.data();
 
-                // Get the key
                 w_keystr_t key;
                 key.construct_from_keystr(dp->_data, dp->_klen);
-                // Lock re-acquisition
-                //DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for OVERWRITE, key: " << key);
+
                 okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+                lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
+                        key.get_length_as_keystr());
 
-                lck_tab_entry_t entry;
-                entry.lock_mode = mode;
-                entry.lock_hash = lid.hash();
-
-                w_assert0(new_chkpt.xct_tab.count(r.tid()) == 1);
-
-                new_chkpt.lck_tab[r.tid()].push_back(entry);
+                new_chkpt.add_lock(r.tid(), mode, lid.hash());
             }
             break;
         case logrec_t::t_btree_ghost_mark:
             {
-                // Delete operation only turn the valid record into a ghost record, while the system transaction
-                // will clean up the ghost after the user transaction commits and releases its locks, therefore
-                // only need a lock on the key value, not any key range
-
                 btree_ghost_t* dp = (btree_ghost_t*) r.data();
-                if (1 == dp->sys_txn)
-                {
-                    // The deletion log record was generated by a page rebalance full logging operation
-                    // Do not acquire locks on this log record
-                }
-                else
-                {
-                    // Get the key
-                    for (size_t i = 0; i < dp->cnt; ++i)
-                    {
-                        // Get the key
-                        w_keystr_t key (dp->get_key(i));
-                        // Lock re-acquisition
-                        //DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for DELETE, key: " << key);
-                        okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                        lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+                for (size_t i = 0; i < dp->cnt; ++i) {
+                    w_keystr_t key (dp->get_key(i));
 
-                        lck_tab_entry_t entry;
-                        entry.lock_mode = mode;
-                        entry.lock_hash = lid.hash();
+                    okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
+                    lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
+                            key.get_length_as_keystr());
 
-                        w_assert0(new_chkpt.xct_tab.count(r.tid()) == 1);
-
-                        new_chkpt.lck_tab[r.tid()].push_back(entry);
-                    }
+                    new_chkpt.add_lock(r.tid(), mode, lid.hash());
                 }
             }
             break;
         case logrec_t::t_btree_ghost_reserve:
             {
-                // This is to insert a new record where the key did not exist as a ghost
-                // Similar to logrec_t::t_btree_insert_nonghost
-
-                // In Restart, only need to re-acquire key lock, not key range lock
-
                 btree_ghost_reserve_t* dp = (btree_ghost_reserve_t*) r.data();
 
-                // Get the key
                 w_keystr_t key;
                 key.construct_from_keystr(dp->data, dp->klen);
-                // Lock re-acquisition
-                //DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for GHOST_RESERVE(INSERT), key: " << key);
+
                 okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+                lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
+                        key.get_length_as_keystr());
 
-                lck_tab_entry_t entry;
-                entry.lock_mode = mode;
-                entry.lock_hash = lid.hash();
-
-                w_assert0(new_chkpt.xct_tab.count(r.tid()) == 1);
-
-                new_chkpt.lck_tab[r.tid()].push_back(entry);
+                new_chkpt.add_lock(r.tid(), mode, lid.hash());
             }
             break;
         default:
-            {
-                if(r.type() != logrec_t::t_page_img_format)
-                    W_FATAL_MSG(fcINTERNAL, << "restart_m::_analysis_acquire_lock_log - Unexpected log record type: " << r.type());
-            }
+            w_assert0(r.type() == logrec_t::t_page_img_format);
             break;
     }
 
@@ -1398,30 +1004,25 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
     vector<tid_t> tid;
     vector<smlevel_0::xct_state_t> state;
     vector<lsn_t> last_lsn;
-    vector<lsn_t> undo_nxt;
     vector<lsn_t> first_lsn;
     for(xct_tab_t::iterator it=new_chkpt.xct_tab.begin(); it!=new_chkpt.xct_tab.end(); ++it) {
         DBGOUT1(<<"tid[]="<<it->first<<" , " <<
                   "state[]="<<it->second.state<< " , " <<
                   "last_lsn[]="<<it->second.last_lsn<<" , " <<
-                  "undo_nxt[]="<<it->second.undo_nxt<<" , " <<
                   "first_lsn[]="<<it->second.first_lsn);
         tid.push_back(it->first);
         state.push_back(it->second.state);
         last_lsn.push_back(it->second.last_lsn);
-        undo_nxt.push_back(it->second.undo_nxt);
         first_lsn.push_back(it->second.first_lsn);
         if(tid.size()==chunk || &*it==&*new_chkpt.xct_tab.rbegin()) {
             LOG_INSERT(chkpt_xct_tab_log(new_chkpt.youngest, tid.size(),
                                         (const tid_t*)(&tid[0]),
                                         (const smlevel_0::xct_state_t*)(&state[0]),
                                         (const lsn_t*)(&last_lsn[0]),
-                                        (const lsn_t*)(&undo_nxt[0]),
                                         (const lsn_t*)(&first_lsn[0])), 0);
             tid.clear();
             state.clear();
             last_lsn.clear();
-            undo_nxt.clear();
             first_lsn.clear();
         }
     }
@@ -1433,7 +1034,6 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
                                         (const tid_t*)(&tid[0]),
                                         (const smlevel_0::xct_state_t*)(&state[0]),
                                         (const lsn_t*)(&last_lsn[0]),
-                                        (const lsn_t*)(&undo_nxt[0]),
                                         (const lsn_t*)(&first_lsn[0])), 0);
     }
     //==========================================================================
@@ -1504,8 +1104,8 @@ void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode)
  *  and cancel the checkpoint operation silently.
  *********************************************************************/
 void chkpt_m::take(chkpt_mode_t chkpt_mode,
-                    XctLockHeap& lock_heap,  // In: special heap to hold lock information
-                    const bool record_lock)  // In: True if need to record lock information into the heap
+                    XctLockHeap& lock_heap,
+                    const bool acquire_locks)
 {
     FUNC(chkpt_m::take);
 
@@ -1535,7 +1135,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
         return;
     }
 
-    if ((t_chkpt_async == chkpt_mode) && (true == record_lock))
+    if ((t_chkpt_async == chkpt_mode) && (acquire_locks))
     {
         // Only synch checkpoint (internal) can ask for building lock information in the provided heap
         // this is a coding error so raise error to stop the execution now
@@ -2159,7 +1759,7 @@ try
 
                                     ++per_chunk_lock_count;
 
-                                    if (true == record_lock)
+                                    if (acquire_locks)
                                     {
                                         // Caller asked for lock information into a provided
                                         // heap structure, this is generated only for debug build
@@ -2246,7 +1846,7 @@ try
                 // Filled up one log record, write a Transaction Table Log out
                 // before processing more transactions
                 LOG_INSERT(chkpt_xct_tab_log(youngest, per_chunk_txn_count,
-                                   tid, state, last_lsn, undo_nxt, first_lsn), 0);
+                                   tid, state, last_lsn, first_lsn), 0);
             }
         } while (xd);
     }
