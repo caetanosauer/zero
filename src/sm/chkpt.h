@@ -90,7 +90,7 @@ struct buf_tab_entry_t {
       store(0), rec_lsn(lsn_t::null), page_lsn(lsn_t::null), dirty(true) {}
 };
 
-struct lck_tab_entry_t {
+struct lock_info_t {
   okvl_mode lock_mode;
   uint32_t lock_hash;
 };
@@ -99,24 +99,26 @@ struct xct_tab_entry_t {
   smlevel_0::xct_state_t state;
   lsn_t last_lsn;               // most recent log record
   lsn_t first_lsn;              // first lsn of the txn
+  list<lock_info_t> locks;
 
   xct_tab_entry_t() :
       state(xct_t::xct_active), last_lsn(lsn_t::null), first_lsn(lsn_t::null) {}
 };
 
 typedef map<PageID, buf_tab_entry_t>       buf_tab_t;
-typedef map<tid_t, list<lck_tab_entry_t> > lck_tab_t;
 typedef map<tid_t, xct_tab_entry_t>        xct_tab_t;
 
-struct chkpt_t {
+class chkpt_t {
+private:
     lsn_t begin_lsn;
-    tid_t youngest;
+    tid_t highest_tid;
 
+public: // required for restart for now
     buf_tab_t buf_tab;
-    lck_tab_t lck_tab;
     xct_tab_t xct_tab;
     string bkp_path;
 
+public:
     void init(lsn_t begin_lsn);
     void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn,
             StoreID store);
@@ -129,8 +131,12 @@ struct chkpt_t {
     void add_backup(const char* path);
     void cleanup();
 
+    lsn_t get_begin_lsn() const { return  begin_lsn; }
     lsn_t get_min_rec_lsn() const;
     lsn_t get_min_xct_lsn() const;
+
+    tid_t get_highest_tid() { return highest_tid; }
+    void set_highest_tid(tid_t) { highest_tid = highest_tid; }
 };
 
 

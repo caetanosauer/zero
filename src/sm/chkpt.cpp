@@ -354,8 +354,8 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
         }
 
         if (!r.tid().is_null()) {
-            if (r.tid() > new_chkpt.youngest) {
-                new_chkpt.youngest = r.tid();
+            if (r.tid() > new_chkpt.get_highest_tid()) {
+                new_chkpt.set_highest_tid(r.tid());
             }
 
             if (r.xid_prev().is_null()) {
@@ -506,7 +506,6 @@ void chkpt_t::init(lsn_t begin_lsn)
     this->begin_lsn = begin_lsn;
     buf_tab.clear();
     xct_tab.clear();
-    lck_tab.clear();
     bkp_path.clear();
 }
 
@@ -564,7 +563,6 @@ void chkpt_t::mark_xct_ended(tid_t tid)
 void chkpt_t::delete_xct(tid_t tid)
 {
     xct_tab.erase(tid);
-    lck_tab.erase(tid);
 }
 
 void chkpt_t::add_backup(const char* path)
@@ -574,10 +572,11 @@ void chkpt_t::add_backup(const char* path)
 
 void chkpt_t::add_lock(tid_t tid, okvl_mode mode, uint32_t hash)
 {
-    lck_tab_entry_t entry;
+    if (!is_xct_active(tid)) { return; }
+    lock_info_t entry;
     entry.lock_mode = mode;
     entry.lock_hash = hash;
-    lck_tab[tid].push_back(entry);
+    xct_tab[tid].locks.push_back(entry);
 }
 
 void chkpt_t::cleanup()
@@ -597,7 +596,6 @@ void chkpt_t::cleanup()
     for(xct_tab_t::iterator it  = xct_tab.begin();
                             it != xct_tab.end(); ) {
         if(it->second.state == xct_t::xct_ended) {
-            lck_tab.erase(it->first); //erase locks
             xct_tab.erase(it++);      //erase xct
         }
         else {
@@ -922,7 +920,9 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     vector<StoreID> store;
     vector<lsn_t> rec_lsn;
     vector<lsn_t> page_lsn;
-    for(buf_tab_t::iterator it=new_chkpt.buf_tab.begin(); it!=new_chkpt.buf_tab.end(); ++it) {
+    for(buf_tab_t::const_iterator it = new_chkpt.buf_tab.begin();
+            it != new_chkpt.buf_tab.end(); ++it)
+    {
         DBGOUT1(<<"pid[]="<<it->first<< " , " <<
                   "store[]="<<it->second.store<< " , " <<
                   "rec_lsn[]="<<it->second.rec_lsn<< " , " <<
@@ -943,43 +943,26 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
          }
     }
 
-
-    chunk = chkpt_xct_lock_t::max;
-    for(lck_tab_t::iterator it=new_chkpt.lck_tab.begin(); it!=new_chkpt.lck_tab.end(); ++it) {
-        vector<okvl_mode> lock_mode;
-        vector<uint32_t> lock_hash;
-        DBGOUT1(<<"tid="<<it->first);
-        for(list<lck_tab_entry_t>::iterator jt=it->second.begin(); jt!=it->second.end(); ++jt) {
-            DBGOUT1(<<"lock_mode[]="<<jt->lock_mode<<" , lock_hash[]="<<jt->lock_hash);
-            lock_mode.push_back(jt->lock_mode);
-            lock_hash.push_back(jt->lock_hash);
-            if(lock_mode.size()==chunk || &*jt==&*it->second.rbegin()) {
-                LOG_INSERT(chkpt_xct_lock_log(it->first,
-                                      lock_mode.size(),
-                                      (const okvl_mode*)(&lock_mode[0]),
-                                      (const uint32_t*)(&lock_hash[0])), 0);
-                lock_mode.clear();
-                lock_hash.clear();
-            }
-        }
-    }
-
     chunk = chkpt_xct_tab_t::max;
     vector<tid_t> tid;
     vector<smlevel_0::xct_state_t> state;
     vector<lsn_t> last_lsn;
     vector<lsn_t> first_lsn;
-    for(xct_tab_t::iterator it=new_chkpt.xct_tab.begin(); it!=new_chkpt.xct_tab.end(); ++it) {
+    vector<okvl_mode> lock_mode;
+    vector<uint32_t> lock_hash;
+    for(xct_tab_t::const_iterator it=new_chkpt.xct_tab.begin();
+            it != new_chkpt.xct_tab.end(); ++it) {
         DBGOUT1(<<"tid[]="<<it->first<<" , " <<
                   "state[]="<<it->second.state<< " , " <<
                   "last_lsn[]="<<it->second.last_lsn<<" , " <<
                   "first_lsn[]="<<it->second.first_lsn);
+
         tid.push_back(it->first);
         state.push_back(it->second.state);
         last_lsn.push_back(it->second.last_lsn);
         first_lsn.push_back(it->second.first_lsn);
         if(tid.size()==chunk || &*it==&*new_chkpt.xct_tab.rbegin()) {
-            LOG_INSERT(chkpt_xct_tab_log(new_chkpt.youngest, tid.size(),
+            LOG_INSERT(chkpt_xct_tab_log(new_chkpt.get_highest_tid(), tid.size(),
                                         (const tid_t*)(&tid[0]),
                                         (const smlevel_0::xct_state_t*)(&state[0]),
                                         (const lsn_t*)(&last_lsn[0]),
@@ -989,12 +972,37 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
             last_lsn.clear();
             first_lsn.clear();
         }
+
+        // gather lock table
+        for(list<lock_info_t>::const_iterator jt = it->second.locks.begin();
+                jt != it->second.locks.end(); ++jt)
+        {
+            DBGOUT1(<<"    lock_mode[]="<<jt->lock_mode<<" , lock_hash[]="<<jt->lock_hash);
+            lock_mode.push_back(jt->lock_mode);
+            lock_hash.push_back(jt->lock_hash);
+            if(lock_mode.size() == chunk) {
+                LOG_INSERT(chkpt_xct_lock_log(it->first,
+                                      lock_mode.size(),
+                                      (const okvl_mode*)(&lock_mode[0]),
+                                      (const uint32_t*)(&lock_hash[0])), 0);
+                lock_mode.clear();
+                lock_hash.clear();
+            }
+        }
+        if(lock_mode.size() > 0) {
+            LOG_INSERT(chkpt_xct_lock_log(it->first,
+                        lock_mode.size(),
+                        (const okvl_mode*)(&lock_mode[0]),
+                        (const uint32_t*)(&lock_hash[0])), 0);
+            lock_mode.clear();
+            lock_hash.clear();
+        }
     }
 
     // In case the transaction table was empty, we insert a xct_tab_log anyway,
-    // because we want to save the youngest tid.
+    // because we want to save the highest tid.
     if(new_chkpt.xct_tab.size() == 0) {
-        LOG_INSERT(chkpt_xct_tab_log(new_chkpt.youngest, tid.size(),
+        LOG_INSERT(chkpt_xct_tab_log(new_chkpt.get_highest_tid(), tid.size(),
                                         (const tid_t*)(&tid[0]),
                                         (const smlevel_0::xct_state_t*)(&state[0]),
                                         (const lsn_t*)(&last_lsn[0]),
@@ -1010,13 +1018,13 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     }
     else
     {
-        LOG_INSERT(chkpt_end_log (new_chkpt.begin_lsn,
+        LOG_INSERT(chkpt_end_log (new_chkpt.get_begin_lsn(),
                                   new_chkpt.get_min_rec_lsn(),
                                   new_chkpt.get_min_xct_lsn()), 0);
 
         W_COERCE(ss_m::log->flush_all() );
-        DBGOUT1(<<"Setting master_lsn to " << new_chkpt.begin_lsn);
-        ss_m::log->set_master(new_chkpt.begin_lsn,
+        DBGOUT1(<<"Setting master_lsn to " << new_chkpt.get_begin_lsn());
+        ss_m::log->set_master(new_chkpt.get_begin_lsn(),
                               new_chkpt.get_min_rec_lsn(),
                               new_chkpt.get_min_xct_lsn());
     }

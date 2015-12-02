@@ -613,9 +613,10 @@ void restart_m::log_analysis(
     }
 
     //Re-create transactions
-    xct_t::update_youngest_tid(v_chkpt.youngest);
-    for(xct_tab_t::iterator it  = v_chkpt.xct_tab.begin();
-                            it != v_chkpt.xct_tab.end(); ++it) {
+    xct_t::update_youngest_tid(v_chkpt.get_highest_tid());
+    for(xct_tab_t::const_iterator it = v_chkpt.xct_tab.begin();
+                            it != v_chkpt.xct_tab.end(); ++it)
+    {
         xct_t* xd = new xct_t(NULL,               // stats
                         WAIT_SPECIFIED_BY_THREAD, // default timeout value
                         false,                    // sys_xct
@@ -628,24 +629,21 @@ void restart_m::log_analysis(
         xd->set_first_lsn(it->second.first_lsn); // Set the first LSN of the in-flight transaction
         xd->set_last_lsn(it->second.last_lsn);   // Set the last lsn in the transaction
 
+        //Re-acquire locks
+        if(restart_with_lock) {
+            for(list<lock_info_t>::const_iterator jt = it->second.locks.begin();
+                    jt != it->second.locks.end(); ++it)
+            {
+                _re_acquire_lock(lock_heap, jt->lock_mode, jt->lock_hash, xd);
+            }
+        }
+
         // Loser transaction
         if (use_serial_restart())
             loser_heap.AddElementDontHeapify(xd);
     }
     if (use_serial_restart()) {
         loser_heap.Heapify();
-    }
-
-    //Re-acquire locks
-    if(restart_with_lock) {
-        for(lck_tab_t::iterator it  = v_chkpt.lck_tab.begin();
-                                it != v_chkpt.lck_tab.end(); ++it) {
-            xct_t* xd = xct_t::look_up(it->first);
-            list<lck_tab_entry_t>::iterator jt;
-            for(jt = it->second.begin(); jt != it->second.end(); ++jt) {
-                _re_acquire_lock(lock_heap, jt->lock_mode, jt->lock_hash, xd);
-            }
-        }
     }
 
     //Re-add backups
