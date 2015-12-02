@@ -220,6 +220,8 @@ public:
     void                 set_page_prev_lsn(const lsn_t &lsn);
     const lsn_t&         xid_prev() const;
     void                 set_xid_prev(const lsn_t &lsn);
+    void                 set_undo_nxt(const lsn_t &lsn);
+    void                 set_tid(const tid_t& tid);
     void                 set_clr(const lsn_t& c);
     void                 set_undoable_clr(const lsn_t& c);
     void                 set_pid(const PageID& p);
@@ -590,6 +592,18 @@ inline void
 logrec_t::set_pid(const PageID& p)
 {
     header._pid = p;
+}
+
+inline void
+logrec_t::set_tid(const tid_t& tid)
+{
+    xidInfo._xid = tid;
+}
+
+inline void
+logrec_t::set_undo_nxt(const lsn_t& undo_nxt)
+{
+    xidInfo._xid_prv = undo_nxt;
 }
 
 inline bool

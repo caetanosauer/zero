@@ -81,28 +81,31 @@ class CmpXctLockTids;
 typedef class Heap<comp_lock_info_t*, CmpXctLockTids> XctLockHeap;
 
 struct buf_tab_entry_t {
-  StoreID store;
-  lsn_t rec_lsn;              // initial dirty lsn
-  lsn_t page_lsn;             // last write lsn
-  bool dirty;                 //this flag is only used to filter non-dirty pages
+    StoreID store;
+    lsn_t rec_lsn;              // initial dirty lsn
+    lsn_t page_lsn;             // last write lsn
+    bool dirty;                 //this flag is only used to filter non-dirty pages
+    bool resolved;    // if set, page_lsn and rec_lsn are not updated anymore
 
-  buf_tab_entry_t() :
-      store(0), rec_lsn(lsn_t::null), page_lsn(lsn_t::null), dirty(true) {}
+    buf_tab_entry_t() :
+        store(0), rec_lsn(lsn_t::max), page_lsn(lsn_t::null), dirty(true),
+        resolved(false)
+    {}
 };
 
 struct lock_info_t {
-  okvl_mode lock_mode;
-  uint32_t lock_hash;
+    okvl_mode lock_mode;
+    uint32_t lock_hash;
 };
 
 struct xct_tab_entry_t {
-  smlevel_0::xct_state_t state;
-  lsn_t last_lsn;               // most recent log record
-  lsn_t first_lsn;              // first lsn of the txn
-  list<lock_info_t> locks;
+    smlevel_0::xct_state_t state;
+    lsn_t last_lsn;               // most recent log record
+    lsn_t first_lsn;              // first lsn of the txn
+    vector<lock_info_t> locks;
 
-  xct_tab_entry_t() :
-      state(xct_t::xct_active), last_lsn(lsn_t::null), first_lsn(lsn_t::null) {}
+    xct_tab_entry_t() :
+        state(xct_t::xct_active), last_lsn(lsn_t::null), first_lsn(lsn_t::max) {}
 };
 
 typedef map<PageID, buf_tab_entry_t>       buf_tab_t;
@@ -139,7 +142,7 @@ public:
     lsn_t get_min_xct_lsn() const;
 
     tid_t get_highest_tid() { return highest_tid; }
-    void set_highest_tid(tid_t) { highest_tid = highest_tid; }
+    void set_highest_tid(tid_t tid) { highest_tid = tid; }
 
 private:
     void init();

@@ -191,6 +191,10 @@ testdriver_thread_t::do_construct(int32_t restart_mode)
                  SM_PAGESIZE / 1024 * default_bufferpool_size_in_pages);
     }
 
+    if(_options.get_bool_option("sm_testenv_init_vol", true)) {
+        _options.set_bool_option("sm_truncate", true);
+    }
+
     // Control which internal restart mode/setting to use.  This is the only place from test suites
     // to set the value for 'sm_restart'.
     // If not set, the internal default value is determined in sm.cpp (hard coded).

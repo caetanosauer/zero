@@ -79,12 +79,6 @@ struct RawLock;            // Lock information gathering
 
 #include "stopwatch.h"
 
-#ifdef EXPLICIT_TEMPLATE
-template class w_auto_delete_array_t<lsn_t>;
-template class w_auto_delete_array_t<tid_t>;
-template class w_auto_delete_array_t<ss_m::xct_state_t>;
-#endif
-
 
 /*********************************************************************
  *
@@ -117,73 +111,6 @@ private:
     NORET                chkpt_thread_t(const chkpt_thread_t&);
     chkpt_thread_t&      operator=(const chkpt_thread_t&);
 };
-
-
-/*****************************************************
-// Dead code, comment out just in case we need to re-visit it in the future
-
- // Not waiting on old transactions to finish
-
-struct old_xct_tracker {
-    struct dependent : public xct_dependent_t  {
-        w_link_t _link;
-        old_xct_tracker* _owner;
-
-        dependent(xct_t* xd, old_xct_tracker* owner)
-            : xct_dependent_t(xd), _owner(owner)
-        {
-            register_me();
-        }
-
-        virtual void xct_state_changed(ss_m::xct_state_t,
-              ss_m::xct_state_t new_state)
-        {
-            if(new_state == ss_m::xct_ended)
-            _owner->report_finished(xd());
-        }
-    };
-
-    old_xct_tracker() : _list(W_LIST_ARG(dependent, _link), 0) , _count(0)
-    {
-        pthread_mutex_init(&_lock, 0);
-        pthread_cond_init(&_cond, 0);
-    }
-
-    ~old_xct_tracker() {
-        w_assert2(! _count);
-        while(_list.pop());
-    }
-
-    void track(xct_t* xd) {
-        dependent* d = new dependent(xd, this);
-        pthread_mutex_lock(&_lock);
-        _count++;
-        _list.push(d);
-        pthread_mutex_unlock(&_lock);
-    }
-
-    void wait_for_all() {
-        pthread_mutex_lock(&_lock);
-        while(_count)
-            pthread_cond_wait(&_cond, &_lock);
-        pthread_mutex_unlock(&_lock);
-    }
-
-    void report_finished(xct_t*) {
-        pthread_mutex_lock(&_lock);
-        if(! --_count)
-            pthread_cond_signal(&_cond);
-        pthread_mutex_unlock(&_lock);
-    }
-
-    pthread_mutex_t    _lock;
-    pthread_cond_t     _cond;
-    w_list_t<dependent, unsafe_list_dummy_lock_t> _list;
-    long             _count;
-
-};
-*****************************************************/
-
 
 /*********************************************************************
  *
@@ -323,6 +250,8 @@ void chkpt_t::scan_log()
     init();
 
     lsn_t scan_start = smlevel_0::log->durable_lsn();
+    if (scan_start == lsn_t(1,0)) { return; }
+
     log_i scan(*smlevel_0::log, scan_start, false); // false == backward scan
     logrec_t r;
     lsn_t lsn;   // LSN of the retrieved log record
@@ -341,13 +270,16 @@ void chkpt_t::scan_log()
                 set_highest_tid(r.tid());
             }
 
-            if (r.xid_prev().is_null()) {
-                // We won't see this xct again -- delete it
-                delete_xct(r.tid());
-            }
-            else {
+            if (r.is_page_update() || r.is_cpsn()) {
                 mark_xct_active(r.tid(), lsn, lsn);
-                acquire_lock(r);
+
+                if (is_xct_active(r.tid())) {
+                    if (!r.is_cpsn()) { acquire_lock(r); }
+                }
+                else if (r.xid_prev().is_null()) {
+                    // We won't see this xct again -- delete it
+                    delete_xct(r.tid());
+                }
             }
         }
 
@@ -366,6 +298,7 @@ void chkpt_t::scan_log()
             case logrec_t::t_chkpt_begin:
                 if (insideChkpt) {
                     // Signal to stop backward log scan loop now
+                    begin_lsn = lsn;
                     scan_done = true;
                 }
                 break;
@@ -410,7 +343,6 @@ void chkpt_t::scan_log()
             case logrec_t::t_chkpt_end:
                 // checkpoints should not run concurrently
                 w_assert0(!insideChkpt);
-                begin_lsn = *((lsn_t*) r.data());
                 insideChkpt = true;
                 break;
 
@@ -437,7 +369,7 @@ void chkpt_t::scan_log()
             case logrec_t::t_page_write:
                 {
                     PageID pid = *((PageID*) r.data());
-                    uint32_t count = *((uint32_t*) r.data() + sizeof(PageID));
+                    uint32_t count = *((uint32_t*) (r.data() + sizeof(PageID)));
                     PageID end = pid + count;
 
                     while (pid < end) {
@@ -492,7 +424,8 @@ void chkpt_t::mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn,
         StoreID store)
 {
     // operator[] adds an empty dirty entry if key is not found
-    buf_tab_entry_t e = buf_tab[pid];
+    buf_tab_entry_t& e = buf_tab[pid];
+    if (e.resolved) { return; }
     if (page_lsn > e.page_lsn) { e.page_lsn = page_lsn; }
     if (rec_lsn < e.rec_lsn) { e.rec_lsn = rec_lsn; }
     // CS TODO: why do we need the store?
@@ -501,19 +434,18 @@ void chkpt_t::mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn,
 
 void chkpt_t::mark_page_clean(PageID pid, lsn_t lsn)
 {
-    if(buf_tab.count(pid) > 0) {
-        if(buf_tab[pid].page_lsn < lsn) {
-            buf_tab[pid].page_lsn = lsn;
-            buf_tab[pid].dirty = false;
-        }
+    // If pid is already on table, it must remain as dirty.
+    // But resolved is set anyway, to stop rec and page lsn from being updated
+    // further in mark_page_dirty
+    buf_tab_t::iterator it = buf_tab.find(pid);
+    if (it != buf_tab.end()) {
+        it->second.resolved = true;
     }
     else {
-        // Page does not exist in bf_table, we add it with
-        // dummy values and mark as !dirty
-        buf_tab[pid].store = 0;
-        buf_tab[pid].rec_lsn = lsn_t::null;
-        buf_tab[pid].page_lsn = lsn;
-        buf_tab[pid].dirty = false;
+        buf_tab_entry_t e;
+        e.dirty = false;
+        e.resolved = true;
+        buf_tab[pid] = e;
     }
 }
 
@@ -529,7 +461,7 @@ bool chkpt_t::is_xct_active(tid_t tid) const
 void chkpt_t::mark_xct_active(tid_t tid, lsn_t first_lsn, lsn_t last_lsn)
 {
     // operator[] adds an empty active entry if key is not found
-    xct_tab_entry_t e = xct_tab[tid];
+    xct_tab_entry_t& e = xct_tab[tid];
     if (last_lsn > e.last_lsn) { e.last_lsn = last_lsn; }
     if (first_lsn < e.first_lsn) { e.first_lsn = first_lsn; }
 }
@@ -634,11 +566,13 @@ void chkpt_t::serialize()
 
     size_t chunk;
 
-    // Serialize bkp_tab
-    vector<string> backup_paths;
-    backup_paths.push_back(bkp_path);
-    LOG_INSERT(chkpt_backup_tab_log(backup_paths.size(),
-                (const string*)(&backup_paths[0])), 0);
+    // Serialize bkp_tab -- CS TODO
+    if (!bkp_path.empty()) {
+        vector<string> backup_paths;
+        backup_paths.push_back(bkp_path);
+        LOG_INSERT(chkpt_backup_tab_log(backup_paths.size(),
+                    (const string*)(&backup_paths[0])), 0);
+    }
 
     //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
 
@@ -702,7 +636,7 @@ void chkpt_t::serialize()
         }
 
         // gather lock table
-        for(list<lock_info_t>::const_iterator jt = it->second.locks.begin();
+        for(vector<lock_info_t>::const_iterator jt = it->second.locks.begin();
                 jt != it->second.locks.end(); ++jt)
         {
             DBGOUT1(<<"    lock_mode[]="<<jt->lock_mode<<" , lock_hash[]="<<jt->lock_hash);

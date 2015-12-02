@@ -613,7 +613,7 @@ void restart_m::log_analysis(
 
         //Re-acquire locks
         if(restart_with_lock) {
-            for(list<lock_info_t>::const_iterator jt = it->second.locks.begin();
+            for(vector<lock_info_t>::const_iterator jt = it->second.locks.begin();
                     jt != it->second.locks.end(); ++it)
             {
                 _re_acquire_lock(lock_heap, jt->lock_mode, jt->lock_hash, xd);
@@ -2548,6 +2548,7 @@ void restart_m::_undo_txn_pass()
                 }
             }
         }
+        // CS TODO: which exception are we expecting to cacth here???
         catch (...)
         {
             // It is possible a race condition occurred, the transaction object is being

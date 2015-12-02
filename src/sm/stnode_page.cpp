@@ -12,6 +12,7 @@
 stnode_cache_t::stnode_cache_t(stnode_page& stpage)
 {
     int r = posix_memalign((void**) &_stnode_page, IO_ALIGN, sizeof(stnode_page));
+    memcpy(_stnode_page, &stpage, sizeof(stnode_page));
     w_assert0(r == 0);
 }
 
