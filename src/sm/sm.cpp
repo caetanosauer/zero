@@ -466,8 +466,7 @@ ss_m::_construct_once()
     /*
      *  Level 3
      */
-    bool decoupled_chkpt = _options.get_bool_option("sm_decoupled_chkpt", false);
-    chkpt = new chkpt_m(decoupled_chkpt);
+    chkpt = new chkpt_m();
     if (! chkpt)  {
         W_FATAL(eOUTOFMEMORY);
     }

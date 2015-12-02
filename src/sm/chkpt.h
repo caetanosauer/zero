@@ -150,7 +150,7 @@ class chkpt_thread_t;
  *********************************************************************/
 class chkpt_m : public smlevel_0 {
 public:
-    NORET            chkpt_m(bool _decoupled);
+    NORET            chkpt_m();
     NORET            ~chkpt_m();
 
     /*
@@ -168,13 +168,9 @@ public:
     void retire_chkpt_thread();
     void synch_take();
     void synch_take(XctLockHeap& lock_heap);
-    void take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap,
-            bool acquire_locks = false);
-    void dcpld_take(chkpt_mode_t chkpt_mode);
+    void take(chkpt_mode_t chkpt_mode);
     void backward_scan_log(lsn_t master_lsn, lsn_t begin_lsn,
             chkpt_t& new_chkpt, bool acquire_locks);
-
-    bool decoupled;
 
 private:
     chkpt_thread_t*  _chkpt_thread;

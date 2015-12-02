@@ -259,8 +259,7 @@ restart_m::restart(
     // First one is populated during Log Analysis phase
     // Second one is populated during checkpoint after the Log Analysis phase
     CmpXctLockTids        lock_cmp;
-    XctLockHeap           lock_heap1(lock_cmp);  // For Log Analysis
-    XctLockHeap           lock_heap2(lock_cmp);  // For Checkpoint
+    XctLockHeap           lock_heap(lock_cmp);  // For Log Analysis
     bool                  restart_with_lock;     // Whether to acquire lock during Log Analysis
 
     // Measuer time for Log Analysis phase
@@ -305,7 +304,7 @@ restart_m::restart(
     //                       commit_lsn, last_lsn, restart_with_lock, lock_heap1);
 
 
-    log_analysis(master, restart_with_lock, redo_lsn, undo_lsn, commit_lsn, last_lsn, in_doubt_count, loser_heap, lock_heap1);
+    log_analysis(master, restart_with_lock, redo_lsn, undo_lsn, commit_lsn, last_lsn, in_doubt_count, loser_heap, lock_heap);
     /*
     redo_lsn = cp.min_rec_lsn;
     undo_lsn = cp.min_xct_lsn;
@@ -360,10 +359,7 @@ restart_m::restart(
     {
         // Checkpoint always gather lock information, but it would build a heap
         // on return only if asked for it (debug only)
-        smlevel_0::chkpt->synch_take(lock_heap2);
-
-        // Compare lock information in two heaps, the actual comparision is debug build only
-        _compare_lock_entries(lock_heap1, lock_heap2);
+        smlevel_0::chkpt->synch_take();
     }
 
     if (false == use_serial_restart())
