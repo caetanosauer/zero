@@ -119,17 +119,20 @@ public: // required for restart for now
     string bkp_path;
 
 public:
-    void init(lsn_t begin_lsn);
+    void scan_log();
+    void serialize();
+
     void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn,
             StoreID store);
     void mark_page_clean(PageID pid, lsn_t lsn);
+
     void mark_xct_active(tid_t tid, lsn_t first_lsn, lsn_t last_lsn);
     void mark_xct_ended(tid_t tid);
     bool is_xct_active(tid_t tid) const;
     void delete_xct(tid_t tid);
     void add_lock(tid_t tid, okvl_mode mode, uint32_t hash);
+
     void add_backup(const char* path);
-    void cleanup();
 
     lsn_t get_begin_lsn() const { return  begin_lsn; }
     lsn_t get_min_rec_lsn() const;
@@ -137,6 +140,11 @@ public:
 
     tid_t get_highest_tid() { return highest_tid; }
     void set_highest_tid(tid_t) { highest_tid = highest_tid; }
+
+private:
+    void init();
+    void cleanup();
+    void acquire_lock(logrec_t& r);
 };
 
 
@@ -175,13 +183,12 @@ public:
     void synch_take();
     void synch_take(XctLockHeap& lock_heap);
     void take(chkpt_mode_t chkpt_mode);
-    void backward_scan_log(lsn_t master_lsn, lsn_t begin_lsn,
-            chkpt_t& new_chkpt, bool acquire_locks);
 
 private:
     chkpt_thread_t*  _chkpt_thread;
     long             _chkpt_count;
     lsn_t            _chkpt_last;
+    chkpt_t          curr_chkpt;
 
     void             _acquire_lock(logrec_t& r, chkpt_t& new_chkpt);
 

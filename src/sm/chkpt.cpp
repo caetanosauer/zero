@@ -318,34 +318,17 @@ void chkpt_m::synch_take()
 *  corresponding to the latest completed checkpoint.
 *
 *********************************************************************/
-void chkpt_m::backward_scan_log(const lsn_t master_lsn,
-                                const lsn_t begin_lsn,
-                                chkpt_t& new_chkpt,
-                                const bool acquire_locks)
+void chkpt_t::scan_log()
 {
-    w_assert0(begin_lsn >= master_lsn);
-    new_chkpt.init(begin_lsn);
+    init();
 
-    if (master_lsn == lsn_t::null) {
-        // The only possibility that we have a NULL as master lsn is due to a brand new
-        // start (empty) of the engine, in such case, nothing to scan.
-
-        // LL: we have to guarantee that this is the first chkpt ever being taken.
-        // In this case, the chkpt begin lsn must be the very first one.
-        w_assert0(begin_lsn == lsn_t(1,0));
-        DBGOUT1( << "NULL master_lsn, nothing to scan");
-        return;
-    }
-
-    DBGOUT1(<<"backward_scan_log("<<begin_lsn<<", "<<master_lsn<<")");
-
-    log_i         scan(*log, begin_lsn, false); // false == backward scan
-    logrec_t      r;
-    lsn_t         lsn;   // LSN of the retrieved log record
+    lsn_t scan_start = smlevel_0::log->durable_lsn();
+    log_i scan(*smlevel_0::log, scan_start, false); // false == backward scan
+    logrec_t r;
+    lsn_t lsn;   // LSN of the retrieved log record
 
     bool insideChkpt = false;
     bool scan_done = false;
-    lsn_t chkpt_begin = master_lsn;
 
     while (scan.xct_next(lsn, r) && !scan_done)
     {
@@ -354,29 +337,27 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
         }
 
         if (!r.tid().is_null()) {
-            if (r.tid() > new_chkpt.get_highest_tid()) {
-                new_chkpt.set_highest_tid(r.tid());
+            if (r.tid() > get_highest_tid()) {
+                set_highest_tid(r.tid());
             }
 
             if (r.xid_prev().is_null()) {
                 // We won't see this xct again -- delete it
-                new_chkpt.delete_xct(r.tid());
+                delete_xct(r.tid());
             }
             else {
-                new_chkpt.mark_xct_active(r.tid(), lsn, lsn);
-                if (acquire_locks) {
-                    _acquire_lock(r, new_chkpt);
-                }
+                mark_xct_active(r.tid(), lsn, lsn);
+                acquire_lock(r);
             }
         }
 
         if (r.is_page_update()) {
             w_assert0(r.is_redo() && !r.null_pid());
-            new_chkpt.mark_page_dirty(r.pid(), lsn, lsn, r.stid());
+            mark_page_dirty(r.pid(), lsn, lsn, r.stid());
 
             if (r.is_multi_page()) {
                 w_assert0(r.pid2() != 0);
-                new_chkpt.mark_page_dirty(r.pid2(), lsn, lsn, r.stid());
+                mark_page_dirty(r.pid2(), lsn, lsn, r.stid());
             }
         }
 
@@ -385,7 +366,6 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
             case logrec_t::t_chkpt_begin:
                 if (insideChkpt) {
                     // Signal to stop backward log scan loop now
-                    w_assert1(master_lsn <= lsn);
                     scan_done = true;
                 }
                 break;
@@ -395,7 +375,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                     const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
                     for (uint i = 0; i < dp->count; i++) {
                         w_assert0(dp->brec[i].pid != 0);
-                        new_chkpt.mark_page_dirty(dp->brec[i].pid, dp->brec[i].page_lsn,
+                        mark_page_dirty(dp->brec[i].pid, dp->brec[i].page_lsn,
                                 dp->brec[i].rec_lsn, dp->brec[i].store);
                     }
                 }
@@ -403,12 +383,12 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
 
 
             case logrec_t::t_chkpt_xct_lock:
-                if (insideChkpt && acquire_locks) {
+                if (insideChkpt) {
                     const chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r.data();
-                    if (new_chkpt.is_xct_active(dp->tid)) {
+                    if (is_xct_active(dp->tid)) {
                         for (uint i = 0; i < dp->count; i++) {
-                            new_chkpt.add_lock(dp->tid,
-                                    dp->xrec[i].lock_mode, dp->xrec[i].lock_hash);
+                            add_lock(dp->tid, dp->xrec[i].lock_mode,
+                                    dp->xrec[i].lock_hash);
                         }
                     }
                 }
@@ -420,7 +400,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                     for (size_t i = 0; i < dp->count; ++i) {
                         tid_t tid = dp->xrec[i].tid;
                         w_assert1(!tid.is_null());
-                        new_chkpt.mark_xct_active(tid, dp->xrec[i].first_lsn,
+                        mark_xct_active(tid, dp->xrec[i].first_lsn,
                                 dp->xrec[i].last_lsn);
                     }
                 }
@@ -430,8 +410,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
             case logrec_t::t_chkpt_end:
                 // checkpoints should not run concurrently
                 w_assert0(!insideChkpt);
-                chkpt_begin = *((lsn_t*) r.data());
-                w_assert0(master_lsn > chkpt_begin);
+                begin_lsn = *((lsn_t*) r.data());
                 insideChkpt = true;
                 break;
 
@@ -439,7 +418,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
             case logrec_t::t_xct_freeing_space:
             case logrec_t::t_xct_end:
             case logrec_t::t_xct_abort:
-                new_chkpt.mark_xct_ended(r.tid());
+                mark_xct_ended(r.tid());
                 break;
 
             case logrec_t::t_xct_end_group:
@@ -450,7 +429,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                     uint listlen = list->count;
                     for(uint i=0; i<listlen; i++) {
                         tid_t tid = list->xrec[i].tid;
-                        new_chkpt.mark_xct_ended(tid);
+                        mark_xct_ended(tid);
                     }
                 }
                 break;
@@ -462,7 +441,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
                     PageID end = pid + count;
 
                     while (pid < end) {
-                        new_chkpt.mark_page_clean(pid, lsn);
+                        mark_page_clean(pid, lsn);
                         pid++;
                     }
                 }
@@ -471,7 +450,7 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
             case logrec_t::t_add_backup:
                 {
                     const char* dev = (const char*)(r.data_ssx());
-                    new_chkpt.add_backup(dev);
+                    add_backup(dev);
                 }
                 break;
 
@@ -495,15 +474,15 @@ void chkpt_m::backward_scan_log(const lsn_t master_lsn,
     } //while
 
     w_assert0(scan_done);
-    w_assert0(!chkpt_begin.is_null());
-    w_assert0(chkpt_begin >= master_lsn);
+    w_assert0(!begin_lsn.is_null());
 
-    new_chkpt.cleanup();
+    cleanup();
 }
 
-void chkpt_t::init(lsn_t begin_lsn)
+void chkpt_t::init()
 {
-    this->begin_lsn = begin_lsn;
+    begin_lsn = lsn_t::null;
+    highest_tid = tid_t::null;
     buf_tab.clear();
     xct_tab.clear();
     bkp_path.clear();
@@ -634,20 +613,139 @@ lsn_t chkpt_t::get_min_rec_lsn() const
     return min_rec_lsn;
 }
 
-/*********************************************************************
-*
-*  chkpt_m::_analysis_acquire_lock_log(r, xd, lock_heap)
-*
-*  Helper function to process lock re-acquisition based on the log record
-*  called by analysis_pass_backward only
-*
-*  System is not opened during Log Analysis phase
-*
-*********************************************************************/
-void chkpt_m::_acquire_lock(logrec_t& r,            // In: log record
-                                         chkpt_t& new_chkpt)
+void chkpt_t::serialize()
 {
-    w_assert1(new_chkpt.is_xct_active(r.tid()));
+    // Allocate a buffer for storing log records
+    w_auto_delete_t<logrec_t> logrec(new logrec_t);
+
+#define LOG_INSERT(constructor_call, rlsn)            \
+    do {                                              \
+        new (logrec) constructor_call;                \
+        W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
+        if(!ss_m::log->consume_chkpt_reservation(logrec->length())) { \
+            chkpt_serial_m::write_release();                    \
+            W_FATAL(eOUTOFLOGSPACE);                            \
+        }                                                       \
+    } while(0)
+
+    // Insert chkpt_begin log record.
+    lsn_t begin_lsn = lsn_t::null;
+    LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
+
+    size_t chunk;
+
+    // Serialize bkp_tab
+    vector<string> backup_paths;
+    backup_paths.push_back(bkp_path);
+    LOG_INSERT(chkpt_backup_tab_log(backup_paths.size(),
+                (const string*)(&backup_paths[0])), 0);
+
+    //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
+
+    // Serialize buf_tab
+    chunk = chkpt_bf_tab_t::max;
+    vector<PageID> pid;
+    vector<StoreID> store;
+    vector<lsn_t> rec_lsn;
+    vector<lsn_t> page_lsn;
+    for(buf_tab_t::const_iterator it = buf_tab.begin();
+            it != buf_tab.end(); ++it)
+    {
+        DBGOUT1(<<"pid[]="<<it->first<< " , " <<
+                  "store[]="<<it->second.store<< " , " <<
+                  "rec_lsn[]="<<it->second.rec_lsn<< " , " <<
+                  "page_lsn[]="<<it->second.page_lsn);
+        pid.push_back(it->first);
+        store.push_back(it->second.store);
+        rec_lsn.push_back(it->second.rec_lsn);
+        page_lsn.push_back(it->second.page_lsn);
+         if(pid.size()==chunk || &*it==&*buf_tab.rbegin()) {
+            LOG_INSERT(chkpt_bf_tab_log(pid.size(), (const PageID*)(&pid[0]),
+                                                    (const StoreID*)(&store[0]),
+                                                    (const lsn_t*)(&rec_lsn[0]),
+                                                    (const lsn_t*)(&page_lsn[0])), 0);
+            pid.clear();
+            store.clear();
+            rec_lsn.clear();
+            page_lsn.clear();
+         }
+    }
+
+    chunk = chkpt_xct_tab_t::max;
+    vector<tid_t> tid;
+    vector<smlevel_0::xct_state_t> state;
+    vector<lsn_t> last_lsn;
+    vector<lsn_t> first_lsn;
+    vector<okvl_mode> lock_mode;
+    vector<uint32_t> lock_hash;
+    for(xct_tab_t::const_iterator it=xct_tab.begin();
+            it != xct_tab.end(); ++it) {
+        DBGOUT1(<<"tid[]="<<it->first<<" , " <<
+                  "state[]="<<it->second.state<< " , " <<
+                  "last_lsn[]="<<it->second.last_lsn<<" , " <<
+                  "first_lsn[]="<<it->second.first_lsn);
+
+        tid.push_back(it->first);
+        state.push_back(it->second.state);
+        last_lsn.push_back(it->second.last_lsn);
+        first_lsn.push_back(it->second.first_lsn);
+        if(tid.size()==chunk || &*it==&*xct_tab.rbegin()) {
+            LOG_INSERT(chkpt_xct_tab_log(get_highest_tid(), tid.size(),
+                                        (const tid_t*)(&tid[0]),
+                                        (const smlevel_0::xct_state_t*)(&state[0]),
+                                        (const lsn_t*)(&last_lsn[0]),
+                                        (const lsn_t*)(&first_lsn[0])), 0);
+            tid.clear();
+            state.clear();
+            last_lsn.clear();
+            first_lsn.clear();
+        }
+
+        // gather lock table
+        for(list<lock_info_t>::const_iterator jt = it->second.locks.begin();
+                jt != it->second.locks.end(); ++jt)
+        {
+            DBGOUT1(<<"    lock_mode[]="<<jt->lock_mode<<" , lock_hash[]="<<jt->lock_hash);
+            lock_mode.push_back(jt->lock_mode);
+            lock_hash.push_back(jt->lock_hash);
+            if(lock_mode.size() == chunk) {
+                LOG_INSERT(chkpt_xct_lock_log(it->first,
+                                      lock_mode.size(),
+                                      (const okvl_mode*)(&lock_mode[0]),
+                                      (const uint32_t*)(&lock_hash[0])), 0);
+                lock_mode.clear();
+                lock_hash.clear();
+            }
+        }
+        if(lock_mode.size() > 0) {
+            LOG_INSERT(chkpt_xct_lock_log(it->first,
+                        lock_mode.size(),
+                        (const okvl_mode*)(&lock_mode[0]),
+                        (const uint32_t*)(&lock_hash[0])), 0);
+            lock_mode.clear();
+            lock_hash.clear();
+        }
+    }
+
+    // In case the transaction table was empty, we insert a xct_tab_log anyway,
+    // because we want to save the highest tid.
+    if(xct_tab.size() == 0) {
+        LOG_INSERT(chkpt_xct_tab_log(get_highest_tid(), tid.size(),
+                                        (const tid_t*)(&tid[0]),
+                                        (const smlevel_0::xct_state_t*)(&state[0]),
+                                        (const lsn_t*)(&last_lsn[0]),
+                                        (const lsn_t*)(&first_lsn[0])), 0);
+    }
+    //==========================================================================
+
+    LOG_INSERT(chkpt_end_log (get_begin_lsn(),
+                get_min_rec_lsn(),
+                get_min_xct_lsn()), 0);
+}
+
+void chkpt_t::acquire_lock(logrec_t& r)
+{
+    w_assert1(is_xct_active(r.tid()));
     w_assert1(!r.is_single_sys_xct());
     w_assert1(!r.is_multi_page());
     w_assert1(!r.is_cpsn());
@@ -668,7 +766,7 @@ void chkpt_m::_acquire_lock(logrec_t& r,            // In: log record
                 lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
                         key.get_length_as_keystr());
 
-                new_chkpt.add_lock(r.tid(), mode, lid.hash());
+                add_lock(r.tid(), mode, lid.hash());
             }
             break;
         case logrec_t::t_btree_update:
@@ -682,7 +780,7 @@ void chkpt_m::_acquire_lock(logrec_t& r,            // In: log record
                 lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
                         key.get_length_as_keystr());
 
-                new_chkpt.add_lock(r.tid(), mode, lid.hash());
+                add_lock(r.tid(), mode, lid.hash());
             }
             break;
         case logrec_t::t_btree_overwrite:
@@ -696,7 +794,7 @@ void chkpt_m::_acquire_lock(logrec_t& r,            // In: log record
                 lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
                         key.get_length_as_keystr());
 
-                new_chkpt.add_lock(r.tid(), mode, lid.hash());
+                add_lock(r.tid(), mode, lid.hash());
             }
             break;
         case logrec_t::t_btree_ghost_mark:
@@ -709,7 +807,7 @@ void chkpt_m::_acquire_lock(logrec_t& r,            // In: log record
                     lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
                             key.get_length_as_keystr());
 
-                    new_chkpt.add_lock(r.tid(), mode, lid.hash());
+                    add_lock(r.tid(), mode, lid.hash());
                 }
             }
             break;
@@ -724,7 +822,7 @@ void chkpt_m::_acquire_lock(logrec_t& r,            // In: log record
                 lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
                         key.get_length_as_keystr());
 
-                new_chkpt.add_lock(r.tid(), mode, lid.hash());
+                add_lock(r.tid(), mode, lid.hash());
             }
             break;
         default:
@@ -748,19 +846,6 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         return; // recovery facilities disabled ... do nothing
     }
 
-    /*
-     * Checkpoints are fuzzy but must be serialized wrt each other.
-     *
-     * Acquire the 'write' mutex immediatelly to serialize concurrent checkpoint requests.
-     *
-     * NB: EVERYTHING BETWEEN HERE AND RELEASING THE MUTEX
-     * MUST BE W_COERCE (not W_DO).
-     *
-     * The W_COERCE is like W_DO(x), but instead of returning in the error
-     * case, it fails catastrophically.
-     * It is used in checkpoint function because
-     *   Checkpoint has no means to return error information
-     */
     chkpt_serial_m::write_acquire();
     DBGOUT1(<<"BEGIN chkpt_m::take");
 
@@ -874,165 +959,18 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         W_FATAL(eOUTOFLOGSPACE);
     }
 
-    // Allocate a buffer for storing log records
-    w_auto_delete_t<logrec_t> logrec(new logrec_t);
-
-#define LOG_INSERT(constructor_call, rlsn)            \
-    do {                                              \
-        new (logrec) constructor_call;                \
-        W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
-        if(!ss_m::log->consume_chkpt_reservation(logrec->length())) { \
-            chkpt_serial_m::write_release();                    \
-            W_FATAL(eOUTOFLOGSPACE);                            \
-        }                                                       \
-    } while(0)
-
-    const lsn_t curr_lsn = ss_m::log->curr_lsn();
-    lsn_t begin_lsn = lsn_t::null;
-
-    // Insert chkpt_begin log record.
-    LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
-    W_COERCE(ss_m::log->flush_all() );
-
-    w_assert1(curr_lsn.data() <= begin_lsn.data());
-
-    // Backward scan from begin_lsn to first completed chkpt (may not be master).
-    lsn_t master_lsn = ss_m::log->master_lsn();
-    chkpt_t new_chkpt;
-
-    backward_scan_log(master_lsn, begin_lsn, new_chkpt, true);
-
-    //============================ WRITE LOG RECORDS ===========================
-
-    uint chunk;
-
-    // Serialize bkp_tab
-    vector<string> backup_paths;
-    backup_paths.push_back(new_chkpt.bkp_path);
-    LOG_INSERT(chkpt_backup_tab_log(backup_paths.size(),
-                (const string*)(&backup_paths[0])), 0);
-
-    //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
-
-    // Serialize buf_tab
-    chunk = chkpt_bf_tab_t::max;
-    vector<PageID> pid;
-    vector<StoreID> store;
-    vector<lsn_t> rec_lsn;
-    vector<lsn_t> page_lsn;
-    for(buf_tab_t::const_iterator it = new_chkpt.buf_tab.begin();
-            it != new_chkpt.buf_tab.end(); ++it)
-    {
-        DBGOUT1(<<"pid[]="<<it->first<< " , " <<
-                  "store[]="<<it->second.store<< " , " <<
-                  "rec_lsn[]="<<it->second.rec_lsn<< " , " <<
-                  "page_lsn[]="<<it->second.page_lsn);
-        pid.push_back(it->first);
-        store.push_back(it->second.store);
-        rec_lsn.push_back(it->second.rec_lsn);
-        page_lsn.push_back(it->second.page_lsn);
-         if(pid.size()==chunk || &*it==&*new_chkpt.buf_tab.rbegin()) {
-            LOG_INSERT(chkpt_bf_tab_log(pid.size(), (const PageID*)(&pid[0]),
-                                                    (const StoreID*)(&store[0]),
-                                                    (const lsn_t*)(&rec_lsn[0]),
-                                                    (const lsn_t*)(&page_lsn[0])), 0);
-            pid.clear();
-            store.clear();
-            rec_lsn.clear();
-            page_lsn.clear();
-         }
-    }
-
-    chunk = chkpt_xct_tab_t::max;
-    vector<tid_t> tid;
-    vector<smlevel_0::xct_state_t> state;
-    vector<lsn_t> last_lsn;
-    vector<lsn_t> first_lsn;
-    vector<okvl_mode> lock_mode;
-    vector<uint32_t> lock_hash;
-    for(xct_tab_t::const_iterator it=new_chkpt.xct_tab.begin();
-            it != new_chkpt.xct_tab.end(); ++it) {
-        DBGOUT1(<<"tid[]="<<it->first<<" , " <<
-                  "state[]="<<it->second.state<< " , " <<
-                  "last_lsn[]="<<it->second.last_lsn<<" , " <<
-                  "first_lsn[]="<<it->second.first_lsn);
-
-        tid.push_back(it->first);
-        state.push_back(it->second.state);
-        last_lsn.push_back(it->second.last_lsn);
-        first_lsn.push_back(it->second.first_lsn);
-        if(tid.size()==chunk || &*it==&*new_chkpt.xct_tab.rbegin()) {
-            LOG_INSERT(chkpt_xct_tab_log(new_chkpt.get_highest_tid(), tid.size(),
-                                        (const tid_t*)(&tid[0]),
-                                        (const smlevel_0::xct_state_t*)(&state[0]),
-                                        (const lsn_t*)(&last_lsn[0]),
-                                        (const lsn_t*)(&first_lsn[0])), 0);
-            tid.clear();
-            state.clear();
-            last_lsn.clear();
-            first_lsn.clear();
-        }
-
-        // gather lock table
-        for(list<lock_info_t>::const_iterator jt = it->second.locks.begin();
-                jt != it->second.locks.end(); ++jt)
-        {
-            DBGOUT1(<<"    lock_mode[]="<<jt->lock_mode<<" , lock_hash[]="<<jt->lock_hash);
-            lock_mode.push_back(jt->lock_mode);
-            lock_hash.push_back(jt->lock_hash);
-            if(lock_mode.size() == chunk) {
-                LOG_INSERT(chkpt_xct_lock_log(it->first,
-                                      lock_mode.size(),
-                                      (const okvl_mode*)(&lock_mode[0]),
-                                      (const uint32_t*)(&lock_hash[0])), 0);
-                lock_mode.clear();
-                lock_hash.clear();
-            }
-        }
-        if(lock_mode.size() > 0) {
-            LOG_INSERT(chkpt_xct_lock_log(it->first,
-                        lock_mode.size(),
-                        (const okvl_mode*)(&lock_mode[0]),
-                        (const uint32_t*)(&lock_hash[0])), 0);
-            lock_mode.clear();
-            lock_hash.clear();
-        }
-    }
-
-    // In case the transaction table was empty, we insert a xct_tab_log anyway,
-    // because we want to save the highest tid.
-    if(new_chkpt.xct_tab.size() == 0) {
-        LOG_INSERT(chkpt_xct_tab_log(new_chkpt.get_highest_tid(), tid.size(),
-                                        (const tid_t*)(&tid[0]),
-                                        (const smlevel_0::xct_state_t*)(&state[0]),
-                                        (const lsn_t*)(&last_lsn[0]),
-                                        (const lsn_t*)(&first_lsn[0])), 0);
-    }
-    //==========================================================================
-
-    if (ss_m::shutting_down && !ss_m::shutdown_clean) // Dirty shutdown (simulated crash)
-    {
-        DBGOUT1(<<"chkpt_m::take ABORTED due to dirty shutdown, "
-                << ", dirty page count = " << pid.size()
-                << ", total txn count = " << tid.size());
-    }
-    else
-    {
-        LOG_INSERT(chkpt_end_log (new_chkpt.get_begin_lsn(),
-                                  new_chkpt.get_min_rec_lsn(),
-                                  new_chkpt.get_min_xct_lsn()), 0);
-
-        W_COERCE(ss_m::log->flush_all() );
-        DBGOUT1(<<"Setting master_lsn to " << new_chkpt.get_begin_lsn());
-        ss_m::log->set_master(new_chkpt.get_begin_lsn(),
-                              new_chkpt.get_min_rec_lsn(),
-                              new_chkpt.get_min_xct_lsn());
-    }
-
-    DBGOUT1(<<"Exiting take()");
+    curr_chkpt.scan_log();
+    curr_chkpt.serialize();
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_serial_m::write_release();
+
+    W_COERCE(ss_m::log->flush_all() );
+    DBGOUT1(<<"Setting master_lsn to " << curr_chkpt.get_begin_lsn());
+    // CS TODO: get rid of master lsn
+    ss_m::log->set_master(curr_chkpt.get_begin_lsn(),
+            curr_chkpt.get_min_rec_lsn(),
+            curr_chkpt.get_min_xct_lsn());
 }
 
 /*********************************************************************

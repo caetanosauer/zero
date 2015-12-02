@@ -304,7 +304,8 @@ restart_m::restart(
     //                       commit_lsn, last_lsn, restart_with_lock, lock_heap1);
 
 
-    log_analysis(master, restart_with_lock, redo_lsn, undo_lsn, commit_lsn, last_lsn, in_doubt_count, loser_heap, lock_heap);
+    log_analysis(restart_with_lock, redo_lsn, undo_lsn, commit_lsn, last_lsn,
+            in_doubt_count, loser_heap, lock_heap);
     /*
     redo_lsn = cp.min_rec_lsn;
     undo_lsn = cp.min_xct_lsn;
@@ -560,7 +561,6 @@ restart_m::restart(
 }
 
 void restart_m::log_analysis(
-    const lsn_t         master,
     bool                restart_with_lock,
     lsn_t&              redo_lsn,
     lsn_t&              undo_lsn,
@@ -570,52 +570,34 @@ void restart_m::log_analysis(
     XctPtrHeap&         loser_heap,
     XctLockHeap&        lock_heap)
 {
-    FUNC(restart_m::log_analysis);
-
-    AutoTurnOffLogging turnedOnWhenDestroyed;
     smlevel_0::operating_mode = smlevel_0::t_in_analysis;
 
-    last_lsn = log->curr_lsn();
-    chkpt_t v_chkpt;    // virtual checkpoint (not going to be written to log)
+    chkpt_t chkpt;
+    chkpt.scan_log();
 
-    /* Scan the log backward, from the most current lsn (last_lsn) until
-     * master lsn or first completed checkpoint (might not be the same).
-     * Returns a chkpt_t object with all required information to initialize
-     * the other data structures. */
-    smlevel_0::chkpt->backward_scan_log(master, last_lsn, v_chkpt, restart_with_lock);
-
-    redo_lsn = v_chkpt.get_min_rec_lsn();
-    undo_lsn = v_chkpt.get_min_xct_lsn();
-    if(undo_lsn == master) {
-        commit_lsn = lsn_t::null;
-    }
-    else{
-        commit_lsn = undo_lsn;
-    }
+    redo_lsn = chkpt.get_min_rec_lsn();
+    undo_lsn = chkpt.get_min_xct_lsn();
+    // CS TODO: what's the difference between commit_lsn and undo_lsn???
+    commit_lsn = undo_lsn;
 
     //Re-load buffer
-    for (buf_tab_t::iterator it  = v_chkpt.buf_tab.begin();
-                             it != v_chkpt.buf_tab.end(); ++it) {
+    for (buf_tab_t::iterator it  = chkpt.buf_tab.begin();
+                             it != chkpt.buf_tab.end(); ++it)
+    {
         bf_idx idx = 0;
-        w_rc_t rc = RCOK;
-
-        rc = smlevel_0::bf->register_and_mark(idx, it->first,
+        W_COERCE(smlevel_0::bf->register_and_mark(idx, it->first,
                                                 it->second.store,
                                                 it->second.rec_lsn.data() /*first_lsn*/,
                                                 it->second.page_lsn.data() /*last_lsn*/,
-                                                in_doubt_count);
+                                                in_doubt_count));
 
-        if (rc.is_error()) {
-            // Not able to get a free block in buffer pool without evict, cannot continue
-            W_FATAL_MSG(fcINTERNAL, << "Failed to record an in_doubt page in t_chkpt_bf_tab during Log Analysis" << rc);
-        }
         w_assert1(0 != idx);
     }
 
     //Re-create transactions
-    xct_t::update_youngest_tid(v_chkpt.get_highest_tid());
-    for(xct_tab_t::const_iterator it = v_chkpt.xct_tab.begin();
-                            it != v_chkpt.xct_tab.end(); ++it)
+    xct_t::update_youngest_tid(chkpt.get_highest_tid());
+    for(xct_tab_t::const_iterator it = chkpt.xct_tab.begin();
+                            it != chkpt.xct_tab.end(); ++it)
     {
         xct_t* xd = new xct_t(NULL,               // stats
                         WAIT_SPECIFIED_BY_THREAD, // default timeout value
@@ -648,7 +630,7 @@ void restart_m::log_analysis(
 
     //Re-add backups
     // CS TODO only works for one backup
-    smlevel_0::vol->sx_add_backup(v_chkpt.bkp_path, true);
+    smlevel_0::vol->sx_add_backup(chkpt.bkp_path, true);
 }
 
 /*********************************************************************
