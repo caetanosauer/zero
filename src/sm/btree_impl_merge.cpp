@@ -114,15 +114,6 @@ rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page,        // In/Out: sour
     if (true == caller_commit)
         W_DO (sxs.end_sys_xct (ret));
 
-    if ((true == restart_m::use_redo_full_logging_restart()) && (false == caller_commit))
-    {
-        // Rebalance is a system transaction with single log normally,
-        // but if we are doing full logging due to page driven REDO,
-        // then a lot of log records have been generated (not a single log anymore)
-        //
-        // Not forcing a log flush because flushing should not impact recovery operation
-        //W_COERCE( smlevel_0::log->flush_all() );
-    }
     return ret;
 }
 
@@ -158,50 +149,8 @@ rc_t btree_impl::_ux_rebalance_foster_core(
     // first, mark both dirty.
     page.set_dirty();
     foster_p.set_dirty();
-    if (true == restart_m::use_redo_full_logging_restart())
-    {
-        // If page driven REDO recovery, the recovery operation cannot
-        // obey WOD for b-tree rebalance operation, disable minimal logging and
-        // use full logging for all the record movements
-        // the system transaction log records are used to set page fence keys only,
-        // the following log records record the the actual record movements
-        // No dependency on WOD (Write Order Dependency) in this case
-        caller_commit = false;
-    }
-    else
-    {
-        bool registered = smlevel_0::bf->register_write_order_dependency(page._pp, foster_p._pp);
-        if (!registered) {
-            // TODO in this case we should do full logging.
-            DBGOUT1 (<< "oops, couldn't force write order dependency in rebalance. this should be treated with care");
-
-////////////////////////////////////////
-// TODO(Restart)... NYI
-// This is an existing issue from Single-Page-Recovery, when a WOD cannot be generated during the execution
-// it has to use either 1) full logging or 2) flush the page to persistent device first
-// but the current code continue the execution although Write-Order-Dependency was not followed.
-// This scenario is not so difficult to encounter, at least one of the test cases in test_restart triggers this error.
-// Comment out the fatal error for now since we have not implement the proper solution yet
-//
-// Possible solution:
-//    1. Add an extra field in the 'page rebalance log record' to indicate whether minimal or full logging for the associated page rebalance.
-//    2. If 'Write-Order-Dependency' cannot be followed, turn the full logging flag on in the log record, and use full logging for the operation
-//    3. If 'Write-Order-Dependency' can be followed, turn the full logging flag off in the log record, and use minimal logging for the operation
-//    4. In REDO and UNDO, check the flag in log record to determine whether use minimal or full logging for the REDO/UNDO operation.
-//    5. Once this is implemented, the system can use either minimal or full logging to handle each page rebalance operation on demand,
-//        no need to force and limit to use one method for the entire system up time.
-//
-// Current situation:
-//   Both minimal and full logging are implemented (still need more stabilization work, especially full logging), but controlled by
-//   restart flags, in other words, we must pick one methond for the entire system up time, including before and after system crash.
-//   Also full logging flag is used in M2 test cases only.
-////////////////////////////////////////
-
-
-//            W_FATAL_MSG(fcINTERNAL, << "oops, couldn't force write order dependency in rebalance, full loggig required: NYI");
-        }
-        // this can't cause cycle as it's always right-to-left depdencency.
-    }
+    bool registered = smlevel_0::bf->register_write_order_dependency(page._pp, foster_p._pp);
+    w_assert0(registered);
 
     // TODO(Restart)... see the same fence key setting code in btree_impl::_ux_rebalance_foster_apply
     // the assumption is the fence keys in destination page has been set up already
@@ -246,29 +195,11 @@ rc_t btree_impl::_ux_rebalance_foster_core(
                                      prefix_length, move_count, len /*user record data length*/,
                                      record_data /*user reocrd data*/));
 
-    if (true == restart_m::use_redo_full_logging_restart())
-    {
-        // TODO(Restart)... If we need to move records for rebalance,
-        // commit the current single log system transaction before the
-        // actual record movements
-        // By doing so, the actual logging and record movements are outside of
-        // the single log system transaction
-        // If system failure occurrs during record movements, the standard recovery
-        // would handle the REDO/UNDO for each record movement, the system
-        // transaction REDO does not handle record movements
-        // this behavior is due to the fact that we are using page driven REDO with Single-Page-Recovery,
-        // while the WOD cannot be followed
-        caller_commit = false;
-        W_DO (sxs.end_sys_xct (RCOK));
-    }
-    else
-    {
-        // Not full logging, caller should commit the current system transaction
-        caller_commit = true;
-    }
+    // Not full logging, caller should commit the current system transaction
+    caller_commit = true;
     // Record movements
     W_DO (_ux_rebalance_foster_apply(page, foster_p, move_count, mid_key, new_pid0,
-                                     new_pid0_emlsn, restart_m::use_redo_full_logging_restart()));
+                                     new_pid0_emlsn, false));
 
     return RCOK;
 }
@@ -447,16 +378,6 @@ rc_t btree_impl::_sx_merge_foster(btree_page_h &page)
     if (true == caller_commit)
         W_DO (sxs.end_sys_xct (ret));
 
-    if ((true == restart_m::use_redo_full_logging_restart()) && (false == caller_commit))
-    {
-        // Merge is a system transaction with single log normally,
-        // but if we are doing full logging due to page driven REDO,
-        // then a lot of log records have been generated (not a single log anymore)
-        //
-        // Not forcing a log flush because flushing should not impact recovery operation
-        //W_COERCE( smlevel_0::log->flush_all() );
-
-    }
     return ret;
 }
 
@@ -509,28 +430,6 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page,      // In/Out: desti
     // first, mark them dirty.
     page.set_dirty();
     foster_p.set_dirty();
-    if (true == restart_m::use_redo_full_logging_restart())
-    {
-        // If page driven REDO during recovery, the recovery operation cannot
-        // obey WOD for b-tree merge, disable minimal logging and
-        // use full logging for all the record movements
-        // the system transactions are used to set page fence keys only the following
-        // log records record the actual record movements
-        // No dependency on WOD (Write Order Dependency) in this case
-        caller_commit = false;
-    }
-    else
-    {
-        bool registered = smlevel_0::bf->register_write_order_dependency(foster_p._pp, page._pp);
-        if (!registered) {
-            // this means the merging will cause a cycle in write-order.
-            // so, let's not do the merging now.
-            // see ticket:39 for more details (jira ticket:39 "Node removal and rebalancing" (originally trac ticket:39))
-
-            caller_commit = true;
-            return RCOK;
-        }
-    }
 
     // TODO(Restart)... see the same fence key setting code in btree_impl::_ux_merge_foster_apply_parent
     w_keystr_t high_key, chain_high_key;
@@ -590,24 +489,8 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page,      // In/Out: desti
     if (ret.is_error())
         return ret;
 
-    if (true == restart_m::use_redo_full_logging_restart())
-    {
-        // TODO(Restart)... If we need to move records for merge, commit
-        // the current single log system transaction before the actual record
-        // movements
-        // By doing so, the actual logging and record movements are outside of
-        // single log system transaction
-        // If system failure occurred during record movements, the standard recovery
-        // would handle the REDO/UNDO for each record movement, the system
-        // transaction REDO is no-op
-        // this behavior is due to the fact that we are using page driven REDO with Single-Page-Recovery,
-        // while the WOD cannot be followed
-        caller_commit = false;
-        W_DO (sxs.end_sys_xct (ret));
-    }
-
     // Move the records now
-    _ux_merge_foster_apply_parent(page, foster_p, restart_m::use_redo_full_logging_restart());
+    _ux_merge_foster_apply_parent(page, foster_p, false);
     W_COERCE(foster_p.set_to_be_deleted(false));
     return RCOK;
 }

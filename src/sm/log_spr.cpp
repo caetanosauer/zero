@@ -27,11 +27,11 @@ void page_evict_log::redo(fixable_page_h* page) {
 
 // CS TODO: why isnt this in restart.cpp??
 void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn) {
-    lsn_t master = log->master_lsn();
+    lsn_t master = smlevel_0::log->master_lsn();
     o << "Dumping Page LSN Chain for PID=" << pid << ", MAXLSN=" << max_lsn
         << ", MasterLSN=" << master << "..." << std::endl;
 
-    log_i           scan(*log, master);
+    log_i           scan(*smlevel_0::log, master);
     logrec_t        buf;
     lsn_t           lsn;
     // Scan all log entries until EMLSN
@@ -211,7 +211,7 @@ rc_t restart_m::_collect_spr_logs(
         // STEP 1: Fecth log record and copy it into buffer
         logrec_t* lr = NULL;
         lsn_t lsn = nxt;
-        rc_t rc = log->fetch(lsn, lr, NULL, true);
+        rc_t rc = smlevel_0::log->fetch(lsn, lr, NULL, true);
 
         if ((rc.is_error()) && (eEOF == rc.err_num())) {
             // EOF -- scan finished
@@ -237,7 +237,7 @@ rc_t restart_m::_collect_spr_logs(
 
         pos -= lr->length();
         memcpy(buffer + pos, lr, lr->length());
-        log->release();
+        smlevel_0::log->release();
         lr = (logrec_t*) (buffer + pos);
 
         // STEP 2: Obtain LSN of previous log record on the same page (nxt)

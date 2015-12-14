@@ -102,13 +102,6 @@ w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, PageID page_updated,
     w_assert1(!smlevel_0::bf->is_swizzling_enabled());
 
     smlevel_0::bf->associate_page(_pp, idx, page_updated);
-
-    if (false == managed)
-    {
-        // Set the page to be not managed if using minimal logging
-        // Page is managed if using full logging
-        w_assert1(false == restart_m::use_redo_full_logging_restart());
-    }
     _bufferpool_managed = managed;
     _mode = LATCH_EX;
 
@@ -132,7 +125,6 @@ w_rc_t fixable_page_h::fix_recovery_redo_managed()
     // before the page recovery, and set to managed again (this function)
     // after the recovery operation
 
-    w_assert1(false == restart_m::use_redo_full_logging_restart());
     _bufferpool_managed = true;
     return RCOK;
 }
@@ -168,8 +160,7 @@ w_rc_t fixable_page_h::fix_virgin_root (StoreID store, PageID shpid) {
     return RCOK;
 }
 
-w_rc_t fixable_page_h::fix_root (StoreID store, latch_mode_t mode,
-                                 bool conditional, const bool from_undo) {
+w_rc_t fixable_page_h::fix_root (StoreID store, latch_mode_t mode, bool conditional) {
     w_assert1(mode != LATCH_NL);
 
     if (force_Q_fixing > 0 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
@@ -181,7 +172,7 @@ w_rc_t fixable_page_h::fix_root (StoreID store, latch_mode_t mode,
             return RC(eLATCHQFAIL);
         }
     } else {
-        W_DO(smlevel_0::bf->fix_root(_pp, store, mode, conditional, from_undo));
+        W_DO(smlevel_0::bf->fix_root(_pp, store, mode, conditional));
     }
     _bufferpool_managed = true;
     _mode               = mode;

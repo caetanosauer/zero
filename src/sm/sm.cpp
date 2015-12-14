@@ -113,11 +113,6 @@ uint32_t     smlevel_0::in_doubt_count = 0;
 #endif
 
 
-// This is the controlling variable to determine which mode to use at run time if user did not specify restart mode:
-smlevel_0::restart_internal_mode_t
-           smlevel_0::restart_internal_mode =
-                 (smlevel_0::restart_internal_mode_t)m1_default_restart;
-
 
             //controlled by AutoTurnOffLogging:
 bool        smlevel_0::lock_caching_default = true;
@@ -385,10 +380,6 @@ ss_m::_construct_once()
     std::string logimpl = _options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
 
 
-    // For Instant Restart testing purpose, determine which
-    // internal code path to use
-    _set_recovery_mode();
-
     bf = new bf_tree_m(_options);
     if (! bf) {
         W_FATAL(eOUTOFMEMORY);
@@ -516,18 +507,12 @@ void ss_m::_do_restart()
         // Start the recovery process as sequential  operations
         // The recovery manager is on the stack, it will be destroyed once it is
         // out of scope
-        restart_m restart;
+        restart_m restart(_options);
 
         // Recovery process, a checkpoint will be taken at the end of recovery
         // Make surethe current operating state is before recovery
         smlevel_0::operating_mode = t_not_started;
         restart.restart(master, verify_lsn, redo_lsn, last_lsn, in_doubt_count);
-    }
-
-    // Pure on-demand mode must be the same for REDO and UNDO phases
-    if (smlevel_0::use_redo_demand_restart() != smlevel_0::use_undo_demand_restart())
-    {
-        W_FATAL_MSG(fcINTERNAL, << "Inconsistent mode between on-demand REDO and UNDO");
     }
 
     // Store some information globally in all cases, because although M3 does not use
@@ -538,11 +523,6 @@ void ss_m::_do_restart()
     smlevel_0::last_lsn = last_lsn;              // page driven REDO, last LSN in Recovery log before system crash
     smlevel_0::in_doubt_count = in_doubt_count;
 
-    if ((false == smlevel_0::use_serial_restart()) &&         // Not serial, so must be concurrent mode
-         (false == smlevel_0::use_redo_demand_restart()) &&   // Not pure on-demand redo, so need child thread
-         (false == smlevel_0::use_undo_demand_restart()))     // Not pure on-demand undo, so need child thread
-
-    {
         // Log Analysis has completed but no REDO or UNDO yet
         // exception: M5 (ARIES) did the REDO already, but no UNDO
         // Start the recovery process child thread to carry out
@@ -551,8 +531,6 @@ void ss_m::_do_restart()
         // Child thread will carry out both REDO and UNDO
         // for M5 (ARIES), in_doubt count is already 0 therefore no need to REDO again
 
-        if (_options.get_bool_option("sm_logging", true))
-        {
             // If we have the recovery process
 
             // Check the operating mode
@@ -575,14 +553,13 @@ void ss_m::_do_restart()
                 // 2. No recovery work to do
 
                 w_assert1(!recovery);
-                recovery = new restart_m();
+                recovery = new restart_m(_options);
                 if (! recovery)
                 {
                     W_FATAL(eOUTOFMEMORY);
                 }
                 recovery->spawn_recovery_thread();
             }
-        }
 
         // Continue the process to open system for user transactions immediatelly
         // No buffer pool flush or user checkpoint in this case
@@ -600,52 +577,10 @@ void ss_m::_do_restart()
         // Do not flush buffer pool or take checkpoint because recovery
         // is still going on
 
-    }
-    else
-    {
-        // If in serial or pure on-demand mode, change the operating state
-        // to allow concurrent transactions to come in
-        // No child restart thread for these modes
-
-        smlevel_0::operating_mode = t_forward_processing;
-
-        // Have the log initialize its reservation accounting.
-        if(log)
-            log->activate_reservations();
-
-        // Force the log after recovery.  The background flush threads exist
-        // and might be working due to recovery activities.
-        // But to avoid interference with their control structure,
-        // we will do this directly.  Take a checkpoint as well.
-        // CS TODO: force pages
-
-        // An synchronous checkpoint was taken at the end of recovery
-        // This is a synchronous checkpoint after buffer pool flush
-        chkpt->synch_take();
-
-        // Debug only
-        me()->check_pin_count(0);
-
-    }
 }
 
 void ss_m::_finish_recovery()
 {
-    if ((shutdown_clean) && (true == smlevel_0::use_redo_demand_restart()))
-    {
-        // If we have a clean shutdown and the current system is using
-        // pure on-demand recovery (no child restart thread), we might
-        // still have a lot of recovery work to do at this point
-        // Because we are doing a clean shutdown, we do not want to have
-        // leftover restart work, spawn the restart child thread to finish up
-        // the restart work first and then shutdown
-
-        w_assert1(!recovery);
-        recovery = new restart_m();
-        if (recovery)
-            recovery->spawn_recovery_thread();
-    }
-
     // get rid of all non-prepared transactions
     // First... disassociate me from any tx
     if(xct()) {
@@ -654,10 +589,6 @@ void ss_m::_finish_recovery()
 
     if (recovery)
     {
-        // The recovery object is only inistantiated if open system for user
-        // transactions during recovery
-        w_assert1(false == smlevel_0::use_serial_restart());
-
         // The destructor of restart_m terminates (no wait if crash shutdown)
         // the child thread if the child thread is still active.
         // The child thread is for Recovery process only, it should terminate
@@ -723,24 +654,6 @@ void ss_m::_finish_recovery()
     //                                                    blocked operation, therefore no lock re-acquision and
     //                                                    nothing to rollback
     //        Mixed mode using locks - Same as 'pure on-demand shutdown using locks'
-}
-
-void ss_m::_set_recovery_mode()
-{
-    // For Instant Restart testing purpose
-    // which internal restart mode to use?  Default to serial restart (M1) if not specified
-
-    int32_t restart_mode = _options.get_int_option("sm_restart", 1 /*default value*/);
-    if (1 == restart_mode)
-    {
-        // Caller did not specify restart mode, use default (serial mode)
-        smlevel_0::restart_internal_mode = (smlevel_0::restart_internal_mode_t)m1_default_restart;
-    }
-    else
-    {
-        // Set caller specified restart mode
-        smlevel_0::restart_internal_mode = (smlevel_0::restart_internal_mode_t)restart_mode;
-    }
 }
 
 ss_m::~ss_m()
@@ -1008,128 +921,6 @@ rc_t ss_m::_truncate_log(bool ignore_chkpt)
 void ss_m::set_shutdown_flag(bool clean)
 {
     shutdown_clean = clean;
-}
-
-// Debugging function
-// Returns true if restart is still going on
-// Serial restart mode: always return false
-// Concurrent restart mode: return true if concurrent restart
-//                                          (REDO and UNDO) is active
-bool ss_m::in_restart()
-{
-    // This function can be called only after the system is opened
-    // therefore the system is not in recovery when running in serial recovery mode
-
-    if (true == smlevel_0::use_serial_restart())
-    {
-        return false;
-    }
-    else if (recovery)
-    {
-        // The restart object exists and we are not using serial mode
-        return recovery->restart_in_progress();
-    }
-    else
-    {
-        w_assert1(false == smlevel_0::use_serial_restart());
-
-        // Restart object does not exist, this can happen if the system
-        // was started from an empty database and nothing to recover
-
-        return false;
-    }
-}
-
-// Debugging function
-// Returns the status of the specified restart phase
-restart_phase_t ss_m::in_log_analysis()
-{
-    if (true == smlevel_0::use_serial_restart())
-    {
-        // If in serial mode, by time time caller calls this function
-        // we are done with restart already
-        return t_restart_phase_done;
-    }
-    else if (recovery)
-    {
-        // System is opened after Log Analysis phase
-        // If we have the restart object, are we still in Log Analysis?
-        if (true == smlevel_0::in_recovery_analysis())
-            return t_restart_phase_active;
-        else
-            return t_restart_phase_done;
-    }
-    else
-    {
-        // Restart object does not exist
-        return t_restart_phase_done;
-    }
-}
-
-// Debugging function
-// Returns the status of the specified restart phase
-restart_phase_t ss_m::in_REDO()
-{
-    if (true == smlevel_0::use_serial_restart())
-    {
-        // If in serial mode, by time time caller calls this function
-        // we are done with restart already
-        return t_restart_phase_done;
-    }
-    else if (recovery)
-    {
-        // System is opened after Log Analysis phase
-        // If we have the restart object, are we still in REDO?
-
-        // If pure on-demand REDO, we don't know where we are
-        if (true == smlevel_0::use_redo_demand_restart())
-            return t_restart_phase_unknown;
-
-        // If concurrent REDO (M2 or M4)
-        if (true == recovery->redo_in_progress())
-            return t_restart_phase_active;  // In REDO
-        else
-            return t_restart_phase_done;    // Done with REDO
-    }
-    else
-    {
-        // Restart object does not exist
-        return t_restart_phase_done;
-    }
-}
-
-// Debugging function
-// Returns the status of the specified restart phase
-restart_phase_t ss_m::in_UNDO()
-{
-    if (true == smlevel_0::use_serial_restart())
-    {
-        // If in serial mode, by time time caller calls this function
-        // we are done with restart already
-        return t_restart_phase_done;
-    }
-    else if (recovery)
-    {
-        // System is opened after Log Analysis phase
-        // If we have the restart object, are we still in UNDO?
-
-        // If pure on-demand REDO, we don't know where we are
-        if (true == smlevel_0::use_undo_demand_restart())
-            return t_restart_phase_unknown;
-
-        // If concurrent REDO (M2 or M4)
-        if (true == recovery->undo_in_progress())
-            return t_restart_phase_active;       // In UNDO
-        else if (true == recovery->redo_in_progress())
-            return t_restart_phase_not_active;   // Still in REDO
-        else
-            return t_restart_phase_done;         // Done with UNDO
-    }
-    else
-    {
-        // Restart object does not exist
-        return t_restart_phase_done;
-    }
 }
 
 

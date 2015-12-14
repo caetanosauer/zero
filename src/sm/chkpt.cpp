@@ -819,42 +819,15 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
             }
             else if (ss_m::ss_m::in_recovery() && (t_chkpt_sync != chkpt_mode))
             {
-                // Asynch checkpoint
-                if (false == ss_m::use_serial_restart())
-                {
                     // System opened after Log Analysis phase, allow asynch checkpoint
                     // after Log Analysis phase
                     if (ss_m::ss_m::in_recovery_analysis())
                         valid_chkpt = false;
-                }
-                else
-                {
-                    // System is not opened during recovery
-                    DBGOUT1(<<"END chkpt_m::take - system in recovery, skip asynch checkpoint");
-                    valid_chkpt = false;
-                }
             }
             else if (ss_m::in_recovery() && (t_chkpt_sync == chkpt_mode))
             {
-                // Synch checkpoint
-                if (false == ss_m::use_serial_restart())
-                {
                     // System opened after Log Analysis phase, accept system checkpoint anytime
                     DBGOUT1(<<"PROCESS chkpt_m::take - system in recovery, allow synch checkpoint");
-                }
-                else
-                {
-                    // System is not opened during recovery
-                    if (ss_m::in_recovery_analysis() || ss_m::in_recovery_undo())
-                    {
-                        DBGOUT1(<<"PROCESS chkpt_m::take - system in recovery, allow synch checkpoint");
-                    }
-                    else
-                    {
-                        DBGOUT1(<<"END chkpt_m::take - system in REDO phase, disallow checkpoint");
-                        valid_chkpt = false;
-                    }
-                }
             }
             else
             {

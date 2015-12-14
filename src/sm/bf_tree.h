@@ -328,7 +328,7 @@ public:
      * To use this method, you need to include bf_tree_inline.h.
      */
     w_rc_t fix_root (generic_page*& page, StoreID store, latch_mode_t mode,
-                     bool conditional, const bool from_undo = false);
+                     bool conditional);
 
     /**
      * Fixes an existing (not virgin) root page for the given store in Q mode.
@@ -628,12 +628,6 @@ private:
     w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, PageID shpid,
                                latch_mode_t mode, bool conditional, bool virgin_page,
                                const bool from_recovery = false);
-
-    // Validate whether the given page is safe for concurrent operation to access
-    // Validate is based on either commit_lsn or lock acquisition
-    // Commit_lsn: raise error if conflict
-    // Lock acquisition: block if conflict
-    w_rc_t _validate_access(generic_page*& page);
 
     /**
      * \brief Checks validity of the page image that has been retrieved from disk,

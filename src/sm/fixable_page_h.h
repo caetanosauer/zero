@@ -164,7 +164,7 @@ public:
      * receive page ID because it's already known by bufferpool.
      */
     w_rc_t fix_root(StoreID store, latch_mode_t mode,
-                    bool conditional=false, const bool from_undo = false);
+                    bool conditional=false);
 
     /**
      * Imaginery 'fix' for a non-bufferpool-managed page.

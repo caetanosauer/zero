@@ -107,14 +107,14 @@ btree_impl::_ux_traverse(StoreID store, const w_keystr_t &key,
         bool should_try_ex = (leaf_latch_mode == LATCH_EX &&
                               leaf_pid_causing_failed_upgrade == smlevel_0::bf->get_root_page_id(store));
         // Root page is pre-loaded into buffer pool
-        W_DO( root_p.fix_root(store, should_try_ex ? LATCH_EX : LATCH_SH, false, from_undo));
+        W_DO( root_p.fix_root(store, should_try_ex ? LATCH_EX : LATCH_SH, false));
         w_assert1(root_p.is_fixed());
 
         if (root_p.get_foster() != 0) {
             // root page has foster-child!  Let's grow the tree.
             if (root_p.latch_mode() != LATCH_EX) {
                 root_p.unfix(); // don't upgrade.  Re-fix.
-                W_DO( root_p.fix_root(store, LATCH_EX, false, from_undo));
+                W_DO( root_p.fix_root(store, LATCH_EX, false));
             }
             W_DO(_sx_grow_tree(root_p));
             --times; // We don't penalize this.  Do it again.

@@ -608,13 +608,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
         // Handle on_demand UNDO if necessary
         w_assert1(NULL != compatibility.blocker);
 
-        if (true == restart_m::use_concurrent_lock_restart())
-        {
             // If using lock re-acquisition for restart concurrency control
-
-            if ((true == restart_m::use_undo_demand_restart()) ||  // pure on-demand
-                (true == restart_m::use_undo_mix_restart()))       // midxed mode
-            {
                 DBGOUT3(<< "RawLockQueue::trigger_UNDO(): on_demand or mixed UNDO with loc, check for loser transaction...");
 
                 // If we did not find any loser transaction in the transaction table
@@ -791,24 +785,6 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                     DBGOUT3(<< "RawLockQueue::trigger_UNDO(): have more loser transactions in transaction table");
                 }
 
-            }
-            else
-            {
-                // Using lock re-acquisition for restart
-                // but not using on_demand or mixed UNDO
-                // this code path is for performance testing purpose only
-                // the restart UNDO is using txn driven UNDO through restart thread
-                // conflicting user transactions do not trigger UNDO and they
-                // have to wait for restart thread to rollback the loser transactions
-            }
-        }
-        else
-        {
-            // Not using lock re-acquisition for restart
-            // either serial (triditional) or commit_lsn is used for concurrency control
-            // locks were not re-acquired by restart
-            // no-op
-        }
     }
     else
     {

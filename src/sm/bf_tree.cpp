@@ -319,72 +319,69 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
             //        do not load the page again
             DBGOUT3(<<"bf_tree_m::install_volume: root page is already in hash table");
 
-            if ((true == restart_m::use_redo_demand_restart()) ||   // On_demand, backward log scan
-                (true == restart_m::use_redo_mix_restart()))        // Mixed, backward log scan
+            // Root page is special, it is pre-loaded into memory and then recovered.
+            //
+            // In traditional restart mode (M1 and M2), the root page is pre-loaded during
+            // Log Analysis phase but not recovered.  Root page is recovered during REDO
+            // phase by the restart thread which blocks user transactions.
+            //
+            // In on_demand mode (M3 and M4, backward log scan), the root page is
+            // pre-loaded and also recovered during Log Analysis phase, because
+            // all REDOs are triggered by user transactions and b-tree traversal
+            // starts with root page, therefore the root page must be recovered
+            // before accepting user transactions, also normal Single Page Recovery is
+            // relying on the last page LSN in both parent and child pages to perform
+            // the recovery operation on child page, therefore the root page must be
+            // recovered before everything else.
+
+            bf_tree_cb_t &cb = get_cb(idx);
+            w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
+            if (latch_rc.is_error())
             {
-                // Root page is special, it is pre-loaded into memory and then recovered.
-                //
-                // In traditional restart mode (M1 and M2), the root page is pre-loaded during
-                // Log Analysis phase but not recovered.  Root page is recovered during REDO
-                // phase by the restart thread which blocks user transactions.
-                //
-                // In on_demand mode (M3 and M4, backward log scan), the root page is
-                // pre-loaded and also recovered during Log Analysis phase, because
-                // all REDOs are triggered by user transactions and b-tree traversal
-                // starts with root page, therefore the root page must be recovered
-                // before accepting user transactions, also normal Single Page Recovery is
-                // relying on the last page LSN in both parent and child pages to perform
-                // the recovery operation on child page, therefore the root page must be
-                // recovered before everything else.
+                // Not expected
+                W_FATAL_MSG(fcINTERNAL, << "REDO (redo_page_pass()): unable to EX latch cb on root page");
+            }
+            w_assert1(true == cb._used);
+            if (0 != cb._dependency_lsn)
+            {
+                DBGOUT3(<<"bf_tree_m::install_volume: root page is not in buffer pool, loading...");
 
-                bf_tree_cb_t &cb = get_cb(idx);
-                w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
-                if (latch_rc.is_error())
+                w_assert1(true == cb._in_doubt);
+
+                // The last page LSN is stored in cb._dependency_lsn during Log Analysis
+                // and cleared after the page has been restored
+                // Use Single Page Recovery to load and recover the root page
+                lsn_t emlsn = cb._dependency_lsn;
+                // Load the page first, no recovery at this point
+                preload_rc = _preload_root_page(desc, volume, store, shpid, idx);
+                if (false == preload_rc.is_error())
                 {
-                    // Not expected
-                    W_FATAL_MSG(fcINTERNAL, << "REDO (redo_page_pass()): unable to EX latch cb on root page");
+                    // Recover the root page through Single Page Recovery
+                    // In order to use minimal logging for page rebalance operations, the root
+                    // page must be unmanaged during Single Page Recover process
+                    fixable_page_h page;
+                    W_COERCE(page.fix_recovery_redo(idx, shpid, false /* managed*/));
+                    page.get_generic_page()->pid = shpid;
+                    page.get_generic_page()->tag = t_btree_p;
+                    w_assert1(page.is_fixed());
+                    if (emlsn != page.lsn())
+                        page.set_lsns(lsn_t::null);  // set last write lsn to null to force a complete recovery
+                    W_COERCE(smlevel_0::recovery->recover_single_page(page, emlsn, true)); // we have the actual emlsn
+                    W_COERCE(page.fix_recovery_redo_managed());  // set the page to be managed again
+
+                    smlevel_0::bf->in_doubt_to_dirty(idx);  // Set use and dirty, clear the cb._dependency_lsn flag
+
                 }
-                w_assert1(true == cb._used);
-                if (0 != cb._dependency_lsn)
-                {
-                    DBGOUT3(<<"bf_tree_m::install_volume: root page is not in buffer pool, loading...");
-
-                    w_assert1(true == cb._in_doubt);
-
-                    // The last page LSN is stored in cb._dependency_lsn during Log Analysis
-                    // and cleared after the page has been restored
-                    // Use Single Page Recovery to load and recover the root page
-                    lsn_t emlsn = cb._dependency_lsn;
-                    // Load the page first, no recovery at this point
-                    preload_rc = _preload_root_page(desc, volume, store, shpid, idx);
-                    if (false == preload_rc.is_error())
-                    {
-                        // Recover the root page through Single Page Recovery
-                        // In order to use minimal logging for page rebalance operations, the root
-                        // page must be unmanaged during Single Page Recover process
-                        fixable_page_h page;
-                        W_COERCE(page.fix_recovery_redo(idx, shpid, false /* managed*/));
-                        page.get_generic_page()->pid = shpid;
-                        page.get_generic_page()->tag = t_btree_p;
-                        w_assert1(page.is_fixed());
-                        if (emlsn != page.lsn())
-                            page.set_lsns(lsn_t::null);  // set last write lsn to null to force a complete recovery
-                        W_COERCE(smlevel_0::recovery->recover_single_page(page, emlsn, true)); // we have the actual emlsn
-                        W_COERCE(page.fix_recovery_redo_managed());  // set the page to be managed again
-
-                        smlevel_0::bf->in_doubt_to_dirty(idx);  // Set use and dirty, clear the cb._dependency_lsn flag
-
-                    }
-                }
-                else
-                {
-                    // Root page already loaded and recovered, no-op
-                    w_assert1(false == cb._in_doubt);
-                    DBGOUT3(<<"bf_tree_m::install_volume: root page is already in buffer pool, skip loading");
-                }
-                // Release EX latch before exit
-                if (cb.latch().held_by_me())
-                   cb.latch().latch_release();
+            }
+            else
+            {
+                // Root page already loaded and recovered, no-op
+                w_assert1(false == cb._in_doubt);
+                DBGOUT3(<<"bf_tree_m::install_volume: root page is already in buffer pool, skip loading");
+            }
+            // Release EX latch before exit
+            if (cb.latch().held_by_me())
+                cb.latch().latch_release();
 
             // Done with recovery the root page, at this point the
             // root page is in memory and it has been REDOne, but
@@ -392,12 +389,6 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
             // data which need to be rollback.  The UNDO operation
             // will be triggered by user transaction due to lock conflict (M3)
             // or transaction drive UNDO (M4) if the restart thread reaches it first
-            }
-            else
-            {
-                // Forward log scan with traditional recovery, page already loaded
-                DBGOUT3(<<"bf_tree_m::install_volume: traditional restart, skip re-loading of root page");
-            }
 
             // Store the root page index into descriptor
             desc->_root_pages[store] = idx;
@@ -958,58 +949,19 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         force_load = true;
                         continue;
                     }
-                    else if (true == restart_m::use_concurrent_commit_restart())  // Using commit_lsn
-                    {
-                        // User transaction
-                        // Concurrent log mode (M2) is using commit_lsn for concurrency control
-                        // M2 does not support pure on-demand REDO, therefore
-                        // user transaction cannot load an in-doubt page
-
-                        w_assert1(false == restart_m::use_redo_demand_restart());
-                        w_assert1(false == restart_m::use_redo_mix_restart());
-
-                        return RC(eACCESS_CONFLICT);
-                    }
-                    else if (true == restart_m::use_concurrent_lock_restart())  // Using lock acquisition
+                    else
                     {
                         // User transaction
                         // This is the normal lock mode which is using lock for concurrency control
+                        // If either pure on-demand or mixed mode REDO, allow user transaction
+                        // to trigger in_doubt page loading
 
-                        if ((true == restart_m::use_redo_demand_restart()) ||  // pure on-demand
-                           (true == restart_m::use_redo_mix_restart()))        // midxed mode
-                        {
-                            // If either pure on-demand or mixed mode REDO, allow user transaction
-                            // to trigger in_doubt page loading
-
-                            // Set the force_load so we will load the in_doubt page and also trigger
-                            // Single Page Recovery on the page
-                            DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: force load triggered by on-demand user transaction and lock");
-                            force_load = true;
-                            continue;
-                        }
-                        else if ((false == restart_m::use_redo_demand_restart()) &&    // Not pure on-demand
-                                (false == restart_m::use_redo_mix_restart()))          // Not midxed mode
-                        {
-                            // Using lock for concurrency control but not on-demand REDO
-                            // This is a mode mainly for performance measurement purpose
-
-                            // User transaction cannot load an in_doubt page, only REDO can
-                            // load an in_doubt page
-
-                            return RC(eACCESS_CONFLICT);
-                        }
-                        else
-                        {
-                            // Unexpected mode
-                            W_FATAL_MSG(fcINTERNAL,
-                                        << "bf_tree_m::_fix_nonswizzled: unexpected recovery mode under lock concurrency control mode");
-                        }
-                    }
-                    else
-                    {
-                        // Unexpected mode
-                        W_FATAL_MSG(fcINTERNAL,
-                                    << "bf_tree_m::_fix_nonswizzled: unexpected concurrency control recovery mode");
+                        // Set the force_load so we will load the in_doubt page and also trigger
+                        // Single Page Recovery on the page
+                        DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: force load "
+                                << "triggered by on-demand user transaction and lock");
+                        force_load = true;
+                        continue;
                     }
                 }
             }
@@ -1059,25 +1011,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             //         page and also it has to traversal B-tree (visit multiple pages), so
             //         it is relying on input parameter 'from_recovery'
 
-            if ((true == from_recovery) || (true == cb._recovery_access))
-            {
-                // From Recovery, no validation
-                DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from recovery, skip check for accessability, page: " << shpid);
-            }
-            else
-            {
-                // DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page "
-                // << " from user txn, check for accessability, page: " << shpid);
-                rc = _validate_access(page);
-                if (rc.is_error())
-                {
-                    ++cb._refbit_approximate;
-                    if (cb.latch().held_by_me())
-                        cb.latch().latch_release();
-                    return rc;
-                }
-            }
-
             w_assert1(cb.latch().held_by_me());
             cb.pin();
             // CS TODO: race condition! assert succeeds, but 0 is printed below
@@ -1087,88 +1020,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             return RCOK;
         }
     }
-}
-
-w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the underlying page _pp
-{
-    // Special function to validate whether a page is safe to be accessed by
-    // concurrent user transaction while the recovery is still going on
-    // Page is already loaded in buffer pool, and the page_lsn (last write)
-    // is available.
-
-    // Validation is on only if using commit_lsn for concurrency control
-    //    Commit_lsn: raise error if falid the commit_lsn validation
-    //    Lock re-acquisition: block if lock conflict
-
-    // If lock re-acquisition is used, if user transaction is trying to load an
-    // in_doubt page, it triggers on-demand REDO, the code path should not
-    // come here.
-    // If user transaction is accessing an already loaded buffer pool page,
-    // the blocking happens during lock acquisition (which happens later),
-    // and there is no need to validate in the page level.
-
-    // If the system is doing concurrent recovery and we are still in the middle
-    // of recovery, need to validate whether a user transaction can access this page
-    if ((smlevel_0::recovery) &&                      // The restart_m object is valid
-        (smlevel_0::recovery->restart_in_progress())) // Restart is in progress, both serial and concurrent
-                                                      // if pure on_demand, then this function returns
-                                                      // false (not in restart) after Log Analysis phase
-    {
-        if (true ==  restart_m::use_concurrent_commit_restart()) // Using commit_lsn
-        {
-            // Accept a new transaction if the associated page met the following conditions:
-            // REDO phase:
-            //    1. Page is not an 'in_doubt' page - 'dirty' is okay.
-            //    2. Page_LSN < Commit_LSN (minimum Txn LSN of all loser transactions).
-            // UNDO phase:
-            //    Page_LSN < Commit_LSN (minimum Txn LSN of all loser transactions).
-
-            // With the M2 limitation, user transaction does not load in_doubt page (raise error),
-            // so we only need to validate one condition for the newly loaded page:
-            //    Page_LSN < Commit_LSN (minimum Txn LSN of all loser transactions)
-            // The last write on the page was before the minimum TXN lsn of all loser transactions
-            // Note this is an over conserve policy mainly because we do not have
-            // lock acquisition to protect loser transactions.
-
-            if (lsn_t::null == smlevel_0::commit_lsn)
-            {
-                // commit_lsn == null only if empty database or no
-                // actual work for recovery
-                // All access are allowed in this case
-            }
-            else
-            {
-                // If the page is not marked being access for recovery purpose
-                // then we need to validate the accessability
-
-                // Get the last write on the page
-                lsn_t page_lsn = page->lsn;
-                if (page_lsn >= smlevel_0::commit_lsn)
-                {
-                    // Condition not met, cannot continue
-                    DBGOUT2(<<"bf_tree_m: page access condition not met, page_lsn: "
-                            << page_lsn << ", commit_lsn:" << smlevel_0::commit_lsn);
-                    return RC(eACCESS_CONFLICT);
-                }
-                else
-                {
-                    DBGOUT2(<<"bf_tree_m: page access condition met, page_lsn: "
-                            << page_lsn << ", commit_lsn:" << smlevel_0::commit_lsn);
-                }
-            }
-        }
-        else if (true == restart_m::use_concurrent_lock_restart())
-        {
-            // Using lock for concurrency control, no need to validate page
-            // which is already loaded into buffer pool (not in_doubt)
-        }
-    }
-    else
-    {
-        // Serial recovery mode or concurrent recovery mode but recovery has completed
-        // No need to validate for page accessability
-    }
-    return RCOK;
 }
 
 bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
@@ -2610,7 +2461,8 @@ w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, StoreID store, PageID sh
 }
 
 w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
-                                   latch_mode_t mode, bool conditional, const bool from_undo) {
+                                   latch_mode_t mode, bool conditional)
+{
     w_assert1(store != 0);
 
     if (!_volume) {
@@ -2657,43 +2509,6 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
     w_assert1(_is_active_idx(idx));
     w_assert1(get_cb(idx)._used);
 
-    // Root page is pre-loaded into buffer pool when loading volume
-    // this function is called for both normal and Recovery operations
-    // In concurrent recovery mode, the root page might still be in_doubt
-    // when called, need to block user txn in such case, but allow recovery
-    // operation to go through
-
-    if (get_cb(idx)._in_doubt)
-    {
-        DBGOUT3(<<"bf_tree_m::fix_root: root page is still in_doubt");
-
-        if ((false == from_undo) && (false == get_cb(idx)._recovery_access))
-        {
-            // Page still in_doubt, caller is from concurrent transaction.
-            // if we are not using on_demand or mixed restart modes,
-            // raise error because concurrent transaction is not allowed
-            // to load in_doubt page in traditional restart mode (not on_demand)
-
-            if ((false == restart_m::use_redo_demand_restart()) &&  // pure on-demand
-                (false == restart_m::use_redo_mix_restart()))       // midxed mode
-            {
-                DBGOUT3(<<"bf_tree_m::fix_root: user transaction but not on_demand, cannot fix in_doubt root page");
-                return RC(eACCESS_CONFLICT);
-            }
-        }
-    }
-
-    if ((false == get_cb(idx)._in_doubt) &&                                 // Page not in_doubt
-        (false == from_undo) && (false == get_cb(idx)._recovery_access))    // From concurrent user transaction
-    {
-        // validate the accessability of the page (validation happens only if using commit_lsn)
-        w_rc_t rc = _validate_access(page);
-        if (rc.is_error())
-        {
-            get_cb(idx).latch().latch_release();
-            return rc;
-        }
-    }
 
 #if 0
 #ifndef SIMULATE_MAINMEMORYDB
