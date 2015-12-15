@@ -237,7 +237,7 @@ w_rc_t page_cleaner_slave::flush_workspace() {
 
     for(uint i=0; i<workspace_size; ++i) {
         generic_page& flushed = workspace[i];
-        bf_idx idx = master->bufferpool->lookup_in_doubt(flushed.pid);
+        bf_idx idx = master->bufferpool->lookup(flushed.pid);
         if(idx != 0) {
             //page is in the buffer
             bf_tree_cb_t& cb = master->bufferpool->get_cb(idx);
@@ -257,9 +257,6 @@ w_rc_t page_cleaner_slave::flush_workspace() {
                     master->bufferpool->_dirty_page_count_approximate--;
                     DBGOUT1(<<"Setting page " << flushed.pid << " clean.");
                 }
-                // CS TODO: why are in_doubt and recovery_access set here???
-                cb._in_doubt = false;
-                cb._recovery_access = false;
 
                 // cb._rec_lsn = _write_buffer[i].lsn.data();
                 cb._rec_lsn = lsn_t::null.data();

@@ -193,26 +193,6 @@ public:
      */
     bool         is_dirty()  const;
 
-    /**
-     * Mark this page being accessed for recovery purpose, so the pagee access
-     * validation will let it go through if in concurrent log mode
-     *
-     * @pre We do not hold current page's latch in Q mode
-     */
-    void         set_recovery_access() const;
-    /**
-     * Return true if this page is marked for recovery access.
-     *
-     * @pre We do not hold current page's latch in Q mode
-     */
-    bool         is_recovery_access()  const;
-    /**
-     * Clear the flag so the page is no longer being accessed for recovery purpose
-     *
-     * @pre We do not hold current page's latch in Q mode
-     */
-    void         clear_recovery_access() const;
-
     // Update both initial dirty lsn (if needed) and last write lsn on page
     void update_initial_and_last_lsn(const lsn_t & lsn) const;
 

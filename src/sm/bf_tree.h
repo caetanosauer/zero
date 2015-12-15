@@ -369,52 +369,13 @@ public:
      */
     bool is_dirty(const bf_idx idx) const;
 
+    bf_idx lookup(PageID pid) const;
+
     /**
      * Update the initial dirty lsn in the page if needed.
      */
     void update_initial_dirty_lsn(const generic_page* p,
                                    const lsn_t new_lsn);
-
-    /**
-     * Mark the page being accessed by recovery.
-     */
-    void set_recovery_access(const generic_page* p);
-    /**
-     * Returns if the page is being accessed by recovery.
-     */
-    bool is_recovery_access(const generic_page* p) const;
-    /**
-     * Clear the page being accessed by recovery.
-     */
-    void clear_recovery_access(const generic_page* p);
-
-    /**
-     * Mark the page in_doubt and used flags, the physical page is not in buffer pool
-     * also update the LSNs (track when the page was made dirty initially and last update)
-     */
-    void set_in_doubt(const bf_idx idx, lsn_t first_lsn, lsn_t last_sn);
-
-    /**
-     * Clear the page in_doubt flag, if page is no longer needed, clear the used flag and
-     * add it back to freelist, the physical page is not in buffer pool
-     */
-    void clear_in_doubt(const bf_idx idx, bool still_used, uint64_t key);
-
-    /**
-     * Change from in_doubt to dirty flag, the physical page is in buffer pool
-     */
-    void in_doubt_to_dirty(const bf_idx idx);
-
-    /**
-     * Returns true if the page is already marked in_doubt, the page is not in buffer pool
-     */
-    bool is_in_doubt(const bf_idx idx) const;
-
-    /**
-     * Returns the index of the page if page cb is in buffer pool, it is used in Recovery
-     * therefore the actual page might or might not be loaded at thi spoint
-     */
-    bf_idx lookup_in_doubt(const int64_t key) const;
 
     /**
      * Set the _rec_lsn (the LSN which made the page dirty initially) in page cb
@@ -548,27 +509,6 @@ public:
                      lsn_t last_mount_lsn);
 
     /**
-    *  Ensures the buffer pool's rec_lsn for this page is no larger than
-    *  the page lsn. If not repaired, the faulty rec_lsn can lead to
-    *  recovery errors. Invalid rec_lsn can occur when
-    *  1) there are unlogged updates to a page -- log redo, for instance, or updates to a tmp page.
-    *  2) when a clean page is fixed in EX mode but an update is never
-    *  made and the page is unfixed.  Now the rec_lsn reflects the tail
-    *  end of the log but the lsn on the page reflects something earlier.
-    *  At least in this case, we should expect the bfcb_t to say the
-    *  page isn't dirty.
-    *  3) when a st_tmp page is fixed in EX mode and an update is
-    *  made and the page is unfixed.  Now the rec_lsn reflects the tail
-    *  end of the log but the lsn on the page reflects something earlier.
-    *  In this case, the page IS dirty.
-    *
-    *  FRJ: I don't see any evidence that this function is actually
-    *  called because of (3) above...
-    *
-    */
-    void repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t &new_rlsn);
-
-    /**
      * Returns true if the node has any swizzled pointers to its children.
      * In constrast to the swizzled_ptr_cnt_hint counter, which is just a
      * a hint, this method is accurate as it scans the node * and counts
@@ -594,19 +534,6 @@ public:
         uint32_t &unswizzled_count,
         evict_urgency_t urgency = EVICT_NORMAL,
         uint32_t preferred_count = 0);
-
-    /**
-     * Used during Log Analysis in Recovery only
-     * If the page exists in the buffer pool, make sure in_doubt and used flags are on
-     * If the page does not exist in the buffer pool, find a free block in buffer pool
-     * without evict, return error if the freelist is empty.
-     * Populate the page cb but not loading the actual page
-     * Set in_doubt and used flags in cb to true, update LSNs (where the page got dirty
-     * and the last write)
-     * update the in_doubt page counter and return the index of the page
-     */
-    w_rc_t register_and_mark(bf_idx& ret, PageID page_of_interest, StoreID store,
-           lsn_t first_lsn, lsn_t last_lsn, uint32_t& in_doubt_count);
 
 
     /**

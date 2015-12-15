@@ -152,19 +152,8 @@ struct bf_tree_cb_t {
     /// replacement priority; protected by ??
     char                        _replacement_priority;      // +1 -> 31
 
-    // in_doubt flag; used in Recovery process, protected by our latch
-    // If in_doubt flag is ON (only set in Log Analysys phase', an in_doubt page
-    // is registered in the buffer pool but the page has not been loaded into the
-    // buffer pool yet.
-    // We need the long ID (volume number + store number + page number)
-    // to load the actual page, all the information are stored in cb but need to
-    // re-construct the long ID:
-    // volume number - _pid_vol (overload for in_doubt purpose)
-    // store number    - _store_num (valid for Recovery only)
-    // page number    - _pid_shpid
-    // If _in_doubt == true, do not access 'bf_tree_m::_buffer'
-    //
-    bool                        _in_doubt;      // +1 -> 32
+    // CS TODO: replacing old in-doubt flag
+    uint8_t                        _filler32;      // +1 -> 32
 
     /// if not zero, this page must be written out after this dependency page; protected by ??
     bf_idx _dependency_idx;// +4 -> 36
@@ -200,11 +189,8 @@ struct bf_tree_cb_t {
 
     fill8                       _fill56;          // +1 -> 51
 
-    // If _recovery_access == true, page is being accessed for recovery purpose
-    // this is a short duration flag which is only set when performing
-    // recovery operation on this page
-    //
-    bool                       _recovery_access;       // +1 -> 52
+    // CD TODO: replacing old recovery-access flag
+    uint8_t                       _fill52;       // +1 -> 52
 
     // page store information, used for recovery purpose
     //

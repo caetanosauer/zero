@@ -209,50 +209,6 @@ bool fixable_page_h::is_dirty() const {
     }
 }
 
-void fixable_page_h::set_recovery_access() const
-{
-    // Set a flag in cb to indicate this page is being
-    // accessed for recovery purpose
-
-    w_assert1(_pp);
-    w_assert1(_mode != LATCH_Q);
-
-    if (_bufferpool_managed)
-    {
-        smlevel_0::bf->set_recovery_access(_pp);
-    }
-}
-
-bool fixable_page_h::is_recovery_access() const
-{
-    // Is this page being accessed recovery purpose?
-
-    w_assert1(_mode != LATCH_Q);
-
-    if (_bufferpool_managed)
-    {
-        return smlevel_0::bf->is_recovery_access(_pp);
-    }
-    else
-    {
-        return false;
-    }
-}
-
-void fixable_page_h::clear_recovery_access() const
-{
-    // Set a flag in cb to indicate this page is being
-    // accessed for recovery purpose
-
-    w_assert1(_pp);
-    w_assert1(_mode != LATCH_Q);
-
-    if (_bufferpool_managed)
-    {
-        smlevel_0::bf->clear_recovery_access(_pp);
-    }
-}
-
 // CS: a function that updates a field should NOT be declared const (TODO)
 void fixable_page_h::update_initial_and_last_lsn(const lsn_t & lsn) const
 {

@@ -130,11 +130,12 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
         // If caller specify 'from_lsn', then use the last write LSN on the page as the starting point
         // of the recovery, otherwise set page lsn to NULL to force a complete recovery
 
-        if (false == from_lsn)
+        if (!from_lsn)
         {
-            // Complete recovery
+            // Complete recovery -- currently not supported (CS TODO)
             DBGOUT1(<< "Force a complete recovery");
             p.set_lsns(lsn_t::null);
+            w_assert0(false);
         }
         else
         {

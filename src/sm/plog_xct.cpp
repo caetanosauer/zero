@@ -285,7 +285,7 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
         latch_t* latch;
 
         while (true) {
-            bf_idx idx = smlevel_0::bf->lookup_in_doubt(pid);
+            bf_idx idx = smlevel_0::bf->lookup(pid);
             if (idx == 0) {
                 // page needs to be fetched
                 // Instead of repeating the logic of the fix method once again,

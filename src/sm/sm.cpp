@@ -101,11 +101,6 @@ bool         smlevel_0::shutting_down = false;
 smlevel_0::operating_mode_t
             smlevel_0::operating_mode = smlevel_0::t_not_started;
 
-lsn_t        smlevel_0::commit_lsn = lsn_t::null;
-lsn_t        smlevel_0::redo_lsn = lsn_t::null;
-lsn_t        smlevel_0::last_lsn = lsn_t::null;
-uint32_t     smlevel_0::in_doubt_count = 0;
-
 #ifdef USE_TLS_ALLOCATOR
     sm_tls_allocator smlevel_0::allocator;
 #else
@@ -498,7 +493,6 @@ void ss_m::_do_restart()
 
     lsn_t     verify_lsn = lsn_t::null;  // verify_lsn is for use_concurrent_commit_restart() only
     lsn_t     redo_lsn = lsn_t::null;    // used if log driven REDO with use_concurrent_XXX_restart()
-    lsn_t     last_lsn = lsn_t::null;    // used if page driven REDO with use_concurrent_XXX_restart()
     uint32_t  in_doubt_count = 0;        // used if log driven REDO with use_concurrent_XXX_restart()
     lsn_t     master = log->master_lsn();
 
@@ -512,16 +506,8 @@ void ss_m::_do_restart()
         // Recovery process, a checkpoint will be taken at the end of recovery
         // Make surethe current operating state is before recovery
         smlevel_0::operating_mode = t_not_started;
-        restart.restart(master, verify_lsn, redo_lsn, last_lsn, in_doubt_count);
+        restart.restart(master, verify_lsn, redo_lsn, in_doubt_count);
     }
-
-    // Store some information globally in all cases, because although M3 does not use
-    // child restart thread initially, it uses child restart thread during normal shutdown
-    // REDO from child thread will use redo_lsn, last_lsn and in_doubt_count
-    // to control the REDO phase
-    smlevel_0::redo_lsn = redo_lsn;              // Log driven REDO, starting point for forward log scan
-    smlevel_0::last_lsn = last_lsn;              // page driven REDO, last LSN in Recovery log before system crash
-    smlevel_0::in_doubt_count = in_doubt_count;
 
         // Log Analysis has completed but no REDO or UNDO yet
         // exception: M5 (ARIES) did the REDO already, but no UNDO
@@ -535,10 +521,6 @@ void ss_m::_do_restart()
 
             // Check the operating mode
             w_assert1(t_in_analysis == smlevel_0::operating_mode);
-
-            // Store commit_lsn globally, concurrent txn uses commit_lsn
-            // only if use_concurrent_commit_restart (M2)
-            smlevel_0::commit_lsn = verify_lsn;
 
             if (lsn_t::null != master)
             {

@@ -337,7 +337,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
         bf_idx idx = candidates[i];
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
         w_assert1(cb._pid_shpid >= _parent->_bufferpool->_volume->_volume->first_data_pageid());
-        w_assert1(false == cb._in_doubt);
         w_assert1(_parent->_bufferpool->_buffer->lsn.valid());
         _sort_buffer[sort_buf_used] = (((uint64_t) cb._pid_shpid) << 32) + ((uint64_t) idx);
         ++sort_buf_used;
@@ -568,9 +567,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(
                 cb._dirty = false;
                 cleaned_count++;
             }
-            // CS TODO: why are in_doubt and recovery_access set here???
-            cb._in_doubt = false;
-            cb._recovery_access = false;
             --_parent->_bufferpool->_dirty_page_count_approximate;
 
             // cb._rec_lsn = _write_buffer[i].lsn.data();
@@ -608,11 +604,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
         // If page is not dirty or not in use, no need to flush
         if (!cb._dirty || !cb._used) {
-            continue;
-        }
-
-        // If page is in_doubt (still need to be recovery by the restart process), do not flush it
-        if (cb._in_doubt && cb._used) {
             continue;
         }
 

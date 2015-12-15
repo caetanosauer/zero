@@ -551,8 +551,6 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
                 // If we get here, caller was not from page driven REDO phase but "page2" (src) has
                 // been recovered already, this is breaking WOD rule and cannot continue
 
-                w_assert1(false == p->is_recovery_access());
-
                 DBGOUT3 (<< "btree_foster_merge_log::redo: caller from page driven REDO, source(foster child) has been recovered");
                 W_FATAL_MSG(fcINTERNAL, << "btree_foster_merge_log::redo - WOD cannot be followed, abort the operation");
             }
@@ -806,7 +804,6 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             DBGOUT1 (<< "Recovering 'page'. page2.lsn=" << another.lsn());
             if (another.lsn() >= redo_lsn)
             {
-                w_assert1(false == p->is_recovery_access());
                 // If we get here, this is not a page driven REDO therefore minimal logging,
                 // but "page2" (src) has been fully recovered already, it is breaking WOD rule and cannot continue
 
@@ -904,20 +901,6 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
 
             // Get the in_doubt, dirty and dependency (starting LSN for single page recovery) information first
             w_assert1(bp.is_latched());
-            bool is_in_doubt = false;
-            lsn_t recover_lsn = lsn_t::null;
-
-            bf_idx idx = smlevel_0::bf->lookup_in_doubt(bp.pid());
-            if (0 != idx)
-            {
-                bf_tree_cb_t &cb = smlevel_0::bf->get_cb(idx);
-                is_in_doubt = cb._in_doubt;
-                recover_lsn = cb._dependency_lsn;
-            }
-            else
-            {
-                DBGOUT0(<< "btree_foster_rebalance_log::redo - page not in hash table");
-            }
 
             // Determine whether we ar recovering source or destination page first
             if (recovering_dest)
@@ -997,11 +980,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             // the original values after page rebalance redo operation
 
             w_assert1(bp.is_latched());
-            w_assert1(0 != idx);
             bp.set_dirty();
-            bf_tree_cb_t &cb = smlevel_0::bf->get_cb(idx);
-            cb._in_doubt = is_in_doubt;
-            cb._dependency_lsn = recover_lsn.data();
         }
 
         // Done with Single Page Recovery REDO

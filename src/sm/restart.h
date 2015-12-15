@@ -174,32 +174,11 @@ public:
         w_assert1(_restart_thread);
     }
 
-    // Return true if the restart operation is still on-going
-    bool restart_in_progress()
-    {
-        // CS TODO: delete
-        return true;
-    }
-
-    bool redo_in_progress()
-    {
-        // CS TODO: delete
-        return true;
-    }
-
-    bool undo_in_progress()
-    {
-        // CS TODO: delete
-        return true;
-    }
-
-
     // Top function to start the restart process
     void                 restart(
         lsn_t                   master,         // In: Starting point for log scan
         lsn_t&                  commit_lsn,     // Out: used if use_concurrent_log_restart()
         lsn_t&                  redo_lsn,       // Out: used if log driven REDO with use_concurrent_XXX_restart()
-        lsn_t&                  last_lsn,       // Out: used if page driven REDO with use_concurrent_XXX_restart()
         uint32_t&               in_doubt_count  // Out: used if log driven REDO with use_concurrent_XXX_restart()
         );
 
@@ -213,7 +192,6 @@ private:
         lsn_t&                  redo_lsn,
         lsn_t&                  undo_lsn,
         lsn_t&                  commit_lsn,
-        lsn_t&                  last_lsn,
         uint32_t&               in_doubt_count
     );
 
@@ -312,15 +290,6 @@ private:
                                                                //      mainly used for multi-page log
                                 bool &redone,                  // Out: did REDO occurred?  Validation purpose
                                 uint32_t &dirty_count);        // Out: dirty page count, validation purpose
-
-
-    // Function used for concurrent operations, open system after Log Analysis
-    // Transaction driven UNDO phase, it handles both commit_lsn and lock acquisition
-    void                 _undo_txn_pass();
-
-    // Function used for concurrent operations, open system after Log Analysis
-    // Page driven REDO phase, it handles both commit_lsn and lock acquisition
-    void                 _redo_page_pass();
 
     // Helper function to add one entry into the lock heap
     void                 _re_acquire_lock(

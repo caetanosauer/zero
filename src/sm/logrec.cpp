@@ -222,17 +222,10 @@ void logrec_t::redo(fixable_page_h* page)
     // this is for page access validation purpose to allow recovery
     // operation to by-pass the page concurrent access check
 
-    if(page)
-        page->set_recovery_access();
 
     switch (header._type)  {
 #include "redo_gen.cpp"
     }
-
-    // If we have a page, clear the recovery flag on the page after
-    // we are done with undo operation
-    if(page)
-        page->clear_recovery_access();
 
     /*
      *  Page is dirty after redo.
@@ -280,19 +273,12 @@ logrec_t::undo(fixable_page_h* page)
     // operations for system and user transactions, note that operations
     // for system transaction have REDO but no UNDO
     // The actual UNDO implementation in Btree_impl.cpp
-    if(page)
-        page->set_recovery_access();
 
     switch (header._type) {
 #include "undo_gen.cpp"
     }
 
     xct()->compensate_undo(xid_prev());
-
-    // If we have a page, clear the recovery flag on the page after
-    // we are done with undo operation
-    if(page)
-        page->clear_recovery_access();
 
     undoing_context = logrec_t::t_max_logrec;
 }
