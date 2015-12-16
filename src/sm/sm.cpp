@@ -506,7 +506,7 @@ void ss_m::_do_restart()
         // Recovery process, a checkpoint will be taken at the end of recovery
         // Make surethe current operating state is before recovery
         smlevel_0::operating_mode = t_not_started;
-        restart.restart(master, verify_lsn, redo_lsn, in_doubt_count);
+        restart.restart();
     }
 
         // Log Analysis has completed but no REDO or UNDO yet

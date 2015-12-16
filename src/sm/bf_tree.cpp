@@ -540,11 +540,6 @@ w_rc_t bf_tree_m::uninstall_volume(const bool clear_cb)
 // NOTE most of the page fix/unfix functions are in bf_tree_inline.h.
 // These functions are here are because called less frequently.
 
-w_rc_t bf_tree_m::fix_direct (generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
-    // fix_direct is for REDO operation, rollback and cursor re-fix, both root and non-root page, no parent
-    // mark it as from Recovery so we do not check access availability
-    return _fix_nonswizzled(NULL, page, shpid, mode, conditional, virgin_page, true /*from_recovery*/);
-}
 
 void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx, PageID page_updated)
 {
@@ -591,41 +586,14 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
 }
 
 w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
-                                   PageID shpid,
-                                   latch_mode_t mode, bool conditional,
-                                   bool virgin_page,
-                                   const bool from_recovery)  // True if caller is from recovery UNDO operation
+                                   PageID shpid, latch_mode_t mode,
+                                   bool conditional, bool virgin_page,
+                                   lsn_t emlsn)
 {
-    // Main function to set up a page in buffer pool before it can be used for various purposes.
-    // Page index not in hashtable: loads a page from disk into buffer pool memory, setup proper
-    //     fields in cb, register the page in hashtable, and then return page pointer to caller.
-    // Page index in hashtable: assumping page is in memory already, does some validation
-    //     and then return page pointer to caller.
-    //
-    // With concurrent Recovery, the system is opened after Log Analysis phase, and in_doubt
-    // pages will be loaded into buffer pool while concurrent transactions are coming in.
-    // It is possible a user transaction asks for a page before the REDO phase gets to
-    // load the page (M2), in such case the page index is in hashtable but the actual page has
-    // not been loaded into memory yet.
-
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
     bf_tree_vol_t *volume = _volume;
     w_assert1(volume != NULL);
-#ifdef SIMULATE_MAINMEMORYDB
-    W_DO (_fix_nonswizzled_mainmemorydb(parent, page, shpid, mode, conditional, virgin_page));
-    if (true) return RCOK;
-#endif // SIMULATE_MAINMEMORYDB
-
-    // unlike swizzled case, this is complex and inefficient.
-    // we need to carefully follow the protocol to make it safe.
-
-    // Force loading the data even if the page is in hash table already, this could happen
-    // during Recovery REDO phase, all 'in_doubt' pages are in hash table but not loaded
-    // an page REDO operation might need to access a second page (multi-page operations
-    // such as page rebalance and page merge), while the second page might still be in_doubt
-    // This flag is used for Recovery operation only
-    bool force_load = false;
 
     // note that the hashtable is separated from this bufferpool.
     // we need to make sure the returned block is still there, and retry otherwise.
@@ -651,22 +619,14 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             }
         }
 
-        if (idx == 0 || force_load)
+        if (idx == 0)
         {
             // 1. page is not registered in hash table therefore it is not an in_doubt page either
             // 2. page is registered in hash table already but force loading, meaning it is an
             //    in_doubt page and the actual page has not been loaded into buffer pool yet
 
             // STEP 1) Grab a free frame to read into
-            lsn_t page_emlsn = lsn_t::null;
-            if (force_load) {
-                // If force load, page is registered in hash table already but the
-                // actual page was not loaded
-                w_assert1(0 != idx);
-            }
-            else {
-                W_DO(_grab_free_block(idx));
-            }
+            W_DO(_grab_free_block(idx));
             w_assert1(idx != 0);
             bf_tree_cb_t &cb = get_cb(idx);
 
@@ -678,15 +638,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 // Cannot latch cb, probably a concurrent user transaction is
                 // trying to load this page, or in M4 (mixed mode) the page is
                 // being recoverd, rare but possible, try again
-                if (!force_load) {
-                    _add_free_block(idx);
-                }
+                _add_free_block(idx);
 
-                // DBG(<<"bf_tree_m: unlucky! not able to acquire cb on a force load page "
-                //         << shpid << ". Discard my own work and try again."
-                //         << " force_load = " << force_load);
-
-                force_load = false;
                 // Sleep a while to give the other process time to finish its
                 // work and then retry
                 ::usleep(ONE_MICROSEC);
@@ -699,28 +652,10 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             bool registered = _hashtable->insert_if_not_exists(shpid,
                     bf_idx_pair(idx, parent_idx));
             if (!registered) {
-                if (!force_load) {
-                    // If force_load flag is off this pid already exists in
-                    // bufferpool. this means another thread concurrently added
-                    // the page to bufferpool. unlucky, but can happen.
-                    cb.clear_except_latch();
-                    cb.latch().latch_release();
-                    _add_free_block(idx);
-                    continue;
-                }
-                else {
-                    // If the force_load flag is on and the pid is already in
-                    // hash table, this is a force load scenario In this case
-                    // an in_doubt page is loaded due to page driven
-                    // Single-Page-Recovery REDO operation or on-demand user
-                    // transaction triggered REDO operation Clear the in_doubt
-                    // flag on the page so we do not try to load this page
-                    // again
-                    DBGOUT1(<<"bf_tree_m: force_load with page in hash table "
-                            << " already, mark page dirty, page id: " << shpid);
-                    w_assert1(0 != idx);
-                    force_load = false;
-                }
+                cb.clear_except_latch();
+                cb.latch().latch_release();
+                _add_free_block(idx);
+                continue;
             }
 
             // STEP 4) Read page from disk
@@ -729,83 +664,27 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
             if (!virgin_page) {
                 INC_TSTAT(bf_fix_nonroot_miss_count);
-                w_rc_t read_rc = volume->_volume->read_page(shpid, page);
 
-                // Not checking 'past_end' (stSHORTIO), because if the page
-                // does not exist on disk (only if fix_direct from REDO
-                // operation), the page context will be zero out, and the
-                // following logic (_check_read_page) will fail in checksum and
-                // try Single-Page-Recovery immediatelly Note that for
-                // fix_direct from REDO, we do not have parent page pointer
+                if (emlsn.is_null()) {
+                    // Get emlsn from parent
+                    general_recordid_t recordid = find_page_id_slot(parent, shpid);
+                    btree_page_h parent_h;
+                    parent_h.fix_nonbufferpool_page(parent);
+                    emlsn = parent_h.get_emlsn_general(recordid);
+                    w_assert0(!emlsn.is_null());
+                }
 
+                w_rc_t read_rc = volume->_volume->read_page_verify(shpid, page, emlsn);
                 if (read_rc.is_error())
                 {
-                    DBGOUT3(<<"bf_tree_m: error while reading page "
-                            << shpid << " to frame " << idx << ". rc=" << read_rc);
-
                     _hashtable->remove(shpid);
                     cb.latch().latch_release();
-
-                    if (!force_load)
-                        _add_free_block(idx);
+                    _add_free_block(idx);
                     return read_rc;
                 }
 
-                // Loaded the page from disk successfully for each page
-                // retrieved from disk, check validity, possibly apply
-                // Single-Page-Recovery.  this is not a virgin page so if the
-                // page does not exist on disk, we need to try the backup
-                // Scenarios: 1. Normal page loading due to user transaction
-                // accessing a page not in buffer pool 2. Traditional recovery
-                // UNDO or REDO (force_load) 3. On-demand or mixed REDO
-                // triggered by user transaction (force_load)
-
-                if (force_load) {
-                    // get the last page update lsn from page cb for recovery purpose
-                    if (0 != cb._dependency_lsn)
-                    {
-                        // Copy over the last update lsn if it is valid lsn
-                        // and reset it to 0 after copied it, this is to prevent other
-                        // user transaction using this value for recovery purpose
-                        // (note the last update lsn is gone after this reset)
-                        // This is needed because the slot in buffer pool is already decided,
-                        // we cannot have multiple user transactions recoverying the same
-                        // page in buffer pool slot, it would corrupt the page context
-                        page_emlsn = cb._dependency_lsn;
-                    }
-                    else
-                    {
-                        // Someone else beat us in recoverying this page, try again
-                        _hashtable->remove(shpid);
-                        cb.latch().latch_release();
-                        force_load = false;
-                        // Sleep a while to give the other thread time to finish its work
-                        ::usleep(ONE_MICROSEC);
-                        continue;
-                    }
-                    w_assert1(lsn_t::null != page_emlsn);
-
-                    DBGOUT3(<< "Force load - caller ask for page: " << shpid);
-                }
-                else
-                {
-                    PageID root_shpid =
-                        smlevel_0::bf->get_root_page_id(cb._store_num);
-                    w_assert0(root_shpid != shpid);
-                }
-
-                w_assert1(page->lsn.hi() > 0);
-                check_rc = _check_read_page(parent, page, shpid, page_emlsn);
-                if (check_rc.is_error())
-                {
-                    // Free the block even if we did not acquire it in the
-                    // first place (force load), this is because we are
-                    // erroring out
-                    _add_free_block(idx);
-                    _hashtable->remove(shpid);
-                    cb.latch().latch_release();
-                    return check_rc;
-                }
+                PageID root_shpid = smlevel_0::bf->get_root_page_id(cb._store_num);
+                w_assert0(root_shpid != shpid);
                 w_assert1(page->lsn.hi() > 0);
             }
 
@@ -843,7 +722,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             w_assert1(cb.latch().held_by_me());
             w_assert1(cb._pin_cnt > 0);
             DBG(<< "Fixed " << idx << " pin count " << cb._pin_cnt);
-            w_assert1(!force_load);
 
             if (mode != LATCH_EX) {
                 // CS: I dont know what LATCh_Q is about
@@ -857,13 +735,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
         else
         {
             // Page index is registered in hash table
-            force_load = false;
-
-            // unlike swizzled case, we have to pin it while verifying it's
-            // still there.
             bf_tree_cb_t &cb = get_cb(idx);
-
-            PageID root_shpid = smlevel_0::bf->get_root_page_id(cb._store_num);
 
             // Page is registered in hash table and it is not an in_doubt page,
             // meaning the actual page is in buffer pool already
@@ -1673,221 +1545,6 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
     return RCOK;
 }
 
-w_rc_t bf_tree_m::_check_read_page(generic_page* parent, generic_page* page,
-                                   PageID shpid,
-                                   const lsn_t page_emlsn) // In: if != 0, it is the last page update LSN identified
-                                                           //     during Log Analysis and stored in cb,
-                                                           //     it is used to recover the page if parent page
-                                                           //     does not exist
-{
-    w_assert1(shpid != 0);
-    uint32_t checksum = page->calculate_checksum();
-
-    if (parent == NULL)
-    {
-        ERROUT(<<"bf_tree_m: page does not exist on disk and it is from REDO operation, page: " << shpid);
-        // Special scenario from Recovery and REDO with multi-page log record
-        // loading the 2nd page via fix_direct.
-        // Failure on failure case, need to recover from scratch, no parent page pointer (from fix_direct)
-        // therefore we cannot use the typical logic in this function
-        // The page has already been zero'd out
-        // Call recover_single_page() directly using emlsn if we have a valid one from cb:
-        //    page: page to recover
-        //    emlsn:  the LSN identified during Log Analysis phase
-        //    actual_emlsn: true
-        //   or
-        //    last_lsn:  the last LSN from pre-crash recovery log
-        //    actual_emlsn: false because emlsn is not the actual emlsn
-
-        // Force a complete recovery
-        page->lsn = lsn_t::null;
-        page->pid = shpid;
-        page->tag = t_btree_p;
-
-        btree_page_h p;
-        p.fix_nonbufferpool_page(page);    // Page is marked as not buffer pool managed through this call
-                                                    // This is important for minimal logging of page rebalance operation
-        w_assert0(lsn_t::null != page_emlsn);
-
-        return (smlevel_0::recovery->recover_single_page(p, page_emlsn, true /*actual_emlsn*/));
-    }
-    else if (checksum != page->checksum)
-    {
-        // Checksum didn't agree! this page image is completely
-        // corrupted and we have to recover the page from scratch.
-
-        if (parent == NULL)
-        {
-            // No parent page, caller is not a user transaction
-            if (lsn_t::null != page_emlsn)
-            {
-                DBGOUT3(<<"_check_read_page(): use emlsn gathered from Log Analysis for recovery: " << page_emlsn);
-                // We have the LSN identified during Log Analysis,
-                // try the Single Page Recovery in this case even the
-                // parent page is not available
-
-
-                // Wipe out the page so we recover from scratch
-                ::memset(page, '\0', sizeof(generic_page));
-                // Force a complete recovery
-                page->lsn = lsn_t::null;
-                page->pid = shpid;
-                page->tag = t_btree_p;
-                btree_page_h p;
-                p.fix_nonbufferpool_page(page);  // Page is marked as not buffer pool managed through this call
-                                                          // This is important for minimal logging of page rebalance operation
-                W_DO(smlevel_0::recovery->recover_single_page(p, page_emlsn, true /*actual_emlsn*/));
-            }
-            else
-            {
-                // If parent page is not available (eg, via fix_direct) and no emlsn
-                // we can't apply Single-Page-Recovery. Return error and let the caller
-                // decide what to do (e.g., re-traverse from root).
-                return RC(eNO_PARENT_SPR);
-            }
-        }
-        else
-        {
-            // Has parent page, caller is a user transaction
-            // Check the input parameter page_emlsn
-            // Valid page_emlsn: force loading a page while page_emlsn was from Log Analysis, use it to recover
-            // Invalid page_emlsn: normal page loading due to user transaction, use emlsn from parent to recover
-
-            DBGOUT3(<<"_check_read_page(): Caller is a user transaction, recovery with known parent page");
-            W_DO(_try_recover_page(parent, page, shpid, true, page_emlsn));
-        }
-    }
-
-    // Then, page ID must match.
-    // There should be no case where checksum agrees but page ID doesn't agree.
-    if (page->pid != shpid) {
-        W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
-            << shpid << " was " << page->pid);
-    }
-
-    // Page is valid, but it might be stale...
-    if (parent == NULL) {
-        // EMLSN check is possible only when parent pointer is available.
-        // In case of fix_direct, we do only checksum validation.
-        // fix_direct are used in 1) restart and 2) cursor refix.
-        // 1) is fine because we anyway recover the child page during REDO.
-        // 2) is fine because of pin_for_refix() (in other words, it never comes here).
-        return RCOK;
-    }
-
-    general_recordid_t recordid = find_page_id_slot(parent, shpid);
-    btree_page_h parent_h;
-    parent_h.fix_nonbufferpool_page(parent);
-    lsn_t p_emlsn = parent_h.get_emlsn_general(recordid);
-
-    if (lsn_t::null == p_emlsn) {
-        // CS TODO: this shouldn't really happen!
-        // EMLSN should always be available if we are supporting write elision
-        // (which we indirectly are because of the cleaner bug).
-        return RCOK;
-    }
-
-    if (p_emlsn < page->lsn)
-    {
-        // Parent's EMLSN is out of date, e.g. system died before
-        // parent was updated on child's previous eviction.
-        // We can update it here and have to do more I/O
-        // or try to catch it again on eviction and risk being unlucky.
-        // CS TODO: cannot happen!
-    }
-    else if (p_emlsn > page->lsn)
-    {
-        // Child is stale. Apply Single-Page-Recovery
-        // ERROUT(<< "Stale Child LSN found! Invoking Single-Page-Recovery.. parent=" << parent->pid
-        //     << ", child pid=" << shpid << ", EMLSN=" << p_emlsn << " LSN=" << page.lsn);
-#if W_DEBUG_LEVEL>0
-        // debug_dump(std::cerr);
-#endif // W_DEBUG_LEVEL>0
-
-        INC_TSTAT(bf_invoked_spr);
-        DBGOUT3(<<"bf_tree_m::_check_read_page: After recovery, target page emlsn < parent emlsn"
-                << ", recover again without page_emlsn (From Log Analysis)");
-        W_DO(_try_recover_page(parent, page, shpid, false /*corrupted*/, lsn_t::null));
-    }
-    // else child_emlsn == lsn. we are ok.
-
-    w_assert1(page->lsn.hi() > 0);
-    return RCOK;
-}
-
-w_rc_t bf_tree_m::_try_recover_page(generic_page* parent,     // In: parent page
-                                        generic_page* page,
-                                        PageID shpid,
-                                        bool corrupted,          // In: true if page was corrupted, need to zero out the page
-                                        const lsn_t page_emlsn)  // In: If non-null, it is the page emlsn
-                                                                 //     gathered from Log Analysis,
-{
-    if (corrupted) {
-        ::memset(page, '\0', sizeof(generic_page));
-        page->lsn = lsn_t::null;
-        page->pid = shpid;
-        page->tag = t_btree_p;
-    }
-    general_recordid_t recordid = find_page_id_slot(parent, shpid);
-    btree_page_h parent_h;
-    parent_h.fix_nonbufferpool_page(parent);
-    lsn_t emlsn = parent_h.get_emlsn_general(recordid);
-
-    if ((lsn_t::null != page_emlsn) && (page_emlsn >= emlsn))
-    {
-        // If we have a valid page_emlsn from Log Analysis phase, this is a user transaction
-        // which triggers a page REDO operation, if the page_emlsn from Log Analysis phase
-        // is available, use it to recover the page
-        // The page_emlsn might be different from the parent emlsn if page rebalance was
-        // involved during the recovery
-        w_assert1(page_emlsn >= emlsn);
-
-        DBGOUT1(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn:"
-                << emlsn << ", page_emlsn (from Log Analysis): " << page_emlsn << ", use page_emlsn for recovery");
-        emlsn = page_emlsn;
-    }
-    else if ((lsn_t::null != page_emlsn) && (lsn_t::null == emlsn))
-    {
-        DBGOUT1(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn is NULL"
-                << ", page_emlsn (from Log Analysis): " << page_emlsn << ", use parent_emlsn which is NULL");
-        //        emlsn = page_emlsn;
-    }
-    else if (lsn_t::null != emlsn)
-    {
-        DBGOUT0(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn:"
-                << emlsn << ", no page_emlsn (from Log Analysis), use parent for recovery");
-    }
-    else
-    {
-        DBGOUT0(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn is NULL"
-                << ", no page_emlsn (from Log Analysis)");
-    }
-
-    if (emlsn == lsn_t::null)
-    {
-        // Parent page does not have emlsn, and no page_emlsn from Log Analysis
-        // Nothing we can do at this point
-        DBGOUT0(<<"bf_tree_m::_try_recover_page: Parent page does not have emlsn, no recovery");
-        return RCOK; // this can happen when the page has been just created.
-    }
-
-    btree_page_h p;
-    p.fix_nonbufferpool_page(page);    // Page is marked as not buffer pool managed through this call
-                                                // This is important for minimal logging of page rebalance operation
-
-    if (lsn_t::null != page_emlsn)
-    {
-        // From Restart, use the last write lsn on the page for recovery (not complete recovery)
-        return smlevel_0::recovery->recover_single_page(p, emlsn, true);
-    }
-    else
-    {
-        // Not from Restart
-        return smlevel_0::recovery->recover_single_page(p, emlsn);
-    }
-
-}
-
 void bf_tree_m::_delete_block(bf_idx idx) {
     w_assert1(_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
@@ -1990,99 +1647,11 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
 
 w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
                                      PageID shpid, latch_mode_t mode, bool conditional,
-                                     bool virgin_page, const bool from_recovery) {
+                                     bool virgin_page, lsn_t emlsn)
+{
     INC_TSTAT(bf_fix_nonroot_count);
-#ifdef SIMULATE_MAINMEMORYDB
-    if (virgin_page) {
-        W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
-    } else {
-        w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
-        bf_idx idx = shpid;
-        w_assert1(_is_valid_idx(idx));
-        bf_tree_cb_t &cb = get_cb(idx);
-        W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
-        w_assert1 (_is_active_idx(idx));
-        page = &(_buffer[idx]);
-    }
-    if (true) return RCOK;
-#endif // SIMULATE_MAINMEMORYDB
-    w_assert1(parent !=  NULL);
-    // if (!is_swizzling_enabled()) {
-        return _fix_nonswizzled(parent, page, shpid, mode, conditional, virgin_page, from_recovery);
-    // }
-    w_assert0(false);
-
-    // the parent must be latched
-    w_assert1(latch_mode(parent) == LATCH_SH || latch_mode(parent) == LATCH_EX);
-    if((shpid & SWIZZLED_PID_BIT) == 0) {
-        // non-swizzled page. or even worse it might not exist in bufferpool yet!
-        W_DO (_fix_nonswizzled(parent, page, shpid, mode, conditional, virgin_page, from_recovery));
-        // also try to swizzle this page
-        // TODO so far we swizzle all pages as soon as we load them to bufferpool
-        // but, we might want to consider a more advanced policy.
-        fixable_page_h p;
-        p.fix_nonbufferpool_page(parent);
-        if (!_bf_pause_swizzling && is_swizzled(parent) && !is_swizzled(page)
-            //  don't swizzle foster-child
-            && *p.child_slot_address(GeneralRecordIds::FOSTER_CHILD) != shpid) {
-            general_recordid_t slot = find_page_id_slot (parent, shpid);
-            w_assert1(slot != GeneralRecordIds::FOSTER_CHILD); // because we ruled it out
-
-            // this is a new (virgin) page which has not been linked yet.
-            // skip swizzling this page
-            if (slot == GeneralRecordIds::INVALID && virgin_page) {
-                return RCOK;
-            }
-
-            // benign race: if (slot < -1 && is_swizzled(page)) then some other
-            // thread swizzled it already. This can happen when two threads that
-            // have the page latched as shared need to swizzle it
-            w_assert1(slot >= GeneralRecordIds::FOSTER_CHILD || is_swizzled(page)
-                || (slot == GeneralRecordIds::INVALID && virgin_page));
-
-#ifdef EX_LATCH_ON_SWIZZLING
-            if (latch_mode(parent) != LATCH_EX) {
-                ++_bf_swizzle_ex;
-                bool upgraded = upgrade_latch_conditional(parent);
-                if (!upgraded) {
-                    ++_bf_swizzle_ex_fails;
-                    DBGOUT2(<< "gave up swizzling for now because we failed to upgrade parent's latch");
-                    return RCOK;
-                }
-            }
-#endif //EX_LATCH_ON_SWIZZLING
-            if (!is_swizzled(page)) {
-                swizzle_child(parent, slot);
-            }
-        }
-    } else {
-        w_assert1(!virgin_page); // virgin page can't be swizzled
-        // the pointer is swizzled! we can bypass pinning
-        bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
-        w_assert1(_is_valid_idx(idx));
-        bf_tree_cb_t &cb = get_cb(idx);
-        W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
-        w_assert1 (_is_active_idx(idx));
-        w_assert1(cb._pin_cnt > 0);
-        w_assert1(cb._pid_shpid == _buffer[idx].pid);
-
-        // We limit the maximum value of the refcount by BP_MAX_REFCOUNT to avoid the scalability
-        // bottleneck caused by excessive cache coherence traffic (cacheline ping-pongs between sockets).
-        if (get_cb(idx)._refbit_approximate < BP_MAX_REFCOUNT) {
-            ++cb._refbit_approximate;
-        }
-        // also, doesn't have to unpin whether there happens an error or not. easy!
-        page = &(_buffer[idx]);
-
-#ifdef BP_MAINTAIN_PARENT_PTR
-        ++cb._counter_approximate;
-        // infrequently update LRU.
-        // if (cb._counter_approximate % SWIZZLED_LRU_UPDATE_INTERVAL == 0) {
-        //     _update_swizzled_lru(idx);
-        // }
-#endif // BP_MAINTAIN_PARENT_PTR
-    }
-    return RCOK;
+    w_assert1(parent !=  NULL || !emlsn.is_null());
+    return _fix_nonswizzled(parent, page, shpid, mode, conditional, virgin_page, emlsn);
 }
 
 w_rc_t bf_tree_m::fix_unsafely_nonroot(generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, q_ticket_t& ticket) {

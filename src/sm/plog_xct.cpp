@@ -164,7 +164,9 @@ rc_t plog_xct_t::_abort()
                 DBGOUT3 (<<"physical UNDO.. which is not quite good");
                 // tentatively use fix_direct for this
                 // eventually all physical UNDOs should go away
-                W_DO(page.fix_direct(pid, LATCH_EX));
+                // CS TODO fix_direct not supported anymore
+                w_assert0(false);
+                // W_DO(page.fix_direct(pid, LATCH_EX));
                 w_assert1(page.pid() == pid);
             }
 
@@ -296,7 +298,9 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
                 // uncommitted updates) is avoided by the page cleaner, and
                 // even if we do that later, it should be quite rare.
                 fixable_page_h fetched_page;
-                W_DO(fetched_page.fix_direct(pid, LATCH_SH, false, false));
+                // CS TODO fix_direct not supported anymore
+                w_assert0(false);
+                // W_DO(fetched_page.fix_direct(pid, LATCH_SH, false, false));
                 fetched_page.unfix();
                 continue;
             }

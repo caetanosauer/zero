@@ -40,6 +40,7 @@
 class dirty_pages_tab_t;
 
 #include "sm_base.h"
+#include "chkpt.h"
 #include "lock.h"               // Lock re-acquisition
 
 #include <map>
@@ -174,32 +175,21 @@ public:
         w_assert1(_restart_thread);
     }
 
-    // Top function to start the restart process
-    void                 restart(
-        lsn_t                   master,         // In: Starting point for log scan
-        lsn_t&                  commit_lsn,     // Out: used if use_concurrent_log_restart()
-        lsn_t&                  redo_lsn,       // Out: used if log driven REDO with use_concurrent_XXX_restart()
-        uint32_t&               in_doubt_count  // Out: used if log driven REDO with use_concurrent_XXX_restart()
-        );
+    void restart();
 
 private:
 
+    // System state object, updated by log analysis
+    chkpt_t chkpt;
+
     bool instantRestart;
 
-    // Shared by all restart modes
-    void                 log_analysis(
-        bool                    restart_with_lock,
-        lsn_t&                  redo_lsn,
-        lsn_t&                  undo_lsn,
-        lsn_t&                  commit_lsn,
-        uint32_t&               in_doubt_count
-    );
+    void log_analysis();
 
     // Function used for log scan REDO operations
     void                 redo_log_pass(
         const lsn_t              redo_lsn,       // In: Starting point for REDO forward log scan
-        const lsn_t              &highest,       // Out: for debugging
-        const uint32_t           in_doubt_count  // In: How many in_doubt pages in buffer pool
+        const lsn_t              &highest        // Out: for debugging
         );
 
     // Child thread, used only if open system after Log Analysis phase while REDO and UNDO
@@ -290,13 +280,6 @@ private:
                                                                //      mainly used for multi-page log
                                 bool &redone,                  // Out: did REDO occurred?  Validation purpose
                                 uint32_t &dirty_count);        // Out: dirty page count, validation purpose
-
-    // Helper function to add one entry into the lock heap
-    void                 _re_acquire_lock(
-                                const okvl_mode& mode,  // In: lock mode to acquire
-                                const uint32_t hash,    // In: hash value of the lock to acquire
-                                xct_t* xd);             // In: associated txn object
-
 };
 
 #endif

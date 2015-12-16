@@ -543,7 +543,9 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
     {
         // Page is buffer pool managed, so fix_direct should be safe.
         btree_page_h another;
-        W_COERCE(another.fix_direct(another_pid, LATCH_EX));
+        // CS TODO: fix_direct not currently supported
+        w_assert0(false);
+        // W_COERCE(another.fix_direct(another_pid, LATCH_EX));
         if (recovering_dest) {
             // we are recovering "page", which is foster-parent (dest).
             if (another.lsn() >= lsn_ck())
@@ -798,7 +800,9 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     {
         // If page is buffer pool managed (not from Recovery REDO), fix_direct should be safe.
         btree_page_h another;
-        W_COERCE(another.fix_direct(another_pid, LATCH_EX));
+        // CS TODO: fix_direct not currently supported
+        w_assert0(false);
+        // W_COERCE(another.fix_direct(another_pid, LATCH_EX));
         if (recovering_dest) {
             // we are recovering "page", which is foster-child (dest).
             DBGOUT1 (<< "Recovering 'page'. page2.lsn=" << another.lsn());

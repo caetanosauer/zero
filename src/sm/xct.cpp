@@ -2700,20 +2700,7 @@ xct_t::rollback(const lsn_t &save_pt)
             fixable_page_h page;
 
             // CS TODO: ALL undo should be logical
-            if (! r.is_logical())
-            {
-                // Operations such as foster adoption, load balance, etc.
-
-                DBGOUT3 (<<"physical UNDO.. which is not quite good");
-                // tentatively use fix_direct for this. eventually all physical UNDOs should go away
-                rc = page.fix_direct(pid, LATCH_EX);
-                if(rc.is_error())
-                {
-                    goto done;
-                }
-                w_assert1(page.pid() == pid);
-            }
-
+            w_assert0 (r.is_logical());
 
             r.undo(page.is_fixed() ? &page : 0);
 

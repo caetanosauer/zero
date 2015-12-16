@@ -239,13 +239,12 @@ public:
      * @param[in]  mode         latch mode.  has to be SH or EX.
      * @param[in]  conditional  whether the fix is conditional (returns immediately even if failed).
      * @param[in]  virgin_page  whether the page is a new page thus doesn't have to be read from disk.
-     * @param[in]  from_recovery true if caller is from recovery.
      *
      * To use this method, you need to include bf_tree_inline.h.
      */
     w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, PageID shpid,
                           latch_mode_t mode, bool conditional, bool virgin_page,
-                          const bool from_recovery = false);
+                          lsn_t emlsn = lsn_t::null);
 
     /**
      * Fixes a non-root page in the bufferpool given a swizzled pointer that may be stale.
@@ -265,26 +264,6 @@ public:
     w_rc_t fix_unsafely_nonroot(generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, q_ticket_t& ticket);
 
     /**
-     * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
-     * In some places, we need to fix a page without fixing the parent, e.g., recovery or re-fix in cursor.
-     * For such code, this method allows fixing without parent. However, this method can be used only when
-     * the pointer swizzling is off. The reason is as follows.
-     * If the requested page is swizzled (shpid is a swizzled pointer) and the parent page is not fixed,
-     * the page might be already evicted and placed in other slots. Hence, this method rejects a swizzled pointer.
-     * To prevent errors caused by this, consider following:
-     *  1. Disable pointer swizzling  (see bf_tree_m::is_swizzling_enabled()) while you need to call this method.
-     * This will be the choice for REDO in restart_m.
-     *  2. If you are to 're-fix' a page such as in cursor, use pin_for_refix()/refix_direct()/unpin_for_refix().
-     * @param[out] page the fixed page.
-     * @param[in] vol volume ID.
-     * @param[in] shpid ID of the page to fix. If the shpid looks like a swizzled pointer, this method returns an error eBF_DIRECTFIX_SWIZZLED_PTR (see above).
-     * @param[in] mode latch mode. has to be SH or EX.
-     * @param[in] conditional whether the fix is conditional (returns immediately even if failed).
-     * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
-     */
-    w_rc_t fix_direct (generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, bool virgin_page);
-
-    /**
      * Special function for the REDO phase in system Recovery process
      * The page has been loaded into buffer pool and in the hashtable with known idx
      * This function associates the page in buffer pool with fixable_page data structure.
@@ -294,6 +273,10 @@ public:
      * @param[in] idx idx of the page.
      */
     void associate_page(generic_page*&_pp, bf_idx idx, PageID page_updated);
+
+    /**
+     * New version of fix_direct: requires a given EMLSN
+     */
 
     /**
      * Adds an additional pin count for the given page (which must be already latched).
@@ -554,34 +537,7 @@ private:
     /** fixes a non-swizzled page. */
     w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, PageID shpid,
                                latch_mode_t mode, bool conditional, bool virgin_page,
-                               const bool from_recovery = false);
-
-    /**
-     * \brief Checks validity of the page image that has been retrieved from disk,
-     * \e trying to recover the page via Single-Page-Recovery if its has some issue.
-     * \ingroup Single-Page-Recovery
-     * @param[in,out] parent Parent page of the given page. Might be NULL.
-     * @param[in] idx Bufferpool index of the page to check and recover.
-     * @param[in] vol Volume ID
-     * @param[in] shpid Page ID
-     * @param[in] page_emlsn if != 0, it is the page last update LSN identified during Log Analysis
-     */
-    w_rc_t _check_read_page(generic_page* parent, generic_page* page,
-                                 PageID shpid, const lsn_t page_emlsn);
-
-    /**
-     * \brief Tries to recover the given page with some issue via Single-Page-Recovery.
-     * \ingroup Single-Page-Recovery
-     * @param[in,out] parent Parent page of the given page. Must not be NULL.
-     * @param[in] idx Bufferpool index of the page to check and recover.
-     * @param[in] vol Volume ID
-     * @param[in] shpid Page ID
-     * @param[in] corrupted Whether the page is corrupt (e.g., checksum
-     * did not match). Otherwise, the page is just a little stale and Single-Page-Recovery is more efficient.
-     * @param[in] page_emlsn If not NULL, it is the last LSN gathered during Log Analysis
-     */
-    w_rc_t _try_recover_page(generic_page* parent, generic_page* page,
-                             PageID shpid, bool corrupted, const lsn_t page_emlsn);
+                               lsn_t emlsn);
 
     /** used by fix_root and fix_virgin_root. */
     w_rc_t _latch_root_page(generic_page*& page, bf_idx idx, latch_mode_t mode, bool conditional);

@@ -56,7 +56,14 @@ public:
         return write_many_pages(page, buf, 1);
     }
 
-    rc_t                read_page(PageID page, generic_page* const buf);
+    rc_t read_page(PageID page, generic_page* const buf);
+
+    /**
+     * Read page and verify if it is either corrupted or out-of-date according
+     * to the given EMLSN (expected minimum LSN). If that's the case, invoke
+     * single-page recovery to restore page to its most recent state.
+     */
+    rc_t read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn);
 
     rc_t                read_many_pages(
         PageID             first_page,

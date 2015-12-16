@@ -83,7 +83,6 @@ public:
      *                         failed).
      * @param[in] virgin_page  whether the page is a new page and thus doesn't have to be
      *                         read from disk.
-     * @param[in] from_recovery true if caller is from recovery
      *
      * If parent.latch_mode() or mode is LATCH_Q, can return eLATCHQFAIL,
      * ePARENTLATCHQFAIL, or eNEEDREALLATCH.  The later occurs only when virgin_page is
@@ -91,27 +90,7 @@ public:
      */
     w_rc_t fix_nonroot(const fixable_page_h &parent,
                        PageID pid, latch_mode_t mode, bool conditional=false,
-                       bool virgin_page=false, const bool from_recovery = false);
-
-    /**
-     * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.  In
-     * some places, we need to fix a page without fixing the parent, e.g., recovery or
-     * re-fix in cursor.  For such code, this method allows fixing without
-     * parent.  However, this method can be used only when pointer swizzling is off.
-     * @see bf_tree_m::fix_direct()
-     *
-     * @param[in] vol          volume ID.
-     * @param[in] shpid        ID of the page to fix.  If the shpid looks like
-     *                         a swizzled pointer, this method returns an error (see above).
-     * @param[in] mode         latch mode.  has to be SH or EX.
-     * @param[in] conditional  whether the fix is conditional (returns
-     *                         immediately even if failed).
-     * @param[in] virgin_page  whether the page is a new page thus
-     *                         doesn't have to be read from disk.
-     */
-    w_rc_t fix_direct(PageID pid, latch_mode_t mode,
-                      bool conditional=false, bool virgin_page=false);
-
+                       bool virgin_page=false);
 
     /**
      * Only used in the REDO phase of Recovery process

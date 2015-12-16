@@ -243,7 +243,7 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
         // Will load the page if page is not in buffer pool already
         W_DO(next->fix_nonroot(*current, pid_to_follow_opaqueptr,
                                should_try_ex ? LATCH_EX : LATCH_SH, false /*conditional*/,
-                               false /*virgin_page*/, from_undo /*from_recovery*/));
+                               false /*virgin_page*/));
 
         if (slot_to_follow != t_follow_foster && next->get_foster() != 0) {
             // We followed a real-child pointer and found that it has foster... let's adopt it! (but
@@ -365,7 +365,7 @@ rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current,
         }
         btree_page_h next;
         W_DO(next.fix_nonroot(current, next_pid, LATCH_EX, false /*conditional*/,
-                               false /*virgin_page*/, from_recovery /*from_recovery*/));
+                               false /*virgin_page*/));
 
         // okay, now we got EX latch, but..
         if (!is_ex_recommended(next_pid)) {

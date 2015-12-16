@@ -27,8 +27,8 @@ void fixable_page_h::unfix() {
 
 w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent,
                                    PageID shpid, latch_mode_t mode,
-                                   bool conditional, bool virgin_page,
-                                   const bool from_recovery) {
+                                   bool conditional, bool virgin_page)
+{
     w_assert1(parent.is_fixed());
     w_assert1(shpid != 0);
     w_assert1(mode != LATCH_NL);
@@ -55,26 +55,12 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent,
             }
         }
     } else {
-        W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, shpid, mode, conditional, virgin_page, from_recovery));
+        W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, shpid, mode, conditional, virgin_page));
         w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     }
     _bufferpool_managed = true;
     _mode               = mode;
 
-    return RCOK;
-}
-
-w_rc_t fixable_page_h::fix_direct(PageID shpid,
-                                  latch_mode_t mode, bool conditional,
-                                  bool virgin_page) {
-    w_assert1(shpid != 0);
-    w_assert1(mode >= LATCH_SH);
-
-    unfix();
-    W_DO(smlevel_0::bf->fix_direct(_pp, shpid, mode, conditional, virgin_page));
-    _bufferpool_managed = true;
-    _mode               = mode;
-    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     return RCOK;
 }
 

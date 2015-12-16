@@ -156,6 +156,9 @@ btree_m::_get_du_statistics_recurse(
     btree_int_stats_t       &int_stats,
     bool                 audit)
 {
+    // CS TODO: currently not supported due to removal of fix_direct
+    return RC(fcNOTIMPLEMENTED);
+
     btree_page_h next_page;
     btree_page_h current;
     PageID nextpid = currentpid;
@@ -164,7 +167,7 @@ btree_m::_get_du_statistics_recurse(
     while (nextpid != 0) {
         PageID original_pid = smlevel_0::bf->debug_get_original_pageid(nextpid);
         btree_page_h page;
-        W_DO( next_page.fix_direct(original_pid, LATCH_SH));
+        // W_DO( next_page.fix_direct(original_pid, LATCH_SH));
         current = next_page;// at this point (after latching next) we don't need to keep the "previous" fixed.
 
         if (current.level() > 1)  {
@@ -236,10 +239,13 @@ btree_m::print(const PageID& current,
     bool print_elem
 )
 {
+    // CS TODO: currently not supported due to removal of fix_direct
+    W_FATAL(fcNOTIMPLEMENTED);
+
     {
         PageID original_pid = smlevel_0::bf->debug_get_original_pageid(current);
         btree_page_h page;
-        W_COERCE( page.fix_direct(original_pid, LATCH_SH));// coerce ok-- debugging
+        // W_COERCE( page.fix_direct(original_pid, LATCH_SH));// coerce ok-- debugging
 
         for (int i = 0; i < 5 - page.level(); i++) {
             cout << '\t';

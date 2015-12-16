@@ -379,7 +379,7 @@ rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent,
             }
             btree_page_h child;
             rc_t rc = child.fix_nonroot(parent, shpid_opaqueptr, LATCH_EX, true /*conditional*/,
-                                        false /*virgin_page*/, from_recovery);
+                                        false /*virgin_page*/);
             // if we can't instantly get latch, just skip it. we can defer it arbitrary
             if (rc.is_error()) {
                 continue;
@@ -395,7 +395,7 @@ rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent,
         }
         btree_page_h foster_p;
         W_DO(foster_p.fix_nonroot(parent, parent.get_foster_opaqueptr(), LATCH_EX,
-                                  false /*conditional*/, false /*virgin_page*/, from_recovery));// latch coupling
+                                  false /*conditional*/, false /*virgin_page*/));// latch coupling
         parent.unfix();
         parent = foster_p;
     }

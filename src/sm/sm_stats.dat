@@ -328,6 +328,10 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long bf_fix_nonroot_swizzled_count Fix a non-root page, which is already swizzled
     u_long bf_fix_nonroot_miss_count  Cache miss when fixing a non-root page
 
+    // Restart stats
+    u_long restart_log_analysis_time    Time spend with log analysis (usec)
+    u_long restart_redo_time            Time spend with non-concurrent REDO (usec)
+
     // Restore stats
     u_long restore_sched_seq        Restore scheduled a page in single-pass restore
     u_long restore_sched_queued     Restore scheduled a page which was queued (on-demand)

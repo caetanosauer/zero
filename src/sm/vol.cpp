@@ -25,6 +25,7 @@
 #include "restore.h"
 #include "logarchiver.h"
 #include "eventlog.h"
+#include "restart.h"
 
 #include "sm.h"
 
@@ -519,6 +520,37 @@ bool vol_t::set_fake_disk_latency(const int adelay)
 rc_t vol_t::read_page(PageID pnum, generic_page* const buf)
 {
     return read_many_pages(pnum, buf, 1);
+}
+
+rc_t vol_t::read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn)
+{
+    w_assert0(!emlsn.is_null());
+    W_DO(read_many_pages(pnum, buf, 1));
+
+    uint32_t checksum = buf->calculate_checksum();
+
+    if (checksum != buf->checksum) {
+        // Corrupted page
+        ::memset(buf, '\0', sizeof(generic_page));
+        buf->lsn = lsn_t::null;
+        buf->pid = pnum;
+        buf->tag = t_btree_p;
+
+        btree_page_h p;
+        p.fix_nonbufferpool_page(buf);
+        W_DO(smlevel_0::recovery->recover_single_page(p, emlsn, false));
+    }
+    else if (buf->lsn < emlsn) {
+        // Page is out-of-date; invoke SPR
+        btree_page_h p;
+        p.fix_nonbufferpool_page(buf);
+        W_DO(smlevel_0::recovery->recover_single_page(p, emlsn, true));
+    }
+
+    if (buf->pid != pnum) {
+        W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
+            << pnum << " was " << buf->pid);
+    }
 }
 
 /*********************************************************************
