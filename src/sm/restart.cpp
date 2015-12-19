@@ -78,7 +78,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 restart_m::restart_m(const sm_options& options)
 {
     _restart_thread = NULL;
-    instantRestart = options.get_bool_option("sm_restart_instant", true);
 }
 
 restart_m::~restart_m()
@@ -126,42 +125,10 @@ restart_m::~restart_m()
 
     // Okay to destroy the restart_m now
 }
-/*********************************************************************
- *
- *  restart_m::restart(master, commit_lsn, redo_lsn, last_lsn, in_doubt_count)
- *
- *  Start the restart process. Master is the master lsn (lsn of
- *  the last successful checkpoint record).
- *
- * Restart invokes Log Analysis, REDO and UNDO if system is not opened during
- * the entire recovery process.
- * Restart invokes Log Analysis only if system is opened after Log Analysis.
- *
- *********************************************************************/
-void
-restart_m::restart()
-{
-    stopwatch_t timer;
-
-    log_analysis();
-
-    ADD_TSTAT(restart_log_analysis_time, timer.time_us());
-
-    if (!instantRestart)
-    {
-        // Perform log-based REDO without opening system (ARIES mode)
-        lsn_t curr_lsn = smlevel_0::log->curr_lsn();
-        redo_log_pass(chkpt.get_min_rec_lsn(), curr_lsn);
-        ADD_TSTAT(restart_redo_time, timer.time_us());
-    }
-
-    // System can now be opened up for new transactions.
-    // REDO and UNDO will be executed concurrently
-}
 
 void restart_m::log_analysis()
 {
-    smlevel_0::operating_mode = smlevel_0::t_in_analysis;
+    stopwatch_t timer;
 
     chkpt.scan_log();
 
@@ -184,7 +151,7 @@ void restart_m::log_analysis()
 
         //Re-acquire locks
         for(vector<lock_info_t>::const_iterator jt = it->second.locks.begin();
-                jt != it->second.locks.end(); ++it)
+                jt != it->second.locks.end(); ++jt)
         {
             W_COERCE(btree_impl::_ux_lock_key(jt->lock_hash, jt->lock_mode,
                         false /*check_only*/, xd));
@@ -194,6 +161,13 @@ void restart_m::log_analysis()
     //Re-add backups
     // CS TODO only works for one backup
     smlevel_0::vol->sx_add_backup(chkpt.bkp_path, true);
+
+    ADD_TSTAT(restart_log_analysis_time, timer.time_us());
+
+    ERROUT(<< "Log analysis found "
+            << chkpt.buf_tab.size() << " dirty pages and "
+            << chkpt.xct_tab.size() << " active transactions");
+    chkpt.dump(cerr);
 }
 
 /*********************************************************************
@@ -207,11 +181,13 @@ void restart_m::log_analysis()
  *
  *********************************************************************/
 void
-restart_m::redo_log_pass(
-    const lsn_t redo_lsn,
-    const lsn_t& end_logscan_lsn
-)
+restart_m::redo_log_pass()
 {
+    stopwatch_t timer;
+    // Perform log-based REDO without opening system (ARIES mode)
+    lsn_t end_logscan_lsn = smlevel_0::log->curr_lsn();
+    lsn_t redo_lsn = chkpt.get_min_rec_lsn();
+
     // How many pages have been changed from in_doubt to dirty?
     uint32_t dirty_count = 0;
 
@@ -285,7 +261,16 @@ restart_m::redo_log_pass(
 
             // pid in log record is populated when a log record is filled
             // null_pid is checking the page numer (PageID) recorded in the log record
-            if (r.null_pid())
+            /*
+             * CS TODO: in the new extent-based allocation mechanism, 0 is a
+             * valid page ID, whereas before it was considered an indication
+             * of a log record that does not affect any page. Workaround in
+             * the if clause below, which tests if log record is "page-less",
+             * by checking if page id is 0 AND if it's not an operation that
+             * would apply to the alloc_page, which can have pid 0.
+             */
+            if (r.pid() == 0 && r.type() != logrec_t::t_alloc_page &&
+                    r.type() != logrec_t::t_dealloc_page)
             {
                 // Cannot be compensate log record
                 w_assert1(!r.is_cpsn());
@@ -321,22 +306,9 @@ restart_m::redo_log_pass(
                                     << "REDO phase, no page transaction not in 'active' state - invalid");
                         }
                     }
-                    else
-                    {
-                        // Transaction is not in the transaction table, it ended already, no-op
-                    }
                 }
                 else
                 {
-                    // Redo mounts and dismounts, at the start of redo,
-                    // all the volumes which were mounted at the redo lsn
-                    // should be mounted.
-                    // need to do this to take care of the case of creating
-                    // a volume which mounts the volume under a temporary
-                    // volume id in order to create stores and initialize the
-                    // volume.  this temporary volume id can be reused,
-                    // which is why this must be done.
-
                     if (!r.is_single_sys_xct())
                     {
                         // Regular transaction without a valid txn id
@@ -346,36 +318,12 @@ restart_m::redo_log_pass(
                                 r.type() == logrec_t::t_chkpt_backup_tab ||
                                 r.type() == logrec_t::t_add_backup);
 
-                        //r.redo(0);
-                        // CS TODO
-                        // log->SetLastMountLSN(lsn);
-
-                        // No page involved, no need to update dirty_count
-                        //redone = true;
+                        r.redo(0);
                     }
                     else
                     {
-                        // single-log-sys-xct doesn't have tid (because it's not needed!).
-
-                        // Log Analysis phase took care of buffer pool information for system
-                        // transaction.
-                        // For system transaction without buffer pool impact, we need to redo
-                        // them here.
-                        // System transaction should have page number also, the logic here is
-                        // on the defensive side in case we have system transactions which
-                        // does not affect buffer pool.
-
-                        // Note we cannot look up system transaction in transaction table because
-                        // it does not have txn id.
-
-                        // If the system transaction is not for page allocation/deallocation,
-                        // creates a new ssx and runs it.
-                        // Page allocation - taken care of as part of page format
-                        // Page deallocation - no need from a recovery
-                        if (r.type() != logrec_t::t_alloc_page
-                                && r.type() != logrec_t::t_dealloc_page
-                                // CS TODO -- restore not supported yet
-                                && r.type() != logrec_t::t_restore_begin
+                        if ( // CS TODO -- restore not supported yet
+                                r.type() != logrec_t::t_restore_begin
                                 && r.type() != logrec_t::t_restore_segment
                                 && r.type() != logrec_t::t_restore_end
                            )
@@ -384,8 +332,6 @@ restart_m::redo_log_pass(
                             sys_xct_section_t sxs (true); // single log!
                             w_assert1(!sxs.check_error_on_start().is_error());
                             r.redo(0);
-                            // CS TODO
-                            // log->SetLastMountLSN(lsn);
                             redone = true;
                             rc_t sxs_rc = sxs.end_sys_xct (RCOK);
                             w_assert1(!sxs_rc.is_error());
@@ -442,6 +388,8 @@ restart_m::redo_log_pass(
                 << (redone ? " redone" : " skipped") );
 
     }
+
+    ADD_TSTAT(restart_redo_time, timer.time_us());
 }
 
 /*********************************************************************
@@ -520,6 +468,7 @@ void restart_m::_redo_log_with_pid(
             return;
         }
 
+        // CS TODO: pages will not be marked dirty on the buffer anymore!
         if (smlevel_0::bf->is_dirty(idx))
         {
             fixable_page_h page;
@@ -645,14 +594,10 @@ void restart_m::_redo_log_with_pid(
 
             if (corrupted_page)
             {
-                // Corrupted page, use Single-Page-Recovery to recovery the page before retrieving
-                // the last write lsn from page context
-                // use the log record lsn for Single-Page-Recovery, which is the the actual emlsn
-
                 // CS: since this method is static, we refer to restart_m indirectly
                 // For corrupted page, set the last write to force a complete recovery
                 page.get_generic_page()->lsn = lsn_t::null;
-                W_COERCE(smlevel_0::recovery->recover_single_page(page, lsn, true));
+                W_COERCE(smlevel_0::recovery->recover_single_page(page, lsn));
             }
 
             /// page.lsn() is the last write to this page
@@ -1046,7 +991,7 @@ void restart_thread_t::run()
 
     // REDO, call back to restart_m to carry out the concurrent REDO
     working = true;
-    smlevel_0::recovery->redo_concurrent_pass();
+    // smlevel_0::recovery->redo_concurrent_pass();
 
     gettimeofday(&tm_after, NULL);
     DBGOUT1(<< "**** Restart child thread REDO, elapsed time (milliseconds): "

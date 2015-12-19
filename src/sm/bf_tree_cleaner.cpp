@@ -6,7 +6,6 @@
 #include <sys/time.h>
 #include "sm_base.h"
 #include "bf_tree_cb.h"
-#include "bf_tree_vol.h"
 #include "bf_tree.h"
 #include "w_autodel.h"
 #include "generic_page.h"
@@ -107,11 +106,6 @@ const uint32_t FORCE_SLEEP_MS_MAX = 1000;
 
 w_rc_t bf_tree_cleaner::force_volume()
 {
-    if (_bufferpool->_volume == NULL) {
-        DBGOUT2(<< "volume is not mounted");
-        return RCOK;
-    }
-
     // CS TODO: force pages of stnode and alloc caches
 
     while (true) {
@@ -336,7 +330,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     for (size_t i = 0; i < candidates.size(); ++i) {
         bf_idx idx = candidates[i];
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
-        w_assert1(cb._pid_shpid >= _parent->_bufferpool->_volume->_volume->first_data_pageid());
+        w_assert1(cb._pid_shpid >= smlevel_0::vol->first_data_pageid());
         w_assert1(_parent->_bufferpool->_buffer->lsn.valid());
         _sort_buffer[sort_buf_used] = (((uint64_t) cb._pid_shpid) << 32) + ((uint64_t) idx);
         ++sort_buf_used;
@@ -443,8 +437,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 // this operation requires a xct for logging. we create a ssx for this reason.
                 sys_xct_section_t sxs(true); // ssx to call free_page
                 W_DO (sxs.check_error_on_start());
-                W_DO (_parent->_bufferpool->_volume->_volume
-                        ->deallocate_page(page_buffer[idx].pid));
+                W_DO (smlevel_0::vol->deallocate_page(page_buffer[idx].pid));
                 W_DO (sxs.end_sys_xct (RCOK));
                 // drop the page from bufferpool too
                 _parent->_bufferpool->_delete_block(idx);
@@ -545,7 +538,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(
     //     W_COERCE( smlevel_0::log->flush(lsn_t(max_page_lsn)) );
     // }
 
-    W_COERCE(_parent->_bufferpool->_volume->_volume->write_many_pages(
+    W_COERCE(smlevel_0::vol->write_many_pages(
                 _write_buffer[from].pid, _write_buffer + from,
                 consecutive));
 

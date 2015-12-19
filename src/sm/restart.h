@@ -175,7 +175,10 @@ public:
         w_assert1(_restart_thread);
     }
 
-    void restart();
+    void log_analysis();
+    void redo_log_pass();
+
+    chkpt_t* get_chkpt() { return &chkpt; }
 
 private:
 
@@ -183,14 +186,6 @@ private:
     chkpt_t chkpt;
 
     bool instantRestart;
-
-    void log_analysis();
-
-    // Function used for log scan REDO operations
-    void                 redo_log_pass(
-        const lsn_t              redo_lsn,       // In: Starting point for REDO forward log scan
-        const lsn_t              &highest        // Out: for debugging
-        );
 
     // Child thread, used only if open system after Log Analysis phase while REDO and UNDO
     // will be performed with concurrent user transactions
@@ -207,7 +202,6 @@ private:
      */
 
     // CS: These functions were moved from log_core
-private:
     /**
     * \brief Collect relevant logs to recover the given page.
     * \ingroup Single-Page-Recovery
@@ -266,8 +260,7 @@ public:
     *            the starting point for recovery, do not rely on backup file only.
     * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)
     */
-    static rc_t recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
-                                     const bool from_lsn = false);
+    static rc_t recover_single_page(fixable_page_h &p, const lsn_t& emlsn);
 
 private:
     // Function used for serialized operations, open system after the entire restart process finished

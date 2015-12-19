@@ -18,7 +18,6 @@
 class sm_options;
 class lsn_t;
 struct bf_tree_cb_t; // include bf_tree_cb.h in implementation codes
-struct bf_tree_vol_t; // include bf_tree_vol.h in implementation codes
 
 class test_bf_tree;
 class test_bf_fixed;
@@ -299,25 +298,12 @@ public:
     w_rc_t refix_direct (generic_page*& page, bf_idx idx, latch_mode_t mode, bool conditional);
 
     /**
-     * Fixes a new (virgin) root page for a new store with the specified page ID.
-     * Implicitly, the latch will be EX and non-conditional.
-     * To use this method, you need to include bf_tree_inline.h.
-     */
-    w_rc_t fix_virgin_root (generic_page*& page, StoreID store, PageID shpid);
-
-    /**
      * Fixes an existing (not virgin) root page for the given store.
      * This method doesn't receive page ID because it's already known by bufferpool.
      * To use this method, you need to include bf_tree_inline.h.
      */
     w_rc_t fix_root (generic_page*& page, StoreID store, latch_mode_t mode,
-                     bool conditional);
-
-    /**
-     * Fixes an existing (not virgin) root page for the given store in Q mode.
-     * To use this method, you need to include bf_tree_inline.h.
-     */
-    w_rc_t fix_with_Q_root(generic_page*& page, StoreID store, q_ticket_t& ticket);
+                     bool conditional, bool virgin);
 
 
     /** returns the current latch mode of the page. */
@@ -381,19 +367,6 @@ public:
      * and give up the logging optimization if rejected.
      */
     bool register_write_order_dependency(const generic_page* page, const generic_page* dependency);
-
-    /**
-     * Creates a volume descriptor for the given volume and install it
-     * to this bufferpool. Called when a volume is mounted.
-     * Because mounting a volume is protected by mutexes, this method is indirectly protected too.
-     */
-    w_rc_t install_volume (vol_t* volume);
-    /**
-     * Removes the volume descriptor for the given volume.
-     * Called when a volume is unmounted.
-     * Like install_volume(), this method is indirectly protected too.
-     */
-    w_rc_t uninstall_volume (const bool clear_cb = true);
 
     /**
      * Whenever the parent of a page is changed (adoption or de-adoption),
@@ -531,16 +504,10 @@ public:
 
 private:
 
-    /** called when a volume is mounted. */
-    w_rc_t _preload_root_page (bf_tree_vol_t* desc, vol_t* volume, StoreID store, PageID shpid, bf_idx idx);
-
     /** fixes a non-swizzled page. */
     w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, PageID shpid,
                                latch_mode_t mode, bool conditional, bool virgin_page,
-                               lsn_t emlsn);
-
-    /** used by fix_root and fix_virgin_root. */
-    w_rc_t _latch_root_page(generic_page*& page, bf_idx idx, latch_mode_t mode, bool conditional);
+                               lsn_t emlsn = lsn_t::null);
 
     /**
      * Given an image of page which might have swizzled pointers,
@@ -630,11 +597,6 @@ private:
 
     void   _swizzle_child_pointer(generic_page* parent, PageID* pointer_addr);
 
-    // these are used only in the mainmemory-db experiment
-    w_rc_t _install_volume_mainmemorydb(vol_t* volume);
-    w_rc_t _fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, bool virgin_page);
-
-
     /**
      * \brief System transaction for upadting child EMLSN in parent
      * \ingroup Single-Page-Recovery
@@ -653,7 +615,8 @@ private:
     /** count of blocks (pages) in this bufferpool. */
     bf_idx               _block_cnt;
 
-    bf_tree_vol_t*       _volume;
+    // CS TODO: concurrency???
+    bf_idx _root_pages[stnode_page::max];
 
     /** Array of control blocks. array size is _block_cnt. index 0 is never used (means NULL). */
     bf_tree_cb_t*        _control_blocks;

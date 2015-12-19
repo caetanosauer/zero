@@ -741,15 +741,17 @@ alloc_page_log::alloc_page_log(PageID pid)
     fill((PageID) 0, sizeof(PageID));
 }
 
-void alloc_page_log::redo(fixable_page_h*)
+void alloc_page_log::redo(fixable_page_h* p)
 {
-    PageID shpid = *((PageID*) data_ssx());
+    PageID pid = *((PageID*) data_ssx());
 
-    // CS TODO: update page state
+    alloc_page* apage = (alloc_page*) p->get_generic_page();
+    uint32_t index = pid % alloc_page::bits_held;
+    apage->set_bit(index);
 
-    vol_t* volume = smlevel_0::vol;
-    w_assert0(volume);
-    volume->alloc_a_page(shpid, true);
+    // vol_t* volume = smlevel_0::vol;
+    // w_assert0(volume);
+    // volume->alloc_a_page(pid, true);
 }
 
 dealloc_page_log::dealloc_page_log(PageID pid)
@@ -758,15 +760,17 @@ dealloc_page_log::dealloc_page_log(PageID pid)
     fill((PageID) 0, sizeof(PageID));
 }
 
-void dealloc_page_log::redo(fixable_page_h*)
+void dealloc_page_log::redo(fixable_page_h* p)
 {
-    PageID shpid = *((PageID*) data_ssx());
+    PageID pid = *((PageID*) data_ssx());
 
-    // CS TODO: update page state
+    alloc_page* apage = (alloc_page*) p->get_generic_page();
+    uint32_t index = pid % alloc_page::bits_held;
+    apage->unset_bit(index);
 
-    vol_t* volume = smlevel_0::vol;
-    w_assert0(volume);
-    volume->deallocate_page(shpid, true);
+    // vol_t* volume = smlevel_0::vol;
+    // w_assert0(volume);
+    // volume->deallocate_page(pid, true);
 }
 
 page_img_format_t::page_img_format_t (const btree_page_h& page)
@@ -835,7 +839,7 @@ operator<<(ostream& o, const logrec_t& l)
         o << "TID=SSX" << ' ';
     }
     o << l.type_str() << ":" << l.cat_str() << ":" << rb;
-    o << "  " << l.pid();
+    o << "  p(" << l.pid() << ")";
     if (l.is_multi_page()) {
         o << " src-" << l.pid2();
     }
@@ -851,24 +855,33 @@ operator<<(ostream& o, const logrec_t& l)
             {
                 chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) l.data();
                 o << " dirty_page_count: " << dp->count;
+                break;
             }
         case t_comment :
-                {
-                    o << (const char *)l._data;
-                }
+            {
+                o << (const char *)l._data;
                 break;
+            }
         case t_page_evict:
-                {
-                    page_evict_t* pev = (page_evict_t*) l._data;
-                    o << " slot: " << pev->_child_slot << " emlsn: "
-                        << pev->_child_lsn;
-                    break;
-                }
+            {
+                page_evict_t* pev = (page_evict_t*) l._data;
+                o << " slot: " << pev->_child_slot << " emlsn: "
+                    << pev->_child_lsn;
+                break;
+            }
         case t_alloc_page:
         case t_dealloc_page:
-                {
-                    o << " page: " << *((PageID*) (l.data_ssx()));
-                }
+            {
+                o << " page: " << *((PageID*) (l.data_ssx()));
+                break;
+            }
+        case t_create_store:
+            {
+                o << " stid: " <<  *((StoreID*) l.data_ssx());
+                o << " root_pid: " << *((PageID*) (l.data_ssx() + sizeof(StoreID)));
+                break;
+            }
+
 
         default: /* nothing */
                 break;
@@ -928,12 +941,18 @@ void create_store_log::redo(fixable_page_h* page)
     StoreID snum = *((StoreID*) data_ssx());
     PageID root_pid = *((PageID*) (data_ssx() + sizeof(StoreID)));
 
-    // CS TODO: update page contents
+    stnode_page* stpage = (stnode_page*) page->get_generic_page();
+    if (stpage->pid != stnode_page::stpid) {
+        stpage->pid = stnode_page::stpid;
+    }
+    stpage->set_root(snum, root_pid);
+    stpage->update_last_extent(snum, 0);
 
-    vol_t* volume = smlevel_0::vol;
-    w_assert0(volume);
-    W_COERCE(volume->get_stnode_cache()->sx_create_store(
-                root_pid, snum, true));
+    // CS: if logrec refers to a page, it should only update page contents
+//     vol_t* volume = smlevel_0::vol;
+//     w_assert0(volume);
+//     W_COERCE(volume->get_stnode_cache()->sx_create_store(
+//                 root_pid, snum, true));
 }
 
 append_extent_log::append_extent_log(StoreID snum,
@@ -950,12 +969,13 @@ void append_extent_log::redo(fixable_page_h* page)
     StoreID snum = *((StoreID*) data_ssx());
     extent_id_t ext = *((extent_id_t*) (data_ssx() + sizeof(StoreID)));
 
-    // CS TODO: update alloc_page contents
+    stnode_page* stpage = (stnode_page*) page->get_generic_page();
+    stpage->update_last_extent(snum, ext);
 
-    vol_t* volume = smlevel_0::vol;
-    w_assert0(volume);
-    W_COERCE(volume->get_stnode_cache()->sx_append_extent(
-                snum, ext, true));
+    // vol_t* volume = smlevel_0::vol;
+    // w_assert0(volume);
+    // W_COERCE(volume->get_stnode_cache()->sx_append_extent(
+    //             snum, ext, true));
 }
 
 #if LOGREC_ACCOUNTING

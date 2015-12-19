@@ -32,22 +32,41 @@
 // Needed to get LSN of restore_begin log record
 #include "logdef_gen.cpp"
 
-vol_t::vol_t(const sm_options& options)
+vol_t::vol_t(const sm_options& options, buf_tab_t* dirty_pages)
              : _unix_fd(-1),
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
                _alloc_cache(NULL), _stnode_cache(NULL),
                _failed(false), _readonly(false),
-               _restore_mgr(NULL), _backup_fd(-1),
+               _restore_mgr(NULL), _dirty_pages(dirty_pages), _backup_fd(-1),
                _current_backup_lsn(lsn_t::null), _backup_write_fd(-1)
 {
     string dbfile = options.get_string_option("sm_dbfile", "db");
     bool truncate = options.get_bool_option("sm_truncate", false);
-    W_COERCE(mount(dbfile.c_str(), truncate));
+
+    spinlock_write_critical_section cs(&_mutex);
+
+    w_rc_t rc;
+    int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC
+        | smthread_t::OPEN_DIRECT | smthread_t::OPEN_CREATE;
+    if (truncate) {
+        open_flags |= smthread_t::OPEN_TRUNC;
+    }
+
+    W_COERCE(me()->open(dbfile.c_str(), open_flags, 0666, _unix_fd));
 }
 
-vol_t::~vol_t() {
-    clear_caches();
+vol_t::~vol_t()
+{
+    if (_alloc_cache) {
+        delete _alloc_cache;
+        _alloc_cache = NULL;
+    }
+    if (_stnode_cache) {
+        delete _stnode_cache;
+        _stnode_cache = NULL;
+    }
+
     w_assert1(_unix_fd == -1);
     w_assert1(_backup_fd == -1);
     if (_restore_mgr) {
@@ -61,77 +80,31 @@ rc_t vol_t::sync()
     return RCOK;
 }
 
-rc_t vol_t::mount(const char* devname, bool truncate)
+void vol_t::build_caches(bool truncate)
 {
-    spinlock_write_critical_section cs(&_mutex);
-
-    if (_unix_fd >= 0) return RC(eALREADYMOUNTED);
-
-    /*
-     *  Save the device name
-     */
-    w_assert1(strlen(devname) < sizeof(_devname));
-    strcpy(_devname, devname);
-
-    w_rc_t rc;
-    int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC
-        | smthread_t::OPEN_DIRECT | smthread_t::OPEN_CREATE;
-    if (truncate) {
-        open_flags |= smthread_t::OPEN_TRUNC;
-    }
-
-    rc = me()->open(devname, open_flags, 0666, _unix_fd);
-    if (rc.is_error()) {
-        _unix_fd = -1;
-        return rc;
-    }
-
-    clear_caches();
-    build_caches(true);
-    W_DO(init_metadata());
-
-    return RCOK;
-}
-
-void vol_t::clear_caches()
-{
-    // caller must hold mutex
-    if (_alloc_cache) {
-        delete _alloc_cache;
-        _alloc_cache = NULL;
-    }
-    if (_stnode_cache) {
-        delete _stnode_cache;
-        _stnode_cache = NULL;
-    }
-}
-
-void vol_t::build_caches(bool virgin)
-{
-    // caller must hold mutex
-    stnode_page stpage;
-    if (virgin) {
-        stpage.format_empty();
-    }
-    else {
-        W_COERCE(read_page(stnode_page::stpid, (generic_page*) &stpage));
-    }
-
-    _stnode_cache = new stnode_cache_t(stpage);
+    _stnode_cache = new stnode_cache_t(truncate);
     w_assert1(_stnode_cache);
+    _stnode_cache->dump(cerr);
 
-    _alloc_cache = new alloc_cache_t(*_stnode_cache, virgin);
+    _alloc_cache = new alloc_cache_t(*_stnode_cache, truncate);
     w_assert1(_alloc_cache);
-
-    // CS TODO: should we write back pages of stnode and alloc caches here?
 }
 
-rc_t vol_t::init_metadata()
+lsn_t vol_t::get_dirty_page_emlsn(PageID pid) const
 {
-    W_DO(smlevel_0::bf->install_volume(this));
-
-    return RCOK;
+    buf_tab_t::const_iterator it = _dirty_pages->find(pid);
+    if (it == _dirty_pages->end()) { return lsn_t::null; }
+    return it->second.page_lsn;
 }
+
+void vol_t::delete_dirty_page(PageID pid)
+{
+    buf_tab_t::iterator it = _dirty_pages->find(pid);
+    if (it != _dirty_pages->end()) {
+        _dirty_pages->erase(it);
+    }
+}
+
 rc_t vol_t::open_backup()
 {
     // mutex held by caller -- no concurrent backup being added
@@ -160,10 +133,6 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
         return RCOK;
     }
 
-    // empty metadata caches
-    // clear_caches();
-    // build_caches();
-
     bool useBackup = _backups.size() > 0;
 
     /*
@@ -187,14 +156,6 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
             ss_m::logArchiver->getDirectory(), this, useBackup);
 
     set_failed(true);
-
-    // evict device pages from buffer pool
-    if (evict) {
-        w_assert0(smlevel_0::bf);
-        W_DO(smlevel_0::bf->uninstall_volume(true));
-        // no need to call install because root pages are loaded on demand in
-        // bf_tree_m::fix_root
-    }
 
     lsn_t failureLSN = lsn_t::null;
     if (!redo) {
@@ -313,9 +274,6 @@ rc_t vol_t::dismount(bool abrupt)
     INC_TSTAT(vol_cache_clears);
 
     w_assert1(_unix_fd >= 0);
-    if (smlevel_0::bf) { // might have shut down already
-        W_DO(smlevel_0::bf->uninstall_volume(!abrupt /* clear_cb */));
-    }
 
     if (!abrupt) {
         if (is_failed()) {
@@ -337,8 +295,6 @@ rc_t vol_t::dismount(bool abrupt)
 
     W_DO(me()->close(_unix_fd));
     _unix_fd = -1;
-
-    clear_caches();
 
     return RCOK;
 }
@@ -414,11 +370,6 @@ rc_t vol_t::alloc_a_page(PageID& shpid, bool redo)
     // CS TODO: add store parameter
     W_DO(_alloc_cache->sx_allocate_page(shpid, 0, redo));
 
-    if (!redo) {
-        sys_xct_section_t ssx(true);
-        ssx.end_sys_xct(log_alloc_page(shpid));
-    }
-
     INC_TSTAT(page_alloc_cnt);
 
     return RCOK;
@@ -432,11 +383,6 @@ rc_t vol_t::deallocate_page(const PageID& pid, bool redo)
     // CS TODO: add store parameter
     W_DO(_alloc_cache->sx_deallocate_page(pid, 0, redo));
 
-    if (!redo) {
-        sys_xct_section_t ssx(true);
-        ssx.end_sys_xct(log_dealloc_page(pid));
-    }
-
     INC_TSTAT(page_dealloc_cnt);
 
     return RCOK;
@@ -449,19 +395,16 @@ size_t vol_t::num_used_pages() const
 
 rc_t vol_t::create_store(PageID root_pid, StoreID& snum)
 {
-    // check_metadata_restored();
     return _stnode_cache->sx_create_store(root_pid, snum);
 }
 
 bool vol_t::is_alloc_store(StoreID f) const
 {
-    // check_metadata_restored();
     return _stnode_cache->is_allocated(f);
 }
 
 PageID vol_t::get_store_root(StoreID f) const
 {
-    // check_metadata_restored();
     return _stnode_cache->get_root_pid(f);
 }
 
@@ -524,27 +467,28 @@ rc_t vol_t::read_page(PageID pnum, generic_page* const buf)
 
 rc_t vol_t::read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn)
 {
-    w_assert0(!emlsn.is_null());
     W_DO(read_many_pages(pnum, buf, 1));
 
-    uint32_t checksum = buf->calculate_checksum();
+    // check for more recent LSN in dirty page table
+    lsn_t dirty_lsn = get_dirty_page_emlsn(pnum);
+    if (dirty_lsn > emlsn) { emlsn = dirty_lsn; }
 
-    if (checksum != buf->checksum) {
-        // Corrupted page
-        ::memset(buf, '\0', sizeof(generic_page));
-        buf->lsn = lsn_t::null;
-        buf->pid = pnum;
-        buf->tag = t_btree_p;
+    // CS TODO: ignoring page corruption for now
+    // uint32_t checksum = buf->calculate_checksum();
+    // if (checksum != buf->checksum && !emlsn.is_null())
+
+    if (buf->lsn < emlsn) {
+        if (buf->pid == 0) { // virgin page
+            buf->lsn = lsn_t::null;
+            buf->pid = pnum;
+            buf->tag = t_btree_p;
+        }
 
         btree_page_h p;
         p.fix_nonbufferpool_page(buf);
-        W_DO(smlevel_0::recovery->recover_single_page(p, emlsn, false));
-    }
-    else if (buf->lsn < emlsn) {
-        // Page is out-of-date; invoke SPR
-        btree_page_h p;
-        p.fix_nonbufferpool_page(buf);
-        W_DO(smlevel_0::recovery->recover_single_page(p, emlsn, true));
+        W_DO(smlevel_0::recovery->recover_single_page(p, emlsn));
+        delete_dirty_page(pnum);
+        cerr << "Recovered " << pnum << " to LSN " << emlsn << endl;
     }
 
     if (buf->pid != pnum) {

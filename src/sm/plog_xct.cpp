@@ -275,7 +275,8 @@ rc_t plog_xct_t::_commit_nochains(uint32_t flags, lsn_t* /* plastlsn */)
 rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
 {
     // decrement uncommitted counter on page and set PageLSN
-    if (!lr->null_pid()) {
+    // if (!lr->null_pid()) {
+    if (true) { // CS TODO
         // Later on, we need access to the control block, which the
         // standard fix procedure does not provide. So for now we have
         // to use this hack, which is basically a "manual" fix.

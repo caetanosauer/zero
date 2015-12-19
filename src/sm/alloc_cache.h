@@ -40,7 +40,6 @@ public:
      */
     rc_t sx_deallocate_page(PageID pid, StoreID store = 0, bool redo = false);
 
-    /** Returns if the page is already allocated. not quite fast. don't call this so often!. */
     bool is_allocated (PageID pid);
 
     rc_t force_pages();
@@ -78,6 +77,16 @@ private:
      */
     vector<bool> loaded_extents;
 
+    /**
+     * CS TODO
+     * This map is needed fore the sole purpose of maintaining per-page
+     * log-record chains. It keeps track of the current pageLSN of each
+     * alloc page. Since we don't apply allocation operations on the pages
+     * directly (i.e., no page fix is performed), this is required to
+     * generate a correct prev_page pointer when logging allocations.
+     */
+    map<PageID, lsn_t> page_lsns;
+
     stnode_cache_t& stcache;
 
     /** all operations in this object are protected by this lock. */
@@ -85,7 +94,7 @@ private:
 
     static const size_t extent_size;
 
-    rc_t load_alloc_page(extent_id_t ext, alloc_page& page, bool is_last_ext);
+    rc_t load_alloc_page(extent_id_t ext, bool is_last_ext);
 };
 
 #endif // ALLOC_CACHE_H

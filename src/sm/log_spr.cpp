@@ -40,9 +40,6 @@ void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const ls
             o << "  CHECKPT: " << buf << std::endl;
             continue;
         }
-        if (buf.null_pid()) {
-            continue;
-        }
 
         PageID log_pid = buf.pid();
         PageID log_pid2 = log_pid;
@@ -69,10 +66,7 @@ void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const ls
     //_storage->reset_master_lsn(master);
 }
 
-rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
-                                    const bool from_lsn)  // True if use page lsn as the start point
-                                                          // mainly from Restart using Single Pge Recovery
-                                                          // in REDO phase where the page is not corrupted
+rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn)
 {
     // Single-Page-Recovery operation does not hold latch on the page to be recovered, because
     // it assumes the page is private until recovered.  It is not the case during
@@ -91,66 +85,9 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     // that transparently, so that a volume read is redirected to a backup if
     // necessary (similar to how restore works currently).
 
-    if (true)
-    // if (smlevel_0::bk->page_exists(p.vol(), pid))
-    {
-        // W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
-        W_DO(smlevel_0::vol->read_page(pid, p.get_generic_page()));
-        w_assert1(pid == p.pid());
-        DBGOUT1(<< "Backup page retrieved. Backup-LSN=" << p.lsn());
-        if (p.lsn() > emlsn)
-        {
-            // Last write LSN from backup > given LSN, the page last write LSN
-            // from the backup is newer (later) than our recorded emlsn (last write)
-            // on the page.
-            // First, there are cases of single-page failure in which the backup media
-            // are not consulted: the prototypical example here is restart bringing
-            // a page up-to-date from an out-of-date page in the database.
-            // Second, there might be weird cases (all requiring double failures)
-            // in which a database page might be written to persistent storage
-            // (e.g., a child page in a self-repairing b-tree index) but the
-            // expected LSN value is not up-to-date.
-
-            // Raise error for now, we cannot handle double failures and other special
-            // cases currently
-////////////////////////////////////////
-// TODO(Restart)... NYI
-////////////////////////////////////////
-
-            DBGOUT1(<< "Backup page last write LSN > emlsn");
-            W_FATAL(eBAD_BACKUPPAGE);
-        }
-    }
-    else
-    {
-        DBGOUT1(<< "No backup page. Recovering from log only");
-
-        // if the page is not in the backup (possible if the page was created after the
-        // backup) or no backup file at all, we need to recover the page purely from the log.
-        // If caller specify 'from_lsn', then use the last write LSN on the page as the starting point
-        // of the recovery, otherwise set page lsn to NULL to force a complete recovery
-
-        if (!from_lsn)
-        {
-            // Complete recovery -- currently not supported (CS TODO)
-            DBGOUT1(<< "Force a complete recovery");
-            p.set_lsns(lsn_t::null);
-            w_assert0(false);
-        }
-        else
-        {
-            if (lsn_t::null == p.lsn())
-            {
-                // Page does not have last write LSN
-                DBGOUT1(<< "Recovery from page last write LSN but it is NULL, a complete recovery");
-            }
-            else
-            {
-                // Page has last write LSN, use it as the starting point so it is not a complete recovery
-                DBGOUT1(<< "Recovery from page last write LSN: " << p.lsn());
-            }
-        }
-    }
+    // W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
+    w_assert1(pid == p.pid());
+    w_assert0(p.lsn() <= emlsn);
 
     char* buffer = NULL;
     size_t bufsize = 0;
@@ -171,33 +108,7 @@ rc_t restart_m::_collect_spr_logs(
     const lsn_t& emlsn,        // In: starting point of the log chain
     char*& buffer, size_t& buffer_size)
 {
-    // When caller from recovery REDO phase on a virgin or corrupted page, we do not have
-    // a valid emlsn and page last-write lsn (current_lsn) has been set to lsn_t::null.
-    // The pre-crash last log lsn was used instead for emlsn, therefore passed in emlsn
-    // is not a valid starting point for log chain, need to find the starting point for the valid
-    // page log chain
-
-    // we go back using page log chain like what xct_t::rollback() does on undo log chain.
-
-    DBGOUT1(<< "restart_m::_collect_single_page_recovery_logs: "
-            << "current_lsn (end): " << current_lsn
-            << ", emlsn (begin): " << emlsn );
-
-    if (emlsn == lsn_t::null)
-    {
-        // Failure on failure scenario The emlsn is not the actual last write
-        // on the page, it is a corrupted page during recovery, we do not have
-        // a parent page to retrieve the actual last write lsn, and we cannot
-        // trust the last write LSN due to page corruption, using the last LSN
-        // before system crash as the emlsn, therefore we need to find the
-        // actual emlsn first
-
-        // TODO(Restart)... NYI.  How to find the valid emlsn?  Need backward
-        // log scan and slow
-        W_FATAL_MSG(fcINTERNAL,
-                << "restart_m::_collect_single_page_recovery_logs "
-                << "- failure on failure, NYI");
-    }
+    w_assert0(!emlsn.is_null());
 
     // Allocate initial buffer -- expand later if needed
     // CS: regular allocation is fine since SPR isn't such a critical operation

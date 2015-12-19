@@ -59,26 +59,17 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "w_defines.h"
 
-/*  -- do not edit anything above this line --   </std-header>*/
-
 #include "sm_base.h"
 #include "w_heap.h"
 #include "logarchiver.h"
-
-//#include "lock.h"               // Lock re-acquisition
-//#include "btree_impl.h"         // Lock re-acquisition
-//#include "btree_logrec.h"       // Lock re-acquisition
+#include "w_okvl.h"
+#include "xct.h"
 
 #include <vector>
 #include <list>
 #include <map>
 #include <algorithm>
 #include <limits>
-
-// For checkpoint to gather lock information into heap if asked
-struct comp_lock_info_t;
-class CmpXctLockTids;
-typedef class Heap<comp_lock_info_t*, CmpXctLockTids> XctLockHeap;
 
 struct buf_tab_entry_t {
     StoreID store;
@@ -144,6 +135,8 @@ public:
     tid_t get_highest_tid() { return highest_tid; }
     void set_highest_tid(tid_t tid) { highest_tid = tid; }
 
+    void dump(ostream& out);
+
 private:
     void init();
     void cleanup();
@@ -167,8 +160,8 @@ class chkpt_thread_t;
  *********************************************************************/
 class chkpt_m : public smlevel_0 {
 public:
-    NORET            chkpt_m();
-    NORET            ~chkpt_m();
+    chkpt_m();
+    virtual ~chkpt_m();
 
     /*
     * smlevel_0::chkpt_mode is always set to one of the mode
@@ -184,7 +177,6 @@ public:
     void spawn_chkpt_thread();
     void retire_chkpt_thread();
     void synch_take();
-    void synch_take(XctLockHeap& lock_heap);
     void take(chkpt_mode_t chkpt_mode);
 
 private:

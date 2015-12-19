@@ -374,7 +374,19 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             DBGOUT5(<<" destroy_file " << n << "false");
             destroy_file(n, false);
         }
-        for (n = _min_chkpt_rec_lsn.hi(); n <= last_partition; n++)  {
+
+        // CS TODO: hack to deal with absence of min_chkpt_rec_lsn
+        n = _min_chkpt_rec_lsn.hi();
+        if (n == 0) {
+            if (last_partition <= 8) {
+                n = 1;
+            }
+            else {
+                n = last_partition - 8;
+            }
+        }
+
+        for (; n <= last_partition; n++)  {
             // Find out if there's a hint about the length of the
             // partition (from the checkpoint).  This lsn serves as a
             // starting point from which to search for the skip_log record

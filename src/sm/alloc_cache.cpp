@@ -9,6 +9,7 @@
 
 #include "alloc_cache.h"
 #include "smthread.h"
+#include "eventlog.h"
 
 const size_t alloc_cache_t::extent_size = alloc_page::bits_held;
 
@@ -25,20 +26,20 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
         // Extend 0 and stnode pid are always allocated
         loaded_extents.push_back(true);
         last_alloc_page[0] = stnode_page::stpid;
-        // CS TODO: this will not work at restart because we don't force
-        // alloc pages. We need to have decoupled propagation!
     }
     else {
-        alloc_page page;
         extent_id_t max_ext = 0;
         for (size_t i = 0; i < stores.size(); i++) {
             stnode_t s = stcache.get_stnode(stores[i]);
 
-            W_COERCE(load_alloc_page(s.last_extent, page, true));
-
-            if (s.last_extent > max_ext) {
+            if (s.last_extent >= max_ext) {
                 max_ext = s.last_extent;
+                loaded_extents.resize(max_ext + 1, false);
             }
+            loaded_extents[s.last_extent] = true;
+
+            W_COERCE(load_alloc_page(s.last_extent, true));
+
 
             // CS TODO: read alloc page of last extent of each store to
             // determine last_alloc_pid and add any non-cotiguous free
@@ -47,35 +48,30 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
             // case, there should be a method to eagerly load the alloc
             // pages of all extents.
         }
-
-        // Initialize bitmap of loaded extents
-        loaded_extents.resize(max_ext + 1, false);
-        for (size_t i = 0; i < stores.size(); i++) {
-            stnode_t s = stcache.get_stnode(stores[i]);
-            loaded_extents[s.last_extent] = true;
-        }
     }
 }
 
-rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, alloc_page& page,
-        bool is_last_ext)
+rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, bool is_last_ext)
 {
     PageID alloc_pid = ext * extent_size;
-    W_DO(smlevel_0::vol->read_page(alloc_pid, (generic_page*) &page));
+    fixable_page_h p;
+    W_DO(p.fix_direct(alloc_pid, LATCH_SH, false, false));
 
     spinlock_write_critical_section cs(&_latch);
 
     // protect against race on concurrent loads
     if (loaded_extents[ext]) {
+        p.unfix();
         return RCOK;
     }
 
-    StoreID store = page.store;
+    alloc_page* page = (alloc_page*) p.get_generic_page();
+    StoreID store = page->store;
 
     size_t last_alloc = 0;
     size_t j = alloc_page::bits_held;
     while (j > 0) {
-        if (page.get_bit(j)) {
+        if (page->get_bit(j)) {
             if (last_alloc == 0) {
                 last_alloc = j;
                 if (is_last_ext) {
@@ -90,7 +86,9 @@ rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, alloc_page& page,
         j--;
     }
 
+    page_lsns[p.pid()] = p.lsn();
     loaded_extents[ext] = true;
+    p.unfix();
 
     return RCOK;
 }
@@ -103,8 +101,7 @@ bool alloc_cache_t::is_allocated(PageID pid)
     bool found = loaded_extents[ext];
 
     if (!found) {
-        alloc_page* page = new alloc_page();
-        W_COERCE(load_alloc_page(ext, *page, false));
+        W_COERCE(load_alloc_page(ext, false));
     }
 
     spinlock_read_critical_section cs(&_latch);
@@ -188,9 +185,10 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID store, bool redo)
         // due to system failures after allocation but before setting the
         // pointer on the new owner/parent page. To fix this, an SSX to
         // allocate an emptry b-tree child would be the best option.
-        sys_xct_section_t ssx(true);
-        W_DO(log_alloc_page(pid));
-        ssx.end_sys_xct(RCOK);
+        // sys_xct_section_t ssx(true);
+        // W_DO(log_alloc_page(pid));
+        sysevent::log_alloc_page(pid, page_lsns[pid / extent_size]);
+        // ssx.end_sys_xct(RCOK);
     }
 
     return RCOK;
@@ -207,9 +205,10 @@ rc_t alloc_cache_t::sx_deallocate_page(PageID pid, StoreID store, bool redo)
     freed_pages[store].push_back(pid);
 
     if (!redo) {
-        sys_xct_section_t ssx(true);
-        W_DO(log_dealloc_page(pid));
-        ssx.end_sys_xct(RCOK);
+        // sys_xct_section_t ssx(true);
+        // W_DO(log_dealloc_page(pid));
+        sysevent::log_dealloc_page(pid, page_lsns[pid / extent_size]);
+        // ssx.end_sys_xct(RCOK);
     }
 
     return RCOK;

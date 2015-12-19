@@ -61,7 +61,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define LOG_RESV_C
 
-#include "chkpt.h"
+#include "sm_base.h"
 #include "log_resv.h"
 #include "log_storage.h"
 #include "log_lsn_tracker.h"

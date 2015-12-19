@@ -30,7 +30,6 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent,
                                    bool conditional, bool virgin_page)
 {
     w_assert1(parent.is_fixed());
-    w_assert1(shpid != 0);
     w_assert1(mode != LATCH_NL);
 
     if (force_Q_fixing > 1 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
@@ -58,6 +57,23 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent,
         W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, shpid, mode, conditional, virgin_page));
         w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     }
+    _bufferpool_managed = true;
+    _mode               = mode;
+
+    return RCOK;
+}
+
+w_rc_t fixable_page_h::fix_direct(PageID shpid, latch_mode_t mode,
+                                   bool conditional, bool virgin_page)
+{
+    w_assert1(mode != LATCH_NL);
+
+    unfix();
+
+    W_DO(smlevel_0::bf->fix_nonroot(_pp, NULL, shpid, mode, conditional, virgin_page));
+
+    w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
+
     _bufferpool_managed = true;
     _mode               = mode;
 
@@ -135,31 +151,14 @@ w_rc_t fixable_page_h::refix_direct (bf_idx idx, latch_mode_t mode, bool conditi
     return RCOK;
 }
 
-w_rc_t fixable_page_h::fix_virgin_root (StoreID store, PageID shpid) {
-    w_assert1(shpid != 0);
-
-    unfix();
-    W_DO(smlevel_0::bf->fix_virgin_root(_pp, store, shpid));
-    _bufferpool_managed = true;
-    _mode               = LATCH_EX;
-    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
-    return RCOK;
-}
-
-w_rc_t fixable_page_h::fix_root (StoreID store, latch_mode_t mode, bool conditional) {
+w_rc_t fixable_page_h::fix_root (StoreID store, latch_mode_t mode,
+        bool conditional, bool virgin)
+{
     w_assert1(mode != LATCH_NL);
 
-    if (force_Q_fixing > 0 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
     unfix();
-    if (mode == LATCH_Q) {
-        W_DO(smlevel_0::bf->fix_with_Q_root(_pp, store, _Q_ticket));
-        if (false) { // test ticket later for validity <<<>>>
-            _pp = NULL;
-            return RC(eLATCHQFAIL);
-        }
-    } else {
-        W_DO(smlevel_0::bf->fix_root(_pp, store, mode, conditional));
-    }
+    W_DO(smlevel_0::bf->fix_root(_pp, store, mode, conditional, virgin));
+
     _bufferpool_managed = true;
     _mode               = mode;
     return RCOK;

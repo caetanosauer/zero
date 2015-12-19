@@ -42,3 +42,40 @@ void sysevent::log_page_write(PageID shpid, uint32_t count)
     W_COERCE(smlevel_0::log->insert(*lr, NULL));
     delete lr;
 }
+
+// METADATA OPERATIONS (CS TODO)
+// CS: there are logged with sysevent because the per-page chain cannot be
+// generated automatically (with give_logbuf), as the operations are performed
+// directly on in-memory data structures instead of buffered pages.
+
+void sysevent::log_alloc_page(PageID pid, lsn_t& prev_page_lsn)
+{
+    logrec_t* lr = new alloc_page_log(pid);
+    lr->set_page_prev_lsn(prev_page_lsn);
+    W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
+    delete lr;
+}
+
+void sysevent::log_dealloc_page(PageID pid, lsn_t& prev_page_lsn)
+{
+    logrec_t* lr = new dealloc_page_log(pid);
+    lr->set_page_prev_lsn(prev_page_lsn);
+    W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
+    delete lr;
+}
+
+void sysevent::log_create_store(PageID root, StoreID stid, lsn_t& prev_page_lsn)
+{
+    logrec_t* lr = new create_store_log(root, stid);
+    lr->set_page_prev_lsn(prev_page_lsn);
+    W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
+    delete lr;
+}
+
+void sysevent::log_append_extent(StoreID stid, extent_id_t ext, lsn_t& prev_page_lsn)
+{
+    logrec_t* lr = new append_extent_log(stid, ext);
+    lr->set_page_prev_lsn(prev_page_lsn);
+    W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
+    delete lr;
+}

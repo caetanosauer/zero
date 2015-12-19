@@ -426,10 +426,16 @@ ss_m::_construct_once()
         << flushl;
     }
 
-    vol = new vol_t(_options);
-    if (!vol) {
-        W_FATAL(eOUTOFMEMORY);
-    }
+    // Log analysis provides info required to initialize vol_t
+    recovery = new restart_m(_options);
+    recovery->log_analysis();
+    chkpt_t* chkpt_info = recovery->get_chkpt();
+    chkpt_info->serialize();
+
+    bool truncate = _options.get_bool_option("sm_truncate", false);
+    vol = new vol_t(_options, &chkpt_info->buf_tab);
+    if (!vol) { W_FATAL(eOUTOFMEMORY); }
+    vol->build_caches(truncate);
 
     smlevel_0::statistics_enabled = _options.get_bool_option("sm_statistics", true);
 
@@ -456,7 +462,7 @@ ss_m::_construct_once()
     if (! chkpt)  {
         W_FATAL(eOUTOFMEMORY);
     }
-    // Spawn the checkpoint child thread immediatelly
+    // Spawn the checkpoint child thread immediatelly and initialize log with CP
     chkpt->spawn_chkpt_thread();
 
     DBG(<<"Level 4");
@@ -474,91 +480,21 @@ ss_m::_construct_once()
         _ticker->fork();
     }
 
-    _do_restart();
-
     do_prefetch = _options.get_bool_option("sm_prefetch", false);
     DBG(<<"constructor done");
 
-    // System is opened for user transactions once the function returns
+    // If not using instant restart, perform log-based REDO before opening up
+    bool instantRestart = _options.get_bool_option("sm_restart_instant", true);
+    if (instantRestart) {
+        recovery->spawn_recovery_thread();
+    }
+    else {
+        recovery->redo_log_pass();
+    }
 }
 
 void ss_m::_do_restart()
 {
-    /*
-     * Mount the volumes for recovery.  For now, we automatically
-     * mount all volumes.  A better solution would be for restart_m
-     * to tell us, after analysis, whether any volumes should be
-     * mounted.  If not, we can skip the mount/dismount.
-     */
-
-    lsn_t     verify_lsn = lsn_t::null;  // verify_lsn is for use_concurrent_commit_restart() only
-    lsn_t     redo_lsn = lsn_t::null;    // used if log driven REDO with use_concurrent_XXX_restart()
-    uint32_t  in_doubt_count = 0;        // used if log driven REDO with use_concurrent_XXX_restart()
-    lsn_t     master = log->master_lsn();
-
-    if (_options.get_bool_option("sm_logging", true))
-    {
-        // Start the recovery process as sequential  operations
-        // The recovery manager is on the stack, it will be destroyed once it is
-        // out of scope
-        restart_m restart(_options);
-
-        // Recovery process, a checkpoint will be taken at the end of recovery
-        // Make surethe current operating state is before recovery
-        smlevel_0::operating_mode = t_not_started;
-        restart.restart();
-    }
-
-        // Log Analysis has completed but no REDO or UNDO yet
-        // exception: M5 (ARIES) did the REDO already, but no UNDO
-        // Start the recovery process child thread to carry out
-        // the REDO and UNDO phases if not in serial or pure on-demand mode
-        // which means M2 (traditional), M4 (mixed) and M5 (ARIES) would start the child thread
-        // Child thread will carry out both REDO and UNDO
-        // for M5 (ARIES), in_doubt count is already 0 therefore no need to REDO again
-
-            // If we have the recovery process
-
-            // Check the operating mode
-            w_assert1(t_in_analysis == smlevel_0::operating_mode);
-
-            if (lsn_t::null != master)
-            {
-                // If it is not an empty database, then instinate
-                // the recovery manager because we need to persist it
-                // Note that even if the database is not empty, it does
-                // not mean we have recovery work to do in REDO and
-                // UNDO phases
-
-                // Commit_lsn could be null if:
-                // 1. Empty database
-                // 2. No recovery work to do
-
-                w_assert1(!recovery);
-                recovery = new restart_m(_options);
-                if (! recovery)
-                {
-                    W_FATAL(eOUTOFMEMORY);
-                }
-                recovery->spawn_recovery_thread();
-            }
-
-        // Continue the process to open system for user transactions immediatelly
-        // No buffer pool flush or user checkpoint in this case
-
-        smlevel_0::operating_mode = t_forward_processing;
-
-        // Have the log initialize its reservation accounting.
-        // while Recovery REDO and UNDO is happening concurrently
-        // the 'activate_reservations' does not affect Recovery task
-        // althought the calculation might be off since UNDO might not be
-        // completed yet
-        if (log)
-            log->activate_reservations();
-
-        // Do not flush buffer pool or take checkpoint because recovery
-        // is still going on
-
 }
 
 void ss_m::_finish_recovery()

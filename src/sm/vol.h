@@ -6,6 +6,8 @@
 #define VOL_H
 
 #include "w_defines.h"
+#include "stnode_page.h"
+#include "chkpt.h"
 
 #include <list>
 #include <stdlib.h>
@@ -13,23 +15,18 @@
 class alloc_cache_t;
 class stnode_cache_t;
 class RestoreMgr;
-class store_operation_param;
 class sm_options;
 class chkpt_restore_tab_t;
 
-#include "stnode_page.h"
 
 class vol_t
 {
-    friend class vol_m;
-
 public:
-    vol_t(const sm_options&);
+    vol_t(const sm_options&, buf_tab_t* dirty_pages);
     virtual ~vol_t();
 
     void shutdown(bool abrupt);
 
-    const char* devname() const { return _devname; }
     // CS TODO
     PageID     first_data_pageid() const { return 0; }
     size_t      num_used_pages() const;
@@ -142,9 +139,11 @@ public:
     /** Return largest PID allocated for this volume yet **/
     PageID get_last_allocated_pid() const;
 
+    /** Method to create _alloc_cache and _stnode_cache */
+    void build_caches(bool truncate);
+
 private:
     // variables read from volume header -- remain constant after mount
-    char             _devname[smlevel_0::max_devname];
     int              _unix_fd;
 
     mutable srwlock_t _mutex;
@@ -175,6 +174,10 @@ private:
     std::vector<string> _backups;
     std::vector<lsn_t> _backup_lsns;
 
+    /** Dirty pages that require REDO after restart **/
+    // CS TODO: this should be destroyed once recovery is complete
+    buf_tab_t* _dirty_pages;
+
     /** Currently opened backup (during restore only) */
     int _backup_fd;
     lsn_t _current_backup_lsn;
@@ -187,18 +190,10 @@ private:
      *  (128 bytes are enough since it contains only vid) */
     char _logrec_buf[128];
 
-    rc_t mount(const char* devname, bool truncate = false);
     rc_t dismount(bool abrupt = false);
-
-    /** Methods to create and destroy _alloc_cache and _stnode_cache */
-    void clear_caches();
-    void build_caches(bool virgin);
 
     /** Open backup file descriptor for retore or taking new backup */
     rc_t open_backup();
-
-    /** Initialize caches by reading from (restored/healthy) device */
-    rc_t init_metadata();
 
     // setting failed status only allowed internally (private method)
     void set_failed(bool failed)
@@ -206,6 +201,9 @@ private:
         _failed = failed;
         lintel::atomic_thread_fence(lintel::memory_order_release);
     }
+
+    lsn_t get_dirty_page_emlsn(PageID pid) const;
+    void delete_dirty_page(PageID pid);
 
     /** If media failure happened, wait for metadata to be restored */
     void check_metadata_restored() const;

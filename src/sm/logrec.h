@@ -203,7 +203,6 @@ public:
        PageID         pid2() const;
 
 public:
-    bool                 null_pid() const; // needed in restart.cpp
     uint16_t              tag() const;
     smsize_t             length() const;
     const lsn_t&         undo_nxt() const;
@@ -606,12 +605,6 @@ logrec_t::set_undo_nxt(const lsn_t& undo_nxt)
     xidInfo._xid_prv = undo_nxt;
 }
 
-inline bool
-logrec_t::null_pid() const
-{
-    return pid() == 0;
-}
-
 inline uint16_t
 logrec_t::tag() const
 {
@@ -656,7 +649,9 @@ logrec_t::set_page_prev_lsn(const lsn_t &lsn)
 inline const tid_t&
 logrec_t::tid() const
 {
-    w_assert1(!is_single_sys_xct()); // otherwise this part is in data area!
+    if (is_single_sys_xct()) {
+        return tid_t::null;
+    }
     return xidInfo._xid;
 }
 
@@ -772,7 +767,7 @@ inline bool
 logrec_t::is_page_update() const
 {
     // old: return is_redo() && ! is_cpsn();
-    return is_redo() && !is_cpsn() && (!null_pid());
+    return is_redo() && !is_cpsn();
 }
 
 inline bool

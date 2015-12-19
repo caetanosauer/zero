@@ -92,6 +92,9 @@ public:
                        PageID pid, latch_mode_t mode, bool conditional=false,
                        bool virgin_page=false);
 
+    w_rc_t fix_direct(PageID pid, latch_mode_t mode, bool conditional=false,
+                       bool virgin_page=false);
+
     /**
      * Only used in the REDO phase of Recovery process
      * The physical page has been loaded into buffer pooland the idx is known
@@ -133,17 +136,11 @@ public:
     w_rc_t refix_direct(bf_idx idx, latch_mode_t mode, bool conditional=false);
 
     /**
-     * Fixes a new (virgin) root page for a new store with the specified page ID.
-     * Implicitly, the latch will be EX and non-conditional.
-     */
-    w_rc_t fix_virgin_root(StoreID store, PageID pid);
-
-    /**
      * Fixes an existing (not virgin) root page for the given store.  This method doesn't
      * receive page ID because it's already known by bufferpool.
      */
     w_rc_t fix_root(StoreID store, latch_mode_t mode,
-                    bool conditional=false);
+                    bool conditional=false, bool virgin=false);
 
     /**
      * Imaginery 'fix' for a non-bufferpool-managed page.

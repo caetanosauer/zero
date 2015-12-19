@@ -284,7 +284,7 @@ void chkpt_t::scan_log()
         }
 
         if (r.is_page_update()) {
-            w_assert0(r.is_redo() && !r.null_pid());
+            w_assert0(r.is_redo());
             mark_page_dirty(r.pid(), lsn, lsn, r.stid());
 
             if (r.is_multi_page()) {
@@ -307,7 +307,6 @@ void chkpt_t::scan_log()
                 if (insideChkpt) {
                     const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
                     for (uint i = 0; i < dp->count; i++) {
-                        w_assert0(dp->brec[i].pid != 0);
                         mark_page_dirty(dp->brec[i].pid, dp->brec[i].page_lsn,
                                 dp->brec[i].rec_lsn, dp->brec[i].store);
                     }
@@ -683,7 +682,6 @@ void chkpt_t::acquire_lock(logrec_t& r)
     w_assert1(!r.is_single_sys_xct());
     w_assert1(!r.is_multi_page());
     w_assert1(!r.is_cpsn());
-    w_assert1(!r.null_pid());
     w_assert1(r.is_page_update());
 
     switch (r.type())
@@ -767,6 +765,29 @@ void chkpt_t::acquire_lock(logrec_t& r)
     return;
 }
 
+void chkpt_t::dump(ostream& os)
+{
+    //Re-create transactions
+    os << "ACTIVE TRANSACTIONS" << endl;
+    for(xct_tab_t::const_iterator it = xct_tab.begin();
+                            it != xct_tab.end(); ++it)
+    {
+        os << it->first << " first_lsn=" << it->second.first_lsn
+            << " last_lsn=" << it->second.last_lsn
+            << " locks=" << it->second.locks.size()
+            << endl;
+    }
+
+    os << "DIRTY PAGES" << endl;
+    for(buf_tab_t::const_iterator it = buf_tab.begin();
+                            it != buf_tab.end(); ++it)
+    {
+        os << it->first << "(" << it->second.rec_lsn
+            << "-" << it->second.page_lsn << ") ";
+    }
+    os << endl;
+}
+
 void chkpt_m::take(chkpt_mode_t chkpt_mode)
 {
     if (t_chkpt_async == chkpt_mode) {
@@ -784,80 +805,6 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     DBGOUT1(<<"BEGIN chkpt_m::take");
 
     INC_TSTAT(log_chkpt_cnt);
-
-    // Start the initial validation check for make sure the incoming checkpoint request is valid
-    bool valid_chkpt = true;
-    {
-        if (ss_m::log && _chkpt_thread)
-        {
-            // Log is on and chkpt thread is available, but the chkpt thread has received
-            // a 'retire' message (signal to shutdown), return without doing anything
-            if (true == _chkpt_thread->is_retired())
-            {
-                DBGOUT1(<<"END chkpt_m::take - detected retire, skip checkpoint");
-                valid_chkpt = false;
-            }
-        }
-        else if ((ss_m::shutting_down) && (t_chkpt_async == chkpt_mode))
-        {
-            // No asynch checkpoint if we are shutting down
-            DBGOUT1(<<"END chkpt_m::take - detected shutdown, skip asynch checkpoint");
-            valid_chkpt = false;
-        }
-        else if ((ss_m::shutting_down) && (t_chkpt_sync == chkpt_mode))
-        {
-            // Middle of shutdown, allow synch checkpoint request
-            DBGOUT1(<<"PROCESS chkpt_m::take - system shutdown, allow synch checkpoint");
-        }
-        else
-        {
-            // Not in shutdown
-            if (ss_m::before_recovery())
-            {
-                DBGOUT1(<<"END chkpt_m::take - before system startup/recovery, skip checkpoint");
-                valid_chkpt = false;
-            }
-            else if (ss_m::ss_m::in_recovery() && (t_chkpt_sync != chkpt_mode))
-            {
-                    // System opened after Log Analysis phase, allow asynch checkpoint
-                    // after Log Analysis phase
-                    if (ss_m::ss_m::in_recovery_analysis())
-                        valid_chkpt = false;
-            }
-            else if (ss_m::in_recovery() && (t_chkpt_sync == chkpt_mode))
-            {
-                    // System opened after Log Analysis phase, accept system checkpoint anytime
-                    DBGOUT1(<<"PROCESS chkpt_m::take - system in recovery, allow synch checkpoint");
-            }
-            else
-            {
-                // We cannot be in recovery if we get here
-                if (true == ss_m::in_recovery())
-                {
-                    DBGOUT1(<<"END chkpt_m::take - system should not be in Recovery, exist checkpoint");
-                    valid_chkpt = false;
-                }
-                else
-                {
-                    if (t_chkpt_sync == chkpt_mode)
-                    {
-                        DBGOUT1(<<"PROCESS chkpt_m::take - allow synch/internal checkpoint");
-                    }
-                    else
-                    {
-                        DBGOUT1(<<"PROCESS chkpt_m::take - allow asynch/user checkpoint");
-                    }
-                }
-            }
-        }
-    }
-
-     // Done with the checkpoint validation, should we continue?
-    if (!valid_chkpt) {
-        // Failed the checkpoint validation, release the 'write' mutex and exist
-        chkpt_serial_m::write_release();
-        return;
-    }
 
     // Verifies if there is enough space to insert the maximum lenght of a chkpt
     // in the log.
@@ -934,7 +881,6 @@ void
 chkpt_thread_t::run()
 {
     CmpXctLockTids	 lock_cmp;
-    XctLockHeap      dummy_heap(lock_cmp);
 
     while(! _retire)
     {

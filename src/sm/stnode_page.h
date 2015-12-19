@@ -113,7 +113,7 @@ class stnode_cache_t {
 public:
     /// special_pages here holds the special pages for volume vid, the
     /// last of which should be the stnode_page for that volume
-    stnode_cache_t(stnode_page& stpage);
+    stnode_cache_t(bool virgin);
 
     /**
      * Returns the root page ID of the given store.
@@ -121,6 +121,8 @@ public:
      * @param[in] store Store ID.
      */
     PageID get_root_pid(StoreID store) const;
+
+    lsn_t get_root_elmsn(StoreID store) const;
 
     bool is_allocated(StoreID store) const;
 
@@ -134,20 +136,26 @@ public:
 
     rc_t sx_append_extent(StoreID snum, extent_id_t ext, bool redo = false);
 
+    void dump(ostream& out);
+
 private:
     /// all operations in this object except get_root_pid are protected by this latch
     mutable queue_based_lock_t _latch;
 
-    // CS TODO: not needed with decoupled propagation (Merge Lucas' branch)
-    stnode_page* _stnode_page;        /// The stnode_page of the volume we are caching
+    // stnode page is used here not as a mirror of the page image on disk,
+    // but simply as an in-memory data structure. As in alloc_cache_t,
+    // decoupled propagation and checkpoints will take care of maintaining
+    // the page on disk.
+    stnode_page _stnode_page;
 
     /// Returns the first StoreID that can be used for a new store in
     /// this volume or stnode_page::max if all available stores of
     /// this volume are already allocated.
     StoreID get_min_unused_store_ID() const;
 
-    // CS TODO: not needed with decoupled propagation (Merge Lucas' branch)
-    rc_t write_stnode_page();
+    /// Required to maintain per-page log chain (see comments on alloc_cache.h)
+    lsn_t prev_page_lsn;
+
 };
 
 #endif // STNODE_PAGE_H

@@ -1,7 +1,6 @@
 #include "page_cleaner.h"
 
 #include "sm.h" //for ss_m::shutting_down and ss_m::shutdown_clean
-#include "bf_tree_vol.h"
 #include "logrec.h"
 #include "fixable_page_h.h"
 #include "bf_tree_cb.h"
@@ -289,8 +288,7 @@ page_cleaner_mgr::~page_cleaner_mgr() {
 }
 
 w_rc_t page_cleaner_mgr::install_cleaner() {
-    w_assert0(bufferpool->_volume != NULL);
-    cleaner = new page_cleaner_slave(this, bufferpool->_volume->_volume, buffer_size, mode, sleep_time);
+    cleaner = new page_cleaner_slave(this, smlevel_0::vol, buffer_size, mode, sleep_time);
     cleaner->fork();
     return RCOK;
 }
@@ -334,8 +332,5 @@ w_rc_t page_cleaner_mgr::force_all() {
 }
 
 bool page_cleaner_mgr::wakeup_cleaner() {
-    if (bufferpool->_volume != NULL) {
-        return cleaner->activate();
-    }
-    return false;
+    return cleaner->activate();
 }
