@@ -36,10 +36,9 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
                 max_ext = s.last_extent;
                 loaded_extents.resize(max_ext + 1, false);
             }
-            loaded_extents[s.last_extent] = true;
 
             W_COERCE(load_alloc_page(s.last_extent, true));
-
+            loaded_extents[s.last_extent] = true;
 
             // CS TODO: read alloc page of last extent of each store to
             // determine last_alloc_pid and add any non-cotiguous free
