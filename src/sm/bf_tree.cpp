@@ -360,7 +360,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
             // STEP 4) Read page from disk
             page = &_buffer[idx];
-            memset(page, 0, sizeof(generic_page));
 
             if (!virgin_page) {
                 INC_TSTAT(bf_fix_nonroot_miss_count);

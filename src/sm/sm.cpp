@@ -432,10 +432,16 @@ ss_m::_construct_once()
     chkpt_t* chkpt_info = recovery->get_chkpt();
     chkpt_info->serialize();
 
+    bool instantRestart = _options.get_bool_option("sm_restart_instant", false);
     bool truncate = _options.get_bool_option("sm_truncate", false);
-    vol = new vol_t(_options, &chkpt_info->buf_tab);
-    if (!vol) { W_FATAL(eOUTOFMEMORY); }
-    vol->build_caches(truncate);
+
+    // If not instant restart, pass null dirty page table, which disables REDO
+    // recovery based on SPR so that it is done explicitly by restart_m below.
+    vol = new vol_t(_options,
+            instantRestart ? &chkpt_info->buf_tab : NULL);
+    if (!instantRestart) {
+        vol->build_caches(truncate);
+    }
 
     smlevel_0::statistics_enabled = _options.get_bool_option("sm_statistics", true);
 
@@ -484,12 +490,19 @@ ss_m::_construct_once()
     DBG(<<"constructor done");
 
     // If not using instant restart, perform log-based REDO before opening up
-    bool instantRestart = _options.get_bool_option("sm_restart_instant", true);
     if (instantRestart) {
         recovery->spawn_recovery_thread();
     }
     else {
-        recovery->redo_log_pass();
+        if (_options.get_bool_option("sm_restart_log_based_redo", true)) {
+            recovery->redo_log_pass();
+            recovery->undo_pass();
+        }
+        else {
+            recovery->redo_page_pass();
+        }
+        // metadata caches can only be constructed now
+        vol->build_caches(truncate);
     }
 }
 

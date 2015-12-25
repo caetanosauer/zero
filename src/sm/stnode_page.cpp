@@ -115,6 +115,7 @@ rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext, bool redo)
 void stnode_cache_t::dump(ostream& out)
 {
     CRITICAL_SECTION (cs, _latch);
+    out << "STNODE CACHE:" << endl;
     for (size_t i = 1; i < stnode_page::max; ++i) {
         stnode_t s = _stnode_page.get(i);
         if (s.is_used()) {

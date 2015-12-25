@@ -92,6 +92,8 @@ void vol_t::build_caches(bool truncate)
 
 lsn_t vol_t::get_dirty_page_emlsn(PageID pid) const
 {
+    if (!_dirty_pages) { return lsn_t::null; }
+
     buf_tab_t::const_iterator it = _dirty_pages->find(pid);
     if (it == _dirty_pages->end()) { return lsn_t::null; }
     return it->second.page_lsn;
@@ -99,6 +101,8 @@ lsn_t vol_t::get_dirty_page_emlsn(PageID pid) const
 
 void vol_t::delete_dirty_page(PageID pid)
 {
+    if (!_dirty_pages) { return; }
+
     buf_tab_t::iterator it = _dirty_pages->find(pid);
     if (it != _dirty_pages->end()) {
         _dirty_pages->erase(it);
@@ -491,10 +495,10 @@ rc_t vol_t::read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn)
         cerr << "Recovered " << pnum << " to LSN " << emlsn << endl;
     }
 
-    if (buf->pid != pnum) {
-        W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
-            << pnum << " was " << buf->pid);
-    }
+    // if (buf->pid != pnum) {
+    //     W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
+    //         << pnum << " was " << buf->pid);
+    // }
 }
 
 /*********************************************************************

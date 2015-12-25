@@ -177,6 +177,8 @@ public:
 
     void log_analysis();
     void redo_log_pass();
+    void redo_page_pass();
+    void undo_pass();
 
     chkpt_t* get_chkpt() { return &chkpt; }
 
@@ -190,12 +192,6 @@ private:
     // Child thread, used only if open system after Log Analysis phase while REDO and UNDO
     // will be performed with concurrent user transactions
     restart_thread_t*           _restart_thread;
-
-    // Function used for concurrent REDO operations, page driven REDO
-    void                 redo_concurrent_pass();
-
-    // Function used for concurrent UNDO operations, transaction driven UNDO
-    void                 undo_concurrent_pass();
 
     /*
      * SINGLE-PAGE RECOVERY (SPR)
@@ -267,10 +263,7 @@ private:
     // brief sub-routine of redo_pass() for logs that have pid.
     void                 _redo_log_with_pid(
                                 logrec_t& r,                   // In: Incoming log record
-                                lsn_t &lsn,                    // In: LSN of the incoming log record
-                                const lsn_t &end_logscan_lsn,  // In: This is the current LSN, validation purpose
-                                PageID page_updated,           // In: Store ID (vol + store number) + page number
-                                                               //      mainly used for multi-page log
+                                PageID page_updated,
                                 bool &redone,                  // Out: did REDO occurred?  Validation purpose
                                 uint32_t &dirty_count);        // Out: dirty page count, validation purpose
 };

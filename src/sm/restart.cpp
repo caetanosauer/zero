@@ -213,9 +213,6 @@ restart_m::redo_log_pass()
     bool redone = false;
     while (scan.xct_next(lsn, r))
     {
-        // The difference between serial and concurrent modes with
-        // log scan driven REDO:
-        //     Concurrent mode needs to know when to stop the log scan
         if ((lsn > end_logscan_lsn))
         {
             // If concurrent recovery, user transactions would generate new log records
@@ -223,23 +220,6 @@ restart_m::redo_log_pass()
             break;
         }
 
-        DBGOUT3(<<"redo scan returned lsn " << lsn
-                << " expected " << expected_lsn);
-
-        // For each log record ...
-        if (!r.valid_header(lsn))
-        {
-            smlevel_0::errlog->clog << error_prio
-                << "Internal error during redo recovery." << flushl;
-            smlevel_0::errlog->clog << error_prio
-                << "    log record at position: " << lsn
-                << " appears invalid." << endl << flushl;
-            abort();
-        }
-
-        // All these are for debugging and validation purposes
-        // redone: whether REDO occurred for this log record
-        // expected_lsn: the LSN in the retrieved log is what we expected
         redone = false;
         (void) redone; // Used only for debugging output
         DBGOUT3( << setiosflags(ios::right) << lsn
@@ -272,19 +252,6 @@ restart_m::redo_log_pass()
             if (r.pid() == 0 && r.type() != logrec_t::t_alloc_page &&
                     r.type() != logrec_t::t_dealloc_page)
             {
-                // Cannot be compensate log record
-                w_assert1(!r.is_cpsn());
-
-                // The log record does not contain a page number for the buffer pool
-                // there is no 'redo' in the buffer pool but we still need to 'redo' these
-                // transactions
-
-                // If the transaction is still in the table after log analysis,
-                // it didn't get committed or aborted,
-                // so go ahead and process it.
-                // If it isn't in the table, it was  already committed or aborted.
-                // If it's in the table, its state is prepared or active.
-                // Nothing in the table should now be in aborting state.
                 if (!r.is_single_sys_xct() && r.tid() != tid_t::null)
                 {
                     // Regular transaction with a valid txn id
@@ -349,20 +316,11 @@ restart_m::redo_log_pass()
                 // achieve the 'transaction abort' effect during REDO phase, no UNDO for
                 // aborted transaction (aborted txn are not kept in transaction table).
 
-                _redo_log_with_pid(r, lsn, end_logscan_lsn, r.pid(),
-                        redone, dirty_count);
+                _redo_log_with_pid(r, r.pid(), redone, dirty_count);
                 if (r.is_multi_page())
                 {
                     w_assert1(r.is_single_sys_xct());
-                    // If the log is an SSX log that touches multi-pages, also invoke
-                    // REDO on the second page. Whenever the log type moves content
-                    // (or, not self-contained), page=dest, page2=src.
-                    // So, we try recovering page2 after page.
-                    // Note currently only system transaction can affect more than one page, and
-                    // in fact it is limited to 2 pages only
-
-                    _redo_log_with_pid(r, lsn, end_logscan_lsn, r.pid2(),
-                            redone, dirty_count);
+                    _redo_log_with_pid(r, r.pid2(), redone, dirty_count);
                 }
             }
         }
@@ -403,402 +361,37 @@ restart_m::redo_log_pass()
 *  the operation, it cannot continue
 *
 *********************************************************************/
-void restart_m::_redo_log_with_pid(
-    logrec_t& r,                  // Incoming log record
-    lsn_t &lsn,                   // LSN of the incoming log record
-    const lsn_t &end_logscan_lsn, // This is the current LSN, if in serial mode,
-                                  // REDO should not generate log record
-                                  // and this value should not change
-                                  // this is passed in for validation purpose
-    PageID page_updated,          // Store ID (vol + store number) + page number
-                                  // This is mainly because if the log is a multi-page log
-                                  // this will be the information for the 2nd page
-    bool &redone,                 // Did REDO occurred, for validation purpose
-    uint32_t &dirty_count)        // Counter for the number of in_doubt to dirty pages
+void restart_m::_redo_log_with_pid(logrec_t& r, PageID pid,
+        bool &redone, uint32_t &dirty_count)
 {
-    // Use the log record to get the index in buffer pool
-    // Get the cb of the page to make sure the page is indeed 'in_doubt'
-    // load the physical page and apply the REDO to the page
-    // and then clear the in_doubt flag and set the dirty flag
-
-    // For all the buffer pool access, hold latch on the page
-    // becasue we will open the store for new transactions during REDO phase
-    // in the future, therefor the latch protection
-
-    w_rc_t rc = RCOK;
     redone = false;             // True if REDO happened
-
-    // 'is_redo()' covers regular transaction but not compensation transaction
     w_assert1(r.is_redo());
-    w_assert1(r.pid());
-    w_assert1(false == redone);
 
-    // Because we are loading the page into buffer pool directly
-    // we cannot have swizzling on
-    w_assert1(!smlevel_0::bf->is_swizzling_enabled());
+    bool virgin_page = r.type() == logrec_t::t_page_img_format
+            || (r.type() == logrec_t::t_btree_split && pid == r.pid());
 
-    bf_idx idx = smlevel_0::bf->lookup(page_updated);
-    if (0 != idx)
-    {
-        // Found the page in hashtable of the buffer pool
-        // Check the iin_doubt and dirty flag
-        // In_doubt flag on: first time hitting this page, the physical page should
-        //           not be in memory, load it
-        // Dirty flag on: not the first time hitting this page, the physical page
-        //          should be in memory already
-        // Neither In_doubt or dirty flags are on: this cannot happen, error
+    fixable_page_h page;
+    W_COERCE(page.fix_direct(pid, LATCH_EX, false, virgin_page));
 
-        // Acquire write latch because we are going to modify
-        bf_tree_cb_t &cb = smlevel_0::bf->get_cb(idx);
-        // Acquire write latch for each page because we are going to update
-        // Using time out value WAIT_IMMEDIATE:
-        //    Serial mode: no conflict because this is the only operation
-        //    Concurrent mode (both commit_lsn and lock):
-        //                 Page (m2): concurrent txn does not load page, no conflict
-        //                 On-demand (m3): only concurrent txn load page, no conflict
-        //                 Mixed (m4): potential conflict, the failed one skip the page silently
-        //                 ARIES (m5): no conflict because system is not opened
-        rc = cb.latch().latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
-        if (rc.is_error())
-        {
-            // Unable to acquire write latch, cannot continue, raise an internal error
-            DBGOUT3 (<< "Error when acquiring LATCH_EX for a page in buffer pool. pagw ID: "
-                     << page_updated << ", rc = " << rc);
-            W_FATAL_MSG(fcINTERNAL, << "REDO (redo_pass()): unable to EX latch a buffer pool page");
-            return;
-        }
-
-        // CS TODO: pages will not be marked dirty on the buffer anymore!
-        if (smlevel_0::bf->is_dirty(idx))
-        {
-            fixable_page_h page;
-            bool virgin_page = false;
-            bool corrupted_page = false;
-
-            // Comments below (page format) are from the original implementation
-            // save this comments so we don't lose the original thought in this area, although
-            // the current implementation is different from the original implementation:
-            // ***
-            // If the log record is for a page format then there are two possible
-            // implementations:
-            // 1) Trusted LSN on New Pages
-            //   If we assume that the LSNs on new pages can always be
-            //   trusted then the code reads in the page and
-            //   checks the page lsn to see if the log record
-            //   needs to be redone.  Note that this requires that
-            //   pages on volumes stored on a raw device must be
-            //   zero'd when the volume is created.
-            //
-            // 2) No Trusted LSN on New Pages
-            //   If new pages are not in a known (ie. lsn of 0) state
-            //   then when a page_init record is encountered, it
-            //   must always be redone and therefore all records after
-            //   it must be redone.
-            //
-            // ATTENTION!!!!!! case 2 causes problems with
-            //   tmp file pages that can get reformatted as tmp files,
-            //   then converted to regular followed by a restart with
-            //   no chkpt after the conversion and flushing of pages
-            //   to disk, and so it has been disabled. That is to
-            //   say:
-            //
-            //   DO NOT BUILD WITH
-            //   DONT_TRUST_PAGE_LSN defined . In any case, I
-            //   removed the code for its defined case.
-            // ***
-
-            if (r.type() == logrec_t::t_page_img_format
-                // btree_norec_alloc is a multi-page log. "page2" (so, !=shpid()) is the new page.
-                || (r.type() == logrec_t::t_btree_norec_alloc && page_updated != r.pid())
-                // for btree_split, new page is page1 (so, ==shpid())
-                || (r.type() == logrec_t::t_btree_split && page_updated == r.pid())
-            )
-            {
-                virgin_page = true;
-            }
-
-            if (!virgin_page)
-            {
-                // Page is in_doubt and not a virgin page, this is the first time we have seen this page
-                // need to load the page from disk into buffer pool first
-                // Special case: the page is a root page which exists on disk, it was pre-loaded
-                //                     during device mounting (_preload_root_page).
-                //                     We will load reload the root page here but not register it to the
-                //                     hash table (already registered).  Use the same logic to fix up
-                //                     page cb, it does no harm.
-                DBGOUT3 (<< "REDO phase, loading page from disk, page = " << page_updated);
-
-                // If past_end is true, the page does not exist on disk and the buffer pool page
-                // has been zerod out, we cannot apply REDO in this case
-                rc = smlevel_0::bf->load_for_redo(idx, page_updated);
-
-                if (rc.is_error())
-                {
-                    if (cb.latch().held_by_me())
-                        cb.latch().latch_release();
-                    if (eBADCHECKSUM == rc.err_num())
-                    {
-                        // Corrupted page, allow it to continue and we will
-                        // use Single-Page-Recovery to recovery the page
-                        DBGOUT3 (<< "REDO phase, newly loaded page was corrupted, page = " << page_updated);
-                        corrupted_page = true;
-                    }
-                    else
-                    {
-                        // All other errors
-                        W_FATAL_MSG(fcINTERNAL,
-                                    << "Failed to load physical page into buffer pool in REDO phase, page: "
-                                    << page_updated << ", RC = " << rc);
-                    }
-                }
-
-                // Just loaded from disk, set the vol and page in cb
-                cb._store_num = r.stid();
-                cb._pid_shpid = page_updated;
-            }
-            else
-            {
-                // First time encounter this page and it is a virgin page
-                // We have the page cb and hashtable entry for this page already
-                // There is nothing to load from disk, set the vol and page in cb
-
-                cb._store_num = r.stid();
-                cb._pid_shpid = page_updated;
-            }
-
-            // Now the physical page is in memory and we have an EX latch on it
-            // In this case we are not using fixable_page_h::fix_direct() because
-            // we have the idx, need to manage the in_doubt and dirty flags for the page
-            // and we have loaded the page already
-            // 0. Assocate the page to fixable_page_h, swizzling must be off
-            // 1. If a log record pertains does not pertain to one of the pages marked 'in_doubt'
-            //   in the buffer pool, no-op (we should not get here in this case)
-            // 2. If the page image in the buffer pool is newer than the log record, no-op
-            // 3. If the page was corrupted from loading, use Single-Page-Recovery to recover first
-            // 4. Apply REDO, modify the pageLSN value in the page image
-
-            // Associate this buffer pool page with fixable_page data structure
-            W_COERCE(page.fix_recovery_redo(idx, page_updated));
-
-            // We rely on pid/tag set correctly in individual redo() functions
-            // set for all pages, both virgin and non-virgin
-            page.get_generic_page()->pid = page_updated;
-            page.get_generic_page()->tag = t_btree_p;
-
-            if (virgin_page)
-            {
-                // Virgin page has no last write
-                page.get_generic_page()->lsn = lsn_t::null;
-            }
-            w_assert1(page.pid() == page_updated);
-
-            if (corrupted_page)
-            {
-                // CS: since this method is static, we refer to restart_m indirectly
-                // For corrupted page, set the last write to force a complete recovery
-                page.get_generic_page()->lsn = lsn_t::null;
-                W_COERCE(smlevel_0::recovery->recover_single_page(page, lsn));
-            }
-
-            /// page.lsn() is the last write to this page
-            lsn_t page_lsn = page.lsn();
-
-            DBGOUT3( << setiosflags(ios::right) << lsn
-                     << resetiosflags(ios::right) << " R: "
-                     << " page_lsn " << page_lsn
-                     << " will redo if 1: " << int(page_lsn < lsn));
-
-            if (page_lsn < lsn)
-            {
-                // The last write to this page was before the log record LSN
-                // Need to REDO
-                // REDO phase is for buffer pool in_doubt pages, the process is
-                // not related to the transactions in transaction table
-
-                // Log record was for a regular transaction
-                // logrec_t::redo is invoking redo_gen.cpp (generated file)
-                // which calls the appropriate 'redo' methond based
-                // on the log type
-                // Each log message has to implement its own 'redo'
-                // and 'undo' methods, while some of the log records do not
-                // support 'redo' and 'undo', for example, checkpoint related
-                // log records do not have 'redo' and 'undo' implementation
-                // For the generic log records, the 'redo' and 'undo' are in logrec.cpp
-                // For the B-tree related log records, they are in btree_logrec.cpp
-
-                // This function is shared by both Recovery and Single-Page-Recovery, it sets the page
-                // dirty flag before the function returns, which is redudent for Recovery
-                // because we will clear in_doubt flag and set dirty flag later
-
-                DBGOUT3 (<< "redo because page_lsn < lsn");
-                w_assert1(page.is_fixed());
-
-                //Both btree_norec_alloc_log and tree_foster_rebalance_log are multi-page
-                // system transactions, the 2nd page is the foster child and the page
-                // gets initialized as an empty child page during 'redo'
-                r.redo(&page);
-
-                // TODO(Restart)... Something to do with space recoverying issue,
-                // it does not seem needed with the new code
-                //_redo_tid = tid_t::null;
-
-                // Set the 'lsn' of this page (page lsn) to the log record lsn
-                // which is the last write to this page
-                page.update_initial_and_last_lsn(lsn);
-                page.update_clsn(lsn);
-
-                // The _rec_lsn in page cb is the earliest lsn which made the page dirty
-                // the _rec_lsn (earliest lns) must be earlier than the page lsn
-                // (last write to this page)
-                // We need to update the _rec_lsn only if the page in_doubt flag is on
-                // or it is a virgin page, meaning this is the first time we have seen
-                // this page or it is a brand new page.
-                // We do not need to update the _rec_lsn for an already seen page,
-                // _rec_lsn should have been set already when we seen it the first time.
-                // If we need to set the _rec_lsn, set it using the current log record lsn,
-                // both _rec_lsn (initial dirty) and page lsn (last write) are set to the
-                // current log record lsn in this case
-                if (virgin_page)
-                {
-                    if (cb._rec_lsn > lsn.data())
-                        cb._rec_lsn = lsn.data();
-                }
-
-                // Finishe the REDO, set the flag so we will update the dirty page counter later
-                redone = true;
-            }
-            else if (virgin_page)
-            {
-                // Set the initial dirty LSN to the current log record LSN
-                cb._rec_lsn = lsn.data();
-
-                // Virgin page, no need to REDO, set the flag to update dirty page counter
-                redone = true;
-            }
-            else if ((page_lsn >= end_logscan_lsn) && (lsn_t::null != page_lsn))
-            {
-                // Not a virgin page, end_logscan_lsn is the current recovery log LSN
-                // if the page last write LSN > end_logscan_lsn, this cannot happen
-                // we have a page corruption
-                DBGOUT1( << "WAL violation! page "
-                         << page.pid()
-                         << " has lsn " << page_lsn
-                         << " end of log is record prior to " << end_logscan_lsn);
-
-                if (cb.latch().held_by_me())
-                    cb.latch().latch_release();
-                W_FATAL_MSG(fcINTERNAL,
-                    << "Page LSN > current recovery log LSN, page corruption detected in REDO phase, page: "
-                    << page_updated);
-            }
-            else
-            {
-                DBGOUT3( << setiosflags(ios::right) << lsn
-                         << resetiosflags(ios::right) << " R: "
-                         << " page_lsn " << page_lsn
-                         << " will skip & increment rec_lsn ");
-
-                // The last write LSN of this page is larger than the current log record LSN
-                // No need to apply REDO to the page
-                // Bump the recovery lsn (last written) for the page to indicate that
-                // the page is younger than the current log record; the earliest
-                // record we have to apply is that after the page lsn.
-
-                if (lsn_t::null != page_lsn)  // Virgin page has no last write
-                {
-                    w_assert1(false == virgin_page); // cannot be a virgin page
-                    page.get_generic_page()->lsn = page_lsn.advance(1).data(); // non-const method
-                }
-            }
-
-            // REDO happened, and this is the first time we seen this page
-            if (redone)
-            {
-                // Turn the in_doubt flag into the dirty flag
-                smlevel_0::bf->set_dirty(page.get_generic_page());
-
-                // For counting purpose, because we have cleared an in_doubt flag,
-                // update the dirty_count in all cases
-                ++dirty_count;
-            }
-        }
-        else
-        {
-            // Neither in_doubt or dirty bit was set for the page, but the idx is in hashtable
-            // If the log is for page allocation, then the page 'used' flag should be set
-            //     later on we would have a log record to format the
-            //     page (if it is not non-log operation)
-            // If the log is for page deallocation, then the page 'used' flag should not be set
-            //     and we should have removed the idx from hashtable, therefore the code
-            //     should not get here
-            // All other cases are un-expected, raise error
-            if (r.type() == logrec_t::t_alloc_page)
-            {
-                // This is page allocation log record, nothing is in hashtable for this
-                // page currently
-                // Later on we probably will have a 't_page_img_format' log record
-                // (if it is not a non-log operation) to formate this virgin page
-                // No-op for the page allocation log record, because the 't_page_img_format'
-                // log record has already registered the page in the hashtable
-
-                // No need to change dirty_page count, a future page format log record
-                // (t_page_img_format ) will update the dirty_page count
-
-                // The 'used' flag of the page should be set
-                // w_assert1(true == smlevel_0::bf->is_used(idx));
-            }
-            else if (r.type() == logrec_t::t_dealloc_page)
-            {
-                // The idx should not be in hashtable
-                if (cb.latch().held_by_me())
-                    cb.latch().latch_release();
-                W_FATAL_MSG(fcINTERNAL,
-                    << "Deallocated page should not exist in hashtable in REDO phase, page: "
-                    << page_updated);
-            }
-            else
-            {
-                if (true == smlevel_0::bf->is_used(idx))
-                {
-                    // If the page 'used' flag is set but none of the other flags are on, and the log record
-                    // is not page allocation or deallocation, we should not have this case
-                    if (cb.latch().held_by_me())
-                        cb.latch().latch_release();
-                    W_FATAL_MSG(fcINTERNAL,
-                        << "Incorrect in_doubt and dirty flags in REDO phase, page: "
-                        << page_updated);
-                }
-            }
-        }
-
-        // Done, release write latch
-        if (cb.latch().held_by_me())
-            cb.latch().latch_release();
-    }
-    else
-    {
-        // The page cb is not in hashtable, 2 possibilities:
-        // 1. A deallocation log to remove the page (r.is_page_deallocate())
-        // 2. The REDO LSN is before the checkpoint, it is possible the current log record
-        //     is somewhere between REDO LSN and checkpoint, it is referring to a page
-        //     which was not dirty (not in_doubt) therefore this page does not require
-        //     a REDO operation, this might be a rather common scenario
-        //
-        // NOOP if we get here since the log record does not require REDO
-
-        // CS: An error used to be thrown here, but pages not marked in-doubt
-        // during log analysis are actually up-to-date on disk and thus
-        // do not require any REDO. Therefore, it is perfectly reasonable and
-        // even quite likely that we end up in this "else" block with a regular
-        // page update log record. The solution should be to simply ignore it.
-        DBGOUT3(<< "Skipped logrec " << r.lsn_ck()
-                << " -- page " << r.pid() << " not in doubt");
+    if (virgin_page) {
+        page.get_generic_page()->pid = pid;
     }
 
-    return;
+    /// page.lsn() is the last write to this page
+    lsn_t page_lsn = page.lsn();
+
+    if (page_lsn < r.lsn())
+    {
+        w_assert1(page.is_fixed());
+        r.redo(&page);
+        page.update_initial_and_last_lsn(r.lsn());
+        page.update_clsn(r.lsn());
+        redone = true;
+        ++dirty_count;
+    }
 }
 
-void restart_m::redo_concurrent_pass()
+void restart_m::redo_page_pass()
 {
     generic_page* page;
     stopwatch_t timer;
@@ -820,7 +413,7 @@ void restart_m::redo_concurrent_pass()
     ERROUT(<< "Finished concurrent REDO of " << chkpt.buf_tab.size() << " pages");
 }
 
-void restart_m::undo_concurrent_pass()
+void restart_m::undo_pass()
 {
     // If nothing in the transaction table, then nothing to process
     if (0 == xct_t::num_active_xcts())
@@ -991,7 +584,7 @@ void restart_thread_t::run()
 
     // REDO, call back to restart_m to carry out the concurrent REDO
     working = true;
-    // smlevel_0::recovery->redo_concurrent_pass();
+    smlevel_0::recovery->redo_page_pass();
 
     gettimeofday(&tm_after, NULL);
     DBGOUT1(<< "**** Restart child thread REDO, elapsed time (milliseconds): "
@@ -1000,7 +593,7 @@ void restart_thread_t::run()
 
     // UNDO, call back to restart_m to carry out the concurrent UNDO
     working = true;
-    smlevel_0::recovery->undo_concurrent_pass();
+    smlevel_0::recovery->undo_pass();
 
     // Done
     DBGOUT1(<< "restart_thread_t: Finished REDO and UNDO tasks");

@@ -778,14 +778,14 @@ void chkpt_t::dump(ostream& os)
             << endl;
     }
 
-    os << "DIRTY PAGES" << endl;
-    for(buf_tab_t::const_iterator it = buf_tab.begin();
-                            it != buf_tab.end(); ++it)
-    {
-        os << it->first << "(" << it->second.rec_lsn
-            << "-" << it->second.page_lsn << ") ";
-    }
-    os << endl;
+    // os << "DIRTY PAGES" << endl;
+    // for(buf_tab_t::const_iterator it = buf_tab.begin();
+    //                         it != buf_tab.end(); ++it)
+    // {
+    //     os << it->first << "(" << it->second.rec_lsn
+    //         << "-" << it->second.page_lsn << ") ";
+    // }
+    // os << endl;
 }
 
 void chkpt_m::take(chkpt_mode_t chkpt_mode)
