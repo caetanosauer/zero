@@ -68,6 +68,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "logrec.h"
 #include "log_core.h"
 #include "log_carray.h"
+#include "log_lsn_tracker.h"
 
 #include "bf_tree.h"
 
@@ -76,11 +77,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sstream>
 #include <w_strstream.h>
 
+typedef smlevel_0::fileoff_t fileoff_t;
+
 const std::string log_core::IMPL_NAME = "traditional";
 const uint64_t log_common::DFT_LOGBUFSIZE = 128 << 10;
 fileoff_t log_common::max_logsz = 0;
 
-typedef smlevel_0::fileoff_t fileoff_t;
 
 class flush_daemon_thread_t : public smthread_t {
     log_common* _log;
@@ -214,18 +216,6 @@ log_common::log_common(const sm_options& options)
             << endl
             << "Old epoch  end " << _old_epoch.end
             << endl;
-    }
-
-    int percent = options.get_int_option("sm_log_warn", 0);
-
-    // log_warn_exceed is %; now convert it to raw # bytes
-    // that we must have left at all times. When the space available
-    // in the log falls below this, it'll trigger the warning.
-    if (percent > 0) {
-        smlevel_0::log_warn_trigger  = (long) (
-                // max_openlog is a compile-time constant
-                log->limit() * max_openlog *
-                (100.0 - (double)smlevel_0::log_warn_exceed_percent) / 100.00);
     }
 }
 
@@ -504,6 +494,8 @@ log_core::log_core(const sm_options& options)
             _flush_lsn, _segsize);
     long prime_offset = _storage->prime(_buf, _durable_lsn, log_storage::BLOCK_SIZE);
 
+    _oldest_lsn_tracker = new PoorMansOldestLsnTracker(1 << 20);
+
     /* FRJ: the new code assumes that the buffer is always aligned
        with some buffer-sized multiple of the partition, so we need to
        return how far into the current segment we are.
@@ -523,8 +515,6 @@ log_core::log_core(const sm_options& options)
 
     // move the primed data where it belongs (watch out, it might overlap)
     memmove(_buf + offset - prime_offset, _buf, prime_offset);
-
-    _resv = new log_resv(_storage);
 
     start_flush_daemon();
 
@@ -560,7 +550,7 @@ log_core::log_core(const sm_options& options)
 log_core::~log_core()
 {
     delete _storage;
-    delete _resv;
+    delete _oldest_lsn_tracker;
 
 #ifdef LOG_DIRECT_IO
     free(_buf);
@@ -746,16 +736,6 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
         _buf_epoch.end = new_end = spillsize;
     }
     else {
-        // new partition! need to update next_lsn/new_end to reflect this
-        long leftovers = _storage->partition_data_size() - curr_lsn.lo();
-        w_assert2(leftovers >= 0);
-        if(leftovers && !reserve_space(leftovers)) {
-            std::cerr << "WARNING WARNING: OUTOFLOGSPACE in update_epochs" << std::endl;
-            info->error = eOUTOFLOGSPACE;
-            _insert_lock.release(&info->me);
-            return;
-        }
-
         curr_lsn = first_lsn(next_lsn.hi()+1);
         next_lsn = curr_lsn + recsize;
         new_base = _buf_epoch.base + _segsize;

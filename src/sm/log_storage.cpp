@@ -1231,21 +1231,6 @@ log_storage::_open_partition(partition_number_t  __num,
         DBG(<<"about to open for read");
         w_rc_t err = p->open_for_read(__num);
         if(err.is_error()) {
-            // Try callback to recover this file
-            if(smlevel_0::log_archived_callback) {
-                static char buf[smlevel_0::max_devname];
-                make_log_name(__num, buf, smlevel_0::max_devname);
-                err = (*smlevel_0::log_archived_callback)(
-                        buf,
-                        __num
-                        );
-                if(!err.is_error()) {
-                    // Try again, just once.
-                    err = p->open_for_read(__num);
-                }
-            }
-        }
-        if(err.is_error()) {
             fprintf(stderr,
                     "Could not open partition %d for reading.\n",
                     __num);

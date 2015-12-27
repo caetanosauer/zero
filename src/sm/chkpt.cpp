@@ -553,10 +553,6 @@ void chkpt_t::serialize()
     do {                                              \
         new (logrec) constructor_call;                \
         W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
-        if(!ss_m::log->consume_chkpt_reservation(logrec->length())) { \
-            chkpt_serial_m::write_release();                    \
-            W_FATAL(eOUTOFLOGSPACE);                            \
-        }                                                       \
     } while(0)
 
     // Insert chkpt_begin log record.
@@ -805,13 +801,6 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     DBGOUT1(<<"BEGIN chkpt_m::take");
 
     INC_TSTAT(log_chkpt_cnt);
-
-    // Verifies if there is enough space to insert the maximum lenght of a chkpt
-    // in the log.
-    if(!ss_m::log->verify_chkpt_reservation()) {
-        chkpt_serial_m::write_release();
-        W_FATAL(eOUTOFLOGSPACE);
-    }
 
     curr_chkpt.scan_log();
     curr_chkpt.serialize();

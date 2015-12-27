@@ -305,10 +305,6 @@ xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
 #if CHECK_NESTING_VARIABLES
 #endif
     _log_buf(0),
-    _log_bytes_rsvd(0),
-    _log_bytes_ready(0),
-    _log_bytes_used(0),
-    _log_bytes_reserved_space(0),
     _rolling_back(false),
     _in_compensated_op(0)
 #if W_DEBUG_LEVEL > 2
@@ -390,11 +386,6 @@ xct_t::xct_core::~xct_core()
 xct_t::~xct_t()
 {
     FUNC(xct_t::~xct_t);
-    DBGX( << " ended: _log_bytes_rsvd " << _log_bytes_rsvd
-            << " _log_bytes_ready " << _log_bytes_ready
-            << " _log_bytes_used " << _log_bytes_used
-            );
-
     w_assert9(__stats == 0);
 
     if (!_sys_xct && smlevel_0::log) {
@@ -835,42 +826,6 @@ xct_t::put_in_order() {
 // #endif
 }
 
-
-smlevel_0::fileoff_t
-xct_t::get_log_space_used() const
-{
-    return _log_bytes_used
-    + _log_bytes_ready
-    + _log_bytes_rsvd;
-}
-
-rc_t
-xct_t::wait_for_log_space(fileoff_t amt) {
-    rc_t rc = RCOK;
-    if(log) {
-        fileoff_t still_needed = amt;
-        // check whether we even need to wait...
-        if(log->reserve_space(still_needed)) {
-            _log_bytes_reserved_space += still_needed;
-            w_assert1(_log_bytes_reserved_space >= 0);
-            still_needed = 0;
-        }
-        else {
-            timeout_in_ms timeout = first_lsn().valid()? 100 : WAIT_FOREVER;
-            fprintf(stderr, "%s:%d: first_lsn().valid()? %d    timeout=%d\n",
-                __FILE__, __LINE__, first_lsn().valid(), timeout);
-            rc = log->wait_for_space(still_needed, timeout);
-            if(rc.is_error()) {
-            //rc = RC(eOUTOFLOGSPACE);
-            }
-        }
-
-        // update our reservation with whatever we got
-        _log_bytes_ready += amt - still_needed;
-    }
-    return rc;
-}
-
 void
 xct_t::dump(ostream &out)
 {
@@ -891,79 +846,6 @@ void
 xct_t::set_timeout(timeout_in_ms t)
 {
     _core->_timeout = t;
-}
-
-w_rc_t
-xct_log_warn_check_t::check(xct_t *& _victim)
-{
-    /* FRJ: TODO: use this with the new log reservation code. One idea
-       would be to return eLOGSPACEWARN if this transaction (or some
-       other?) has been forced nonblocking. Another would be to hook
-       in with the LOG_RESERVATIONS stuff and warn if transactions are
-       having to wait to acquire log space. Yet another way would be
-       to hook in with the checkpoint thread and see if it feels
-       stressed...
-     */
-    /*
-     * NEH In the meantime, we do this crude check in prologues
-     * to sm routines, if for no other reason than to test
-     * the callbacks.  User can turn off log_warn_check at will with option:
-     * -sm_log_warn
-     */
-
-    DBG(<<"generate_log_warnings " <<  me()->generate_log_warnings());
-
-    // default is true
-    // User can turn it off, too
-    if (me()->generate_log_warnings() &&
-            smlevel_0::log &&
-            smlevel_0::log_warn_trigger > 0)
-    {
-        _victim = NULL;
-        w_assert1(smlevel_0::log != NULL);
-
-        // Heuristic, pretty crude:
-        smlevel_0::fileoff_t left = smlevel_0::log->space_left() ;
-        DBG(<<"left " << left << " trigger " << smlevel_0::log_warn_trigger
-                << " log durable_lsn " << log->durable_lsn()
-                << " log curr_lsn " << log->curr_lsn()
-                //<< " segment_size " << log->segment_size()
-                );
-
-        if( left < smlevel_0::log_warn_trigger )
-        {
-            // Try to force the log first
-            log->flush(log->curr_lsn());
-        }
-        if( left < smlevel_0::log_warn_trigger )
-        {
-            if(log_warn_callback) {
-                xct_t *v = xct();
-                // Check whether we have log warning on - to avoid
-                // cascading errors.
-                if(v && v->log_warn_is_on()) {
-                    xct_i i(true);
-                    lsn_t l = smlevel_0::log->global_min_lsn();
-                    char  buf[max_devname];
-                    log->make_log_name(l.file(), buf, max_devname);
-                    w_rc_t rc = (*log_warn_callback)(
-                        &i,   // iterator
-                        v,    // victim
-                        left, // space left
-                        smlevel_0::log_warn_trigger, // threshold
-                        buf
-                    );
-                    if(rc.is_error() && (rc.err_num() == eUSERABORT)) {
-                        _victim = v;
-                    }
-                    return rc;
-                }
-            } else {
-                return  RC(eLOGSPACEWARN);
-            }
-        }
-    }
-    return RCOK;
 }
 
 
@@ -1013,26 +895,6 @@ xct_t::_teardown(bool is_chaining) {
     xct_t* xd = _xlist.last();
     _oldest_tid = xd ? xd->_tid : _nxt_tid;
     release_xlist_mutex();
-
-    DBGX( << " commit: _log_bytes_rsvd " << _log_bytes_rsvd
-         << " _log_bytes_ready " << _log_bytes_ready
-         << " _log_bytes_used " << _log_bytes_used
-         );
-    if(long leftovers = _log_bytes_rsvd + _log_bytes_ready) {
-        w_assert2(smlevel_0::log);
-        smlevel_0::log->release_space(leftovers);
-        _log_bytes_reserved_space -= leftovers;
-        w_assert1(_log_bytes_reserved_space >= 0);
-
-        DBG( <<  "At commit: rsvd " << _log_bytes_rsvd
-            << " ready " << _log_bytes_ready
-            << " used " << _log_bytes_used);
-
-        DBG( << "Log space available is now " << log->space_left() );
-    };
-    _log_bytes_reserved_space =
-    _log_bytes_rsvd = _log_bytes_ready = _log_bytes_used = 0;
-
 }
 
 /*********************************************************************
@@ -1294,11 +1156,6 @@ xct_t::_pre_commit(uint32_t flags)
 rc_t
 xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
 {
-    DBGX( << " commit: _log_bytes_rsvd " << _log_bytes_rsvd
-            << " _log_bytes_ready " << _log_bytes_ready
-            << " _log_bytes_used " << _log_bytes_used
-            );
-
     // when chaining, we inherit the read_watermark from the previous xct
     // in case the next transaction are read-only.
     lsn_t inherited_read_watermark;
@@ -1694,11 +1551,6 @@ xct_t::dispose()
 w_rc_t
 xct_t::_flush_logbuf()
 {
-    DBGX( << " _flush_logbuf: _log_bytes_rsvd " << _log_bytes_rsvd
-            << " _log_bytes_ready " << _log_bytes_ready
-            << " _log_bytes_used " << _log_bytes_used);
-    // ASSUMES ALREADY PROTECTED BY MUTEX
-
     if (_last_log)  {
 
         DBGX ( << " xct_t::_flush_logbuf " << _last_lsn
@@ -1723,7 +1575,6 @@ xct_t::_flush_logbuf()
 
         if(log) {
             logrec_t* l = _last_log;
-            bool      consuming = should_consume_rollback_resv(l->type());
             _last_log = 0;
             W_DO(log->insert(*l, &_last_lsn));
 
@@ -1732,86 +1583,6 @@ xct_t::_flush_logbuf()
                       );
 
             LOGREC_ACCOUNT(*l, !consuming); // see logrec.h
-
-            /* LOG_RESERVATIONS
-
-               Now that we know the size of the log record which was
-               generated, charge the bytes to the appropriate location.
-
-               Normal log inserts consume /length/ available bytes and
-               reserve an additional /length/ bytes against future
-               rollbacks; undo records consume /length/ previously
-               reserved bytes and leave available bytes unchanged..
-
-               NOTE: we only track reservations during forward
-               processing. The SM can no longer run out of log space,
-               so during recovery we can assume that the log was not
-               wedged at the time of the crash and will not become so
-               during recovery (because redo generates only log
-               compensations and undo was already accounted for)
-            */
-            long bytes_used = l->length();
-            if(consuming)
-            {
-                ADD_TSTAT(log_bytes_generated_rb,bytes_used);
-                DBG(<<"_log_bytes_rsvd " << _log_bytes_rsvd
-                        << "(about to subtract bytes_used " << bytes_used
-                        << ") _log_bytes_used " << _log_bytes_used
-                   );
-
-                // NOTE: this assert can fail when we are rolling
-                // back a btree activity and find that we need to
-                // perform a compensating SMO
-                // that wasn't done by this xct.
-                // So I've added the OR consuming here, and
-                // and for safety, don't let the _log_bytes_rsvd
-                // go negative.
-                w_assert1((_log_bytes_rsvd >= bytes_used) || consuming);
-
-                _log_bytes_rsvd -= bytes_used;
-                if(consuming && _log_bytes_rsvd < 0) {
-                    _log_bytes_rsvd = 0;
-                }
-
-                if(_log_bytes_rsvd < 0) {
-                    // print some useful info
-                    w_ostrstream out;
-                    out
-                        << " _log_bytes_rsvd " << _log_bytes_rsvd
-                        << " bytes_used " << bytes_used
-                        << " _rolling_back " << _rolling_back
-                        << " consuming " << consuming
-                        << "\n"
-                        << " xct state " << state()
-                        << " fudge factor is "
-                        << UNDO_FUDGE_FACTOR(l->type(),1)
-                        ;
-
-                    fprintf(stderr, "%s\n", out.c_str());
-                }
-                w_assert0(_log_bytes_rsvd >= 0);
-                // This is what happens when we didn't
-                // reserve enough space for the rollback
-                // because our fudge factor was insufficient.
-                // It's a lousy heuristic.
-                // Arg.
-            }
-            else {
-                long to_reserve = UNDO_FUDGE_FACTOR(l->type(), bytes_used);
-                w_assert0(_log_bytes_ready >= bytes_used + to_reserve);
-                DBG(<<"_log_bytes_ready " << _log_bytes_ready
-                        << "(about to subtract bytes_used "
-                        << bytes_used << " + to_reserve(undo fudge) " << to_reserve
-                        << ") "
-                   );
-                _log_bytes_ready -= bytes_used + to_reserve;
-                DBG(<<"_log_bytes_rsvd " << _log_bytes_rsvd
-                        << "(about to subtract to_reserve " << to_reserve
-                        << ") "
-                   );
-                _log_bytes_rsvd += to_reserve;
-            }
-            _log_bytes_used += bytes_used;
 
             // log insert effectively set_lsn to the lsn of the *next* byte of
             // the log.
@@ -1859,325 +1630,12 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
         return RCOK;
     }
 
-    // protect the log buf that we'll return
-#if W_DEBUG_LEVEL > 0
-    fileoff_t rsvd = _log_bytes_rsvd;
-    fileoff_t ready = _log_bytes_ready;
-    fileoff_t used = _log_bytes_used;
-    fileoff_t requested = _log_bytes_reserved_space;
-    w_assert1(_log_bytes_reserved_space >= 0);
-#endif
-
-    ret = 0;
-
     INC_TSTAT(get_logbuf);
 
     // Instead of flushing here, we'll flush at the end of give_logbuf()
     // and assert here that we've got nothing buffered:
     w_assert1(!_last_log);
-
-    /* LOG_RESERVATIONS
-    // logrec_t is 3 pages, even though the real record is shorter.
-
-       The log keeps its idea what space is available and as long
-       as every xct calls log->reserve_space(amt) before inserting, to
-       make sure there is adequate space for the insertion, we're ok.
-       The xct, for its part, "carves" up the amt and puts in in one
-       of two "pools": ready space -- for log insertions prior to
-       rollback, and rsvd space -- for rolling back if needed.
-       When the xct ends, it gives back to the log that which it
-       no longer needs.
-
-       Log reservations are not done in recovery with the following
-       two exceptions: prepared xcts, and checkpoints.
-       The log constructor initializes its space available; checkpoint
-       and prepared transactions may reserve some of that during redo
-       and end-of-recovery checkpoint; then the sm "activates " reservations,
-       meaning simply that the log then figures out how much space it
-       has left, and then we go into forward_processing mode. From then
-       on, the xcts have the responsibility for making log reservations.
-
-       -----------------
-
-       Make sure we have enough space, both to continue now and to
-       guarantee the ability to roll back should something go wrong
-       later. This means we need to reserve double space for each log
-       record inserted (one for now, one for the potential undo).
-
-       Unfortunately, we don't actually know the size of the log
-       record to be inserted, so we have to be conservative and assume
-       maximum size. Similarly, we don't know whether we'll eventually
-       abort. We'll deal with the former by adjusting our reservation
-       in _flush_logbuf, where we do know the log record's size; we deal
-       with the undo reservation at commit time, releasing it all en
-       masse.
-
-       NOTE: during rollback we don't check reservations because undo
-       was already paid-for when the original record was inserted.
-
-       NOTE: we require three logrec_t worth of reservation: one each
-       for forward and undo of the log record we're about to insert,
-       and the third to handle asymmetric log records required to end
-       the transaction, such as the commit/abort record and any
-       top-level actions generated unexpectedly during rollback.
-     */
-
-    static u_int const MIN_BYTES_READY = 2*sizeof(logrec_t) +
-                                         UNDO_FUDGE_FACTOR(t,sizeof(logrec_t));
-    static u_int const MIN_BYTES_RSVD =  sizeof(logrec_t);
-    DBGX(<<" get_logbuf: START reserved for rollback " << _log_bytes_reserved_space
-            << "\n"
-            << " need ready " << MIN_BYTES_READY
-            << " have " << _log_bytes_ready
-            );
-    bool reserving = should_reserve_for_rollback(t);
-    if(reserving
-       && _log_bytes_ready < MIN_BYTES_READY) {
-        fileoff_t needed = MIN_BYTES_READY;
-        DBGX(<<" try to reserve " << needed);
-        if(!log->reserve_space(needed)) {
-            DBGX(<<" no luck: my first_lsn " << _first_lsn
-                    << " global min " << log->global_min_lsn()
-                    );
-            /*
-               Yikes! Log full!
-
-               In order to reclaim space the oldest log partition must
-               have no dirty pages or active transactions associated
-               with it. If we're one of those overly old transactions
-               we have no choice but to abort.
-             */
-            INC_TSTAT(log_full);
-            bool badnews=false;
-            if(_first_lsn.valid() && _first_lsn.hi() ==
-                    log->global_min_lsn().hi()) {
-                INC_TSTAT(log_full_old_xct);
-                badnews = true;
-            }
-
-            DBGX(<<" no luck: forcing my dirty pages "
-                    << " badnews " << badnews);
-            if(!badnews) {
-                /* Now it's safe to wait for more log space to open up
-                   But before we do anything, let's try to grab the
-                   chkpt serial mutex so ongoing checkpoint has a
-                   chance to complete before we go crazy.
-                */
-
-                // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
-                // chkpt_serial_m::read_acquire(); // wait for chkpt to finish
-                // chkpt_serial_m::read_release();
-
-                static queue_based_block_lock_t emergency_log_flush_mutex;
-                CRITICAL_SECTION(cs, emergency_log_flush_mutex);
-                for(int tries_left=3; tries_left > 0; tries_left--) {
-                    DBGX(<<" wait for more log space tries_left " << tries_left);
-                    // if(tries_left == 1) {
-                    // // the checkpoint should also do this, but just in case...
-                    // lsn_t target = log_m::first_lsn(log->global_min_lsn().hi()+1);
-                    // w_rc_t rc = bf->force_until_lsn(target);
-                    // // did the force succeed?
-                    // if(rc.is_error()) {
-                    //     INC_TSTAT(log_full_giveup);
-                    //     fprintf(stderr, "Log recovery failed\n");
-// #if W_DEBUG_LEVEL > 0
-                    //     extern void dump_all_sm_stats();
-                    //     dump_all_sm_stats();
-// #endif
-                    //     if(rc.err_num() == eBPFORCEFAILED)
-                    //     return RC(eOUTOFLOGSPACE);
-                    //     return rc;
-                    // }
-                    // }
-
-                    // most likely it's well aware, but just in case...
-                    DBGOUT3(<< "chkpt 4");
-
-                    chkpt->wakeup_and_take();
-                    W_IGNORE(log->wait_for_space(needed, 100));
-                    if(!needed) {
-                        if(tries_left > 1) {
-                            INC_TSTAT(log_full_wait);
-                        }
-                        else {
-                            INC_TSTAT(log_full_force);
-                        }
-                        goto success;
-                    }
-
-                    // try again...
-                }
-
-                if(!log->reserve_space(needed)) {
-                    // won't do any good now...
-                    log->release_space(MIN_BYTES_READY - needed);
-                    _log_bytes_reserved_space -= (MIN_BYTES_READY - needed);
-                    w_assert1(_log_bytes_reserved_space >= 0);
-
-                    // nothing's working... give up and abort
-                    stringstream tmp;
-                    tmp << "Log too full. me=" << me()->id
-                    << " pthread=" << pthread_self()
-                    << ": min_chkpt_rec_lsn=" << log->min_chkpt_rec_lsn()
-                    << ", curr_lsn=" << log->curr_lsn()
-                    // also print info that shows why we didn't croak
-                    // on the first check
-                    << "; space left " << log->space_left()
-                    << "\n";
-                    fprintf(stderr, "%s\n", tmp.str().c_str());
-                    INC_TSTAT(log_full_giveup);
-                    badnews = true;
-                }
-            }
-
-            if(badnews) {
-
-#if W_DEBUG_LEVEL > 1
-                // Dump relevant information
-                stringstream tmp;
-                tmp << "Log too full. " << __LINE__ << " " << __FILE__
-                << "\n";
-                tmp << "Thread: me=" << me()->id
-                << " pthread=" << pthread_self()
-                << "\n";
-                tmp
-                << " xct() " << tid()
-                << " _rolling_back " << _rolling_back
-                << " _core->_xct_aborting " << _core->_xct_aborting
-                << " _state " << _core->_state
-                << " _log_bytes_ready " << _log_bytes_ready
-                << " log bytes needed " << needed
-                << "\n";
-
-                tmp
-                << " _log_bytes_used for fwd " << _log_bytes_used
-                << " _log_bytes_rsvd for rollback " << _log_bytes_rsvd
-                << " rollback/used= " << double(_log_bytes_rsvd)/
-                double(_log_bytes_used)
-                << " fudge factor is " << UNDO_FUDGE_FACTOR(t, 1)
-                << "\n";
-
-                tmp
-                    << " first_lsn="  << _first_lsn
-                << "\n";
-                tmp
-                << "Log: min_chkpt_rec_lsn=" << log->min_chkpt_rec_lsn()
-                << ", curr_lsn=" << log->curr_lsn() << "\n";
-
-                tmp
-                << "; master_lsn " << log->master_lsn()
-                << "; durable_lsn " << log->durable_lsn()
-                << "; curr_lsn " << log->curr_lsn()
-                << ", global_min_lsn=" << log->global_min_lsn()
-                << "\n";
-
-                tmp
-                // also print info that shows why we didn't croak
-                // on the first check
-                << "; space left " << log->space_left()
-                << "; rsvd for checkpoint " << log->space_for_chkpt()
-                //<< "; max checkpoint size " << log->max_chkpt_size()
-                << "\n";
-
-                tmp
-                << " MIN_BYTES_READY " << MIN_BYTES_READY
-                << " MIN_BYTES_RSVD " << MIN_BYTES_RSVD
-                << "\n";
-
-                if(errlog) {
-                    errlog->clog << error_prio
-                    << tmp.str().c_str()
-                    << flushl;
-                } else {
-                    fprintf(stderr, "%s\n", tmp.str().c_str());
-                }
-#endif
-
-                return RC(eOUTOFLOGSPACE);
-            }
-        }
-    success:
-        _log_bytes_reserved_space += needed;
-        w_assert1(_log_bytes_reserved_space >= 0);
-        _log_bytes_ready += MIN_BYTES_READY;
-        DBGX( << " get_logbuf: now "
-            << " _log_bytes_ready " << _log_bytes_ready
-            << " _log_bytes_used " << _log_bytes_used
-            << " _log_bytes_reserved_space (for rollback)"
-            << _log_bytes_reserved_space
-            );
-    }
-
-    /* Transactions must make some log entries as they complete
-       (commit or abort), so we have to have always some bytes
-       reserved. This is the third of those three logrec_t in
-       MIN_BYTES_READY, so we don't have to reserve more ready bytes
-       just because of this.
-     */
-    DBGX(<< " get_logbuf: NEAR END "
-                << " _log_bytes_rsvd " << _log_bytes_rsvd
-                << " MIN_BYTES_RSVD " << MIN_BYTES_RSVD
-                );
-    if(reserving
-            && _log_bytes_rsvd < MIN_BYTES_RSVD) {
-        // transfer bytes from the ready pool to the reserved pool
-        _log_bytes_ready -= MIN_BYTES_RSVD;
-        _log_bytes_rsvd += MIN_BYTES_RSVD;
-        DBGX(<< " get_logbuf: NEAR END transferred from ready to rsvd "
-                << MIN_BYTES_RSVD
-                << " bytes because _log_bytes_rsvd < MIN_BYTES_RSVD "
-                );
-    }
-
-    DBGX( << " get_logbuf: END _log_bytes_rsvd " << _log_bytes_rsvd
-            << " _log_bytes_ready " << _log_bytes_ready
-            << " _log_bytes_used " << _log_bytes_used
-            );
     ret = _last_log = _log_buf;
-
-
-#if W_DEBUG_LEVEL > 0
-    DBG(
-            << " state() " << state()
-            << " _rolling_back " << _rolling_back
-            << " _core->_xct_aborting " << _core->_xct_aborting
-            << " should_reserve_for_rollback( " << t
-            << ") = " << should_reserve_for_rollback(t)
-            << "\n"
-            << " _log_bytes_rsvd " << _log_bytes_rsvd
-                << " orig rsvd " << rsvd
-            << "\n"
-                << " _log_bytes_used " << _log_bytes_used
-                << " orig used " << used
-            << "\n"
-                << " _log_bytes_ready " << _log_bytes_ready
-                << " orig ready " << ready
-                << " _log_bytes_reserved_space " << _log_bytes_reserved_space
-                << " orig reserved " << requested
-                );
-    w_assert1(_log_bytes_reserved_space >= 0);
-    w_assert1(_log_bytes_ready <= _log_bytes_reserved_space);
-    w_assert1(_log_bytes_rsvd <= _log_bytes_reserved_space);
-    w_assert1((_log_bytes_used <= _log_bytes_reserved_space) ||
-            should_consume_rollback_resv(t)
-            );
-
-    if(should_reserve_for_rollback(t))
-    {
-        // Must be reserving for rollback
-        w_assert1(_log_bytes_rsvd >= rsvd); // monotonically increasing here
-        w_assert1(_log_bytes_used == used); // consumed in _flush_logbuf
-        w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
-    }
-    else
-    {
-        // Must be consuming rollback space
-        w_assert1(_log_bytes_rsvd == rsvd); // strictly decreasing, in
-                                            // _flush_logbuf
-        w_assert1(_log_bytes_used == used); // increasing,  in _flush_logbuf
-        w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
-    }
-#endif
 
     return RCOK;
 }
@@ -2240,13 +1698,6 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
         return RCOK;
     }
 
-#if W_DEBUG_LEVEL > 0
-    fileoff_t rsvd = _log_bytes_rsvd;
-    fileoff_t ready = _log_bytes_ready;
-    fileoff_t used = _log_bytes_used;
-    fileoff_t requested = _log_bytes_reserved_space;
-    w_assert1(_log_bytes_reserved_space >= 0);
-#endif
     DBGX(<<"_last_log contains: "   << *l );
 
     // ALREADY PROTECTED from get_logbuf() call
@@ -2260,48 +1711,6 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
         _update_page_lsns(page, _last_lsn);
         _update_page_lsns(page2, _last_lsn);
     }
-
-#if W_DEBUG_LEVEL > 0
-    DBGOUT4(
-            << " state() " << state()
-            << " _rolling_back " << _rolling_back
-            << " _core->_xct_aborting " << _core->_xct_aborting
-            << " should_reserve_for_rollback( " << l->type()
-            << ") = " << should_reserve_for_rollback(l->type())
-            << "\n"
-            << " _log_bytes_rsvd " << _log_bytes_rsvd
-                << " orig rsvd " << rsvd
-            << "\n"
-                << " _log_bytes_used " << _log_bytes_used
-                << " orig used " << used
-            << "\n"
-                << " _log_bytes_ready " << _log_bytes_ready
-                << " orig ready " << ready
-                << " _log_bytes_reserved_space " << _log_bytes_reserved_space
-                << " orig reserved " << requested
-                );
-        if(should_reserve_for_rollback(l->type()))
-        {
-            // Must be reserving for rollback
-            w_assert1(_log_bytes_rsvd >= rsvd); // consumed in _flush_logbuf
-            w_assert1(_log_bytes_used > used); // consumed in _flush_logbuf
-            // but the above 2 numbers are increased by the actual
-            // log bytes used or a fudge function of that size.
-            w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
-        }
-        else
-        {
-            // Must be consuming rollback space (or is xct_freeing_space)
-            // would be < but for special rollback case, in which
-            // we do a SMO, in which case they both can be 0.
-            w_assert1(_log_bytes_rsvd <= rsvd); // consumed in _flush_logbuf
-            w_assert1(_log_bytes_used >= used); // consumed in _flush_logbuf
-            // but the above 2 numbers are adjusted by the actual
-            // log bytes used
-            w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
-        }
-
-#endif
 
     return rc;
 }
@@ -2373,8 +1782,6 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
                    // return all other errors  from the
                    // above log->compensate(...)
 
-                   // compensations use _log_bytes_rsvd,
-                   // not _log_bytes_ready
                    W_COERCE(log_compensate(_anchor));
                    INC_TSTAT(compensate_records);
                }
@@ -2557,7 +1964,6 @@ xct_t::_compensate(const lsn_t& lsn, bool undoable)
         // undone (and we *really* want to compensate around it)
         */
 
-        // compensations use _log_bytes_rsvd, not _log_bytes_ready
         W_COERCE(log_compensate(lsn));
         INC_TSTAT(compensate_records);
     }
@@ -2621,7 +2027,6 @@ xct_t::rollback(const lsn_t &save_pt)
               << resetiosflags(ios::right)
               << " Roll back " << " " << tid()
               << " to " << save_pt );
-    _log_bytes_used_fwd  = _log_bytes_used; // for debugging
 
     { // Contain the scope of the following __copy__buf:
 
@@ -2670,9 +2075,6 @@ xct_t::rollback(const lsn_t &save_pt)
             LOGTRACE1( << setiosflags(ios::right) << nxt
                       << resetiosflags(ios::right) << " U: " << r );
 
-#if W_DEBUG_LEVEL > 2
-            u_int    was_rsvd = _log_bytes_rsvd;
-#endif
             PageID pid = r.pid();
             fixable_page_h page;
 
@@ -2681,12 +2083,6 @@ xct_t::rollback(const lsn_t &save_pt)
 
             r.undo(page.is_fixed() ? &page : 0);
 
-#if W_DEBUG_LEVEL > 2
-            if(was_rsvd - _log_bytes_rsvd  > r.length()) {
-                  LOGTRACE2(<< "U: len=" << r.length() << " B= " <<
-                          (was_rsvd - _log_bytes_rsvd));
-            }
-#endif
             if(r.is_cpsn())
             {
                 // A compensation log record

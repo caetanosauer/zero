@@ -233,95 +233,7 @@ public:
 
     /**\endcond skip */
 
-    /*
-     * rather than automatically aborting the transaction, when the
-     * _log_warn_percent is exceeded, this callback is made, with a
-     * pointer to the xct that did the writing, and with the
-     * expectation that the result will be one of:
-     * - return value == RCOK --> proceed
-     * - return value == eUSERABORT --> victim to abort is given in the argument
-     *
-     * The server has the responsibility for choosing a victim and
-     * for aborting the victim transaction.
-     *
-     */
-
-    /**\brief Log space warning callback function type.
-     *
-     * For more details of how this is used, see the constructor ss_m::ss_m().
-     *
-     * Storage manager methods check the available log space.
-     * If the log is in danger of filling to the point that it will be
-     * impossible to abort a transaction, a
-     * callback is made to the server.  The callback function is of this type.
-     * The danger point is a threshold determined by the option sm_log_warn.
-     *
-     * The callback
-     * function is meant to choose a victim xct and
-     * tell if the xct should be
-     * aborted by returning RC(eUSERABORT).
-     *
-     * Any other RC value is returned to the server through the call stack.
-     *
-     * The arguments:
-     * @param[in] iter    Pointer to an iterator over all xcts.
-     * @param[out] victim    Victim will be returned here. This is an in/out
-     * paramter and is initially populated with the transaction that is
-     * attached to the running thread.
-     * @param[in] curr    Bytes of log consumed by active transactions.
-     * @param[in] thresh   Threshhold just exceeded.
-     * @param[in] logfile   Character string name of oldest file to archive.
-     *
-     *  This function must be careful not to return the same victim more
-     *  than once, even though the callback may be called many
-     *  times before the victim is completely aborted.
-     *
-     *  When this function has archived the given log file, it needs
-     *  to notify the storage manager of that fact by calling
-     *  ss_m::log_file_was_archived(logfile)
-     */
-    typedef w_rc_t (*LOG_WARN_CALLBACK_FUNC) (
-            xct_i*      iter,
-            xct_t *&    victim,
-            fileoff_t   curr,
-            fileoff_t   thresh,
-            const char *logfile
-        );
-    /**\brief Callback function type for restoring an archived log file.
-     *
-     * @param[in] fname   Original file name (with path).
-     * @param[in] needed   Partition number of the file needed.
-     *
-     *  An alternative to aborting a transaction (when the log fills)
-     *  is to archive log files.
-     *  The server can use the log directory name to locate these files,
-     *  and may use the iterator and the static methods of xct_t to
-     *  determine which log file(s) to archive.
-     *
-     *  Archiving and removing the older log files will work only if
-     *  the server also provides a LOG_ARCHIVED_CALLBACK_FUNCTION
-     *  to restore the
-     *  archived log files when the storage manager needs them for
-     *  rollback.
-     *  This is the function type used for that purpose.
-     *
-     *  The function must locate the archived log file containing for the
-     *  partition number \a num, which was a suffix of the original log file's
-     *  name.
-     *  The log file must be restored with its original name.
-     */
     typedef    uint32_t partition_number_t;
-    typedef w_rc_t (*LOG_ARCHIVED_CALLBACK_FUNC) (
-            const char *fname,
-            partition_number_t num
-        );
-
-    typedef w_rc_t (*RELOCATE_RECORD_CALLBACK_FUNC) (
-	   vector<rid_t>&    old_rids,
-           vector<rid_t>&    new_rids
-       );
-
-
 /**\cond skip */
     enum switch_t {
         ON = 1,
@@ -397,11 +309,6 @@ public:
     static LogArchiver* logArchiver;
 
     static ticker_thread_t* _ticker;
-
-    static LOG_WARN_CALLBACK_FUNC log_warn_callback;
-    static LOG_ARCHIVED_CALLBACK_FUNC log_archived_callback;
-    static fileoff_t              log_warn_trigger;
-    static int                    log_warn_exceed_percent;
 
     static int    dcommit_timeout; // to convey option to coordinator,
                                    // if it is created by VAS

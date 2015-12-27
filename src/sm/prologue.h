@@ -262,14 +262,6 @@ prologue_rc_t::prologue_rc_t(
         }
     }
 
-
-    if(check_log)
-    {
-        _rc = xct_log_warn_check_t::check(_victim);
-        // if(_rc.is_error())  {
-            // Caller will check this and return the error.
-        // }
-    }
 }
 
 

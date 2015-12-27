@@ -138,14 +138,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      - default with the new log buffer: 128*1024 (128MB)
  *      - required?: yes
  *
- * -sm_log_warn
- *      - type: number between 0 and 100 (percentage)
- *      - description: percentage of log that, when consumed by active
- *      transactions, triggers a callback warning of potential inability
- *      to roll back.   Should be less than 50.
- *      - default: 45
- *      - required?: no
- *
  * -sm_errlog
  *      - type: string (relative or absolute path name OR - )
  *      - description: Destination for error messages.  If "-" is given,
@@ -469,8 +461,6 @@ class ss_m : public smlevel_top
     friend class tape_t;
 public:
 
-    typedef smlevel_0::LOG_WARN_CALLBACK_FUNC LOG_WARN_CALLBACK_FUNC;
-    typedef smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC LOG_ARCHIVED_CALLBACK_FUNC;
     typedef smlevel_0::concurrency_t concurrency_t;
     typedef smlevel_0::xct_state_t xct_state_t;
 
@@ -554,11 +544,7 @@ public:
      *  \ref smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC, and
      *  \ref SSMLOG.
      */
-    ss_m(const sm_options &options,
-           LOG_WARN_CALLBACK_FUNC warn=NULL,
-           LOG_ARCHIVED_CALLBACK_FUNC get=NULL,
-           bool start = true);   // Default = True: start the store automaticlly
-                                 // this is for backward compatibility reason
+    ss_m(const sm_options &options);
 
     /**\brief  Shut down the storage manager.
      * \ingroup SSMINIT

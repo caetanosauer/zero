@@ -114,17 +114,6 @@ bool        smlevel_0::do_prefetch = false;
 
 bool        smlevel_0::statistics_enabled = true;
 
-#ifndef SM_LOG_WARN_EXCEED_PERCENT
-#define SM_LOG_WARN_EXCEED_PERCENT 40
-#endif
-smlevel_0::fileoff_t smlevel_0::log_warn_trigger = 0;
-int                  smlevel_0::log_warn_exceed_percent =
-                                    SM_LOG_WARN_EXCEED_PERCENT;
-ss_m::LOG_WARN_CALLBACK_FUNC
-                     smlevel_0::log_warn_callback = 0;
-ss_m::LOG_ARCHIVED_CALLBACK_FUNC
-                     smlevel_0::log_archived_callback = 0;
-
 smlevel_0::fileoff_t        smlevel_0::chkpt_displacement = 0;
 
 /*
@@ -227,30 +216,17 @@ sm_options ss_m::_options;
 
 
 static queue_based_block_lock_t ssm_once_mutex;
-ss_m::ss_m(
-    const sm_options &options,
-    smlevel_0::LOG_WARN_CALLBACK_FUNC callbackwarn /* = NULL */,
-    smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC callbackget /* = NULL */,
-    bool start /* = true for backward compatibility reason */
-)
+ss_m::ss_m(const sm_options &options)
 {
     _options = options;
 
     sthread_t::initialize_sthreads_package();
 
-    // Save input parameters for future 'startup' calls
-    // input parameters cannot be modified after ss_m object has been constructed
-    smlevel_0::log_warn_callback  = callbackwarn;
-    smlevel_0::log_archived_callback  = callbackget;
-
     // Start the store during ss_m constructor if caller is asking for it
-    if (true == start)
-    {
-        bool started = startup();
-        // If error encountered, raise fatal error if it was not raised already
-        if (false == started)
-            W_FATAL_MSG(eINTERNAL, << "Failed to start the store from ss_m constructor");
-    }
+    bool started = startup();
+    // If error encountered, raise fatal error if it was not raised already
+    if (!started)
+        W_FATAL_MSG(eINTERNAL, << "Failed to start the store from ss_m constructor");
 }
 
 bool ss_m::startup()
@@ -1055,17 +1031,6 @@ ss_m::xct_state_t ss_m::state_xct(const xct_t* x)
     return x->state();
 }
 
-smlevel_0::fileoff_t ss_m::xct_log_space_needed()
-{
-    w_assert3(xct() != NULL);
-    return xct()->get_log_space_used();
-}
-
-rc_t ss_m::xct_reserve_log_space(fileoff_t amt) {
-    w_assert3(xct() != NULL);
-    return xct()->wait_for_log_space(amt);
-}
-
 /*--------------------------------------------------------------*
  *  ss_m::chain_xct()                                *
  *--------------------------------------------------------------*/
@@ -1847,14 +1812,6 @@ operator<<(ostream &o, const sm_stats_info_t &s)
     o << s.bfht;
     o << s.sm;
     return o;
-}
-
-rc_t
-ss_m::log_file_was_archived(const char * logfile)
-{
-    if(log) return log->file_was_archived(logfile);
-    // should be a programming error to get here!
-    return RCOK;
 }
 
 

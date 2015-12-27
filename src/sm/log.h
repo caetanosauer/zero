@@ -166,8 +166,6 @@ public:
 
     virtual lsn_t               min_chkpt_rec_lsn() const = 0;
 
-    virtual rc_t                file_was_archived(const char *file) = 0;
-
     typedef    smlevel_0::partition_number_t partition_number_t;
 
     /**\brief Do whatever needs to be done before destructor is called, then destruct.
@@ -182,13 +180,6 @@ public:
      * Used by xct_t for error reporting, callback-handling.
      */
     virtual const char * dir_name() const = 0;
-
-    /**\brief  Return the amount of space left in the log.
-     * \details
-     * Used by xct_impl for error-reporting.
-     */
-    virtual fileoff_t           space_left() const = 0;
-    virtual fileoff_t           space_for_chkpt() const = 0;
 
     /**\brief Return name of log file for given partition number.
      * \details
@@ -235,8 +226,6 @@ public:
     virtual lsn_t               master_lsn() const = 0;
 
     // not called from the implementation:
-    virtual rc_t                scavenge(const lsn_t &min_rec_lsn,
-                               const lsn_t &min_xct_lsn) = 0;
     virtual rc_t                insert(logrec_t &r, lsn_t* ret) = 0;
     virtual rc_t                compensate(const lsn_t& orig_lsn,
                                const lsn_t& undo_lsn) = 0;
@@ -246,13 +235,6 @@ public:
             // used in implementation also:
     virtual void        release() = 0; // used by log_i
     virtual rc_t        flush(const lsn_t& lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL) = 0;
-
-    virtual fileoff_t           reserve_space(fileoff_t howmuch) = 0;
-    virtual void                release_space(fileoff_t howmuch) = 0;
-    virtual rc_t                wait_for_space(fileoff_t &amt, int32_t timeout) = 0;
-    virtual bool                verify_chkpt_reservation() = 0;
-    virtual fileoff_t           consume_chkpt_reservation(fileoff_t howmuch) = 0;
-    virtual void                activate_reservations()  = 0;
 
     virtual void                set_master(const lsn_t& master_lsn,
                             const lsn_t& min_lsn,

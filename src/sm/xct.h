@@ -373,8 +373,6 @@ public:
     const lsn_t&                first_lsn() const;
     const lsn_t&                undo_nxt() const;
     const logrec_t*             last_log() const;
-    fileoff_t                   get_log_space_used() const;
-    rc_t                        wait_for_log_space(fileoff_t amt);
 
     // used by restart, chkpt among others
     static xct_t*               look_up(const tid_t& tid);
@@ -792,20 +790,7 @@ protected: // all data members protected
      */
     logrec_t*                    _log_buf_for_piggybacked_ssx;
 
-    /* track log space needed to avoid wedging the transaction in the
-       event of an abort due to full log
-     */
-    fileoff_t                    _log_bytes_rsvd; // reserved for rollback
-    fileoff_t                    _log_bytes_ready; // avail for insert/reserv
-    fileoff_t                    _log_bytes_used; // total used by the xct
-    fileoff_t                    _log_bytes_used_fwd; // used by the xct in
-                                 // forward activity (including partial
-                                 // rollbacks) -- ONLY for assertions/debugging
-    fileoff_t                    _log_bytes_reserved_space;//requested from
-                                 // log -- used ONLY for assertions/debugging
     bool                         _rolling_back;// true if aborting OR
-                                 // in rollback_work (which does not change
-                                 // the xct state).
 
     bool                         should_consume_rollback_resv(int t) const;
     bool                         should_reserve_for_rollback(int t)

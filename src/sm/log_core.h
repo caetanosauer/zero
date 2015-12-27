@@ -80,7 +80,6 @@ class plog_xct_t;
 #include "mcs_lock.h"
 #include "tatas.h"
 #include "log_storage.h"
-#include "log_resv.h"
 
 class log_common : public log_m
 {
@@ -116,24 +115,6 @@ public:
     // for flush_daemon_thread_t
     void            flush_daemon();
 
-    // used by log_i and xct
-
-    // DELEGATED METHODS
-    virtual fileoff_t           reserve_space(fileoff_t howmuch)
-        { return _resv->reserve_space(howmuch); }
-    virtual void                release_space(fileoff_t howmuch)
-        { _resv->release_space(howmuch); }
-    virtual rc_t                wait_for_space(fileoff_t &amt, int32_t timeout)
-        { return _resv->wait_for_space(amt, timeout); }
-    virtual bool           verify_chkpt_reservation()
-        { return _resv->verify_chkpt_reservation(); }
-    virtual fileoff_t           consume_chkpt_reservation(fileoff_t howmuch)
-        { return _resv->consume_chkpt_reservation(howmuch); }
-    virtual void                activate_reservations()
-        { _resv->activate_reservations(curr_lsn()); }
-    PoorMansOldestLsnTracker* get_oldest_lsn_tracker()
-        { return _resv->get_oldest_lsn_tracker(); }
-
     // exported from log_storage to log_m interface
     virtual lsn_t min_chkpt_rec_lsn() const
         { return _storage->min_chkpt_rec_lsn(); }
@@ -152,16 +133,6 @@ public:
         { _storage->release_partition_lock(); }
     virtual const char* dir_name() const
         { return _storage->dir_name(); }
-
-    // exported from log_resv
-    virtual rc_t file_was_archived(const char *file)
-        { return _resv->file_was_archived(file); }
-    virtual fileoff_t space_left() const
-        { return _resv->space_left(); }
-    virtual fileoff_t space_for_chkpt() const
-        { return _resv->space_for_chkpt(); }
-    virtual rc_t  scavenge(const lsn_t &min_rec_lsn, const lsn_t &min_xct_lsn)
-        { return _resv->scavenge(min_rec_lsn, min_xct_lsn); }
 
 
     // DO NOT MAKE SEGMENT_SIZE smaller than 3 pages!  Since we need to
@@ -188,12 +159,13 @@ public:
     static const uint64_t DFT_LOGBUFSIZE;
     static fileoff_t max_logsz;
 
+    PoorMansOldestLsnTracker* get_oldest_lsn_tracker() { return _oldest_lsn_tracker; }
 
 protected:
     virtual lsn_t           flush_daemon_work(lsn_t old_mark) = 0;
 
     log_storage*    _storage;
-    log_resv*       _resv;
+    PoorMansOldestLsnTracker* _oldest_lsn_tracker;
 
     enum { invalid_fhdl = -1 };
 
