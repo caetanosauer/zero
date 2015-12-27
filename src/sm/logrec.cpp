@@ -130,10 +130,7 @@ logrec_t::fill(PageID p, StoreID store, uint16_t tag, smsize_t l)
 
     /* adjust _cat */
     xct_t *x = xct();
-    if(smlevel_0::in_recovery_undo() ||
-        (x && ( x->rolling_back() ||
-			   x->state() == smlevel_0::xct_aborting))
-	)
+    if(x && (x->rolling_back() || x->state() == smlevel_0::xct_aborting))
     {
         header._cat |= t_rollback;
     }

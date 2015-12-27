@@ -98,8 +98,6 @@ template class w_auto_delete_t<SmStoreMetaStats*>;
 bool         smlevel_0::shutdown_clean = false;
 bool         smlevel_0::shutting_down = false;
 
-smlevel_0::operating_mode_t
-            smlevel_0::operating_mode = smlevel_0::t_not_started;
 
 #ifdef USE_TLS_ALLOCATOR
     sm_tls_allocator smlevel_0::allocator;
@@ -1670,13 +1668,6 @@ ss_m::get_du_statistics(StoreID stpgid, sm_du_stats_t& du, bool audit)
 rc_t
 ss_m::get_du_statistics(sm_du_stats_t& du, bool audit)
 {
-    /*
-     * Cannot call this during recovery, even for
-     * debugging purposes
-     */
-    if(smlevel_0::in_recovery()) {
-        return RCOK;
-    }
     sm_du_stats_t new_stats;
 
     rc_t rc;

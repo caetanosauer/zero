@@ -1505,8 +1505,7 @@ xct_t::_pre_abort()
     // we could encounter normal transaction abort while Recovery is going on,
     // in such case the aborting transaction state would fall into case #1 above
 
-    if ((false == in_recovery()) && (false == is_loser_xct()))
-    {
+    if (!is_loser_xct()) {
         // Not a loser txn
         w_assert1(_core->_state == xct_active
                 || _core->_state == xct_committing /* if it got an error in commit*/
@@ -1751,34 +1750,33 @@ xct_t::_flush_logbuf()
                during recovery (because redo generates only log
                compensations and undo was already accounted for)
             */
-            if(smlevel_0::operating_mode == t_forward_processing) {
-                long bytes_used = l->length();
-                if(consuming)
-                {
-                    ADD_TSTAT(log_bytes_generated_rb,bytes_used);
-                    DBG(<<"_log_bytes_rsvd " << _log_bytes_rsvd
-                            << "(about to subtract bytes_used " << bytes_used
-                            << ") _log_bytes_used " << _log_bytes_used
-                            );
+            long bytes_used = l->length();
+            if(consuming)
+            {
+                ADD_TSTAT(log_bytes_generated_rb,bytes_used);
+                DBG(<<"_log_bytes_rsvd " << _log_bytes_rsvd
+                        << "(about to subtract bytes_used " << bytes_used
+                        << ") _log_bytes_used " << _log_bytes_used
+                   );
 
-                    // NOTE: this assert can fail when we are rolling
-                    // back a btree activity and find that we need to
-                    // perform a compensating SMO
-                    // that wasn't done by this xct.
-                    // So I've added the OR consuming here, and
-                    // and for safety, don't let the _log_bytes_rsvd
-                    // go negative.
-                    w_assert1((_log_bytes_rsvd >= bytes_used) || consuming);
+                // NOTE: this assert can fail when we are rolling
+                // back a btree activity and find that we need to
+                // perform a compensating SMO
+                // that wasn't done by this xct.
+                // So I've added the OR consuming here, and
+                // and for safety, don't let the _log_bytes_rsvd
+                // go negative.
+                w_assert1((_log_bytes_rsvd >= bytes_used) || consuming);
 
-                    _log_bytes_rsvd -= bytes_used;
-                    if(consuming && _log_bytes_rsvd < 0) {
-                        _log_bytes_rsvd = 0;
-                    }
+                _log_bytes_rsvd -= bytes_used;
+                if(consuming && _log_bytes_rsvd < 0) {
+                    _log_bytes_rsvd = 0;
+                }
 
-                    if(_log_bytes_rsvd < 0) {
-                        // print some useful info
-                        w_ostrstream out;
-                        out
+                if(_log_bytes_rsvd < 0) {
+                    // print some useful info
+                    w_ostrstream out;
+                    out
                         << " _log_bytes_rsvd " << _log_bytes_rsvd
                         << " bytes_used " << bytes_used
                         << " _rolling_back " << _rolling_back
@@ -1789,32 +1787,31 @@ xct_t::_flush_logbuf()
                         << UNDO_FUDGE_FACTOR(l->type(),1)
                         ;
 
-                        fprintf(stderr, "%s\n", out.c_str());
-                    }
-                    w_assert0(_log_bytes_rsvd >= 0);
-                    // This is what happens when we didn't
-                    // reserve enough space for the rollback
-                    // because our fudge factor was insufficient.
-                    // It's a lousy heuristic.
-                    // Arg.
+                    fprintf(stderr, "%s\n", out.c_str());
                 }
-                else {
-                    long to_reserve = UNDO_FUDGE_FACTOR(l->type(), bytes_used);
-                    w_assert0(_log_bytes_ready >= bytes_used + to_reserve);
-                    DBG(<<"_log_bytes_ready " << _log_bytes_ready
-                            << "(about to subtract bytes_used "
-                            << bytes_used << " + to_reserve(undo fudge) " << to_reserve
-                            << ") "
-                            );
-                    _log_bytes_ready -= bytes_used + to_reserve;
-                    DBG(<<"_log_bytes_rsvd " << _log_bytes_rsvd
-                            << "(about to subtract to_reserve " << to_reserve
-                            << ") "
-                            );
-                    _log_bytes_rsvd += to_reserve;
-                }
-                _log_bytes_used += bytes_used;
+                w_assert0(_log_bytes_rsvd >= 0);
+                // This is what happens when we didn't
+                // reserve enough space for the rollback
+                // because our fudge factor was insufficient.
+                // It's a lousy heuristic.
+                // Arg.
             }
+            else {
+                long to_reserve = UNDO_FUDGE_FACTOR(l->type(), bytes_used);
+                w_assert0(_log_bytes_ready >= bytes_used + to_reserve);
+                DBG(<<"_log_bytes_ready " << _log_bytes_ready
+                        << "(about to subtract bytes_used "
+                        << bytes_used << " + to_reserve(undo fudge) " << to_reserve
+                        << ") "
+                   );
+                _log_bytes_ready -= bytes_used + to_reserve;
+                DBG(<<"_log_bytes_rsvd " << _log_bytes_rsvd
+                        << "(about to subtract to_reserve " << to_reserve
+                        << ") "
+                   );
+                _log_bytes_rsvd += to_reserve;
+            }
+            _log_bytes_used += bytes_used;
 
             // log insert effectively set_lsn to the lsn of the *next* byte of
             // the log.
@@ -1879,7 +1876,6 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
     // and assert here that we've got nothing buffered:
     w_assert1(!_last_log);
 
-    if(smlevel_0::operating_mode == t_forward_processing) {
     /* LOG_RESERVATIONS
     // logrec_t is 3 pages, even though the real record is shorter.
 
@@ -2137,7 +2133,6 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
             << " _log_bytes_ready " << _log_bytes_ready
             << " _log_bytes_used " << _log_bytes_used
             );
-    }
     ret = _last_log = _log_buf;
 
 
@@ -2167,7 +2162,6 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
             should_consume_rollback_resv(t)
             );
 
-    if(smlevel_0::operating_mode == t_forward_processing) {
     if(should_reserve_for_rollback(t))
     {
         // Must be reserving for rollback
@@ -2182,14 +2176,6 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                                             // _flush_logbuf
         w_assert1(_log_bytes_used == used); // increasing,  in _flush_logbuf
         w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
-    }
-    }
-    else
-    {
-        w_assert1(_log_bytes_reserved_space == requested);
-        w_assert1(_log_bytes_rsvd == rsvd);
-        w_assert1(_log_bytes_used == used);
-        w_assert1(_log_bytes_ready == ready);
     }
 #endif
 
@@ -2294,7 +2280,6 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
                 << " _log_bytes_reserved_space " << _log_bytes_reserved_space
                 << " orig reserved " << requested
                 );
-    if(smlevel_0::operating_mode == t_forward_processing) {
         if(should_reserve_for_rollback(l->type()))
         {
             // Must be reserving for rollback
@@ -2315,14 +2300,6 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
             // log bytes used
             w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
         }
-    }
-    else
-    {
-        w_assert1(_log_bytes_reserved_space == requested);
-        w_assert1(_log_bytes_rsvd == rsvd);
-        w_assert1(_log_bytes_used == used);
-        w_assert1(_log_bytes_ready == ready);
-    }
 
 #endif
 

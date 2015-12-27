@@ -314,7 +314,6 @@ log_resv::activate_reservations(const lsn_t& curr_lsn)
        anything because nothing will be undone should a crash occur at
        this point.
      */
-    w_assert1(smlevel_0::operating_mode == smlevel_0::t_forward_processing);
     // FRJ: not true if any logging occurred during recovery
     // w_assert1(PARTITION_COUNT*_partition_data_size ==
     //       _space_available + _space_rsvd_for_chkpt);
@@ -371,9 +370,6 @@ fileoff_t log_resv::reserve_space(fileoff_t amt)
 
 fileoff_t log_resv::consume_chkpt_reservation(fileoff_t amt)
 {
-    if(smlevel_0::operating_mode != smlevel_0::t_forward_processing)
-       return amt; // not yet active -- pretend it worked
-
     return (amt > 0)?
         take_space(&_space_rsvd_for_chkpt, amt) : 0;
 }

@@ -383,18 +383,6 @@ public:
 
 /**\cond skip */
 
-    /*
-     * smlevel_0::operating_mode is always set to
-     * ONE of these, but the function in_recovery() tests for
-     * any of them, so we'll give them bit-mask values
-     */
-    enum operating_mode_t {
-        t_not_started = 0,
-        t_in_analysis = 0x1,
-        t_in_redo = 0x2,
-        t_in_undo = 0x4,
-        t_forward_processing = 0x8   // System is opened for transaction
-    };
 
     static void  add_to_global_stats(const sm_stats_info_t &from);
     static void  add_from_global_stats(sm_stats_info_t &to);
@@ -435,30 +423,6 @@ public:
     static bool         lock_caching_default;
     static bool         do_prefetch;
     static bool         statistics_enabled;
-
-    static operating_mode_t operating_mode;
-    static bool in_recovery() {
-        return ((operating_mode &
-                (t_in_redo | t_in_undo | t_in_analysis)) !=0); }
-    static bool in_recovery_analysis() {
-        return ((operating_mode & t_in_analysis) !=0); }
-    static bool in_recovery_undo() {
-        // Valid for use_serial_restart() only
-        // If concurrent recovery, system is opened after Log Analysis
-        // and the operating mode changed to t_forward_processing after Log Analysis
-        return ((operating_mode & t_in_undo ) !=0); }
-    static bool in_recovery_redo() {
-        // Valid for use_serial_restart() only
-        // If concurrent recovery, system is opened after Log Analysis
-        // and the operating mode changed to t_forward_processing after Log Analysis
-        return ((operating_mode & t_in_redo ) !=0); }
-
-    static bool before_recovery() {
-        if (t_not_started == operating_mode)
-            return true;
-        else
-            return false;
-        }
 
     // This variable controls checkpoint frequency.
     // Checkpoints are taken every chkpt_displacement bytes

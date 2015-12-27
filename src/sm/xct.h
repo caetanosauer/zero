@@ -613,11 +613,7 @@ public:
     void                         acquire_1thread_xct_mutex() const; // serialize
     void                         release_1thread_xct_mutex() const; // concurrency ok
     bool                         is_1thread_log_mutex_mine() const {
-                                    return
-                                        me()->is_update_thread()
-                                        ||
-                                        smlevel_0::in_recovery()
-                                        ;
+                                    return me()->is_update_thread();
     }
 
 private:
@@ -626,14 +622,14 @@ private:
         // remove the 1thread log mutex altogether; given that,
         // we assert that there is one and only one update thread
         // and that thread is us.
-        w_assert0(me()->is_update_thread() || smlevel_0::in_recovery());
+        w_assert0(me()->is_update_thread());
     }
     void                         release_1thread_log_mutex() {
         // This is a sanity check: we want to
         // remove the 1thread log mutex altogether; given that,
         // we assert that there is one and only one update thread
         // and that thread is us.
-        w_assert0(me()->is_update_thread() || smlevel_0::in_recovery());
+        w_assert0(me()->is_update_thread());
     }
 private:
     bool                         is_1thread_xct_mutex_mine() const;

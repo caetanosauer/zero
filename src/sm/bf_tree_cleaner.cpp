@@ -306,13 +306,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
             << " candidate frames");
     unsigned cleaned_count = 0;
 
-    // Don't clean the buffer pool if in the middle of recovery of Log Analysis or REDO,
-    // because we are using buffer pool for the Recovery REDO purpose
-    if (smlevel_0::before_recovery() ||
-        (smlevel_0::in_recovery() &&
-        (smlevel_0::in_recovery_analysis() || smlevel_0::in_recovery_redo())))
-        return RCOK;
-
     // TODO this method should separate dirty pages that have dependency and flush them after others.
     if (_sort_buffer_size < candidates.size()) {
         size_t new_buffer_size = 2 * candidates.size();
