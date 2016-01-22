@@ -101,7 +101,7 @@ rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext, bool redo)
         return RC(eSTCACHEFULL);
     }
 
-    sys_xct_section_t ssx(true);
+    // sys_xct_section_t ssx(true);
     // _stnode_page.update_last_extent(snum, ext);
     if (!redo) {
         // W_DO(log_append_extent(snum, ext));

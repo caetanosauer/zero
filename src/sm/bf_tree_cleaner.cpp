@@ -392,7 +392,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                     // if the page contains a swizzled pointer, we need to convert the data back to the original pointer.
                     // we need to do this before releasing SH latch because the pointer might be unswizzled by other threads.
                     _parent->_bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);// convert swizzled data.
-                    w_assert1(_write_buffer[write_buffer_cur].pid > 0);
                 }
                 cb.latch().latch_release();
             }

@@ -177,8 +177,8 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, PageID& new_page_id,
 
     int move_count = 0;
     w_keystr_t split_key;
-    new_page.format_foster_child(page, new_page_id, triggering_key, split_key,
-            move_count);
+    W_DO(new_page.format_foster_child(page, new_page_id, triggering_key, split_key,
+            move_count));
     w_assert0(move_count > 0);
     DBG(<< "NEW FOSTER CHILD " << new_page);
 

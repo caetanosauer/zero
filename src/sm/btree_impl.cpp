@@ -123,10 +123,6 @@ btree_impl::_ux_insert_core(
                 LATCH_EX, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
 
-        // do it in one-go
-// TODO(Restart)...
-DBGOUT3( << "&&&& Log for regular insertion, key: " << key);
-
 #ifdef USE_ATOMIC_COMMIT
         // Since an undo flag is not available here, this seems to be
         // the only alternative at the moment. Perhaps this logic should
