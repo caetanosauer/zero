@@ -10,12 +10,18 @@
 
 stnode_cache_t::stnode_cache_t(bool create)
 {
-    fixable_page_h p;
-    W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_SH,
-                false, create));
-    memcpy(&_stnode_page, p.get_generic_page(), sizeof(stnode_page));
-    prev_page_lsn = p.lsn();
-    p.unfix();
+    if (create) {
+        memset(&_stnode_page, 0, sizeof(generic_page));
+        prev_page_lsn = lsn_t::null;
+    }
+    else {
+        fixable_page_h p;
+        W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_SH,
+                    false, create));
+        memcpy(&_stnode_page, p.get_generic_page(), sizeof(stnode_page));
+        prev_page_lsn = p.lsn();
+        p.unfix();
+    }
 }
 
 PageID stnode_cache_t::get_root_pid(StoreID store) const
