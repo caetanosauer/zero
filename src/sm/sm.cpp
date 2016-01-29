@@ -1287,7 +1287,7 @@ lil_global_table* ss_m::get_lil_global_table() {
 rc_t ss_m::lock(const lockid_t& n, const okvl_mode& m,
            bool check_only, timeout_in_ms timeout)
 {
-    W_DO( lm->lock(n, m, false, check_only, timeout) );
+    W_DO( lm->lock(n.hash(), m, true, true, !check_only, NULL, timeout) );
     return RCOK;
 }
 

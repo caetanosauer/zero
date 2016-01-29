@@ -104,10 +104,14 @@ bool RawLockQueue::delink(RawLock* predecessor, RawLock* target, RawLock* succes
 ////////////////////////////////////////////////////////////////////////////////////////
 
 w_error_codes RawLockQueue::acquire(RawXct* xct, uint32_t hash, const okvl_mode& mode,
-                int32_t timeout_in_ms, bool conditional, bool check_only, RawLock** out) {
+                int32_t timeout_in_ms, bool check, bool wait, bool acquire,
+                RawLock** out)
+{
+    w_assert1(wait || check || acquire);
+    w_assert1(check || !wait);
     w_assert1(out != NULL);
     *out = NULL;
-    if (check_only) {
+    if (check && !acquire) {
         // peek_compatiblity() provides weaker correctness condition, but check_only is used
         // only when it's still safe (we have EX latch in the page!). so, fine.
         if (peek_compatiblity(xct, hash, mode)) {
@@ -155,16 +159,17 @@ w_error_codes RawLockQueue::acquire(RawXct* xct, uint32_t hash, const okvl_mode&
     }
 
     if (compatibility.deadlocked) {
+        w_assert1(wait);
         release(new_lock, lsn_t::null);
         return eDEADLOCK;
-    } else if (!compatibility.can_be_granted) {
+    } else if (!compatibility.can_be_granted && check) {
         // duh, there is a lock that prevents us.
         w_assert1(compatibility.blocker != NULL);
         xct->blocker = compatibility.blocker; // A6'
         new_lock->state = RawLock::WAITING; // A6
         // announce our waiting status to make sure no one is falsely waiting for us.
         atomic_synchronize_if_mutex(); // A7
-        if (conditional) {
+        if (!wait) {
             // a failed conditional locking! we immediately return, but keep the
             // already inserted lock entry.
             // This return value indicate a safe retry
@@ -189,15 +194,17 @@ w_error_codes RawLockQueue::acquire(RawXct* xct, uint32_t hash, const okvl_mode&
 #endif // PURE_SPIN_RAWLOCK
     }
 
-    w_error_codes err_code = complete_acquire(&new_lock, check_only, timeout_in_ms);
-    if (err_code == w_error_ok && !check_only) {
+    w_error_codes err_code = complete_acquire(&new_lock, wait, acquire, timeout_in_ms);
+    if (err_code == w_error_ok && acquire) {
         w_assert1(new_lock->state == RawLock::ACTIVE);
         *out = new_lock;
     }
     return err_code;
 }
 
-w_error_codes RawLockQueue::retry_acquire(RawLock** lock, bool check_only, int32_t timeout_in_ms) {
+w_error_codes RawLockQueue::retry_acquire(RawLock** lock, bool wait, bool acquire,
+        int32_t timeout_in_ms)
+{
     w_assert1(lock != NULL && (*lock) != NULL);
     RawXct *xct = (*lock)->owner_xct;
     atomic_synchronize();
@@ -212,15 +219,17 @@ w_error_codes RawLockQueue::retry_acquire(RawLock** lock, bool check_only, int32
         atomic_synchronize();
     }
 
-    return complete_acquire(lock, check_only, timeout_in_ms);
+    return complete_acquire(lock, wait, acquire, timeout_in_ms);
 }
 
-w_error_codes RawLockQueue::complete_acquire(RawLock** lock, bool check_only, int32_t timeout_in_ms) {
+w_error_codes RawLockQueue::complete_acquire(RawLock** lock, bool wait, bool acquire,
+        int32_t timeout_in_ms)
+{
     // if we get here, the lock can be granted, but we might need
     // to wait for the lock to be available, it happens in 'wait_for'
 
     RawXct *xct = (*lock)->owner_xct;
-    if ((*lock)->state == RawLock::WAITING) {
+    if (wait && (*lock)->state == RawLock::WAITING) {
         w_error_codes err_code = wait_for(*lock, timeout_in_ms);
         if (err_code != w_error_ok) {
             release(*lock, lsn_t::null);
@@ -234,7 +243,7 @@ w_error_codes RawLockQueue::complete_acquire(RawLock** lock, bool check_only, in
     w_assert1((*lock)->state == RawLock::ACTIVE);
     w_assert1(xct->blocker == NULL);
     xct->update_read_watermark(x_lock_tag);
-    if (check_only) {
+    if (!acquire) {
         // immediately release the lock
         release(*lock, lsn_t::null);
         *lock = NULL;
@@ -720,8 +729,9 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                                 // it cannot attach to the loser transaction without detach from the
                                 // user transaction first
                                 xct_t* user_xd = g_xct();
-                                w_assert1(NULL != user_xd);
-                                me()->detach_xct(user_xd);
+                                if (user_xd) {
+                                    me()->detach_xct(user_xd);
+                                }
 
                                 // The blocker txn is a loser transaction and it is not in the middle of rolling back
                                 DBGOUT3( << "RawLockQueue::trigger_UNDO: blocker loser transaction needs UNDO,"
@@ -739,7 +749,9 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                                          << "re-attach to the original user transaction");
 
                                 // Re-attach to the original user transaction
-                                me()->attach_xct(user_xd);
+                                if (user_xd) {
+                                    me()->attach_xct(user_xd);
+                                }
 
                                 // Notify caller an on_demand UNDO has been performed
                                 return true;

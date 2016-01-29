@@ -35,13 +35,13 @@ public:
     void        assert_empty() const;
     void        dump(std::ostream &o);
 
-    
+
     lil_global_table*   get_lil_global_table() { return _lil_global_table; }
 
 public:
     /** @copydoc RawLockQueue::acquire() */
     w_error_codes  acquire_lock(RawXct* xd, uint32_t hash, const okvl_mode& mode,
-                bool conditional, bool check_only, int32_t timeout, RawLock** out);
+                bool check, bool wait, bool acquire, int32_t timeout, RawLock** out);
 
     /** @copydoc RawLockQueue::retry_acquire() */
     w_error_codes  retry_acquire(RawLock** lock, bool check_only, int32_t timeout);
@@ -65,7 +65,7 @@ private:
 
     RawLockQueue*       _htab;
     uint32_t            _htabsz;
-    
+
     /** Global lock table for Light-weight Intent Lock. */
     lil_global_table*  _lil_global_table;
 };

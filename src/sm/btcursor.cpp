@@ -387,7 +387,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
                     lock_mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
                 }
                 // we can unconditionally request lock because we already released latch
-                W_DO(ss_m::lm->lock(lid, lock_mode, false, false));
+                W_DO(ss_m::lm->lock(lid.hash(), lock_mode, true, true, true));
             }
 
             // TODO this part should check if we find an exact match of fence keys.

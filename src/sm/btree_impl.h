@@ -673,23 +673,6 @@ public:
         bool                check_only
     );
 
-    // stid_d version, no latch and no retry, used by Log Analysis phase on individual log record
-    static rc_t _ux_lock_key(
-        const StoreID&       stid,        // stid of the page which contains the key
-        const w_keystr_t&   key,         // Key to lock
-        const okvl_mode&    lock_mode,   // the lock mode to be acquired
-        bool                check_only,  // whether the lock goes away right after grant
-        xct_t*              xd           // associated transaction object
-    );
-
-    // hash version, no latch and no retry, used by Log Analysis phase on checkpoint log record
-    static rc_t _ux_lock_key(
-        const uint32_t&     hash,       // Lock hash
-        const okvl_mode&    lock_mode,  // the lock mode to be acquired
-        bool                check_only, // whether the lock goes away right after grant
-        xct_t*              xd          // associated transaction object
-    );
-
     /**
      * Lock gap containing nonexistent key key in page leaf with locking mode
      * miss_lock_mode; exception: if key equals the low fence key of leaf, instead lock

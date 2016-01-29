@@ -153,8 +153,12 @@ void restart_m::log_analysis()
         for(vector<lock_info_t>::const_iterator jt = it->second.locks.begin();
                 jt != it->second.locks.end(); ++jt)
         {
-            W_COERCE(btree_impl::_ux_lock_key(jt->lock_hash, jt->lock_mode,
-                        false /*check_only*/, xd));
+            // cout << "Locking " << jt->lock_hash << " in " << jt->lock_mode <<
+            //     " for " << xd->tid() << endl;
+            RawLock* entry;
+            W_COERCE(smlevel_0::lm->lock(jt->lock_hash, jt->lock_mode,
+                        false /*check*/, false /*wait*/, true /*acquire*/,
+                        xd, WAIT_SPECIFIED_BY_XCT, &entry));
         }
     }
 

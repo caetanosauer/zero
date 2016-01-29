@@ -151,11 +151,13 @@ void lock_core_m::deallocate_xct(RawXct* xct) {
 
 
 w_error_codes lock_core_m::acquire_lock(RawXct* xct, uint32_t hash, const okvl_mode& mode,
-                bool conditional, bool check_only, int32_t timeout, RawLock** out) {
+                bool check, bool wait, bool acquire, int32_t timeout, RawLock** out)
+{
     w_assert1(timeout >= 0 || timeout == WAIT_FOREVER);
     uint32_t idx = _table_bucket(hash);
     while (true) {
-        w_error_codes er = _htab[idx].acquire(xct, hash, mode, timeout, conditional, check_only, out);
+        w_error_codes er = _htab[idx].acquire(xct, hash, mode, timeout,
+                check, wait, acquire, out);
         // Possible return codes:
         //   eDEADLOCK - detected deadlock, released the lock entry,
         //                         automaticlly retry here if caller does not own other locks
@@ -164,8 +166,8 @@ w_error_codes lock_core_m::acquire_lock(RawXct* xct, uint32_t hash, const okvl_m
         //                         if true == conditional, keep the already inserted lock entry and return control to caller
         //                         caller should retry using retry_acquire
         //   w_error_ok - acquired lock, return to caller
-        
-        if (er == eDEADLOCK && !xct->has_locks() && !check_only && timeout == WAIT_FOREVER) {
+
+        if (er == eDEADLOCK && !xct->has_locks() && wait && timeout == WAIT_FOREVER) {
             // this was a failed lock aquisition, so it didn't get the new lock.
             // the transaction doesn't have any other lock, and waiting unconditionally.
             // this means we can forever retry without risking anything!
@@ -176,7 +178,7 @@ w_error_codes lock_core_m::acquire_lock(RawXct* xct, uint32_t hash, const okvl_m
     }
 }
 
-w_error_codes lock_core_m::retry_acquire(RawLock** lock, bool check_only, int32_t timeout) {
+w_error_codes lock_core_m::retry_acquire(RawLock** lock, bool acquire, int32_t timeout) {
     w_assert1(timeout >= 0 || timeout == WAIT_FOREVER);
     uint32_t hash = (*lock)->hash;
     uint32_t idx = _table_bucket(hash);
@@ -191,11 +193,11 @@ w_error_codes lock_core_m::retry_acquire(RawLock** lock, bool check_only, int32_
         //                         if true == conditional, keep the already inserted lock entry and return control to caller
         //                         caller should retry using retry_acquire
         //   w_error_ok - acquired lock, return to caller
-        w_error_codes er = _htab[idx].retry_acquire(lock, check_only, timeout);
+        w_error_codes er = _htab[idx].retry_acquire(lock, true, acquire, timeout);
         if (er == eDEADLOCK && !xct->has_locks() && timeout == WAIT_FOREVER) {
             // same as above, but now the lock was removed. we have to switch to acquire_lock.
             w_assert1(*lock == NULL);
-            return acquire_lock(xct, hash, mode, false, check_only, WAIT_FOREVER, lock);
+            return acquire_lock(xct, hash, mode, true, true, acquire, WAIT_FOREVER, lock);
         }
         return er;
     }
