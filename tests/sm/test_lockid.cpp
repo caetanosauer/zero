@@ -7,17 +7,11 @@
 
 btree_test_env *test_env;
 
-vid_t    vol(1000);
-stid_t   stor(vol,900);
+StoreID   stor = 900;
 
 void dump(lockid_t &l)
 {
-    vout << "Lock: " << endl;
-    vout << "\t vid()=" << l.vid() << endl;
-
-    stid_t stor;
-    l.extract_stid(stor);
-    vout << "\t store()=" << l.store() << " stid_t=(" << stor << ")" << endl;
+    vout << "\t store()=" << l.store() << endl;
 }
 
 TEST (LockidTest, Create){
@@ -25,7 +19,6 @@ TEST (LockidTest, Create){
     const char     *keybuf2= "Most of the confusion in the world comes from not knowing how little we need.";
 
     vout << "Sources: " << endl
-        <<  "\t vol " << vol << endl
         <<  "\t store " << stor << endl
         ;
     {
@@ -48,7 +41,7 @@ TEST (LockidTest, SameKey){
         EXPECT_EQ(l.hash(), l2.hash());
     }
     {
-        stid_t   stor2(vol,10);
+        StoreID   stor2(10);
         lockid_t l(stor, (const unsigned char*) buf, ::strlen(buf));
         lockid_t l2(stor2, (const unsigned char*) buf, ::strlen(buf));
         EXPECT_NE(l.hash(), l2.hash());
@@ -89,7 +82,7 @@ TEST (LockidTest, CollisionQualityRandom){
     buf [8] = 'b';
     buf [9] = 'c';
     const int COUNT = 100000;
-    
+
     ::srand(1233); // use fixed seed for repeatability
     for (int i = 0; i < COUNT; ++i) {
         uint32_t val;

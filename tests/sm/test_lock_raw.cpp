@@ -16,6 +16,8 @@
 sm_options make_options(bool has_init = true, bool small = true) {
     sm_options options;
     options.set_int_option("sm_locktablesize", small ? 100 : 6400);
+    options.set_bool_option("sm_truncate", true);
+    options.set_bool_option("sm_testenv_init_vol", true);
     options.set_int_option("sm_rawlock_lockpool_initseg", has_init ? 2 : 0);
     options.set_int_option("sm_rawlock_xctpool_initseg", has_init ? 2 : 0);
     options.set_int_option("sm_rawlock_lockpool_segsize", small ? 1 << 3 : 1 << 5);
@@ -44,7 +46,7 @@ TEST (LockRawTest, InvokeGc) {
     for (int i = 0; i < 50; ++i) {
         RawLock *lock = NULL;
         EXPECT_EQ(w_error_ok, core.acquire_lock(xct, 123, ALL_S_GAP_S,
-                                                false, false, 100, &lock));
+                                                true, true, true, 100, &lock));
         EXPECT_TRUE(lock != NULL);
         core.release_lock(lock);
     }
@@ -54,6 +56,8 @@ TEST (LockRawTest, InvokeGc) {
 sm_options make_options_huge(bool catchup) {
     sm_options options;
     options.set_int_option("sm_locktablesize", 1 << 8); // small so that more races happen
+    options.set_bool_option("sm_truncate", true);
+    options.set_bool_option("sm_testenv_init_vol", true);
     options.set_int_option("sm_rawlock_lockpool_initseg", catchup ? 2 : 20);
     options.set_int_option("sm_rawlock_xctpool_initseg", catchup ? 2 : 20);
     options.set_int_option("sm_rawlock_lockpool_segsize", catchup ? 1 << 10 : 1 << 12);
@@ -92,7 +96,7 @@ void *test_parallel_standalone_worker(void *t) {
         for (int j = 0; j < LOCK_COUNT; ++j) {
             uint32_t hash = rand.nextInt32();
             EXPECT_EQ(w_error_ok, shared.core->acquire_lock(
-                xct, hash, shared.mode, false, false, 100, out + j));
+                xct, hash, shared.mode, true, true, true, 100, out + j));
             EXPECT_TRUE(out[j] != NULL);
         }
         for (int j = 0; j < LOCK_COUNT; ++j) {
@@ -169,7 +173,7 @@ public:
                 hack[2] = rand.nextInt32();
                 hack[3] = rand.nextInt32();
                 out[j] = NULL;
-                _rc = smlevel_0::lm->lock(lockid, ALL_S_GAP_S, false, false, 100, out + j);
+                _rc = smlevel_0::lm->lock(lockid.hash(), ALL_S_GAP_S, true, true, true, g_xct(), 100, out + j);
                 EXPECT_FALSE(_rc.is_error());
                 EXPECT_TRUE(out[j] != NULL);
             }
@@ -201,11 +205,11 @@ w_rc_t parallel_locks(ss_m*, test_volume_t *) {
 
 TEST (LockRawTest, ParallelSsmInvolved) {
     test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(parallel_locks, true, 4096, make_options_huge(false)), 0);
+    EXPECT_EQ(test_env->runBtreeTest(parallel_locks, true, make_options_huge(false)), 0);
 }
 TEST (LockRawTest, ParallelSsmInvolvedCatchup) {
     test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(parallel_locks, true, 4096, make_options_huge(true)), 0);
+    EXPECT_EQ(test_env->runBtreeTest(parallel_locks, true, make_options_huge(true)), 0);
 }
 
 
@@ -268,13 +272,13 @@ public:
     int _thid;
     ss_m *ssm;
     test_volume_t *volume;
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
 };
 
 w_rc_t parallel_appends(ss_m *ssm, test_volume_t *volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, volume, stid, root_pid));
 
     append_worker_t workers[THREAD_COUNT];
@@ -298,7 +302,7 @@ TEST (LockRawTest, ParallelAppends) {
     sm_options options = make_options_huge(false);
     options.set_int_option("sm_logbufsize", 128 << 10);
     options.set_int_option("sm_logsize", 8192 << 10);
-    EXPECT_EQ(test_env->runBtreeTest(parallel_appends, true, 1 << 16, options), 0);
+    EXPECT_EQ(test_env->runBtreeTest(parallel_appends, true, options), 0);
 }
 
 int main(int argc, char **argv) {

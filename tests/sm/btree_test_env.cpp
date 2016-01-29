@@ -23,7 +23,6 @@
 #include "sm_options.h"
 #include "xct.h"
 #include "sm_base.h"
-#include "sm_external.h"
 #include "srwlock.h"
 
 // log buffer
@@ -59,6 +58,7 @@ sm_options btree_test_env::make_sm_options(
             const std::vector<std::pair<const char*, bool> > &additional_bool_params,
             const std::vector<std::pair<const char*, const char*> > &additional_string_params) {
     sm_options options;
+    options.set_bool_option("sm_truncate", true);
     options.set_int_option("sm_bufpoolsize", SM_PAGESIZE / 1024 * bufferpool_size_in_pages);
     options.set_int_option("sm_locktablesize", locktable_size);
     // Most testcases make little locks. to speed them up, use small number here.
@@ -132,9 +132,7 @@ public:
                 _retval(0),
                 _functor(functor)
         {
-            // Initialize using serial traditional restart mode
-            // constructor used by test_crash.cpp which does not specify restart mode
-            do_construct(m1_default_restart);
+            do_construct();
         }
 
         testdriver_thread_t(test_functor *functor,
@@ -148,7 +146,7 @@ public:
                 _functor(functor)
         {
             // Initialize using caller specified restart mode
-            do_construct(restart_mode);
+            do_construct();
         }
 
         ~testdriver_thread_t()  {}
@@ -158,7 +156,7 @@ public:
 
 
 private:
-        void   do_construct(int32_t restart_mode);
+        void   do_construct();
         w_rc_t do_init();
 
         btree_test_env *_env;
@@ -168,7 +166,7 @@ private:
 };
 
 void
-testdriver_thread_t::do_construct(int32_t restart_mode)
+testdriver_thread_t::do_construct()
 {
     // Private function called by testdriver_thread_t constructors to
     // complement required options if not set
@@ -193,24 +191,6 @@ testdriver_thread_t::do_construct(int32_t restart_mode)
 
     if(_options.get_bool_option("sm_testenv_init_vol", true)) {
         _options.set_bool_option("sm_truncate", true);
-    }
-
-    // Control which internal restart mode/setting to use.  This is the only place from test suites
-    // to set the value for 'sm_restart'.
-    // If not set, the internal default value is determined in sm.cpp (hard coded).
-    //
-    // This function is called by all constructors, while mode 1 (serial traditional restart)
-    // is for non-restart related test suites and serial traditional restart test suite
-    // (test_crash)
-    // Other restart modes are for target restart testing (e.g. test_restart,
-    // test_concurrent_restart), not used by non-restart related test suites.
-    //
-    // Valid modes are specified in sm.cpp, these are internal setting, see sm.cpp for
-    // detail information on each mode
-    // If an invalid restart_mode was specified, the system defaults to the internal
-    // default setting in sm.cpp
-    if (_options.get_int_option("sm_restart", not_set_int) == not_set_int) {
-        _options.set_int_option("sm_restart", restart_mode);
     }
 }
 
@@ -549,10 +529,6 @@ int btree_test_env::runRestartTest (restart_test_base *context, restart_test_opt
                 }
             }
         }
-
-    if (restart_options->restart_mode == smlevel_0::t_restart_disable) {
-        return rv;
-    }
 
     DBGOUT2 ( << "Going to call post_shutdown()...");
         {
@@ -1517,12 +1493,6 @@ w_rc_t x_btree_scan(ss_m* ssm, const StoreID &stid, x_btree_scan_result &result,
     } while (true);
     W_DO(ssm->commit_xct());
     return RCOK;
-}
-
-bool x_in_restart(ss_m* ssm)
-{
-    // System is still in the process of 'restart'
-    return ssm->in_restart();
 }
 
 
