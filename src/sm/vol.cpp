@@ -499,6 +499,8 @@ rc_t vol_t::read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn)
     //     W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
     //         << pnum << " was " << buf->pid);
     // }
+
+    return RCOK;
 }
 
 /*********************************************************************
