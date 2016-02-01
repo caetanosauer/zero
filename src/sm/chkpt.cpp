@@ -79,6 +79,12 @@ struct RawLock;            // Lock information gathering
 
 #include "stopwatch.h"
 
+#define LOG_INSERT(constructor_call, rlsn)            \
+    do {                                              \
+        new (logrec) constructor_call;                \
+        W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
+    } while(0)
+
 
 /*********************************************************************
  *
@@ -346,7 +352,7 @@ void chkpt_t::scan_log()
                 break;
 
             // CS TODO: why do we need this? Isn't it related to 2PC?
-            case logrec_t::t_xct_freeing_space:
+            // case logrec_t::t_xct_freeing_space:
             case logrec_t::t_xct_end:
             case logrec_t::t_xct_abort:
                 mark_xct_ended(r.tid());
@@ -404,8 +410,8 @@ void chkpt_t::scan_log()
         } //switch
     } //while
 
-    w_assert0(scan_done);
-    w_assert0(!begin_lsn.is_null());
+    w_assert0(lsn == lsn_t(1,0) || scan_done);
+    w_assert0(lsn == lsn_t(1,0) || !begin_lsn.is_null());
 
     cleanup();
 }
@@ -549,16 +555,6 @@ void chkpt_t::serialize()
     // Allocate a buffer for storing log records
     w_auto_delete_t<logrec_t> logrec(new logrec_t);
 
-#define LOG_INSERT(constructor_call, rlsn)            \
-    do {                                              \
-        new (logrec) constructor_call;                \
-        W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
-    } while(0)
-
-    // Insert chkpt_begin log record.
-    lsn_t begin_lsn = lsn_t::null;
-    LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
-
     size_t chunk;
 
     // Serialize bkp_tab -- CS TODO
@@ -666,10 +662,6 @@ void chkpt_t::serialize()
                                         (const lsn_t*)(&first_lsn[0])), 0);
     }
     //==========================================================================
-
-    LOG_INSERT(chkpt_end_log (get_begin_lsn(),
-                get_min_rec_lsn(),
-                get_min_xct_lsn()), 0);
 }
 
 void chkpt_t::acquire_lock(logrec_t& r)
@@ -802,13 +794,24 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
 
     INC_TSTAT(log_chkpt_cnt);
 
+    // Insert chkpt_begin log record.
+    w_auto_delete_t<logrec_t> logrec(new logrec_t);
+    lsn_t begin_lsn = lsn_t::null;
+    LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
+    W_COERCE(ss_m::log->flush_all());
+
     curr_chkpt.scan_log();
     curr_chkpt.serialize();
+
+    // Insert chkpt_end log record
+    LOG_INSERT(chkpt_end_log (curr_chkpt.get_begin_lsn(),
+                curr_chkpt.get_min_rec_lsn(),
+                curr_chkpt.get_min_xct_lsn()), 0);
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_serial_m::write_release();
 
-    W_COERCE(ss_m::log->flush_all() );
+    W_COERCE(ss_m::log->flush_all());
     DBGOUT1(<<"Setting master_lsn to " << curr_chkpt.get_begin_lsn());
     // CS TODO: get rid of master lsn
     ss_m::log->set_master(curr_chkpt.get_begin_lsn(),

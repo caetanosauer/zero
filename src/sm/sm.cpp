@@ -404,7 +404,6 @@ ss_m::_construct_once()
     recovery = new restart_m(_options);
     recovery->log_analysis();
     chkpt_t* chkpt_info = recovery->get_chkpt();
-    chkpt_info->serialize();
 
     bool instantRestart = _options.get_bool_option("sm_restart_instant", false);
     bool truncate = _options.get_bool_option("sm_truncate", false);

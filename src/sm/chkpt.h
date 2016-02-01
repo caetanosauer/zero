@@ -103,6 +103,7 @@ typedef map<PageID, buf_tab_entry_t>       buf_tab_t;
 typedef map<tid_t, xct_tab_entry_t>        xct_tab_t;
 
 class chkpt_t {
+    friend class chkpt_m;
 private:
     lsn_t begin_lsn;
     tid_t highest_tid;
@@ -114,7 +115,6 @@ public: // required for restart for now
 
 public:
     void scan_log();
-    void serialize();
 
     void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn,
             StoreID store);
@@ -139,6 +139,7 @@ public:
 
 private:
     void init();
+    void serialize();
     void cleanup();
     void acquire_lock(logrec_t& r);
 };
