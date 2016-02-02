@@ -37,90 +37,11 @@
 #include "w_defines.h"
 #include "w_heap.h"
 
-class dirty_pages_tab_t;
-
 #include "sm_base.h"
 #include "chkpt.h"
 #include "lock.h"               // Lock re-acquisition
 
 #include <map>
-
-// Used for:
-//    internal wait for testing purpose
-//    normal shutdown wait
-const uint32_t wait_interval = 1000;   // 1 seconds
-
-
-// Map data structure for undeterminstic in-flight transactions
-// key (first) is the associated transaction id (uint64_t)
-// data (second) is the counter for normal and compensation log records
-typedef std::map<uint64_t, signed int> tid_CLR_map;
-
-////////////////////////////
-// Heap for lock re-acquisition tracking
-////////////////////////////
-
-// Structure for lock heap
-struct comp_lock_info_t
-{
-    comp_lock_info_t(const okvl_mode& mode): lock_mode(mode) {};
-
-    tid_t      tid;          // Owning transaction id of the lock
-    okvl_mode  lock_mode;    // lock mode
-    uint32_t   lock_hash;    // lock hash
-};
-
-class CmpXctLockTids
-{
-    public:
-        bool                        gt(const comp_lock_info_t* x, const comp_lock_info_t* y) const;
-};
-
-inline bool
-CmpXctLockTids::gt(const comp_lock_info_t* x, const comp_lock_info_t* y) const
-{
-    bool gt;
-    if (x->tid > y->tid)
-        gt = true;
-    else if (x->tid < y->tid)
-        gt = false;
-    else
-    {
-        // Two lock entries belong to the same transaction
-        // use hash value to compare
-        if (x->lock_hash > y->lock_hash)
-            gt = true;
-        else if (x->lock_hash < y->lock_hash)
-            gt = false;
-        else
-        {
-            // Same txn, same hash, check lock mode on key (ignore gap and partition)
-            // while X is the greater than the rest
-            //
-            // no lock                                    N = 0
-            // intention share (read)               IS = 1
-            // intention exclusive (write)         IX = 2
-            // share (read)                            S = 3
-            // share with intention exclusive   SIX = 4
-            // exclusive (write)                      X = 5
-
-            if (x->lock_mode.get_key_mode()> y->lock_mode.get_key_mode())
-                gt = true;
-            else
-                gt = false;
-        }
-    }
-
-    return gt;
-}
-
-// Special heap for lock re-acquisition in backward log scan Log Analysis phase
-typedef class Heap<comp_lock_info_t*, CmpXctLockTids> XctLockHeap;
-
-
-////////////////////////////
-// Class restart_thread_t
-////////////////////////////
 
 // Child thread created by restart_m for concurrent recovery operation
 // It is to carry out the REDO and UNDO phases while the system is
@@ -154,7 +75,8 @@ private:
 
 };
 
-class restart_m {
+class restart_m
+{
     friend class restart_thread_t;
 
 public:

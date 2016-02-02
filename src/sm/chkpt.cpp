@@ -872,8 +872,6 @@ chkpt_thread_t::~chkpt_thread_t()
 void
 chkpt_thread_t::run()
 {
-    CmpXctLockTids	 lock_cmp;
-
     while(! _retire)
     {
         {

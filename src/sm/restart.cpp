@@ -75,6 +75,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <unistd.h>
 #include <sstream>
 
+const uint32_t wait_interval = 1000;   // 1 seconds
+
 restart_m::restart_m(const sm_options& options)
 {
     _restart_thread = NULL;
