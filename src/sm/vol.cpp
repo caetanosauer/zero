@@ -368,12 +368,8 @@ void vol_t::shutdown(bool abrupt)
 
 rc_t vol_t::alloc_a_page(PageID& shpid, bool redo)
 {
-    // if (!redo) check_metadata_restored();
-
     w_assert1(_alloc_cache);
-    // CS TODO: add store parameter
-    W_DO(_alloc_cache->sx_allocate_page(shpid, 0, redo));
-
+    W_DO(_alloc_cache->sx_allocate_page(shpid, redo));
     INC_TSTAT(page_alloc_cnt);
 
     return RCOK;
@@ -381,12 +377,8 @@ rc_t vol_t::alloc_a_page(PageID& shpid, bool redo)
 
 rc_t vol_t::deallocate_page(const PageID& pid, bool redo)
 {
-    // if (!redo) check_metadata_restored();
-
     w_assert1(_alloc_cache);
-    // CS TODO: add store parameter
-    W_DO(_alloc_cache->sx_deallocate_page(pid, 0, redo));
-
+    W_DO(_alloc_cache->sx_deallocate_page(pid, redo));
     INC_TSTAT(page_dealloc_cnt);
 
     return RCOK;
@@ -397,9 +389,11 @@ size_t vol_t::num_used_pages() const
     return _alloc_cache->get_last_allocated_pid();
 }
 
-rc_t vol_t::create_store(PageID root_pid, StoreID& snum)
+rc_t vol_t::create_store(PageID& root_pid, StoreID& snum)
 {
-    return _stnode_cache->sx_create_store(root_pid, snum);
+    W_DO(_alloc_cache->sx_allocate_page(root_pid));
+    W_DO(_stnode_cache->sx_create_store(root_pid, snum));
+    return RCOK;
 }
 
 bool vol_t::is_alloc_store(StoreID f) const

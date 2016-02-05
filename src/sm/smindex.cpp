@@ -24,7 +24,6 @@ rc_t ss_m::create_index(StoreID &stid)
 
     // CS TODO: page allocation should transfer ownership to stnode
     PageID root;
-    W_DO(vol->alloc_a_page(root));
     W_DO(vol->create_store(root, stid));
     W_DO(bt->create(stid, root));
 

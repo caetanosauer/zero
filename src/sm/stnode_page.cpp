@@ -51,9 +51,9 @@ bool stnode_cache_t::is_allocated(StoreID store) const
     return get_stnode(store).is_used();
 }
 
-StoreID stnode_cache_t::get_min_unused_store_ID() const
+StoreID stnode_cache_t::get_min_unused_stid() const
 {
-    // Caller should hold the latch
+    // Caller should hold the latch or guarantee mutual exclusion externally
 
     // Let's start from 1, not 0.  All user store ID's will begin with 1.
     // Store-ID 0 will be a special store-ID for stnode_page/alloc_page's
@@ -81,39 +81,29 @@ rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum, bool redo)
 {
     CRITICAL_SECTION (cs, _latch);
 
-    snum = get_min_unused_store_ID();
+    snum = get_min_unused_stid();
     if (snum == stnode_page::max) {
         return RC(eSTCACHEFULL);
     }
 
     _stnode_page.set_root(snum, root_pid);
-    _stnode_page.update_last_extent(snum, 0);
 
-    // sys_xct_section_t ssx(true);
     if (!redo) {
-        // log_create_store(root_pid, snum);
         sysevent::log_create_store(root_pid, snum, prev_page_lsn);
     }
-    // W_DO(ssx.end_sys_xct(RCOK));
 
     return RCOK;
 }
 
-rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext, bool redo)
+rc_t stnode_cache_t::sx_append_extent(extent_id_t ext, bool redo)
 {
     CRITICAL_SECTION (cs, _latch);
 
-    if (snum >= stnode_page::max) {
-        return RC(eSTCACHEFULL);
-    }
+    _stnode_page.set_last_extent(ext);
 
-    // sys_xct_section_t ssx(true);
-    // _stnode_page.update_last_extent(snum, ext);
     if (!redo) {
-        // W_DO(log_append_extent(snum, ext));
-        sysevent::log_append_extent(snum, ext, prev_page_lsn);
+        sysevent::log_append_extent(ext, prev_page_lsn);
     }
-    // W_DO(ssx.end_sys_xct(RCOK));
 
     return RCOK;
 }
@@ -127,8 +117,8 @@ void stnode_cache_t::dump(ostream& out)
         if (s.is_used()) {
             out << "stid: " << i
                 << " root: " << s.root
-                << " last_extent: " << s.last_extent
                 << endl;
         }
     }
+    cout << "last_extent: " << _stnode_page.get_last_extent() << endl;
 }

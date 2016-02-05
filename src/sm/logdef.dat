@@ -129,7 +129,7 @@ xct_end_group      1000000 0.0 (const xct_t** l, int llen);
 alloc_page       1110000  1.0  (PageID pid);
 dealloc_page     1110000  1.0  (PageID pid);
 create_store     1110000  1.0  (PageID root_pid, StoreID snum);
-append_extent    1110000  1.0  (StoreID snum, extent_id_t ext);
+append_extent    1110000  1.0  (extent_id_t ext);
 # Instant Restore log records
 restore_begin      1110000 0.0 ();
 restore_segment    1110000 0.0 (uint32_t segment);

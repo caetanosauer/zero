@@ -46,7 +46,7 @@ public:
     static void log_alloc_page(PageID pid, lsn_t& prev_page_lsn);
     static void log_dealloc_page(PageID pid, lsn_t& prev_page_lsn);
     static void log_create_store(PageID root, StoreID stid, lsn_t& prev_page_lsn);
-    static void log_append_extent(StoreID stid, extent_id_t ext, lsn_t& prev_page_lsn);
+    static void log_append_extent(extent_id_t ext, lsn_t& prev_page_lsn);
 };
 
 #endif

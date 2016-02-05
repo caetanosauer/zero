@@ -72,9 +72,9 @@ void sysevent::log_create_store(PageID root, StoreID stid, lsn_t& prev_page_lsn)
     delete lr;
 }
 
-void sysevent::log_append_extent(StoreID stid, extent_id_t ext, lsn_t& prev_page_lsn)
+void sysevent::log_append_extent(extent_id_t ext, lsn_t& prev_page_lsn)
 {
-    logrec_t* lr = new append_extent_log(stid, ext);
+    logrec_t* lr = new append_extent_log(ext);
     lr->set_page_prev_lsn(prev_page_lsn);
     W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
     delete lr;

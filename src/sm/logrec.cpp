@@ -735,7 +735,8 @@ void restore_segment_log::redo(fixable_page_h*)
 alloc_page_log::alloc_page_log(PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
-    fill((PageID) 0, sizeof(PageID));
+    PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
+    fill(alloc_pid, sizeof(PageID));
 }
 
 void alloc_page_log::redo(fixable_page_h* p)
@@ -943,36 +944,20 @@ void create_store_log::redo(fixable_page_h* page)
         stpage->pid = stnode_page::stpid;
     }
     stpage->set_root(snum, root_pid);
-    stpage->update_last_extent(snum, 0);
-
-    // CS: if logrec refers to a page, it should only update page contents
-//     vol_t* volume = smlevel_0::vol;
-//     w_assert0(volume);
-//     W_COERCE(volume->get_stnode_cache()->sx_create_store(
-//                 root_pid, snum, true));
 }
 
-append_extent_log::append_extent_log(StoreID snum,
-        extent_id_t ext)
+append_extent_log::append_extent_log(extent_id_t ext)
 {
-    memcpy(data_ssx(), &snum, sizeof(StoreID));
-    memcpy(data_ssx() + sizeof(StoreID), &ext, sizeof(extent_id_t));
+    memcpy(data_ssx(), &ext, sizeof(extent_id_t));
     PageID stpage_pid(stnode_page::stpid);
-    fill(stpage_pid, snum, 0, sizeof(StoreID) + sizeof(extent_id_t));
+    fill(stpage_pid, 0, 0, sizeof(extent_id_t));
 }
 
 void append_extent_log::redo(fixable_page_h* page)
 {
-    StoreID snum = *((StoreID*) data_ssx());
-    extent_id_t ext = *((extent_id_t*) (data_ssx() + sizeof(StoreID)));
-
+    extent_id_t ext = *((extent_id_t*) data_ssx());
     stnode_page* stpage = (stnode_page*) page->get_generic_page();
-    stpage->update_last_extent(snum, ext);
-
-    // vol_t* volume = smlevel_0::vol;
-    // w_assert0(volume);
-    // W_COERCE(volume->get_stnode_cache()->sx_append_extent(
-    //             snum, ext, true));
+    stpage->set_last_extent(ext);
 }
 
 #if LOGREC_ACCOUNTING

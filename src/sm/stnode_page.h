@@ -22,7 +22,7 @@
  */
 struct stnode_t {
     /// also okay to initialize via memset
-    stnode_t() : root(0), last_extent(0)
+    stnode_t() : root(0)
     { }
 
     /**
@@ -31,12 +31,6 @@ struct stnode_t {
      * extent allocated which was not assigned to a specific store.
      */
     PageID         root;      // +4 -> 4
-
-    /**
-     * Last extend occupied by this store; 0 if store does not use exclusive
-     * extents.
-     */
-    extent_id_t     last_extent; // +4 -> 8
 
     bool is_used() const  { return root != 0; }
 };
@@ -51,7 +45,10 @@ public:
 
     /// max # \ref stnode_t's on a single stnode_page; thus, the
     /// maximum number of stores per volume
-    static const size_t max = (page_sz - sizeof(generic_page_header) - sizeof(lsn_t))
+    static const size_t max =
+        (page_sz - sizeof(generic_page_header)
+            - sizeof(lsn_t)
+            - sizeof(extent_id_t))
         / sizeof(stnode_t);
 
     // Page ID used by the stnode page
@@ -67,11 +64,9 @@ public:
         stnode[index].root = root;
     }
 
-    void update_last_extent(size_t index, extent_id_t ext)
-    {
-        w_assert1(index < max);
-        stnode[index].last_extent = ext;
-    }
+    void set_last_extent(extent_id_t ext) { last_extent = ext; }
+
+    extent_id_t get_last_extent() { return last_extent; }
 
     lsn_t getBackupLSN() { return backupLSN; }
 
@@ -80,14 +75,17 @@ public:
         pid = stnode_page::stpid;
 
         backupLSN = lsn_t(0,0);
+        last_extent = 0;
         memset(&stnode, 0, sizeof(stnode_t) * max);
-        update_last_extent(0, 0);
     }
 
 
 private:
     // Used for backup files
     lsn_t backupLSN;
+
+    // ID of the lastly allocated extent
+    extent_id_t last_extent;
 
     /// stnode[i] is the stnode_t for store # i of this volume
     stnode_t stnode[max];
@@ -111,8 +109,6 @@ BOOST_STATIC_ASSERT(sizeof(stnode_page) == generic_page_header::page_sz);
  */
 class stnode_cache_t {
 public:
-    /// special_pages here holds the special pages for volume vid, the
-    /// last of which should be the stnode_page for that volume
     stnode_cache_t(bool virgin);
 
     /**
@@ -134,9 +130,13 @@ public:
 
     rc_t sx_create_store(PageID root_pid, StoreID& snum, bool redo = false);
 
-    rc_t sx_append_extent(StoreID snum, extent_id_t ext, bool redo = false);
+    rc_t sx_append_extent(extent_id_t ext, bool redo = false);
 
     void dump(ostream& out);
+
+    extent_id_t get_last_extent() {
+        return _stnode_page.get_last_extent();
+    }
 
 private:
     /// all operations in this object except get_root_pid are protected by this latch
@@ -148,13 +148,13 @@ private:
     // the page on disk.
     stnode_page _stnode_page;
 
+    /// Required to maintain per-page log chain (see comments on alloc_cache.h)
+    lsn_t prev_page_lsn;
+
     /// Returns the first StoreID that can be used for a new store in
     /// this volume or stnode_page::max if all available stores of
     /// this volume are already allocated.
-    StoreID get_min_unused_store_ID() const;
-
-    /// Required to maintain per-page log chain (see comments on alloc_cache.h)
-    lsn_t prev_page_lsn;
+    StoreID get_min_unused_stid() const;
 
 };
 

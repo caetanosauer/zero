@@ -104,7 +104,7 @@ public:
     /** Returns root page ID of the specified index. */
     PageID         get_store_root(StoreID f) const;
 
-    rc_t            create_store(PageID, StoreID&);
+    rc_t            create_store(PageID&, StoreID&);
 
     /** Mark device as failed and kick off Restore */
     rc_t            mark_failed(bool evict = false, bool redo = false);
