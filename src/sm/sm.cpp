@@ -362,70 +362,61 @@ ss_m::_construct_once()
     /*
      *  Level 1
      */
-    smlevel_0::logging_enabled = _options.get_bool_option("sm_logging", true);
-    if (logging_enabled)
-    {
 #ifndef USE_ATOMIC_COMMIT // otherwise, log and clog will point to the same log object
-        if (logimpl == logbuf_core::IMPL_NAME) {
-            log = new logbuf_core(_options);
-        }
-        else { // traditional
-            log = new log_core(_options);
-        }
+    if (logimpl == logbuf_core::IMPL_NAME) {
+        log = new logbuf_core(_options);
+    }
+    else { // traditional
+        log = new log_core(_options);
+    }
 #else
-        /*
-         * Centralized log used for atomic commit protocol (by Caetano).
-         * See comments in plog.h
-         */
-        clog = new log_core(_options);
-        log = clog;
-        w_assert0(log);
+    /*
+     * Centralized log used for atomic commit protocol (by Caetano).
+     * See comments in plog.h
+     */
+    clog = new log_core(_options);
+    log = clog;
+    w_assert0(log);
 #endif
 
-        // LOG ARCHIVER
-        bool archiving = _options.get_bool_option("sm_archiving", false);
-        if (archiving) {
-            logArchiver = new LogArchiver(_options);
-            logArchiver->fork();
+    // LOG ARCHIVER
+    bool archiving = _options.get_bool_option("sm_archiving", false);
+    if (archiving) {
+        logArchiver = new LogArchiver(_options);
+        logArchiver->fork();
 
-            bool decoupled_cleaner = _options.get_bool_option("sm_decoupled_cleaner", false);
-            if(decoupled_cleaner) {
-                bf->set_cleaner(logArchiver, _options);
-            }
+        bool decoupled_cleaner = _options.get_bool_option("sm_decoupled_cleaner", false);
+        if(decoupled_cleaner) {
+            bf->set_cleaner(logArchiver, _options);
         }
-    } else {
-        /* Run without logging at your own risk. */
-        errlog->clog << warning_prio <<
-        "WARNING: Running without logging! Do so at YOUR OWN RISK. "
-        << flushl;
     }
+
+    ERROUT(<< "Initializing restart manager");
 
     // Log analysis provides info required to initialize vol_t
     recovery = new restart_m(_options);
     recovery->log_analysis();
     chkpt_t* chkpt_info = recovery->get_chkpt();
 
-    bool instantRestart = _options.get_bool_option("sm_restart_instant", false);
+    bool instantRestart = _options.get_bool_option("sm_restart_instant", true);
     bool truncate = _options.get_bool_option("sm_truncate", false);
+
+    ERROUT(<< "Initializing volume");
 
     // If not instant restart, pass null dirty page table, which disables REDO
     // recovery based on SPR so that it is done explicitly by restart_m below.
     vol = new vol_t(_options,
             instantRestart ? &chkpt_info->buf_tab : NULL);
-    if (!instantRestart) {
+    if (instantRestart) {
         vol->build_caches(truncate);
     }
 
     smlevel_0::statistics_enabled = _options.get_bool_option("sm_statistics", true);
 
+    ERROUT(<< "Initializing buffer manager and other services");
+
     // start buffer pool cleaner when the log module is ready
     W_COERCE(bf->init());
-
-    DBG(<<"Level 2");
-
-    /*
-     *  Level 2
-     */
 
     bt = new btree_m;
     if (! bt) {
@@ -433,10 +424,6 @@ ss_m::_construct_once()
     }
     bt->construct_once();
 
-    DBG(<<"Level 3");
-    /*
-     *  Level 3
-     */
     chkpt = new chkpt_m();
     if (! chkpt)  {
         W_FATAL(eOUTOFMEMORY);
@@ -444,10 +431,6 @@ ss_m::_construct_once()
     // Spawn the checkpoint child thread immediatelly and initialize log with CP
     chkpt->spawn_chkpt_thread();
 
-    DBG(<<"Level 4");
-    /*
-     *  Level 4
-     */
     SSM = this;
 
     me()->mark_pin_count();
@@ -462,102 +445,38 @@ ss_m::_construct_once()
     do_prefetch = _options.get_bool_option("sm_prefetch", false);
     DBG(<<"constructor done");
 
+    ERROUT(<< "Performing initial restart");
+
     // If not using instant restart, perform log-based REDO before opening up
     if (instantRestart) {
         recovery->spawn_recovery_thread();
     }
     else {
         if (_options.get_bool_option("sm_restart_log_based_redo", true)) {
-            recovery->redo_log_pass();
-            recovery->undo_pass();
+            // recovery->redo_log_pass();
+            recovery->redo_page_pass();
         }
         else {
             recovery->redo_page_pass();
         }
+        recovery->undo_pass();
         // metadata caches can only be constructed now
         vol->build_caches(truncate);
-    }
-}
 
-void ss_m::_do_restart()
-{
+        // CS: added this for debugging, but consistency check fails
+        // even right after loading -- so it's not a recovery problem
+        // vector<StoreID> stores;
+        // vol->get_stnode_cache()->get_used_stores(stores);
+        // for (size_t i = 0; i < stores.size(); i++) {
+        //     bool consistent;
+        //     W_COERCE(ss_m::verify_index(stores[i], 31, consistent));
+        //     w_assert0(consistent);
+        // }
+    }
 }
 
 void ss_m::_finish_recovery()
 {
-    // get rid of all non-prepared transactions
-    // First... disassociate me from any tx
-    if(xct()) {
-        me()->detach_xct(xct());
-    }
-
-    if (recovery)
-    {
-        // The destructor of restart_m terminates (no wait if crash shutdown)
-        // the child thread if the child thread is still active.
-        // The child thread is for Recovery process only, it should terminate
-        // itself after the Recovery process completed
-
-        delete recovery;
-        recovery = 0;
-    }
-    // At this point, the restart_m should no longer exist and we are safe to continue the
-    // shutdown process
-    w_assert1(!recovery);
-
-    // Failure on failure scenarios -
-    // Normal shutdown:
-    //    Works correctly even if the 2nd shutdown request came in before the first restart
-    //    process finished.
-    //        Tranditional serial shutdown - System was not opened while restart is going on
-    //        Tranditional serial shutdown - The cleanup() call rolls back all in-flight transactions
-    //        Pure on-demand shutdown using commit_lsn - The cleanup() call rolls back all
-    //                                                                            in-flight transactions
-    //        Pure on-demand shutdown using locks - The cleanup() call rolls back all
-    //                                                                   in-flight transactions
-    //        Mixed mode using locks - The cleanup() call rolls back all in-flight transactions
-    //
-    // Simulated system crash through 'shutdown_clean flag:
-    //    Work correctly with failure on failure scenarions, including on_demand restart
-    //    with lock is used and the 2nd failure occurs before the first restart process finished.
-    //        Tranditional serial shutdown - System was not opened while restart is going on
-    //        Tranditional serial shutdown - The cleanup() call stops all in-flight transactions
-    //                                                    without rolling back
-    //        Pure on-demand shutdown using commit_lsn - The cleanup() call stops all in-flight
-    //                                                    transactions without rolling back
-    //        Pure on-demand shutdown using locks - If the 2nd system crash occurs during
-    //                                                    Log Analysis, no issue
-    //                                                    Otherwise, the cleanup() call stops all in-flight
-    //                                                    transactions without rolling them back.
-    //                                                    If a user transaction has triggered an on_demand
-    //                                                    UNDO and it was in the middle of rolling back the
-    //                                                    loser transaction, potentially there might be other
-    //                                                    blocked user transactions due to lock conflicts,
-    //                                                    and the 2nd system crash occurred, note at this
-    //                                                    point no log record generated for all user transactions
-    //                                                    bloced on lock conflicts.
-    //                                                    During 2nd restart backward log scan Log Analysis
-    //                                                    phase, all lock re-acquisions should succeed without
-    //                                                    conflicts because the previously blocked user
-    //                                                    transactions did not generate log records therefore
-    //                                                    no lock re-acquisition and nothing to rollback
-    //        Mixed mode using locks - Same as 'pure on-demand shutdown using locks'
-    //
-    // Genuine system crash:
-    //    Similar to simulated system crash, it should work correctly with on_demand restart using lock.
-    //        Pure on-demand shutdown using locks - If the 2nd system crash occurs during
-    //                                                    Log Analysis, no issue
-    //                                                    Otherwise, if system crashed before the entire
-    //                                                    on-demand REDO/UNDO finished, and if a user
-    //                                                    transaction triggered UNDO was in the middle of
-    //                                                    rolling back (which blocked the associated user transaction)
-    //                                                    when the system crash occurred, then the lock
-    //                                                    re-acquisition process during 2nd restart should not
-    //                                                    encounter lock conflict because the previously blocked
-    //                                                    user transaction did not generate log record for its
-    //                                                    blocked operation, therefore no lock re-acquision and
-    //                                                    nothing to rollback
-    //        Mixed mode using locks - Same as 'pure on-demand shutdown using locks'
 }
 
 ss_m::~ss_m()
@@ -595,7 +514,17 @@ ss_m::_destruct_once()
     // log flush daemon is running, it won't just try to re-activate it.
     shutting_down = true;
 
-    _finish_recovery();
+    // get rid of all non-prepared transactions
+    // First... disassociate me from any tx
+    if(xct()) {
+        me()->detach_xct(xct());
+    }
+
+    ERROUT(<< "Terminating recovery manager");
+    if (recovery) {
+        delete recovery;
+        recovery = 0;
+    }
 
     // now it's safe to do the clean_up
     // The code for distributed txn (prepared xcts has been deleted, the input paramter
@@ -627,13 +556,13 @@ ss_m::_destruct_once()
         }
     }
     else {
-        DBGTHRD(<< "SM performing dirty shutdown");
+        ERROUT(<< "SM performing dirty shutdown");
         chkpt->retire_chkpt_thread();
 
         delete chkpt; chkpt = 0;
     }
 
-
+    ERROUT(<< "Terminating volume");
     // this should come before xct and log shutdown so that any
     // ongoing restore has a chance to finish cleanly. Should also come after
     // shutdown of buffer, since forcing the buffer requires the volume.
@@ -644,22 +573,13 @@ ss_m::_destruct_once()
     w_assert1(nprepared == 0);
     w_assert1(xct_t::num_active_xcts() == 0);
 
+    ERROUT(<< "Terminating other services");
     lm->assert_empty(); // no locks should be left
-
-    /*
-     *  Level 2
-     */
     bt->destruct_once();
     delete bt; bt = 0; // btree manager
-
-    /*
-     *  Level 1
-     */
-
-
-    // delete the lock manager
     delete lm; lm = 0;
 
+    ERROUT(<< "Terminating log archiver");
     if (logArchiver) {
         logArchiver->shutdown();
         delete logArchiver;
@@ -672,6 +592,7 @@ ss_m::_destruct_once()
         delete _ticker;
     }
 
+    ERROUT(<< "Terminating log manager");
     if(log) {
         log->shutdown(); // log joins any subsidiary threads
         // We do not delete the log now; shutdown takes care of that. delete log;
@@ -685,25 +606,22 @@ ss_m::_destruct_once()
 #endif
     clog = 0;
 
+    ERROUT(<< "Terminating buffer manager");
     W_COERCE(bf->destroy());
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
 
-    /*
-     *  Level 0
-     */
     if (errlog) {
         delete errlog; errlog = 0;
     }
 
-    /*
-     *  free buffer pool memory
-     */
      w_rc_t        e;
      char        *unused;
      e = smthread_t::set_bufsize(0, unused);
      if (e.is_error())  {
         cerr << "ss_m: Warning: set_bufsize(0):" << endl << e << endl;
      }
+
+     ERROUT(<< "SM shutdown complete!");
 }
 
 #include "logdef_gen.cpp" // required to regenerate chkpt_end

@@ -581,7 +581,9 @@ logrec_t::stid() const
 
 inline PageID logrec_t::pid2() const
 {
-    w_assert1(0 != (header._cat & t_multi));
+    if (!(header._cat & t_multi)) {
+        return 0;
+    }
 
     const multi_page_log_t* multi_log = reinterpret_cast<const multi_page_log_t*> (data_ssx());
     return multi_log->_page2_pid;
@@ -637,6 +639,10 @@ logrec_t::page_prev_lsn() const
 inline const lsn_t&
 logrec_t::page2_prev_lsn() const
 {
+    if (!(header._cat & t_multi)) {
+        return lsn_t::null;
+    }
+
     return data_ssx_multi()->_page2_prv;
 }
 inline void

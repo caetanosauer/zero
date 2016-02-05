@@ -732,14 +732,6 @@ public:
 ///   BEGIN: Tree Grow/Shrink/Create. implemented in btree_impl_grow.cpp
 ///==========================================
 #endif // DOXYGEN_HIDE
-
-    /**
-    *  \brief Newly creates a BTree.
-     * Context: only in system transaction.
-     * @param[in] stid ID of the newly created BTree.
-     * @param[out] root_pid ID of the root page of the newly created BTree.
-    */
-    static rc_t                        _sx_create_tree(const StoreID &stid, PageID &root_pid);
     /**
      * this version assumes system transaction as the active transaction on current thread.
      * @see _sx_shrink_tree()

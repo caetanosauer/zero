@@ -109,6 +109,7 @@ btree_impl::_ux_traverse(StoreID store, const w_keystr_t &key,
         // Root page is pre-loaded into buffer pool
         W_DO( root_p.fix_root(store, should_try_ex ? LATCH_EX : LATCH_SH, false));
         w_assert1(root_p.is_fixed());
+        w_assert1(root_p.root() == root_p.pid());
 
         if (root_p.get_foster() != 0) {
             // root page has foster-child!  Let's grow the tree.
@@ -163,7 +164,10 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
     /// cache the flag to avoid calling the functions each time
     bool do_inquery_verify = (xct() != NULL && xct()->is_inquery_verify());
 
+    // CS: why do we call unfix here?
     leaf.unfix();
+
+    w_assert1(start.pid() == start.root());
 
     // this part is now loop, not recursion to prevent the stack from growing too long
     btree_page_h *current = &start;

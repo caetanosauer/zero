@@ -179,8 +179,8 @@ void Command::setupSMOptions()
         "Log Buffer part size")
     ("sm_carray_slots", po::value<int>(),
         "")
-    ("sm_restart", po::value<int>(),
-        "Enable restart")
+    ("sm_restart_instant", po::value<bool>(),
+        "Enable instant restart")
     ("sm_restore_segsize", po::value<int>(),
         "Segment size restore")
     ("sm_restore_prefetcher_window", po::value<int>(),

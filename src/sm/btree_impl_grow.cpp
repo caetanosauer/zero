@@ -21,18 +21,7 @@
 #include "xct.h"
 #include "vol.h"
 
-rc_t btree_impl::_sx_create_tree(const StoreID &stid, PageID &root_pid)
-{
-    FUNC(btree_impl::_sx_create_tree);
-    W_DO(smlevel_0::vol->alloc_a_page(root_pid));
-    sys_xct_section_t sxs;
-    W_DO(sxs.check_error_on_start());
-    rc_t ret = _ux_create_tree_core(stid, root_pid);
-    W_DO (sxs.end_sys_xct (ret));
-    return ret;
-}
-
-rc_t btree_impl::_ux_create_tree_core(const StoreID &stid, const PageID &root_pid)
+rc_t btree_impl::_ux_create_tree_core(const StoreID& stid, const PageID& root_pid)
 {
     w_assert1(root_pid != 0);
     w_assert1(stid != 0);
@@ -50,6 +39,7 @@ rc_t btree_impl::_ux_create_tree_core(const StoreID &stid, const PageID &root_pi
                            0, lsn_t::null,// no foster child
                            infimum, supremum, dummy_chain_high // start from infimum/supremum fence keys
                            ));
+    w_assert1(page.root() == page.pid());
 
     return RCOK;
 }

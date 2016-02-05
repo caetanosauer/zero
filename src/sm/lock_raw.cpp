@@ -130,7 +130,7 @@ w_error_codes RawLockQueue::acquire(RawXct* xct, uint32_t hash, const okvl_mode&
     atomic_lock_insert(new_lock); // A3 . BTW this implies a barrier in x86
     Compatibility compatibility = check_compatiblity(new_lock); // A4-A5
 
-    if ((compatibility.deadlocked) || (!compatibility.can_be_granted))
+    if (check && (compatibility.deadlocked || !compatibility.can_be_granted))
     {
         DBGOUT1(<< "RawLockQueue::acquire: not able to acquire lock, check for UNDO");
 
@@ -141,20 +141,13 @@ w_error_codes RawLockQueue::acquire(RawXct* xct, uint32_t hash, const okvl_mode&
         w_assert1(NULL != compatibility.blocker);
         w_assert1(compatibility.blocker != new_lock->owner_xct);
         DBGOUT3(<< "RawLockQueue::acquire(): cannot grant the lock, check for UNDO");
-        if (true == trigger_UNDO(compatibility))
+        if (trigger_UNDO(compatibility))
         {
             // The user transaction (this thread) triggered an on_demand UNDO which
             // rolled back a loser transaction, check the compatibility again since
             // the lock manager entries changed due to loser transaction rollback
             DBGOUT3(<< "RawLockQueue::acquire(): current thread triggered UNDO");
             compatibility = check_compatiblity(new_lock); // A4-A5
-        }
-        else
-        {
-            // Either this is not part of on_demand UNDO, or the user transaction
-            // was blocked by a loser transaction which is already in the middle of
-            // rollong back, no need to re-check compatibility, continue the process
-            DBGOUT3(<< "RawLockQueue::acquire(): current thread did not trigger UNDO, continue...");
         }
     }
 

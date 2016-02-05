@@ -40,13 +40,12 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict) {
         } // exit the scope to do the following out of the critical section
 
         // if the freelist was empty, let's evict some page.
-        if (true == evict)
+        if (evict)
         {
             W_DO (_get_replacement_block());
         }
         else
         {
-            // Freelist is empty and caller does not want to evict pages (Recovery M1)
             return RC(eBFFULL);
         }
     }

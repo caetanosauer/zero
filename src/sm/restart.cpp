@@ -231,8 +231,14 @@ restart_m::redo_log_pass()
         DBGOUT3( << setiosflags(ios::right) << lsn
                 << resetiosflags(ios::right) << " R: " << r);
         w_assert1(lsn == r.lsn_ck());
-        w_assert1(lsn == expected_lsn || lsn.hi() == expected_lsn.hi()+1);
-        expected_lsn.advance(r.length());
+        if (lsn == expected_lsn) {
+            expected_lsn.advance(r.length());
+        }
+        else {
+            w_assert1(lsn == lsn_t(expected_lsn.hi() + 1, 0));
+            expected_lsn = lsn;
+            expected_lsn.advance(r.length());
+        }
 
         if ( r.is_redo() )
         {
@@ -351,6 +357,9 @@ restart_m::redo_log_pass()
                 << resetiosflags(ios::right) << " R: "
                 << (redone ? " redone" : " skipped") );
 
+        ERROUT(<< "redo_log_pass: " << lsn << " " << r.type_str() << " pid " << r.pid()
+                << (redone ? " redone" : " skipped") );
+
     }
 
     ADD_TSTAT(restart_redo_time, timer.time_us());
@@ -388,6 +397,13 @@ void restart_m::_redo_log_with_pid(logrec_t& r, PageID pid,
 
     if (page_lsn < r.lsn())
     {
+        w_assert1(pid == r.pid() || pid == r.pid2());
+        w_assert1(pid != r.pid() || (r.page_prev_lsn() == lsn_t::null ||
+            r.page_prev_lsn() == page_lsn));
+
+        w_assert1(pid != r.pid2() || (r.page2_prev_lsn() == lsn_t::null ||
+            r.page2_prev_lsn() == page_lsn));
+
         w_assert1(page.is_fixed());
         r.redo(&page);
         page.update_initial_and_last_lsn(r.lsn());
