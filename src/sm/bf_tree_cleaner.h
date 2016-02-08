@@ -15,7 +15,6 @@
 #include <vector>
 
 class bf_tree_m;
-class bf_tree_cleaner_slave_thread_t;
 class generic_page;
 
 /**
@@ -25,8 +24,7 @@ class generic_page;
  * This class manages all worker threads which do the
  * actual page cleaning.
  */
-class bf_tree_cleaner {
-    friend class bf_tree_cleaner_slave_thread_t;
+class bf_tree_cleaner : public smthread_t {
 public:
     /**
      * Constructs this object. This merely allocates arrays and objects.
@@ -36,11 +34,10 @@ public:
      * @param initially_wakeup_workers whether to start cleaner threads as soon as possible.
      * Even if this is false, you can start cleaners later by calling wakeup_cleaners().
      */
-    bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads,
-        uint32_t cleaner_interval_millisec_min,
-        uint32_t cleaner_interval_millisec_max,
-        uint32_t cleaner_write_buffer_pages,
-        bool initially_wakeup_workers);
+    bf_tree_cleaner(bf_tree_m* bufferpool,
+        uint32_t interval_millisec_min,
+        uint32_t interval_millisec_max,
+        uint32_t write_buffer_pages);
 
     /**
      * Destructs this object. This merely de-allocates arrays and objects.
@@ -48,15 +45,7 @@ public:
      */
     ~bf_tree_cleaner();
 
-    /**
-     * Starts up the cleaners. Sort of initialization of this object.
-     */
-    w_rc_t start_cleaners();
-
-    /**
-     * Wakes up all cleaner threads, starting them if not started yet.
-     */
-    w_rc_t wakeup_cleaners ();
+    void run();
 
     /**
      * Wakes up the cleaner thread assigned to the given volume.
@@ -76,87 +65,20 @@ public:
     /** Immediately writes out all dirty pages in the given volume.*/
     w_rc_t force_volume();
 
-    /** Immediately writes out all dirty pages.*/
-    w_rc_t force_all ();
-
-private:
-    /** the buffer pool this cleaner deals with. */
-    bf_tree_m*                  _bufferpool;
-
-    unsigned get_cleaner();
-
-    /**
-     * _volume_requests[vol] indicates whether the volume is requested
-     * to be flushed by force_volume() or force_all().
-     * When the corresponding worker observes this flag and completes
-     * flushing all dirty pages in the volume, the worker turns off the flag.
-     */
-    bool               _requested_volume;
-
-    /** whether any unexpected error happened in some cleaner. */
-    bool                        _error_happened;
-
-    bf_tree_cleaner_slave_thread_t* _slave_thread;
-
-    const uint32_t _cleaner_interval_millisec_min;
-    const uint32_t _cleaner_interval_millisec_max;
-    const uint32_t _cleaner_write_buffer_pages;
-
-    /**
-     * whether to start cleaner threads as soon as possible.
-     * Even if this is false, you can start cleaners later by calling wakeup_cleaners().
-     */
-    const bool                  _initially_wakeup_workers;
-};
-
-/**
- * \brief The worker thread to cleans out buffer frames.
- * \ingroup SSMBUFPOOL
- * \details
- * Each worker thread is assigned to an arbitrary number of volumes.
- * On the other hand, every volume is assigned to a single cleaner worker
- * so that it can efficiently write out contiguous dirty pages.
- *
- * No volume (thus no page) is assigned to more than one cleaner to simplify synchronization,
- * which causes no harm because more than one thread for a single physical disk
- * are useless anyway. This also means that it's useless to have more cleaner threads
- * than the count of volumes.
- */
-class bf_tree_cleaner_slave_thread_t : public smthread_t {
-    friend class bf_tree_cleaner;
-public:
-    bf_tree_cleaner_slave_thread_t (bf_tree_cleaner* parent);
-    ~bf_tree_cleaner_slave_thread_t ();
-
-    void run();
-
-    /** wakes up this thread if it's currently sleeping. */
-    void wakeup ();
-
 private:
     bool _cond_timedwait (uint64_t timeout_microsec);
     void _take_interval ();
     w_rc_t _do_work ();
     bool _exists_requested_work();
     w_rc_t _clean_volume(const std::vector<bf_idx> &candidates);
-    w_rc_t _flush_write_buffer(size_t from, size_t consecutive,
-            unsigned& cleaned_count);
+    w_rc_t _flush_write_buffer(size_t from, size_t consecutive, unsigned& cleaned_count);
 
-    /** parent object. */
-    bf_tree_cleaner*            _parent;
+    /** the buffer pool this cleaner deals with. */
+    bf_tree_m*                  _bufferpool;
 
-    /** @todo at some point the flags below should probably become std::atomic_flag's (or lintel
-        should be updated to include that type). I also think memory_order_consume would
-        be OK for the accesses, instead of the default memory_order_seq_cst, but thats an
-        exercise for another day, and a non-x86 architecture. */
-    /** whether this thread has been requested to start. */
-    lintel::Atomic<bool> _start_requested;
-    /** whether this thread is currently running. */
-    lintel::Atomic<bool> _running;
-    /** whether this thread has been requested to stop. */
-    lintel::Atomic<bool> _stop_requested;
-    /** whether this thread has been requested to wakeup. */
-    lintel::Atomic<bool> _wakeup_requested;
+    const uint32_t _interval_millisec_min;
+    const uint32_t _interval_millisec_max;
+    const uint32_t _write_buffer_pages;
 
     /**
      * milliseconds to sleep when finding no dirty pages.
@@ -174,8 +96,28 @@ private:
     size_t                      _sort_buffer_size;
 
     /** reused buffer to write out the content of dirty pages. */
-    generic_page*                     _write_buffer;
+    generic_page*               _write_buffer;
     bf_idx*                     _write_buffer_indexes;
+
+    /**
+     * _volume_requests[vol] indicates whether the volume is requested
+     * to be flushed by force_volume() or force_all().
+     * When the corresponding worker observes this flag and completes
+     * flushing all dirty pages in the volume, the worker turns off the flag.
+     */
+    bool               _requested_volume;
+
+    /** @todo at some point the flags below should probably become std::atomic_flag's (or lintel
+        should be updated to include that type). I also think memory_order_consume would
+        be OK for the accesses, instead of the default memory_order_seq_cst, but thats an
+        exercise for another day, and a non-x86 architecture. */
+    /** whether this thread has been requested to stop. */
+    lintel::Atomic<bool> _stop_requested;
+    /** whether this thread has been requested to wakeup. */
+    lintel::Atomic<bool> _wakeup_requested;
+
+    /** whether any unexpected error happened in some cleaner. */
+    bool                        _error_happened;
 };
 
 #endif // BF_TREE_CLEANER_H

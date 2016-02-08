@@ -20,83 +20,80 @@
 #include "sm.h"
 #include "xct.h"
 
-
 bool _dirty_shutdown_happening() {
     return (ss_m::shutting_down && !ss_m::shutdown_clean);
 }
 
+const int INITIAL_SORT_BUFFER_SIZE = 64;
 
-bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads,
-    uint32_t cleaner_interval_millisec_min,
-    uint32_t cleaner_interval_millisec_max,
-    uint32_t cleaner_write_buffer_pages,
-    bool initially_wakeup_workers) :
+bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool,
+    uint32_t interval_millisec_min,
+    uint32_t interval_millisec_max,
+    uint32_t write_buffer_pages) :
     _bufferpool(bufferpool),
-    _cleaner_interval_millisec_min (cleaner_interval_millisec_min),
-    _cleaner_interval_millisec_max (cleaner_interval_millisec_max),
-    _cleaner_write_buffer_pages (cleaner_write_buffer_pages),
-    _initially_wakeup_workers(initially_wakeup_workers)
+    _interval_millisec_min (interval_millisec_min),
+    _interval_millisec_max (interval_millisec_max),
+    _write_buffer_pages (write_buffer_pages),
+    _interval_millisec(_interval_millisec_min),
+    _sort_buffer (new uint64_t[INITIAL_SORT_BUFFER_SIZE]), _sort_buffer_size(INITIAL_SORT_BUFFER_SIZE),
+    _stop_requested(false), _wakeup_requested(false)
 {
-    w_assert0(cleaner_threads >= 1);
-
-    _slave_thread = new bf_tree_cleaner_slave_thread_t (this);
-
    _error_happened = false;
+   ::pthread_mutex_init(&_interval_mutex, NULL);
+   ::pthread_cond_init(&_interval_cond, NULL);
+
+   // use posix_memalign because the write buffer might be used for raw disk I/O
+   void *buf = NULL;
+   w_assert0(::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * (_write_buffer_pages + 1))==0); // +1 margin for switching to next batch
+   w_assert0(buf != NULL);
+   _write_buffer = reinterpret_cast<generic_page*>(buf);
+
+   _write_buffer_indexes = new bf_idx[_write_buffer_pages + 1];
 }
 
 bf_tree_cleaner::~bf_tree_cleaner()
 {
-    delete _slave_thread;
-    _slave_thread = NULL;
-}
+    ::pthread_mutex_destroy(&_interval_mutex);
+    ::pthread_cond_destroy(&_interval_cond);
+    delete[] _sort_buffer;
 
-w_rc_t bf_tree_cleaner::start_cleaners()
-{
-    w_assert1(_slave_thread != NULL);
-    _slave_thread->_start_requested = _initially_wakeup_workers;
-    W_DO(_slave_thread->fork());
-    _slave_thread->_running = true; // otherwise it races with thread start...
-    DBGOUT1(<<"bf_tree_cleaner: started cleaner threads");
-    return RCOK;
+    void *buf = reinterpret_cast<void*>(_write_buffer);
+    // note we use free(), not delete[], which corresponds to posix_memalign
+    ::free (buf);
+
+    delete[] _write_buffer_indexes;    
 }
 
 w_rc_t bf_tree_cleaner::wakeup_cleaner()
 {
-    w_assert1(_slave_thread != NULL);
-    lintel::atomic_thread_fence(lintel::memory_order_consume);
-    if (!_slave_thread->_running) {
-        return RCOK;
-    }
-    lintel::atomic_thread_fence(lintel::memory_order_consume);
-    if (_slave_thread->_start_requested == false) {
-        _slave_thread->_start_requested = true;
-        lintel::atomic_thread_fence(lintel::memory_order_release);
-    }
+    int rc_mutex_lock = ::pthread_mutex_lock (&_interval_mutex);
+    w_assert1(rc_mutex_lock == 0);
 
-    _slave_thread->wakeup();
+    _wakeup_requested = true;
+
+    int rc_broadcast = ::pthread_cond_broadcast(&_interval_cond);
+    w_assert1(rc_broadcast == 0);
+
+    int rc_mutex_unlock = ::pthread_mutex_unlock (&_interval_mutex);
+    w_assert1(rc_mutex_unlock == 0);
     return RCOK;
 }
 
 w_rc_t bf_tree_cleaner::request_stop_cleaner()
 {
-    _slave_thread->_stop_requested = true;
+    _stop_requested = true;
     lintel::atomic_thread_fence(lintel::memory_order_release);
     lintel::atomic_thread_fence(lintel::memory_order_consume);
-    if (_slave_thread->_running) {
-        W_DO(wakeup_cleaner());
-    }
     return RCOK;
 }
 
 
 w_rc_t bf_tree_cleaner::join_cleaner(uint32_t max_wait_millisec)
 {
-    if (_slave_thread->_running) {
-        if (max_wait_millisec == 0) {
-            W_DO(_slave_thread->join(sthread_base_t::WAIT_FOREVER));
-        } else {
-            W_DO(_slave_thread->join(max_wait_millisec));
-        }
+    if (max_wait_millisec == 0) {
+        W_DO(join(sthread_base_t::WAIT_FOREVER));
+    } else {
+        W_DO(join(max_wait_millisec));
     }
     return RCOK;
 }
@@ -151,40 +148,7 @@ w_rc_t bf_tree_cleaner::force_volume()
     return RCOK;
 }
 
-
-const int INITIAL_SORT_BUFFER_SIZE = 64;
-
-bf_tree_cleaner_slave_thread_t::bf_tree_cleaner_slave_thread_t(bf_tree_cleaner* parent)
-    : _parent(parent), _start_requested(false), _running(false), _stop_requested(false), _wakeup_requested(false),
-    _interval_millisec(parent->_cleaner_interval_millisec_min),
-    _sort_buffer (new uint64_t[INITIAL_SORT_BUFFER_SIZE]), _sort_buffer_size(INITIAL_SORT_BUFFER_SIZE)
-{
-    ::pthread_mutex_init(&_interval_mutex, NULL);
-    ::pthread_cond_init(&_interval_cond, NULL);
-
-    // use posix_memalign because the write buffer might be used for raw disk I/O
-    void *buf = NULL;
-    w_assert0(::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * (parent->_cleaner_write_buffer_pages + 1))==0); // +1 margin for switching to next batch
-    w_assert0(buf != NULL);
-    _write_buffer = reinterpret_cast<generic_page*>(buf);
-
-    _write_buffer_indexes = new bf_idx[parent->_cleaner_write_buffer_pages + 1];
-}
-
-bf_tree_cleaner_slave_thread_t::~bf_tree_cleaner_slave_thread_t()
-{
-    ::pthread_mutex_destroy(&_interval_mutex);
-    ::pthread_cond_destroy(&_interval_cond);
-    delete[] _sort_buffer;
-
-    void *buf = reinterpret_cast<void*>(_write_buffer);
-    // note we use free(), not delete[], which corresponds to posix_memalign
-    ::free (buf);
-
-    delete[] _write_buffer_indexes;
-}
-
-void bf_tree_cleaner_slave_thread_t::_take_interval()
+void bf_tree_cleaner::_take_interval()
 {
     if (_dirty_shutdown_happening()) {
         return;
@@ -193,16 +157,16 @@ void bf_tree_cleaner_slave_thread_t::_take_interval()
     if (timeouted) {
         // exponentially grow the interval
         _interval_millisec *= 2;
-        if (_interval_millisec > _parent->_cleaner_interval_millisec_max) {
-            _interval_millisec = _parent->_cleaner_interval_millisec_max;
+        if (_interval_millisec > _interval_millisec_max) {
+            _interval_millisec = _interval_millisec_max;
         }
     } else {
         // restart the interval from minimal value
-        _interval_millisec = _parent->_cleaner_interval_millisec_min;
+        _interval_millisec = _interval_millisec_min;
     }
 }
 
-bool bf_tree_cleaner_slave_thread_t::_cond_timedwait (uint64_t timeout_microsec) {
+bool bf_tree_cleaner::_cond_timedwait (uint64_t timeout_microsec) {
     int rc_mutex_lock = ::pthread_mutex_lock (&_interval_mutex);
     w_assert1(rc_mutex_lock == 0);
 
@@ -233,30 +197,10 @@ bool bf_tree_cleaner_slave_thread_t::_cond_timedwait (uint64_t timeout_microsec)
     return timeouted;
 }
 
-void bf_tree_cleaner_slave_thread_t::wakeup()
-{
-    int rc_mutex_lock = ::pthread_mutex_lock (&_interval_mutex);
-    w_assert1(rc_mutex_lock == 0);
-
-    _wakeup_requested = true;
-
-    int rc_broadcast = ::pthread_cond_broadcast(&_interval_cond);
-    w_assert1(rc_broadcast == 0);
-
-    int rc_mutex_unlock = ::pthread_mutex_unlock (&_interval_mutex);
-    w_assert1(rc_mutex_unlock == 0);
-}
-
-void bf_tree_cleaner_slave_thread_t::run()
+void bf_tree_cleaner::run()
 {
     lintel::atomic_thread_fence(lintel::memory_order_consume);
-    while (!_start_requested) {
-        _take_interval();
-        lintel::atomic_thread_fence(lintel::memory_order_consume);
-    }
-
-    lintel::atomic_thread_fence(lintel::memory_order_consume);
-    while (!_stop_requested && !_parent->_error_happened) {
+    while (!_stop_requested && !_error_happened) {
         if (_dirty_shutdown_happening()) {
             ERROUT (<<"the system is going to shutdown dirtily. this cleaner will shutdown without flushing!");
             break;
@@ -264,24 +208,22 @@ void bf_tree_cleaner_slave_thread_t::run()
         w_rc_t rc = _do_work();
         if (rc.is_error()) {
             ERROUT (<<"cleaner thread error:" << rc);
-            _parent->_error_happened = true;
+            _error_happened = true;
             break;
         }
         lintel::atomic_thread_fence(lintel::memory_order_consume);
-        if (!_stop_requested && !_exists_requested_work() && !_parent->_error_happened) {
+        if (!_stop_requested && !_exists_requested_work() && !_error_happened) {
             _take_interval();
             lintel::atomic_thread_fence(lintel::memory_order_consume);
         }
     }
-
-    _running = false;
 }
 
-bool bf_tree_cleaner_slave_thread_t::_exists_requested_work()
+bool bf_tree_cleaner::_exists_requested_work()
 {
     // the cleaner is requested to flush out all dirty pages for assigned volume. let's do it immediately
     lintel::atomic_thread_fence(lintel::memory_order_consume);
-    if (_parent->_requested_volume) {
+    if (_requested_volume) {
         return true;
     }
 
@@ -289,9 +231,7 @@ bool bf_tree_cleaner_slave_thread_t::_exists_requested_work()
     return false;
 }
 
-
-w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
-    const std::vector<bf_idx> &candidates)
+w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
 {
     if (_dirty_shutdown_happening()) return RCOK;
 
@@ -302,8 +242,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     // would affect the page image on the buffer, and not the copied versions.
     W_COERCE(smlevel_0::log->flush(smlevel_0::log->curr_lsn()));
 
-    DBG(<< "Cleaner activated with " << candidates.size()
-            << " candidate frames");
+    DBG(<< "Cleaner activated with " << candidates.size() << " candidate frames");
     unsigned cleaned_count = 0;
 
     // TODO this method should separate dirty pages that have dependency and flush them after others.
@@ -322,9 +261,9 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     size_t sort_buf_used = 0;
     for (size_t i = 0; i < candidates.size(); ++i) {
         bf_idx idx = candidates[i];
-        bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
+        bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
         w_assert1(cb._pid_shpid >= smlevel_0::vol->first_data_pageid());
-        w_assert1(_parent->_bufferpool->_buffer->lsn.valid());
+        w_assert1(_bufferpool->_buffer->lsn.valid());
         _sort_buffer[sort_buf_used] = (((uint64_t) cb._pid_shpid) << 32) + ((uint64_t) idx);
         ++sort_buf_used;
     }
@@ -338,12 +277,12 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     size_t write_buffer_cur = 0;
     PageID prev_idx = 0; // to check duplicates
     PageID prev_shpid = 0; // to check if it's contiguous
-    const generic_page* const page_buffer = _parent->_bufferpool->_buffer;
+    const generic_page* const page_buffer = _bufferpool->_buffer;
     int rounds = 0;
     while (true) {
         bool skipped_something = false;
         for (size_t i = 0; i < sort_buf_used; ++i) {
-            if (write_buffer_cur == _parent->_cleaner_write_buffer_pages) {
+            if (write_buffer_cur == _write_buffer_pages) {
                 // now the buffer is full. flush it out and also reset the buffer
                 DBGOUT3(<< "Write buffer full. Flushing from " << write_buffer_from
                         << " to " << write_buffer_cur);
@@ -354,11 +293,11 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
             }
             bf_idx idx = (bf_idx) (_sort_buffer[i] & 0xFFFFFFFF); // extract bf_idx
             w_assert1(idx > 0);
-            w_assert1(idx < _parent->_bufferpool->_block_cnt);
+            w_assert1(idx < _bufferpool->_block_cnt);
             if (idx == prev_idx) {
                 continue;
             }
-            bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
+            bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
             // Not checking in_doubt flag, because if in_doubt flag is on then cb._used flag must be on
             if (!cb._dirty || !cb._used) {
                 continue;
@@ -391,7 +330,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                     ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (generic_page));
                     // if the page contains a swizzled pointer, we need to convert the data back to the original pointer.
                     // we need to do this before releasing SH latch because the pointer might be unswizzled by other threads.
-                    _parent->_bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);// convert swizzled data.
+                    _bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);// convert swizzled data.
                 }
                 cb.latch().latch_release();
             }
@@ -432,7 +371,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 W_DO (smlevel_0::vol->deallocate_page(page_buffer[idx].pid));
                 W_DO (sxs.end_sys_xct (RCOK));
                 // drop the page from bufferpool too
-                _parent->_bufferpool->_delete_block(idx);
+                _bufferpool->_delete_block(idx);
             } else {
                 PageID shpid = _write_buffer[write_buffer_cur].pid;
                 _write_buffer_indexes[write_buffer_cur] = idx;
@@ -501,8 +440,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
 }
 
 
-w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(
-        size_t from, size_t consecutive, unsigned& cleaned_count)
+w_rc_t bf_tree_cleaner::_flush_write_buffer(size_t from, size_t consecutive, unsigned& cleaned_count)
 {
     if (_dirty_shutdown_happening()) return RCOK;
     if (consecutive == 0) {
@@ -536,7 +474,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(
 
     for (size_t i = from; i < from + consecutive; ++i) {
         bf_idx idx = _write_buffer_indexes[i];
-        bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
+        bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
 
         if (i > from) {
             w_assert1(_write_buffer[i].pid == _write_buffer[i - 1].pid + 1);
@@ -552,7 +490,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(
                 cb._dirty = false;
                 cleaned_count++;
             }
-            --_parent->_bufferpool->_dirty_page_count_approximate;
+            --_bufferpool->_dirty_page_count_approximate;
 
             // cb._rec_lsn = _write_buffer[i].lsn.data();
             cb._rec_lsn = lsn_t::null.data();
@@ -567,7 +505,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(
     return RCOK;
 }
 
-w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
+w_rc_t bf_tree_cleaner::_do_work()
 {
     if (_dirty_shutdown_happening()) return RCOK;
 
@@ -577,16 +515,16 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
 
     // if the dirty page's lsn is same or smaller than durable lsn,
     // we can write it out without log flush overheads.
-    bf_idx block_cnt = _parent->_bufferpool->_block_cnt;
+    bf_idx block_cnt = _bufferpool->_block_cnt;
 
     // do we have lots of dirty pages? (note, these are approximate statistics)
-    if (_parent->_bufferpool->_dirty_page_count_approximate < 0) {// so, even this can happen.
-        _parent->_bufferpool->_dirty_page_count_approximate = 0;
+    if (_bufferpool->_dirty_page_count_approximate < 0) {// so, even this can happen.
+        _bufferpool->_dirty_page_count_approximate = 0;
     }
 
     // list up dirty pages
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
-        bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
+        bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
         // If page is not dirty or not in use, no need to flush
         if (!cb._dirty || !cb._used) {
             continue;
@@ -600,7 +538,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         // also add dependent pages. note that this might cause a duplicate. we deal with duplicates in _clean_volume()
         bf_idx didx = cb._dependency_idx;
         if (didx != 0) {
-            bf_tree_cb_t &dcb = _parent->_bufferpool->get_cb(didx);
+            bf_tree_cb_t &dcb = _bufferpool->get_cb(didx);
             if (dcb._dirty && dcb._used && dcb._rec_lsn <= cb._dependency_lsn) {
                 _candidates_buffer.push_back (didx);
             }
@@ -610,9 +548,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         W_DO(_clean_volume(_candidates_buffer));
     }
 
-
-    _parent->_requested_volume = false;
+    _requested_volume = false;
     lintel::atomic_thread_fence(lintel::memory_order_release);
     return RCOK;
 }
-

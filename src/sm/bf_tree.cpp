@@ -84,8 +84,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     if (cleaner_interval_millisec_max <= 0) {
         cleaner_interval_millisec_max = 256000;
     }
-    bool initially_enable_cleaners =
-        options.get_bool_option("sm_backgroundflush", true);
     bool bufferpool_swizzle =
         options.get_bool_option("sm_bufferpool_swizzle", false);
     // clock or random
@@ -190,9 +188,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     w_assert0(_hashtable != NULL);
 
     // initialize page cleaner
-    _cleaner = new bf_tree_cleaner (this, npgwriters,
-            cleaner_interval_millisec_min, cleaner_interval_millisec_max,
-            cleaner_write_buffer_pages, initially_enable_cleaners);
+    _cleaner = new bf_tree_cleaner (this, cleaner_interval_millisec_min, cleaner_interval_millisec_max, cleaner_write_buffer_pages);
     _dcleaner = NULL;
 
     _dirty_page_count_approximate = 0;
@@ -246,7 +242,7 @@ void bf_tree_m::set_cleaner(LogArchiver* _archiver, const sm_options& _options) 
 
 w_rc_t bf_tree_m::init ()
 {
-    W_DO(_cleaner->start_cleaners());
+    _cleaner->fork();
     return RCOK;
 }
 
