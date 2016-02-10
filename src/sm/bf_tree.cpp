@@ -7,7 +7,7 @@
 #include "bf_hashtable.h"
 #include "bf_tree_cb.h"
 #include "bf_tree_cleaner.h"
-#include "page_cleaner.h"
+#include "page_cleaner_decoupled.h"
 #include "bf_tree.h"
 
 #include "smthread.h"
@@ -73,25 +73,11 @@ bf_tree_m::bf_tree_m(const sm_options& options)
         npgwriters = 1;
     }
 
-    int64_t cleaner_interval_millisec_min =
-        options.get_int_option("sm_cleaner_interval_millisec_min", 1000);
-    if (cleaner_interval_millisec_min <= 0) {
-        cleaner_interval_millisec_min = 1000;
-    }
-
-    int64_t cleaner_interval_millisec_max =
-        options.get_int_option("sm_cleaner_interval_millisec_max", 256000);
-    if (cleaner_interval_millisec_max <= 0) {
-        cleaner_interval_millisec_max = 256000;
-    }
     bool bufferpool_swizzle =
         options.get_bool_option("sm_bufferpool_swizzle", false);
     // clock or random
     std::string replacement_policy =
         options.get_string_option("sm_bufferpool_replacement_policy", "clock");
-
-    uint32_t cleaner_write_buffer_pages =
-        (uint32_t) options.get_int_option("sm_cleaner_write_buffer_pages", 64);
 
     ::memset (this, 0, sizeof(bf_tree_m));
 
@@ -188,8 +174,8 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     w_assert0(_hashtable != NULL);
 
     // initialize page cleaner
-    _cleaner = new bf_tree_cleaner (this, cleaner_interval_millisec_min, cleaner_interval_millisec_max, cleaner_write_buffer_pages);
-    _dcleaner = NULL;
+    //_cleaner = new bf_tree_cleaner (this, cleaner_interval_millisec_min, cleaner_interval_millisec_max, cleaner_write_buffer_pages);
+    //_dcleaner = new page_cleaner(this, smlevel_0::vol, smlevel_0::logArchiver->getDirectory());
 
     _dirty_page_count_approximate = 0;
     _swizzled_page_count_approximate = 0;
@@ -228,31 +214,40 @@ bf_tree_m::~bf_tree_m() {
         delete _cleaner;
         _cleaner = NULL;
     }
-    if (_dcleaner != NULL) {
-        delete _dcleaner;
-        _dcleaner = NULL;
-    }
+
     DO_PTHREAD(pthread_mutex_destroy(&_eviction_lock));
 
 }
 
-void bf_tree_m::set_cleaner(LogArchiver* _archiver, const sm_options& _options) {
-    _dcleaner = new page_cleaner_mgr(this, _archiver->getDirectory(), _options);
-}
-
-w_rc_t bf_tree_m::init ()
+w_rc_t bf_tree_m::init (const sm_options& options)
 {
+    w_assert0(smlevel_0::vol != NULL);
+
+    int64_t cleaner_interval_millisec =
+        options.get_int_option("sm_cleaner_interval_millisec", 1000);
+    //if (cleaner_interval_millisec <= 0) {
+    //    cleaner_interval_millisec = 1000;
+    //}
+
+    uint32_t cleaner_write_buffer_pages = 
+        (uint32_t) options.get_int_option("sm_cleaner_write_buffer_pages", 64);
+
+
+    bool decoupled_cleaner = options.get_bool_option("sm_decoupled_cleaner", false);
+    if(decoupled_cleaner) {
+        w_assert0(smlevel_0::logArchiver != NULL);
+        _cleaner = new page_cleaner_decoupled(this, smlevel_0::vol, smlevel_0::logArchiver->getDirectory());
+    }
+    else{
+        _cleaner = new bf_tree_cleaner (this, cleaner_interval_millisec, cleaner_write_buffer_pages);
+    }
     _cleaner->fork();
     return RCOK;
 }
 
 w_rc_t bf_tree_m::destroy ()
 {
-    if(_dcleaner == NULL) {
-        W_DO(_cleaner->request_stop_cleaner());
-        W_DO(_cleaner->join_cleaner());
-    }
-
+    W_DO(_cleaner->shutdown());
     return RCOK;
 }
 
@@ -519,18 +514,11 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 
 ///////////////////////////////////   Dirty Page Cleaner BEGIN       ///////////////////////////////////
 w_rc_t bf_tree_m::force_volume() {
-    if(_dcleaner != NULL) {
-        return _dcleaner->force_all();
-    }
     return _cleaner->force_volume();
 }
 
 // CS TODO use templace for cleaner
 w_rc_t bf_tree_m::wakeup_cleaners() {
-    if(_dcleaner != NULL) {
-        _dcleaner->wakeup_cleaner();
-        return RCOK;
-    }
     return _cleaner->wakeup_cleaner();
 }
 

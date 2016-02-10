@@ -3,7 +3,7 @@
 #include "log_core.h"
 #include "vol.h"
 #include "logarchiver.h"
-#include "page_cleaner.h"
+#include "page_cleaner_decoupled.h"
 
 // use small block to test boundaries
 const size_t BLOCK_SIZE = 1024 * 1024;

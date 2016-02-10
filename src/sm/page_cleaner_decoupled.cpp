@@ -1,4 +1,4 @@
-#include "page_cleaner.h"
+#include "page_cleaner_decoupled.h"
 
 #include "sm.h" //for ss_m::shutting_down and ss_m::shutdown_clean
 #include "logrec.h"
@@ -9,8 +9,8 @@ bool _dirty_shutdown_happening_now() {
     return (ss_m::shutting_down && !ss_m::shutdown_clean);
 }
 
-CleanerControl::CleanerControl(bool* _shutdownFlag, cleaner_mode_t _mode, uint _sleep_time)
-    : shutdownFlag(_shutdownFlag), mode(_mode), sleep_time(_sleep_time),
+CleanerControl::CleanerControl(bool* _shutdownFlag, uint _sleep_time)
+    : shutdownFlag(_shutdownFlag), sleep_time(_sleep_time),
     activated(false), listening(false)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
@@ -64,48 +64,58 @@ bool CleanerControl::waitForActivation()
     // WARNING: mutex must be held by caller!
     listening = true;
     while(!activated) {
-        struct timespec timeout;
-        sthread_t::timeout_to_timespec(sleep_time, timeout); // 100ms
-        int code = pthread_cond_timedwait(&activateCond, &mutex, &timeout);
-        if (code == ETIMEDOUT) {
-            if (*shutdownFlag) {
-                DBGTHRD(<< "Activation failed due to shutdown. Exiting");
-                return false;
-            }
-            if(mode == EAGER) {
+        if(sleep_time > 0) {
+            // Cleaner blocks until it is activaed by caller OR timeout
+            struct timespec timeout;
+            sthread_t::timeout_to_timespec(sleep_time, timeout); // 100ms
+            int code = pthread_cond_timedwait(&activateCond, &mutex, &timeout);
+            if (code == ETIMEDOUT) {
+                if (*shutdownFlag) {
+                    DBGTHRD(<< "Activation failed due to shutdown. Exiting");
+                    return false;
+                }
                 DBGTHRD(<< "Cleaner activating proactively");
                 activated = true;
             }
+            DO_PTHREAD_TIMED(code);
         }
-        DO_PTHREAD_TIMED(code);
+        else {
+            // Cleaner blocks until it is actived by caller
+            pthread_cond_wait(&activateCond, &mutex);
+        }
     }
     listening = false;
     return true;
 }
 
-page_cleaner_slave::page_cleaner_slave(page_cleaner_mgr* _master,
-                                       vol_t*            _volume,
-                                       uint              _bufsize,
-                                       cleaner_mode_t    _mode,
-                                       uint              _sleep_time)
-: master(_master),
-  volume(_volume),
-  workspace_size(_bufsize),
-  workspace_empty(true),
-  shutdownFlag(false),
-  control(&shutdownFlag, _mode, _sleep_time)
+page_cleaner_decoupled::page_cleaner_decoupled( bf_tree_m*                       _bufferpool,
+                                                vol_t*                           _volume,
+                                                LogArchiver::ArchiveDirectory*   _archive,
+                                                int                              _workspace_size,
+                                                int                              _sleep_time)
+    : bufferpool(_bufferpool),
+      volume(_volume),
+      archive(_archive),
+      workspace_size(_workspace_size),
+      workspace_empty(true),
+      shutdownFlag(false),
+      control(&shutdownFlag, _sleep_time)
 {
     completed_lsn = lsn_t(1,0);
     posix_memalign((void**) &workspace, sizeof(generic_page), workspace_size * sizeof(generic_page));
-    memset(workspace, '\0', workspace_size * sizeof(generic_page));
+    memset(workspace, '\0', workspace_size * sizeof(generic_page));    
+    //sleep_time = _options.get_int_option("sm_cleaner_interval", DFT_SLEEP_TIME);
+    //buffer_size = _options.get_int_option("sm_decoupled_cleaner_bufsize", DFT_BUFFER_SIZE);
 }
 
-page_cleaner_slave::~page_cleaner_slave()
-{
+page_cleaner_decoupled::~page_cleaner_decoupled() {
+    if (!shutdownFlag) {
+        shutdown();
+    }
     delete[] workspace;
 }
 
-void page_cleaner_slave::run() {
+void page_cleaner_decoupled::run() {
     while(true) {
         CRITICAL_SECTION(cs, control.mutex);
 
@@ -120,12 +130,12 @@ void page_cleaner_slave::run() {
             break;
         }
 
-        lsn_t last_lsn = master->archive->getLastLSN();
+        lsn_t last_lsn = archive->getLastLSN();
         if(last_lsn <= completed_lsn) {
             DBGTHRD(<< "Nothing archived to clean.");
 
-            bf_idx block_cnt = master->bufferpool->_block_cnt;
-            bool in_real_hurry = (unsigned)master->bufferpool->_dirty_page_count_approximate > (block_cnt / 4 * 3);
+            bf_idx block_cnt = bufferpool->_block_cnt;
+            bool in_real_hurry = (unsigned)bufferpool->_dirty_page_count_approximate > (block_cnt / 4 * 3);
             if(in_real_hurry) {
                 DBGTHRD(<< "We are in a hurry. Flushing log and archive for cleaner.");
                 ss_m::log->flush_all();
@@ -140,7 +150,7 @@ void page_cleaner_slave::run() {
         DBGTHRD(<< "Cleaner thread activated from " << completed_lsn);
 
         PageID first_page = volume->first_data_pageid();
-        LogArchiver::ArchiveScanner logScan(master->archive);
+        LogArchiver::ArchiveScanner logScan(archive);
         // CS TODO block size
         LogArchiver::ArchiveScanner::RunMerger* merger = logScan.open(first_page, 0,
                 completed_lsn, 1048576);
@@ -214,95 +224,19 @@ void page_cleaner_slave::run() {
     }
 }
 
-bool page_cleaner_slave::activate() {
-    //DBGTHRD(<< "Requesting activation of cleaner thread");
-    return control.activate(false);
-}
-
-void page_cleaner_slave::shutdown() {
+w_rc_t page_cleaner_decoupled::shutdown() {
     shutdownFlag = true;
-    // make other threads see new shutdown value
     lintel::atomic_thread_fence(lintel::memory_order_release);
-}
-
-w_rc_t page_cleaner_slave::flush_workspace() {
-    if (_dirty_shutdown_happening_now()) {
-        return RCOK;
-    }
-
-    PageID first_pid = workspace[0].pid;
-    DBGOUT1(<<"Flushing write buffer from page "<<first_pid << " to page " << first_pid + workspace_size-1);
-    W_COERCE(volume->write_many_pages(first_pid, workspace, workspace_size));
-
-    for(uint i=0; i<workspace_size; ++i) {
-        generic_page& flushed = workspace[i];
-        bf_idx idx = master->bufferpool->lookup(flushed.pid);
-        if(idx != 0) {
-            //page is in the buffer
-            bf_tree_cb_t& cb = master->bufferpool->get_cb(idx);
-            w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_IMMEDIATE);
-
-            if (latch_rc.is_error()) {
-                continue;
-            }
-
-            generic_page& buffered = *smlevel_0::bf->get_page(idx);
-
-            if (buffered.pid == flushed.pid) {
-                w_assert0(buffered.lsn >= flushed.lsn);
-
-                if (buffered.lsn == flushed.lsn && cb._dirty) {
-                    cb._dirty = false;
-                    master->bufferpool->_dirty_page_count_approximate--;
-                    DBGOUT1(<<"Setting page " << flushed.pid << " clean.");
-                }
-
-                // cb._rec_lsn = _write_buffer[i].lsn.data();
-                cb._rec_lsn = lsn_t::null.data();
-                cb._dependency_idx = 0;
-                cb._dependency_lsn = 0;
-                cb._dependency_shpid = 0;
-            }
-            cb.latch().latch_release();
-        }
-    }
+    W_DO(join());
     return RCOK;
 }
 
-page_cleaner_mgr::page_cleaner_mgr( bf_tree_m* _bufferpool, LogArchiver::ArchiveDirectory* _archive, const sm_options& options)
-    : bufferpool(_bufferpool), archive(_archive)
-{
-    bool eager = options.get_bool_option("sm_decoupled_cleaner_mode", DFT_EAGER);
-    if(eager) {
-        mode = EAGER;
-    }
-    else {
-        mode = NORMAL;
-    }
-    sleep_time = options.get_int_option("sm_decoupled_cleaner_interval", DFT_SLEEP_TIME);
-    buffer_size = options.get_int_option("sm_decoupled_cleaner_bufsize", DFT_BUFFER_SIZE);
-    cleaner = NULL;
-}
-
-page_cleaner_mgr::~page_cleaner_mgr() {
-}
-
-w_rc_t page_cleaner_mgr::install_cleaner() {
-    cleaner = new page_cleaner_slave(this, smlevel_0::vol, buffer_size, mode, sleep_time);
-    cleaner->fork();
+w_rc_t page_cleaner_decoupled::wakeup_cleaner() {
+    control.activate(false);
     return RCOK;
 }
 
-w_rc_t page_cleaner_mgr::uninstall_cleaner() {
-    if (cleaner) {
-        cleaner->shutdown();
-        cleaner->join();
-        delete cleaner;
-    }
-    return RCOK;
-}
-
-w_rc_t page_cleaner_mgr::force_all() {
+w_rc_t page_cleaner_decoupled::force_volume() {
     while(true) {
         /* We have to flush log and archive to guarantee that we are going to
          * replay the most recent log records and clean the buffer */
@@ -312,7 +246,7 @@ w_rc_t page_cleaner_mgr::force_all() {
         // We do this for reasons
         // W_DO (smlevel_0::vol->force_fixed_buffers());
 
-        wakeup_cleaner();
+        W_DO(wakeup_cleaner());
 
         bool all_clean = true;
         bf_idx block_cnt = bufferpool->_block_cnt;
@@ -331,6 +265,46 @@ w_rc_t page_cleaner_mgr::force_all() {
     return RCOK;
 }
 
-bool page_cleaner_mgr::wakeup_cleaner() {
-    return cleaner->activate();
+w_rc_t page_cleaner_decoupled::flush_workspace() {
+    if (_dirty_shutdown_happening_now()) {
+        return RCOK;
+    }
+
+    PageID first_pid = workspace[0].pid;
+    DBGOUT1(<<"Flushing write buffer from page "<<first_pid << " to page " << first_pid + workspace_size-1);
+    W_COERCE(volume->write_many_pages(first_pid, workspace, workspace_size));
+
+    for(uint i=0; i<workspace_size; ++i) {
+        generic_page& flushed = workspace[i];
+        bf_idx idx = bufferpool->lookup(flushed.pid);
+        if(idx != 0) {
+            //page is in the buffer
+            bf_tree_cb_t& cb = bufferpool->get_cb(idx);
+            w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_IMMEDIATE);
+
+            if (latch_rc.is_error()) {
+                continue;
+            }
+
+            generic_page& buffered = *smlevel_0::bf->get_page(idx);
+
+            if (buffered.pid == flushed.pid) {
+                w_assert0(buffered.lsn >= flushed.lsn);
+
+                if (buffered.lsn == flushed.lsn && cb._dirty) {
+                    cb._dirty = false;
+                    bufferpool->_dirty_page_count_approximate--;
+                    DBGOUT1(<<"Setting page " << flushed.pid << " clean.");
+                }
+
+                // cb._rec_lsn = _write_buffer[i].lsn.data();
+                cb._rec_lsn = lsn_t::null.data();
+                cb._dependency_idx = 0;
+                cb._dependency_lsn = 0;
+                cb._dependency_shpid = 0;
+            }
+            cb.latch().latch_release();
+        }
+    }
+    return RCOK;
 }
