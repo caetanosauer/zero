@@ -13,6 +13,7 @@
 #include "vol.h"
 #include <AtomicCounter.hpp>
 #include <vector>
+#include "page_cleaner_base.h"
 
 class bf_tree_m;
 class generic_page;
@@ -24,7 +25,7 @@ class generic_page;
  * This class manages all worker threads which do the
  * actual page cleaning.
  */
-class bf_tree_cleaner : public smthread_t {
+class bf_tree_cleaner : public page_cleaner_base {
 public:
     /**
      * Constructs this object. This merely allocates arrays and objects.
@@ -35,8 +36,7 @@ public:
      * Even if this is false, you can start cleaners later by calling wakeup_cleaners().
      */
     bf_tree_cleaner(bf_tree_m* bufferpool,
-        uint32_t interval_millisec_min,
-        uint32_t interval_millisec_max,
+        uint32_t interval_millisec,
         uint32_t write_buffer_pages);
 
     /**
@@ -55,19 +55,13 @@ public:
     /**
      * Gracefully request all cleaners to stop.
      */
-    w_rc_t request_stop_cleaner ();
-    /**
-     * Waits until all cleaner threads stop. Should be used after request_stop_cleaners.
-     * @param max_wait_millisec maximum milliseconds to wait for join. zero for forever.
-     */
-    w_rc_t join_cleaner (uint32_t max_wait_millisec = 0);
+    w_rc_t shutdown ();
 
     /** Immediately writes out all dirty pages in the given volume.*/
     w_rc_t force_volume();
 
 private:
     bool _cond_timedwait (uint64_t timeout_microsec);
-    void _take_interval ();
     w_rc_t _do_work ();
     bool _exists_requested_work();
     w_rc_t _clean_volume(const std::vector<bf_idx> &candidates);
@@ -76,15 +70,9 @@ private:
     /** the buffer pool this cleaner deals with. */
     bf_tree_m*                  _bufferpool;
 
-    const uint32_t _interval_millisec_min;
-    const uint32_t _interval_millisec_max;
     const uint32_t _write_buffer_pages;
+    const uint32_t _interval_millisec;
 
-    /**
-     * milliseconds to sleep when finding no dirty pages.
-     * this value starts from CLEANER_INTERVAL_MILLISEC_MIN and exponentially grows up to CLEANER_INTERVAL_MILLISEC_MAX.
-     */
-    uint32_t                    _interval_millisec;
     pthread_mutex_t             _interval_mutex;
     pthread_cond_t              _interval_cond;
 

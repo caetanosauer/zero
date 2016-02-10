@@ -384,11 +384,6 @@ ss_m::_construct_once()
     if (archiving) {
         logArchiver = new LogArchiver(_options);
         logArchiver->fork();
-
-        bool decoupled_cleaner = _options.get_bool_option("sm_decoupled_cleaner", false);
-        if(decoupled_cleaner) {
-            bf->set_cleaner(logArchiver, _options);
-        }
     }
 
     ERROUT(<< "Initializing restart manager");
@@ -416,7 +411,7 @@ ss_m::_construct_once()
     ERROUT(<< "Initializing buffer manager and other services");
 
     // start buffer pool cleaner when the log module is ready
-    W_COERCE(bf->init());
+    W_COERCE(bf->init(_options));
 
     bt = new btree_m;
     if (! bt) {

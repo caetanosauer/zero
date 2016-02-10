@@ -14,6 +14,7 @@
 #include "bf_hashtable.h"
 #include "bf_tree_cb.h"
 #include <iosfwd>
+#include "page_cleaner_base.h"
 
 class sm_options;
 class lsn_t;
@@ -138,7 +139,6 @@ public:
     virtual void run();
 };
 
-
 /**
  * \Brief The new buffer manager that exploits the tree structure of indexes.
  * \ingroup SSMBUFPOOL
@@ -197,7 +197,7 @@ public:
     w_rc_t set_swizzling_enabled(bool enabled);
 
     /** does additional initialization that might return error codes (thus can't be done in constructor). */
-    w_rc_t init ();
+    w_rc_t init (const sm_options& options);
     /** does additional clean-up that might return error codes (thus can't be done in destructor). */
     w_rc_t destroy ();
 
@@ -654,8 +654,8 @@ private:
     // queue_based_lock_t   _eviction_mutex;
 
     /** the dirty page cleaner. */
-    bf_tree_cleaner*     _cleaner;
     page_cleaner_mgr*    _dcleaner;
+    page_cleaner_base*   _cleaner;
 
     /**
      * Unreliable count of dirty pages in this bufferpool.

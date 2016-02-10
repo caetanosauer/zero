@@ -211,10 +211,8 @@ void Command::setupSMOptions()
         "Transaction Pool Initialization Segment")
     ("sm_num_page_writers", po::value<int>(),
         "Number of page writers")
-    ("sm_cleaner_interval_millisec_min", po::value<int>(),
-        "Minimum of cleaner interval in ms")
-    ("sm_cleaner_interval_millisec_max", po::value<int>(),
-        "Maximal of cleaner interval in ms")
+    ("sm_cleaner_interval_millisec", po::value<int>(),
+        "Cleaner sleep interval in ms")
     ("sm_cleaner_write_buffer_pages", po::value<int>(),
         "Number of buffer pages to write")
     ("sm_archiver_workspace_size", po::value<int>(),

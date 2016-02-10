@@ -27,14 +27,11 @@ bool _dirty_shutdown_happening() {
 const int INITIAL_SORT_BUFFER_SIZE = 64;
 
 bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool,
-    uint32_t interval_millisec_min,
-    uint32_t interval_millisec_max,
+    uint32_t interval_millisec,
     uint32_t write_buffer_pages) :
     _bufferpool(bufferpool),
-    _interval_millisec_min (interval_millisec_min),
-    _interval_millisec_max (interval_millisec_max),
     _write_buffer_pages (write_buffer_pages),
-    _interval_millisec(_interval_millisec_min),
+    _interval_millisec(interval_millisec),
     _sort_buffer (new uint64_t[INITIAL_SORT_BUFFER_SIZE]), _sort_buffer_size(INITIAL_SORT_BUFFER_SIZE),
     _stop_requested(false), _wakeup_requested(false)
 {
@@ -79,22 +76,12 @@ w_rc_t bf_tree_cleaner::wakeup_cleaner()
     return RCOK;
 }
 
-w_rc_t bf_tree_cleaner::request_stop_cleaner()
+w_rc_t bf_tree_cleaner::shutdown()
 {
     _stop_requested = true;
     lintel::atomic_thread_fence(lintel::memory_order_release);
     lintel::atomic_thread_fence(lintel::memory_order_consume);
-    return RCOK;
-}
-
-
-w_rc_t bf_tree_cleaner::join_cleaner(uint32_t max_wait_millisec)
-{
-    if (max_wait_millisec == 0) {
-        W_DO(join(sthread_base_t::WAIT_FOREVER));
-    } else {
-        W_DO(join(max_wait_millisec));
-    }
+    W_DO(join(sthread_base_t::WAIT_FOREVER));
     return RCOK;
 }
 
@@ -142,28 +129,10 @@ w_rc_t bf_tree_cleaner::force_volume()
 
     if (_dirty_shutdown_happening()) {
         DBGOUT1(<< "joining all cleaner threads up to 100ms...");
-        W_DO(join_cleaner(100));
+        W_DO(join(sthread_base_t::WAIT_FOREVER));
     }
     DBGOUT2(<< "done force_volume!");
     return RCOK;
-}
-
-void bf_tree_cleaner::_take_interval()
-{
-    if (_dirty_shutdown_happening()) {
-        return;
-    }
-    bool timeouted = _cond_timedwait((uint64_t) _interval_millisec * 1000);
-    if (timeouted) {
-        // exponentially grow the interval
-        _interval_millisec *= 2;
-        if (_interval_millisec > _interval_millisec_max) {
-            _interval_millisec = _interval_millisec_max;
-        }
-    } else {
-        // restart the interval from minimal value
-        _interval_millisec = _interval_millisec_min;
-    }
 }
 
 bool bf_tree_cleaner::_cond_timedwait (uint64_t timeout_microsec) {
@@ -213,7 +182,7 @@ void bf_tree_cleaner::run()
         }
         lintel::atomic_thread_fence(lintel::memory_order_consume);
         if (!_stop_requested && !_exists_requested_work() && !_error_happened) {
-            _take_interval();
+            _cond_timedwait((uint64_t) _interval_millisec * 1000); //sleep for a bit
             lintel::atomic_thread_fence(lintel::memory_order_consume);
         }
     }
