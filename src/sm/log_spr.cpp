@@ -193,6 +193,7 @@ rc_t restart_m::_collect_spr_logs(
 rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer, size_t bufsize)
 {
     lsn_t prev_lsn = lsn_t::null;
+    PageID pid = p.pid();
     size_t pos = 0;
     while (pos < bufsize) {
         logrec_t* lr = (logrec_t*) (buffer + pos);
@@ -204,7 +205,14 @@ rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer, size_t bufsize)
         if (lr->is_redo() && p.lsn() < lr->lsn_ck()) {
             DBGOUT1(<< "Applying Single-Page-Recovery. current page(" << p.pid()
                     << ") LSN=" << p.lsn() << ", log=" << *lr);
-            w_assert1(lr->is_redo());
+
+            w_assert1(pid == lr->pid() || pid == lr->pid2());
+            w_assert1(pid != lr->pid() || (lr->page_prev_lsn() == lsn_t::null ||
+                        lr->page_prev_lsn() == p.lsn()));
+
+            w_assert1(pid != lr->pid2() || (lr->page2_prev_lsn() == lsn_t::null ||
+                        lr->page2_prev_lsn() == p.lsn()));
+
             lr->redo(&p);
             p.set_lsns(lr->lsn_ck());
             p.update_initial_and_last_lsn(lr->lsn_ck());

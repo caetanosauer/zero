@@ -57,7 +57,6 @@ public:
     };
     NORET ~restart_thread_t()
     {
-        DBGOUT1(<< "restart_thread_t: Exiting child thread");
     };
 
     // Main body of the child thread
@@ -72,7 +71,6 @@ private:
     // disabled
     NORET restart_thread_t(const restart_thread_t&);
     restart_thread_t& operator=(const restart_thread_t&);
-
 };
 
 class restart_m

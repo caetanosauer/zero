@@ -448,15 +448,16 @@ ss_m::_construct_once()
     }
     else {
         if (_options.get_bool_option("sm_restart_log_based_redo", true)) {
-            // recovery->redo_log_pass();
-            recovery->redo_page_pass();
+            recovery->redo_log_pass();
         }
         else {
             recovery->redo_page_pass();
         }
-        recovery->undo_pass();
         // metadata caches can only be constructed now
         vol->build_caches(truncate);
+        // system now ready for UNDO
+        // CS TODO: can this be done concurrently by restart thread?
+        recovery->undo_pass();
 
         // CS: added this for debugging, but consistency check fails
         // even right after loading -- so it's not a recovery problem
@@ -488,8 +489,6 @@ ss_m::~ss_m()
 void
 ss_m::_destruct_once()
 {
-    FUNC(ss_m::~ss_m);
-
     --_instance_cnt;
 
     if (_instance_cnt)  {
@@ -561,6 +560,8 @@ ss_m::_destruct_once()
     // this should come before xct and log shutdown so that any
     // ongoing restore has a chance to finish cleanly. Should also come after
     // shutdown of buffer, since forcing the buffer requires the volume.
+    // destroy() will stop cleaners
+    W_COERCE(bf->destroy());
     vol->shutdown(!shutdown_clean);
     delete vol; vol = 0; // io manager
 
@@ -602,7 +603,6 @@ ss_m::_destruct_once()
     clog = 0;
 
     ERROUT(<< "Terminating buffer manager");
-    W_COERCE(bf->destroy());
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
 
     if (errlog) {
@@ -667,6 +667,7 @@ rc_t ss_m::_truncate_log(bool ignore_chkpt)
     lsn_t newEndLSN = lsn_t(new_part, 0);
 
     // fix LSN of all log records
+    // CS TODO: we wouldn't have to do this if logrecs were stored just with the low part
     size_t pos = 0;
     while (true) {
         logrec_t* lr = (logrec_t*) (buf + pos);

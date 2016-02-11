@@ -199,6 +199,7 @@ void fixable_page_h::update_initial_and_last_lsn(const lsn_t & lsn) const
 {
     // Update both initial dirty lsn (if needed) and last write lsn
     // Caller should have latch on the page
+    w_assert1(_pp);
     if (_pp)
     {
         ((generic_page_h*)this)->set_lsns(lsn);

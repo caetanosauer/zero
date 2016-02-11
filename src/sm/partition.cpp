@@ -949,7 +949,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
      * read & inspect header size and see
      * and see if there's more to read
      */
-    int b = 0;
+    int64_t b = 0;
     bool first_time = true;
 
     rp = (logrec_t *)(readbuf + off);
@@ -971,7 +971,12 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
         if (e.is_error()) {
                 /* accept the short I/O error for now */
                 smlevel_0::errlog->clog << fatal_prio
-                        << "read(" << int(XFERSIZE) << ")" << flushl;
+                        << "Short I/O when reading " << int(XFERSIZE)
+                        << " bytes from partition " << num()
+                        << " at position " << lower + b
+                        << " with leftover=" << leftover
+                        << " and b=" << b
+                        << flushl;
                 /*
                  * CS: short IO when reading the log is not necessarily an
                  * error. In fact, after a system crash, it is quite likely
@@ -1011,7 +1016,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
                 }
                 else {
                     // we were unlucky -- extra IO required to fetch prev_lsn
-                    int prev_offset = lower + b - XFERSIZE - sizeof(lsn_t);
+                    int64_t prev_offset = lower + b - XFERSIZE - sizeof(lsn_t);
                     if (prev_offset < 0) {
                         *prev_lsn = lsn_t::null;
                     }

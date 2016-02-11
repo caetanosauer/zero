@@ -75,57 +75,18 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <unistd.h>
 #include <sstream>
 
-const uint32_t wait_interval = 1000;   // 1 seconds
-
 restart_m::restart_m(const sm_options& options)
+    : _restart_thread(NULL)
 {
-    _restart_thread = NULL;
 }
 
 restart_m::~restart_m()
 {
-    // If we are still in Log Analysis phase, no child thread yet, go ahead and terminate
-
     if (_restart_thread)
     {
-        if (smlevel_0::shutdown_clean)
-        {
-            // Clean shutdown, try to let the child thread finish its work
-            // This would happen only if user shutdowns the system
-            // as soon as the system is open (concurrent recovery just started)
-            DBGOUT2(<< "waiting for recovery child thread to finish...");
-
-            // Wait for the child thread to join, we want to give the child thread some time to
-            // finish its work but we don't want to wait forever, so we are giving
-            // some time to the child thread
-            // If the child thread did not have enough time to finish the recovery
-            // work (e.g., a lot of recovery work to do) after the wait, terminate the
-            // child thread with a message
-            // In this case, the normal shutdown becomes a force shutdown, meaning
-            // the next server startup will need to recovery again
-            // This can happen in concurrent recovery mode because system is opened
-            // while the recovery is still going on
-
-            w_rc_t rc = _restart_thread->join(wait_interval);  // Another wait to give child thread more time
-            if (rc.is_error())
-            {
-                DBGOUT1(<< "Normal shutdown - child thread join error: " << rc);
-                smlevel_0::errlog->clog << info_prio
-                    << "Normal shutdown - child thread join error: " << rc << flushl;
-            }
-        }
-        else
-        {
-            // Simulated crash, just kill the child thread, no wait
-        }
-
-        // Terminate the child thread
+        W_COERCE(_restart_thread->join());
         delete _restart_thread;
-        _restart_thread = 0;
     }
-    w_assert1(!_restart_thread);
-
-    // Okay to destroy the restart_m now
 }
 
 void restart_m::log_analysis()
@@ -593,37 +554,9 @@ void restart_m::undo_pass()
 //*********************************************************************
 void restart_thread_t::run()
 {
-    // Body of the restart thread to carry out the REDO and UNDO work
-    // When this function returns, the child thread will be destroyed
-
-    DBGOUT1(<< "restart_thread_t: Starts REDO and UNDO tasks");
-
-    struct timeval tm_before;
-    struct timeval tm_after;
-    struct timeval tm_done;
-
-    gettimeofday(&tm_before, NULL);
-
-    // REDO, call back to restart_m to carry out the concurrent REDO
-    working = true;
+    // CS TODO: add mechanism to interrupt restart thread and terminate
+    // before recovery is complete
     smlevel_0::recovery->redo_page_pass();
-
-    gettimeofday(&tm_after, NULL);
-    DBGOUT1(<< "**** Restart child thread REDO, elapsed time (milliseconds): "
-            << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
-            + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
-
-    // UNDO, call back to restart_m to carry out the concurrent UNDO
-    working = true;
     smlevel_0::recovery->undo_pass();
-
-    // Done
-    DBGOUT1(<< "restart_thread_t: Finished REDO and UNDO tasks");
-    working = false;
-
-    gettimeofday( &tm_done, NULL );
-    DBGOUT1(<< "**** Restart child thread UNDO, elapsed time (milliseconds): "
-            << (((double)tm_done.tv_sec - (double)tm_after.tv_sec) * 1000.0)
-            + (double)tm_done.tv_usec/1000.0 - (double)tm_after.tv_usec/1000.0);
 };
 
