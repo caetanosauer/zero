@@ -181,6 +181,8 @@ void Command::setupSMOptions()
         "")
     ("sm_restart_instant", po::value<bool>(),
         "Enable instant restart")
+    ("sm_restart_log_based_redo", po::value<bool>(),
+        "Perform non-instant restart with log-based redo instead of page-based")
     ("sm_restore_segsize", po::value<int>(),
         "Segment size restore")
     ("sm_restore_prefetcher_window", po::value<int>(),
@@ -229,6 +231,8 @@ void Command::setupSMOptions()
         "Enable/Disable reformat log")
     ("sm_logging", po::value<bool>()->default_value(true),
         "Enable/Disable logging")
+    ("sm_decoupled_cleaner", po::value<bool>(),
+        "Use log-based propagation to clean pages")
     ("sm_shutdown_clean", po::value<bool>(),
         "Force buffer before shutting down SM")
     ("sm_archiving", po::value<bool>(),
