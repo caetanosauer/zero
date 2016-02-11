@@ -64,7 +64,7 @@ bool CleanerControl::waitForActivation()
     // WARNING: mutex must be held by caller!
     listening = true;
     while(!activated) {
-        if(sleep_time > 0) {
+        if(sleep_time >= 0) {
             // Cleaner blocks until it is activaed by caller OR timeout
             struct timespec timeout;
             sthread_t::timeout_to_timespec(sleep_time, timeout); // 100ms
@@ -89,18 +89,18 @@ bool CleanerControl::waitForActivation()
 }
 
 page_cleaner_decoupled::page_cleaner_decoupled( bf_tree_m*                       _bufferpool,
-                                                vol_t*                           _volume,
-                                                LogArchiver::ArchiveDirectory*   _archive,
-                                                int                              _workspace_size,
-                                                int                              _sleep_time)
-    : bufferpool(_bufferpool),
-      volume(_volume),
-      archive(_archive),
-      workspace_size(_workspace_size),
-      workspace_empty(true),
-      shutdownFlag(false),
-      control(&shutdownFlag, _sleep_time)
+                                                const sm_options&                _options)
+    : bufferpool(_bufferpool)
 {
+    workspace_size = (uint32_t) _options.get_int_option("sm_cleaner_write_buffer_pages", 64);
+    workspace_empty = true;
+
+    shutdownFlag = false;
+
+    int sleep_time = _options.get_int_option("sm_cleaner_interval_millisec", 1000);
+    control = new CleanerControl(&shutdownFlag, sleep_time);
+
+
     completed_lsn = lsn_t(1,0);
     posix_memalign((void**) &workspace, sizeof(generic_page), workspace_size * sizeof(generic_page));
     memset(workspace, '\0', workspace_size * sizeof(generic_page));
@@ -112,25 +112,26 @@ page_cleaner_decoupled::~page_cleaner_decoupled() {
     if (!shutdownFlag) {
         shutdown();
     }
+    delete control;
     delete[] workspace;
 }
 
 void page_cleaner_decoupled::run() {
     while(true) {
-        CRITICAL_SECTION(cs, control.mutex);
+        CRITICAL_SECTION(cs, control->mutex);
 
-        bool activated = control.waitForActivation();
+        bool activated = control->waitForActivation();
         if (!activated) {
             break;
         }
 
         lintel::atomic_thread_fence(lintel::memory_order_release);
         if (shutdownFlag) {
-            control.activated = false;
+            control->activated = false;
             break;
         }
 
-        lsn_t last_lsn = archive->getLastLSN();
+        lsn_t last_lsn = smlevel_0::logArchiver->getDirectory()->getLastLSN();
         if(last_lsn <= completed_lsn) {
             DBGTHRD(<< "Nothing archived to clean.");
 
@@ -142,15 +143,15 @@ void page_cleaner_decoupled::run() {
                 ss_m::logArchiver->requestFlushSync(ss_m::log->durable_lsn());
             }
             else {
-                control.activated = false;
+                control->activated = false;
                 continue;
             }
         }
 
         DBGTHRD(<< "Cleaner thread activated from " << completed_lsn);
 
-        PageID first_page = volume->first_data_pageid();
-        LogArchiver::ArchiveScanner logScan(archive);
+        PageID first_page = smlevel_0::vol->first_data_pageid();
+        LogArchiver::ArchiveScanner logScan(smlevel_0::logArchiver->getDirectory());
         // CS TODO block size
         LogArchiver::ArchiveScanner::RunMerger* merger = logScan.open(first_page, 0,
                 completed_lsn, 1048576);
@@ -181,10 +182,10 @@ void page_cleaner_decoupled::run() {
 
             if(workspace_empty) {
                 /* true for ignoreRestore */
-                w_rc_t err = volume->read_many_pages(lrpid, workspace, workspace_size, true);
+                w_rc_t err = smlevel_0::vol->read_many_pages(lrpid, workspace, workspace_size, true);
                 if(err.err_num() == eVOLFAILED) {
                     DBGOUT(<<"Trying to clean pages, but device is failed. Cleaner deactivating.");
-                    control.activated = false;
+                    control->activated = false;
                     break;
                 }
                 else if(err.err_num() != stSHORTIO) {
@@ -224,7 +225,7 @@ void page_cleaner_decoupled::run() {
         }
         completed_lsn = last_lsn;
         DBGTHRD(<< "Cleaner thread deactivating. Cleaned until " << completed_lsn);
-        control.activated = false;
+        control->activated = false;
     }
 }
 
@@ -236,7 +237,7 @@ w_rc_t page_cleaner_decoupled::shutdown() {
 }
 
 w_rc_t page_cleaner_decoupled::wakeup_cleaner() {
-    control.activate(false);
+    control->activate(false);
     return RCOK;
 }
 
@@ -276,7 +277,7 @@ w_rc_t page_cleaner_decoupled::flush_workspace() {
 
     PageID first_pid = workspace[0].pid;
     DBGOUT1(<<"Flushing write buffer from page "<<first_pid << " to page " << first_pid + workspace_size-1);
-    W_COERCE(volume->write_many_pages(first_pid, workspace, workspace_size));
+    W_COERCE(smlevel_0::vol->write_many_pages(first_pid, workspace, workspace_size));
 
     for(uint i=0; i<workspace_size; ++i) {
         generic_page& flushed = workspace[i];
@@ -293,9 +294,7 @@ w_rc_t page_cleaner_decoupled::flush_workspace() {
             generic_page& buffered = *smlevel_0::bf->get_page(idx);
 
             if (buffered.pid == flushed.pid) {
-                w_assert0(buffered.lsn >= flushed.lsn);
-
-                if (buffered.lsn == flushed.lsn && cb._dirty) {
+                if (buffered.lsn <= flushed.lsn && cb._dirty) {
                     cb._dirty = false;
                     bufferpool->_dirty_page_count_approximate--;
                     DBGOUT1(<<"Setting page " << flushed.pid << " clean.");

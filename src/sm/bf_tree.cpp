@@ -60,19 +60,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
         W_FATAL(eCRASH);
     }
 
-    // number of page writers
-    int32_t npgwriters = options.get_int_option("sm_num_page_writers", 1);
-    if(npgwriters < 0) {
-        smlevel_0::errlog->clog << fatal_prio
-            << "ERROR: num page writers must be positive : "
-             << npgwriters
-             << flushl;
-        W_FATAL(eCRASH);
-    }
-    if (npgwriters == 0) {
-        npgwriters = 1;
-    }
-
     bool bufferpool_swizzle =
         options.get_bool_option("sm_bufferpool_swizzle", false);
     // clock or random
@@ -223,23 +210,13 @@ w_rc_t bf_tree_m::init (const sm_options& options)
 {
     w_assert0(smlevel_0::vol != NULL);
 
-    int64_t cleaner_interval_millisec =
-        options.get_int_option("sm_cleaner_interval_millisec", 1000);
-    //if (cleaner_interval_millisec <= 0) {
-    //    cleaner_interval_millisec = 1000;
-    //}
-
-    uint32_t cleaner_write_buffer_pages = 
-        (uint32_t) options.get_int_option("sm_cleaner_write_buffer_pages", 64);
-
-
-    bool decoupled_cleaner = options.get_bool_option("sm_decoupled_cleaner", false);
-    if(decoupled_cleaner) {
+    bool cleaner_decoupled = options.get_bool_option("sm_cleaner_decoupled", false);
+    if(cleaner_decoupled) {
         w_assert0(smlevel_0::logArchiver != NULL);
-        _cleaner = new page_cleaner_decoupled(this, smlevel_0::vol, smlevel_0::logArchiver->getDirectory());
+        _cleaner = new page_cleaner_decoupled(this, options);
     }
     else{
-        _cleaner = new bf_tree_cleaner (this, cleaner_interval_millisec, cleaner_write_buffer_pages);
+        _cleaner = new bf_tree_cleaner (this, options);
     }
     _cleaner->fork();
     return RCOK;

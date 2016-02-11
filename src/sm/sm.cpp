@@ -572,8 +572,6 @@ ss_m::_destruct_once()
     ERROUT(<< "Terminating log archiver");
     if (logArchiver) {
         logArchiver->shutdown();
-        delete logArchiver;
-        logArchiver = 0;
     }
 
     if (_ticker) {
@@ -596,8 +594,14 @@ ss_m::_destruct_once()
 #endif
     clog = 0;
 
+
     ERROUT(<< "Terminating buffer manager");
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
+    
+    if(logArchiver) {
+        delete logArchiver; // LL: decoupled cleaner in bf still needs archiver
+        logArchiver = 0;    //     so we delete it only after bf is gone
+    }
 
     if (errlog) {
         delete errlog; errlog = 0;

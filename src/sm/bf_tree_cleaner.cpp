@@ -26,15 +26,14 @@ bool _dirty_shutdown_happening() {
 
 const int INITIAL_SORT_BUFFER_SIZE = 64;
 
-bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool,
-    uint32_t interval_millisec,
-    uint32_t write_buffer_pages) :
+bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& _options) :
     _bufferpool(bufferpool),
-    _write_buffer_pages (write_buffer_pages),
-    _interval_millisec(interval_millisec),
     _sort_buffer (new uint64_t[INITIAL_SORT_BUFFER_SIZE]), _sort_buffer_size(INITIAL_SORT_BUFFER_SIZE),
     _stop_requested(false), _wakeup_requested(false)
 {
+    _write_buffer_pages = (uint32_t) _options.get_int_option("sm_cleaner_write_buffer_pages", 64);
+    _interval_millisec = _options.get_int_option("sm_cleaner_interval_millisec", 1000);
+
    _error_happened = false;
    ::pthread_mutex_init(&_interval_mutex, NULL);
    ::pthread_cond_init(&_interval_cond, NULL);
@@ -81,7 +80,7 @@ w_rc_t bf_tree_cleaner::shutdown()
     _stop_requested = true;
     lintel::atomic_thread_fence(lintel::memory_order_release);
     lintel::atomic_thread_fence(lintel::memory_order_consume);
-    W_DO(join(sthread_base_t::WAIT_FOREVER));
+    W_DO(join());
     return RCOK;
 }
 

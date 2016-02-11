@@ -35,9 +35,7 @@ public:
      * @param initially_wakeup_workers whether to start cleaner threads as soon as possible.
      * Even if this is false, you can start cleaners later by calling wakeup_cleaners().
      */
-    bf_tree_cleaner(bf_tree_m* bufferpool,
-        uint32_t interval_millisec,
-        uint32_t write_buffer_pages);
+    bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& _options);
 
     /**
      * Destructs this object. This merely de-allocates arrays and objects.
@@ -70,8 +68,8 @@ private:
     /** the buffer pool this cleaner deals with. */
     bf_tree_m*                  _bufferpool;
 
-    const uint32_t _write_buffer_pages;
-    const uint32_t _interval_millisec;
+    uint32_t _write_buffer_pages;
+    uint32_t _interval_millisec;
 
     pthread_mutex_t             _interval_mutex;
     pthread_cond_t              _interval_cond;

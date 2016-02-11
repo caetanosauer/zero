@@ -15,7 +15,7 @@
 
 struct CleanerControl {
     bool* shutdownFlag;
-    uint sleep_time;
+    int sleep_time;
 
     pthread_mutex_t mutex;
     pthread_cond_t activateCond;
@@ -34,10 +34,7 @@ struct CleanerControl {
 class page_cleaner_decoupled : public page_cleaner_base{
 public:
     page_cleaner_decoupled( bf_tree_m*                     _bufferpool,
-                            vol_t*                          _volume,
-                            LogArchiver::ArchiveDirectory*  _archive,
-                            int                             _workspace_size = 16, //pages
-                            int                             _sleep_time = 10000); //ms
+                            const sm_options&              _options);
     ~page_cleaner_decoupled();
 
     void run();
@@ -46,12 +43,10 @@ public:
     w_rc_t wakeup_cleaner();      // async clean
     w_rc_t force_volume();        // sync clean
 
-    bool isActive() { return control.activated; }
+    bool isActive() { return control->activated; }
 
 private:
     bf_tree_m* bufferpool;
-    vol_t* volume;
-    LogArchiver::ArchiveDirectory* archive;
 
     generic_page* workspace;
     uint workspace_size;
@@ -59,7 +54,7 @@ private:
 
     bool shutdownFlag;
     lsn_t completed_lsn;
-    CleanerControl control;
+    CleanerControl* control;
 
     w_rc_t flush_workspace();
 };

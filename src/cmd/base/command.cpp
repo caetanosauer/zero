@@ -161,8 +161,6 @@ void Command::setupSMOptions()
             "Specify the imposed delay in usec")
     ("sm_errlog", po::value<string>()->default_value("shoremt.err.log"),
             "Path to the error log of the storage manager")
-    ("sm_pagecleaners", po::value<uint>()->default_value(16),
-            "Number of Page Cleaners")
     ("sm_chkpt_flush_interval", po::value<uint>()->default_value(-1),
             "Interval for checkpoint flushes")
     ("sm_backgroundflush", po::value<uint>()->default_value(1),
@@ -220,8 +218,8 @@ void Command::setupSMOptions()
         "Lock table size")
     ("sm_rawlock_xctpool_initseg", po::value<int>(),
         "Transaction Pool Initialization Segment")
-    ("sm_num_page_writers", po::value<int>(),
-        "Number of page writers")
+    ("sm_cleaner_decoupled", po::value<bool>(),
+        "Enable/Disable decoupled cleaner")
     ("sm_cleaner_interval_millisec", po::value<int>(),
         "Cleaner sleep interval in ms")
     ("sm_cleaner_write_buffer_pages", po::value<int>(),
