@@ -56,9 +56,6 @@ void KitsCommand::setupOptions()
         ("spread", po::value<bool>(&opt_spread)->default_value(true)
             ->implicit_value(true),
             "Attach each worker thread to a fixed core for improved concurrency")
-        ("logsize", po::value<unsigned>(&opt_logsize)
-            ->default_value(10000),
-            "Maximum size of log (in MB) (default 10GB)")
         ("logbufsize", po::value<unsigned>(&opt_logbufsize)
             ->default_value(80),
             "Size of log buffer (in MB) (default 80)")
@@ -409,7 +406,6 @@ void KitsCommand::loadOptions(sm_options& options)
     options.set_string_option("sm_logdir", logdir);
     mkdirs(logdir);
 
-    options.set_int_option("sm_logsize", opt_logsize * 1024);
     options.set_int_option("sm_logbufsize", opt_logbufsize * 1024);
 
     if (!archdir.empty()) {

@@ -199,7 +199,7 @@ protected:
 
     void                _sanity_check() const;
 
-    void set_option_logsize(const sm_options&, size_t dft = 10000);
+    void set_option_logsize(const sm_options&, size_t dft = 8192 /* 8GB */);
 
     // Set of pointers into _buf (circular log buffer)
     // and associated lsns. See detailed comments at log_core::insert

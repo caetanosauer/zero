@@ -34,7 +34,6 @@ protected:
     int opt_num_threads;
     int opt_select_trx;
     int opt_queried_sf;
-    unsigned opt_logsize;
     unsigned opt_logbufsize;
     bool opt_eager;
     bool opt_truncateLog;

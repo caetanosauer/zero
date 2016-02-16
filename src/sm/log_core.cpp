@@ -247,8 +247,8 @@ void log_common::set_option_logsize(const sm_options& options, size_t dftLogsize
 
     std::string logimpl = options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
     fileoff_t maxlogsize = fileoff_t(options.get_int_option("sm_logsize", dftLogsize));
-    // The option is in units of KB; convert it to bytes.
-    maxlogsize *= 1024;
+    // The option is in units of MB; convert it to bytes.
+    maxlogsize *= 1024 * 1024;
 
     // maxlogsize is the user-defined maximum open-log size.
     // Compile-time constants determine the size of a segment,
