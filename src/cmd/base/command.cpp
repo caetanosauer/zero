@@ -181,6 +181,9 @@ void Command::setupSMOptions()
         "Log Buffer part size")
     ("sm_carray_slots", po::value<int>(),
         "")
+    ("sm_vol_readonly", po::value<bool>(),
+        "Volume will be opened in read-only mode and all writes from buffer pool \
+         will be ignored (uses write elision and single-page recovery)")
     ("sm_restart_instant", po::value<bool>(),
         "Enable instant restart")
     ("sm_restart_log_based_redo", po::value<bool>(),

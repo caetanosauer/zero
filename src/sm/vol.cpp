@@ -37,21 +37,23 @@ vol_t::vol_t(const sm_options& options, buf_tab_t* dirty_pages)
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
                _alloc_cache(NULL), _stnode_cache(NULL),
-               _failed(false), _readonly(false),
+               _failed(false),
                _restore_mgr(NULL), _dirty_pages(dirty_pages), _backup_fd(-1),
                _current_backup_lsn(lsn_t::null), _backup_write_fd(-1)
 {
     string dbfile = options.get_string_option("sm_dbfile", "db");
     bool truncate = options.get_bool_option("sm_truncate", false);
+    _readonly = options.get_bool_option("sm_vol_readonly", false);
 
     spinlock_write_critical_section cs(&_mutex);
 
-    w_rc_t rc;
-    int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC
-        | smthread_t::OPEN_DIRECT | smthread_t::OPEN_CREATE;
+    // CS TODO: do we need/want OPEN_SYNC?
+    int open_flags = smthread_t::OPEN_SYNC | smthread_t::OPEN_DIRECT;
+    open_flags |= _readonly ? smthread_t::OPEN_RDONLY : smthread_t::OPEN_RDWR;
     if (truncate) {
-        open_flags |= smthread_t::OPEN_TRUNC;
+        open_flags |= smthread_t::OPEN_TRUNC | smthread_t::OPEN_CREATE;
     }
+
 
     W_COERCE(me()->open(dbfile.c_str(), open_flags, 0666, _unix_fd));
 }
