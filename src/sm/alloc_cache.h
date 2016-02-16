@@ -42,6 +42,8 @@ public:
 
     PageID get_last_allocated_pid() const;
 
+    lsn_t get_page_lsn(PageID pid);
+
     static const size_t extent_size;
 
 private:

@@ -122,3 +122,8 @@ void stnode_cache_t::dump(ostream& out)
     }
     cout << "last_extent: " << _stnode_page.get_last_extent() << endl;
 }
+
+lsn_t stnode_cache_t::get_page_lsn() {
+    CRITICAL_SECTION (cs, _latch);
+    return prev_page_lsn;
+}

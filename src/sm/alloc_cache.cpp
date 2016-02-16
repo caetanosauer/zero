@@ -84,6 +84,12 @@ PageID alloc_cache_t::get_last_allocated_pid() const
     return last_alloc_page;
 }
 
+lsn_t alloc_cache_t::get_page_lsn(PageID pid)
+{
+    spinlock_read_critical_section cs(&_latch);
+    return page_lsns[pid];
+}
+
 bool alloc_cache_t::is_allocated(PageID pid)
 {
     // No latching required to check if loaded. Any races will be
