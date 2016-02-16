@@ -661,6 +661,26 @@ void add_backup_log::redo(fixable_page_h*)
     W_COERCE(smlevel_0::vol->sx_add_backup(dev_name, false));
 }
 
+undo_done_log::undo_done_log()
+{
+    fill((PageID) 0, 0);
+}
+
+redo_done_log::redo_done_log()
+{
+    fill((PageID) 0, 0);
+}
+
+loganalysis_end_log::loganalysis_end_log()
+{
+    fill((PageID) 0, 0);
+}
+
+loganalysis_begin_log::loganalysis_begin_log()
+{
+    fill((PageID) 0, 0);
+}
+
 restore_begin_log::restore_begin_log()
 {
 #ifdef TIMED_LOG_RECORDS

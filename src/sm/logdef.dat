@@ -130,6 +130,11 @@ alloc_page       1110000  1.0  (PageID pid);
 dealloc_page     1110000  1.0  (PageID pid);
 create_store     1110000  1.0  (PageID root_pid, StoreID snum);
 append_extent    1110000  1.0  (extent_id_t ext);
+# Instant Restart log records -- system events used just for gathering experiment info
+loganalysis_begin  0000000 0.0 ();
+loganalysis_end    0000000 0.0 ();
+redo_done          0000000 0.0 ();
+undo_done          0000000 0.0 ();
 # Instant Restore log records
 restore_begin      1110000 0.0 ();
 restore_segment    1110000 0.0 (uint32_t segment);
