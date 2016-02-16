@@ -103,7 +103,7 @@ page_cleaner_decoupled::page_cleaner_decoupled( bf_tree_m*                      
 {
     completed_lsn = lsn_t(1,0);
     posix_memalign((void**) &workspace, sizeof(generic_page), workspace_size * sizeof(generic_page));
-    memset(workspace, '\0', workspace_size * sizeof(generic_page));    
+    memset(workspace, '\0', workspace_size * sizeof(generic_page));
     //sleep_time = _options.get_int_option("sm_cleaner_interval", DFT_SLEEP_TIME);
     //buffer_size = _options.get_int_option("sm_decoupled_cleaner_bufsize", DFT_BUFFER_SIZE);
 }
@@ -160,6 +160,10 @@ void page_cleaner_decoupled::run() {
         while (merger != NULL && merger->next(lr)) {
 
             PageID lrpid = lr->pid();
+
+            if (!lr->is_redo()) {
+                continue;
+            }
 
             if(page != NULL && page->pid != lrpid) {
                 page->checksum = page->calculate_checksum();
