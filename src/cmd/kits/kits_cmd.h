@@ -41,6 +41,7 @@ protected:
     bool opt_skew;
     bool opt_spread;
     unsigned opt_warmup;
+    int opt_crashDelay;
 
     MeasurementType mtype;
 

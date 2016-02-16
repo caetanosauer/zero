@@ -15,8 +15,6 @@ protected:
     bool opt_instant;
     bool opt_evict;
     unsigned opt_failDelay;
-    bool opt_crash;
-    int opt_crashDelay;
     bool opt_waitForRestore;
     bool opt_offline;
     bool opt_onDemand;

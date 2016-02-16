@@ -17,6 +17,27 @@ namespace fs = boost::filesystem;
 
 int MAX_THREADS = 1000;
 
+class CrashThread : public smthread_t
+{
+public:
+    CrashThread(unsigned delay)
+        : smthread_t(t_regular, "CrashThread"),
+        delay(delay)
+    {
+    }
+
+    virtual ~CrashThread() {}
+
+    virtual void run()
+    {
+        sleep(delay);
+        abort();
+    }
+
+private:
+    unsigned delay;
+};
+
 void KitsCommand::setupOptions()
 {
     boost::program_options::options_description kits("Kits Options");
@@ -74,6 +95,9 @@ void KitsCommand::setupOptions()
             is supported, i.e., 80% of access to 20% of data")
         ("warmup", po::value<unsigned>(&opt_warmup)->default_value(0),
             "Warmup buffer before running for duration or number of trxs")
+        ("crashDelay", po::value<int>(&opt_crashDelay)->default_value(-1),
+            "Time (sec) to wait before aborting execution to simulate system \
+            failure (negative disables)")
     ;
     options.add(kits);
     setupSMOptions();
@@ -127,6 +151,12 @@ void KitsCommand::run()
     }
 
     cout << "Loading finished!" << endl;
+
+    // Spawn crash thread if requested
+    if (opt_crashDelay >= 0) {
+        CrashThread* t = new CrashThread(opt_crashDelay);
+        t->fork();
+    }
 
     if (opt_num_trxs > 0 || opt_duration > 0) {
         runBenchmark();

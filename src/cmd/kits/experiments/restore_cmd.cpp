@@ -63,13 +63,6 @@ void RestoreCmd::setupOptions()
             "Evict all pages from buffer pool when failure happens")
         ("failDelay", po::value<unsigned>(&opt_failDelay)->default_value(60),
             "Time to wait before marking the volume as failed")
-        ("crash", po::value<bool>(&opt_crash)->default_value(false)
-            ->implicit_value(true),
-            "Simulate media failure together with system failure")
-        ("crashDelay", po::value<int>(&opt_crashDelay)->default_value(0),
-            "Number of seconds passed between media and system failure. \
-            If <= 0, system comes back up with device failed, i.e., \
-            volume is marked failed immediately after log analysis.")
         ("waitForRestore", po::value<bool>(&opt_waitForRestore)
             ->default_value(false)->implicit_value(true),
             "Finish benchmark only when restore is finished")
