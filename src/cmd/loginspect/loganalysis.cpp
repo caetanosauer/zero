@@ -27,7 +27,9 @@ void LogAnalysis::run()
     // Compare lists
     cout << "Log analysis complete!" << endl;
     cout << "chkpt_t active transactions: "
-        << chkpt.xct_tab.size()
+        << chkpt.xct_tab.size() << endl
+        << "chkpt_t dirty pages: "
+        << chkpt.buf_tab.size()
         << endl;
 
     cout << '\t';
