@@ -181,6 +181,10 @@ void Command::setupSMOptions()
         "Log Buffer part size")
     ("sm_carray_slots", po::value<int>(),
         "")
+    ("sm_vol_log_reads", po::value<bool>(),
+        "Generate log records for every page read")
+    ("sm_vol_log_writes", po::value<bool>(),
+        "Generate log records for every page write")
     ("sm_vol_readonly", po::value<bool>(),
         "Volume will be opened in read-only mode and all writes from buffer pool \
          will be ignored (uses write elision and single-page recovery)")

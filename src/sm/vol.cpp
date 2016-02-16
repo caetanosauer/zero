@@ -39,11 +39,14 @@ vol_t::vol_t(const sm_options& options, buf_tab_t* dirty_pages)
                _alloc_cache(NULL), _stnode_cache(NULL),
                _failed(false),
                _restore_mgr(NULL), _dirty_pages(dirty_pages), _backup_fd(-1),
-               _current_backup_lsn(lsn_t::null), _backup_write_fd(-1)
+               _current_backup_lsn(lsn_t::null), _backup_write_fd(-1),
+               _log_page_reads(false), _log_page_writes(false)
 {
     string dbfile = options.get_string_option("sm_dbfile", "db");
     bool truncate = options.get_bool_option("sm_truncate", false);
     _readonly = options.get_bool_option("sm_vol_readonly", false);
+    _log_page_reads = options.get_bool_option("sm_vol_log_reads", false);
+    _log_page_writes = options.get_bool_option("sm_vol_log_writes", false);
 
     spinlock_write_critical_section cs(&_mutex);
 
@@ -569,7 +572,9 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
                     if (reqSucceeded) {
                         // page is loaded in buffer pool already
                         w_assert1(buf->pid == first_page + i);
-                        sysevent::log_page_read(first_page + i);
+                        if (_log_page_reads) {
+                            sysevent::log_page_read(first_page + i);
+                        }
                         return RCOK;
                     }
                 }
@@ -588,7 +593,9 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
     W_DO(me()->pread_short(_unix_fd, (char *) buf, cnt * sizeof(generic_page),
                 offset, read_count));
 
-    sysevent::log_page_read(first_page, cnt);
+    if (_log_page_reads) {
+        sysevent::log_page_read(first_page, cnt);
+    }
 
     return RCOK;
 }
@@ -804,7 +811,9 @@ rc_t vol_t::write_many_pages(PageID first_page, const generic_page* const buf, i
     ADD_TSTAT(vol_blks_written, cnt);
     INC_TSTAT(vol_writes);
 
-    sysevent::log_page_write(first_page, cnt);
+    if (_log_page_writes) {
+        sysevent::log_page_write(first_page, cnt);
+    }
 
     return RCOK;
 }
