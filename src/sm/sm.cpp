@@ -419,12 +419,10 @@ ss_m::_construct_once()
     }
     bt->construct_once();
 
-    chkpt = new chkpt_m();
+    chkpt = new chkpt_m(_options);
     if (! chkpt)  {
         W_FATAL(eOUTOFMEMORY);
     }
-    // Spawn the checkpoint child thread immediatelly and initialize log with CP
-    chkpt->spawn_chkpt_thread();
 
     SSM = this;
 
@@ -544,17 +542,13 @@ ss_m::_destruct_once()
         }
 
         // Take a synch checkpoint (blocking) after buffer pool flush but before shutting down
-        chkpt->synch_take();
-        chkpt->retire_chkpt_thread();
-
-        delete chkpt; chkpt = 0;
+        chkpt->take();
     }
     else {
         ERROUT(<< "SM performing dirty shutdown");
-        chkpt->retire_chkpt_thread();
 
-        delete chkpt; chkpt = 0;
     }
+    delete chkpt; chkpt = 0;
 
     ERROUT(<< "Terminating volume");
     // this should come before xct and log shutdown so that any
@@ -981,20 +975,7 @@ rc_t
 ss_m::checkpoint()
 {
     // Just kick the chkpt thread
-    chkpt->wakeup_and_take();
-    return RCOK;
-}
-
-
-/*--------------------------------------------------------------*
- *  ss_m::checkpoint()
- *  For log buffer testing
- *--------------------------------------------------------------*/
-rc_t
-ss_m::checkpoint_sync()
-{
-    // Synch chekcpoint!
-    chkpt->synch_take();
+    chkpt->take();
     return RCOK;
 }
 

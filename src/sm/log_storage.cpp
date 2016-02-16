@@ -827,7 +827,7 @@ log_storage::get_partition_for_flush(lsn_t start_lsn,
             // need predicates, lest we be in shutdown()
             //if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
             DBGOUT3(<< "chkpt 1");
-            if(smlevel_0::chkpt != NULL) smlevel_0::chkpt->wakeup_and_take();
+            smlevel_0::chkpt->wakeup_thread();
             u_int oldest = global_min_lsn().hi();
             if(oldest + PARTITION_COUNT == start_lsn.file()) {
                 fprintf(stderr,

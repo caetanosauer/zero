@@ -59,6 +59,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "w_defines.h"
 
+#include "sm_options.h"
 #include "sm_base.h"
 #include "w_heap.h"
 #include "logarchiver.h"
@@ -161,24 +162,12 @@ class chkpt_thread_t;
  *********************************************************************/
 class chkpt_m : public smlevel_0 {
 public:
-    chkpt_m();
+    chkpt_m(const sm_options&);
     virtual ~chkpt_m();
 
-    /*
-    * smlevel_0::chkpt_mode is always set to one of the mode
-     */
-    enum chkpt_mode_t {
-        t_chkpt_none,    // no on-going checkpoint
-        t_chkpt_sync,    // in the middle of synchronous checkpoint
-        t_chkpt_async    // in the middle of asynchronous checkpoint
-    };
-
 public:
-    void wakeup_and_take();
-    void spawn_chkpt_thread();
-    void retire_chkpt_thread();
-    void synch_take();
-    void take(chkpt_mode_t chkpt_mode);
+    void take();
+    void wakeup_thread();
 
 private:
     chkpt_thread_t*  _chkpt_thread;

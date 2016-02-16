@@ -96,7 +96,7 @@ struct RawLock;            // Lock information gathering
 class chkpt_thread_t : public smthread_t
 {
 public:
-    NORET                chkpt_thread_t();
+    NORET                chkpt_thread_t(unsigned interval);
     NORET                ~chkpt_thread_t();
 
     virtual void        run();
@@ -106,142 +106,47 @@ public:
 
 private:
     bool                _retire;
-    pthread_mutex_t     _retire_awaken_lock; // paired with _retire_awaken_cond
-    pthread_cond_t      _retire_awaken_cond; // paried with _retire_awaken_lock
-    bool                _kicked;
-
-    // Simple counter to keep track total pending checkpoint requests
-    unsigned int        chkpt_count;
+    unsigned            _interval;
+    pthread_mutex_t     _awaken_lock;
+    pthread_cond_t      _awaken_cond;
 
     // disabled
     NORET                chkpt_thread_t(const chkpt_thread_t&);
     chkpt_thread_t&      operator=(const chkpt_thread_t&);
 };
 
-/*********************************************************************
- *
- *  chkpt_m::chkpt_m()
- *
- *  Constructor for Checkpoint Manager.
- *
- *********************************************************************/
-NORET
-chkpt_m::chkpt_m()
-    : _chkpt_thread(0), _chkpt_count(0)
+chkpt_m::chkpt_m(const sm_options& options)
+    : _chkpt_thread(NULL), _chkpt_count(0)
 {
     _chkpt_last = ss_m::log->master_lsn();
     if(_chkpt_last == lsn_t::null) {
         _chkpt_last = lsn_t(1,0);
     }
-}
 
-/*********************************************************************
- *
- *  chkpt_m::~chkpt_m()
- *
- *  Destructor. If a thread is spawned, tell it to exit.
- *
- *********************************************************************/
-NORET
-chkpt_m::~chkpt_m()
-{
-    if (_chkpt_thread)
-    {
-        retire_chkpt_thread();
-    }
-
-    // Destruct the chkpt_m thresd (itself), if it is a simulated crash,
-    // the system might be in the middle of taking a checkpoint, and
-    // the chkpt_m thread has the chekpt chkpt_serial_m mutex and won't have
-    // a chance to release the mutex
-    // We cannot blindly release the mutex because it will get into infinite wait
-    // in such case, we might see debug assert (core dump) from
-    //     ~w_pthread_lock_t() { w_assert1(!_holder); pthread_mutex_destroy(&_mutex);}
-}
-
-
-/*********************************************************************
- *
- *  chkpt_m::spawn_chkpt_thread()
- *
- *  Fork the checkpoint thread.
- *  Caller should spawn the chkpt thread immediatelly after
- *  the chkpt_m has been created.
- *
- *********************************************************************/
-void
-chkpt_m::spawn_chkpt_thread()
-{
-    w_assert1(_chkpt_thread == 0);
-    if (ss_m::log)
-    {
-        // Create thread (1) to take checkpoints
-        _chkpt_thread = new chkpt_thread_t;
-        if (! _chkpt_thread)
-            W_FATAL(eOUTOFMEMORY);
+    int interval = options.get_int_option("sm_chkpt_interval", -1);
+    if (interval >= 0) {
+        _chkpt_thread = new chkpt_thread_t(interval);
         W_COERCE(_chkpt_thread->fork());
     }
 }
 
-
-
-/*********************************************************************
- *
- *  chkpt_m::retire_chkpt_thread()
- *
- *  Kill the checkpoint thread.
- *
- *  Called from:
- *      chkpt_m destructor
- *      ss_m::_destruct_once() - shutdown storage manager, signal chkpt thread
- *                                            to retire before destroy chkpt_m
- *
- *********************************************************************/
-void
-chkpt_m::retire_chkpt_thread()
+chkpt_m::~chkpt_m()
 {
-    if (ss_m::log)
+    if (_chkpt_thread)
     {
-        w_assert1(_chkpt_thread);
-
-        // Notify the checkpoint thread to retire itself
         _chkpt_thread->retire();
-        W_COERCE( _chkpt_thread->join() ); // wait for it to end
+        _chkpt_thread->awaken();
+        W_COERCE(_chkpt_thread->join());
         delete _chkpt_thread;
-        _chkpt_thread = 0;
     }
 }
 
-/*********************************************************************
-*
-*  chkpt_m::wakeup_and_take()
-*
-*  Issue an asynch checkpoint request
-*
-*********************************************************************/
-void
-chkpt_m::wakeup_and_take()
+void chkpt_m::wakeup_thread()
 {
-    if(ss_m::log && _chkpt_thread)
-    {
-        INC_TSTAT(log_chkpt_wake);
+    if (_chkpt_thread) {
         _chkpt_thread->awaken();
     }
 }
-
-/*********************************************************************
-*
-*  chkpt_m::synch_take()
-*
-*  Issue an synch checkpoint request
-*
-*********************************************************************/
-void chkpt_m::synch_take()
-{
-    take(t_chkpt_sync);
-    return;
-}
-
 
 /*********************************************************************
 *
@@ -776,19 +681,8 @@ void chkpt_t::dump(ostream& os)
     // os << endl;
 }
 
-void chkpt_m::take(chkpt_mode_t chkpt_mode)
+void chkpt_m::take()
 {
-    if (t_chkpt_async == chkpt_mode) {
-        DBGOUT1(<< "Checkpoint request: asynch");
-    }
-    else {
-        DBGOUT1(<< "Checkpoint request: synch");
-    }
-
-    if (!ss_m::log) {
-        return; // recovery facilities disabled ... do nothing
-    }
-
     chkpt_serial_m::write_acquire();
     DBGOUT1(<<"BEGIN chkpt_m::take");
 
@@ -819,130 +713,49 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
             curr_chkpt.get_min_xct_lsn());
 }
 
-/*********************************************************************
- *
- *  chkpt_thread_t::chkpt_thread_t()
- *
- *  Construct a Checkpoint Thread. Priority level is t_time_critical
- *  so that checkpoints are done as fast as it could be done. Most of
- *  the time, however, the checkpoint thread is blocked waiting for
- *  a go-ahead signal to take a checkpoint.
- *
- *********************************************************************/
-chkpt_thread_t::chkpt_thread_t()
+chkpt_thread_t::chkpt_thread_t(unsigned interval)
     : smthread_t(t_time_critical, "chkpt", WAIT_NOT_USED),
-    _retire(false), _kicked(false), chkpt_count(0)
+    _retire(false), _interval(interval)
 {
-    rename("chkpt_thread");            // for debugging
-    DO_PTHREAD(pthread_mutex_init(&_retire_awaken_lock, NULL));
-    DO_PTHREAD(pthread_cond_init(&_retire_awaken_cond, NULL));
+    DO_PTHREAD(pthread_mutex_init(&_awaken_lock, NULL));
+    DO_PTHREAD(pthread_cond_init(&_awaken_cond, NULL));
 }
 
-
-/*********************************************************************
- *
- *  chkpt_thread_t::~chkpt_thread_t()
- *
- *  Destroy a checkpoint thread.
- *
- *********************************************************************/
 chkpt_thread_t::~chkpt_thread_t()
 {
-    /* empty */
 }
 
-
-
-/*********************************************************************
- *
- *  chkpt_thread_t::run()
- *
- *  Body of checkpoint thread. Repeatedly:
- *    1. wait for signal to activate
- *    2. if retire intention registered, then quit
- *    3. write all buffer pages dirtied before the n-1 checkpoint
- *    4. if toggle off then take a checkpoint
- *    5. flip the toggle
- *    6. goto 1
- *
- *  Essentially, the thread will take one checkpoint for every two
- *  wakeups.
- *
- *********************************************************************/
 void
 chkpt_thread_t::run()
 {
+    // Thread waits for an awake signal or for the interval timeout
     while(! _retire)
     {
-        {
-            // Enter mutex first
-            CRITICAL_SECTION(cs, _retire_awaken_lock);
-            while(!_kicked  && !_retire)
-            {
-                // Unlock the mutex and wait on _retire_awaken_cond (checkpoint request)
-                DO_PTHREAD(pthread_cond_wait(&_retire_awaken_cond, &_retire_awaken_lock));
-
-                // On return, we own the mutex again
-            }
-            // On a busy system it is possible (but rare) to have more than one pending
-            // checkpoint requests, we will only execute checkpoint once in such case
-            if (true == _kicked)
-            {
-                w_assert1(0 < chkpt_count);
-                DBG(<<"Found pending checkpoint request count: " << chkpt_count);
-                chkpt_count = 0;
-            }
-
-            // Reset the flag before we continue to execute the checkpoint
-            _kicked = false;
-        }
-
         w_assert1(ss_m::chkpt);
+        CRITICAL_SECTION(cs, _awaken_lock);
 
-        // If a retire request arrived, exit immediatelly without checkpoint
-        if(_retire)
-            break;
+        struct timespec timeout;
+        sthread_t::timeout_to_timespec(_interval * 1000, timeout); // in ms
+        int code = pthread_cond_timedwait(&_awaken_cond, &_awaken_lock, &timeout);
+        DO_PTHREAD_TIMED(code);
 
-        // No need to acquire checkpoint mutex before calling the checkpoint operation
-        // Asynch checkpoint should never record lock information
+        lintel::atomic_thread_fence(lintel::memory_order_acquire);
+        if(_retire) break;
 
-        ss_m::chkpt->take(chkpt_m::t_chkpt_async);
+        ss_m::chkpt->take();
     }
 }
 
-
-/*********************************************************************
- *
- *  chkpt_thread_t::retire()
- *
- *  Register an intention to retire and activate the thread.
- *  The thread will exit when it wakes up and checks the retire
- *  flag.
- *  If the thread is in the middle of executing a checkpoint, it won't check the
- *  retire flag until after the checkpoint finished execution.
- *
- *********************************************************************/
 void
 chkpt_thread_t::retire()
 {
-     CRITICAL_SECTION(cs, _retire_awaken_lock);
-     _retire = true;
-     DO_PTHREAD(pthread_cond_signal(&_retire_awaken_cond));
+    _retire = true;
+    lintel::atomic_thread_fence(lintel::memory_order_release);
 }
 
-
-/*********************************************************************
- *
- *  chkpt_thread_t::awaken()
- *
- *  Signal an asynch checkpoint request arrived.
- *
- *********************************************************************/
 void
 chkpt_thread_t::awaken()
 {
-    CRITICAL_SECTION(cs, _retire_awaken_lock);
-    _kicked = true;
-    ++chkpt_count;
-    DO_PTHREAD(pthread_cond_signal(&_retire_awaken_cond));
+    CRITICAL_SECTION(cs, _awaken_lock);
+    DO_PTHREAD(pthread_cond_signal(&_awaken_cond));
 }

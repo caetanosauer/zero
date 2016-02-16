@@ -1015,15 +1015,6 @@ public:
      */
     static rc_t            checkpoint();
 
-
-    /**\brief Take a checkpoint.
-     * \ingroup SSMAPIDEBUG
-     * \note For debugging only!
-     *
-     * Force the storage manager to take a checkpoint synchronously.
-     */
-    static rc_t            checkpoint_sync();
-
     /**
      * \brief Force the buffer pool to flush to disk all pages for the given volume.
      * \ingroup SSMBUFPOOL

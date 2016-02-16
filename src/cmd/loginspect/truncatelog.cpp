@@ -18,7 +18,7 @@ void TruncateLog::run()
     start_other();
 
     cout << "Taking checkpoint ... ";
-    ss_m::chkpt->synch_take();
+    ss_m::chkpt->take();
     cout << "OK" << endl;
 
     ss_m::SSM->_truncate_log(true /* ignore_chkpt */);
