@@ -759,6 +759,34 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
     info->error = w_error_ok;
 }
 
+/**
+ * Finish current log partition and start writing to a new one.
+ */
+rc_t log_core::truncate()
+{
+    // We want exclusive access to the log, so no CArray
+    mcs_lock::qnode me;
+    _insert_lock.acquire(&me);
+
+    // create new empty epoch at the beginning of the new partition
+    _curr_lsn = first_lsn(_buf_epoch.base_lsn.hi()+1);
+    long new_base = _buf_epoch.base + _segsize;
+    _buf_epoch = epoch(_curr_lsn, new_base, 0, 0);
+    _end = new_base;
+
+    // Update epochs so flush daemon can take over
+    {
+        CRITICAL_SECTION(cs, _flush_lock);
+        w_assert3(_old_epoch.start == _old_epoch.end);
+        _old_epoch = _cur_epoch;
+        _cur_epoch = epoch(_curr_lsn, new_base, 0, 0);
+    }
+
+    _insert_lock.release(&me);
+
+    return RCOK;
+}
+
 lsn_t log_core::_copy_to_buffer(logrec_t &rec, long pos, long recsize, CArraySlot* info)
 {
     /*

@@ -175,6 +175,8 @@ public:
      */
     virtual void           shutdown() = 0;
 
+    virtual rc_t           truncate() = 0;
+
     /**\brief Return name of directory holding log files
      * \details
      * Used by xct_t for error reporting, callback-handling.

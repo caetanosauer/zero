@@ -30,16 +30,17 @@ const char DEBUG_MSG[]="DEBUG";
 
 // doubly linked list of segments
 typedef w_list_t<logbuf_seg, tatas_lock> logbuf_seg_list_t;
-    
+
 // the lob buffer class
 class logbuf_core : public log_common {
     // INTERFACE METHODS BEGIN
 public:
-    virtual rc_t            insert(logrec_t &r, lsn_t* l); 
+    virtual rc_t            insert(logrec_t &r, lsn_t* l);
     virtual rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
     virtual rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
     virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
-    virtual void            shutdown(); 
+    virtual void            shutdown();
+    virtual rc_t truncate() { return RCOK; } // CS TODO
 
     // INTERFACE METHODS END
 public:
@@ -50,19 +51,19 @@ public:
 
     // for test and debug
     // print current buffer state for debugging
-    void logbuf_print(const char *string = DEBUG_MSG, int level=3); 
+    void logbuf_print(const char *string = DEBUG_MSG, int level=3);
     void logbuf_print_nolock(const char *string = DEBUG_MSG, int level=3);
 
-      
+
     // fake operations for M1
     //void logbuf_prime(lsn_t next);
-    int logbuf_fetch(lsn_t lsn); 
+    int logbuf_fetch(lsn_t lsn);
     rc_t logbuf_insert(long recsize);
     rc_t logbuf_flush(const lsn_t &to_lsn, bool block = true, bool signal = true, bool
                        *ret_flushed = NULL);
     void logbuf_archive();
 
-    logrec_t *logbuf_fake_logrec(uint32_t recsize); 
+    logrec_t *logbuf_fake_logrec(uint32_t recsize);
 
     // spacial fetch function for test and debugging only
     int fetch_for_test(lsn_t& ll, logrec_t*& rp);
@@ -114,15 +115,15 @@ private:
     void _get_more_space_for_insertion(CArraySlot *info);
 
     // replacement algorithm
-    logbuf_seg *_replacement(); 
-    
-    // force the flush daemon to flush 
+    logbuf_seg *_replacement();
+
+    // force the flush daemon to flush
     void force_a_flush();
 
 
-    static long         _floor(long offset, long block_size) 
+    static long         _floor(long offset, long block_size)
     { return (offset/block_size)*block_size; }
-    static long         _ceil(long offset, long block_size) 
+    static long         _ceil(long offset, long block_size)
     { return _floor(offset + block_size - 1, block_size); }
 
     //private:
@@ -145,7 +146,7 @@ public:
     /** @cond */ char    _padding00[CACHELINE_TATAS_PADDING]; /** @endcond */
 
 
-    uint32_t _seg_count;  // current number of segments in the log buffer           
+    uint32_t _seg_count;  // current number of segments in the log buffer
                           // it keeps increasing unless the seg is freed
                           // protected by _logbuf_lock
 
@@ -161,29 +162,29 @@ public:
 
 
     /**
-     * _to_OPERATION_lsn is the lsn of the log record that the OPERATION is going to start from. 
-     * For example, _to_insert_lsn is the next available lsn for any new insertion, and _to_flush_lsn 
-     * points to the very first unflushed log record. 
-     * _to_OPERATION_seg usually points to segment that contains _to_OPERATION_lsn, but not always. 
-     * When _to_OPERATION_lsn is at offset 0 of a new segment (i.e., lsn.lo() % _segsize == 0), 
-     * _to_OPERATION_seg still points to the preceding segment, but not the new segment. 
-     * This is because the new segment may not have been allocated yet. 
+     * _to_OPERATION_lsn is the lsn of the log record that the OPERATION is going to start from.
+     * For example, _to_insert_lsn is the next available lsn for any new insertion, and _to_flush_lsn
+     * points to the very first unflushed log record.
+     * _to_OPERATION_seg usually points to segment that contains _to_OPERATION_lsn, but not always.
+     * When _to_OPERATION_lsn is at offset 0 of a new segment (i.e., lsn.lo() % _segsize == 0),
+     * _to_OPERATION_seg still points to the preceding segment, but not the new segment.
+     * This is because the new segment may not have been allocated yet.
      */
 
-    logbuf_seg *_to_archive_seg;  
-    logbuf_seg *_to_insert_seg;  
-    logbuf_seg *_to_flush_seg;  
+    logbuf_seg *_to_archive_seg;
+    logbuf_seg *_to_insert_seg;
+    logbuf_seg *_to_flush_seg;
 
-    lsn_t _to_archive_lsn;  
+    lsn_t _to_archive_lsn;
     lsn_t _to_insert_lsn;  // same as _curr_lsn
     lsn_t _to_flush_lsn;  // same as _durable_lsn
 
     int64_t _free;  // number of bytes usable (allocated and free) for insertion
-        
+
 private:
     // _part_size and this method are only here for test purposes (LogBufferTest)
     fileoff_t _part_size;
-    fileoff_t _partition_data_size() 
+    fileoff_t _partition_data_size()
     {
         if (_part_size > 0) return _part_size;
         return _storage->partition_data_size();

@@ -539,15 +539,15 @@ ss_m::_destruct_once()
         W_COERCE(bf->force_volume());
         me()->check_actual_pin_count(0);
 
+        if (truncate) {
+            W_COERCE(_truncate_log());
+        }
+
         // Take a synch checkpoint (blocking) after buffer pool flush but before shutting down
         chkpt->synch_take();
         chkpt->retire_chkpt_thread();
 
         delete chkpt; chkpt = 0;
-
-        if (truncate) {
-            W_COERCE(_truncate_log());
-        }
     }
     else {
         ERROUT(<< "SM performing dirty shutdown");
@@ -627,6 +627,11 @@ ss_m::_destruct_once()
 rc_t ss_m::_truncate_log(bool ignore_chkpt)
 {
     DBGTHRD(<< "Truncating log on LSN " << log->durable_lsn());
+
+    W_DO(log->truncate());
+    W_DO(log->flush_all());
+
+# if 0
     /*
      * Take contents from last checkpoint until the end of the log file and
      * copy them into a new log file, deleting all older files.
@@ -732,6 +737,7 @@ rc_t ss_m::_truncate_log(bool ignore_chkpt)
         << new_part << ".0" << ends;
     W_DO(me()->open(ss.str().c_str(), flags, 0644, newFd));
     W_DO(me()->close(newFd));
+#endif
 
     return RCOK;
 }
