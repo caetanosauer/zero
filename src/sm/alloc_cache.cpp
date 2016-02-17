@@ -152,10 +152,10 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, bool redo)
         // due to system failures after allocation but before setting the
         // pointer on the new owner/parent page. To fix this, an SSX to
         // allocate an emptry b-tree child would be the best option.
-        // sys_xct_section_t ssx(true);
-        // W_DO(log_alloc_page(pid));
-        sysevent::log_alloc_page(pid, page_lsns[pid / extent_size]);
-        // ssx.end_sys_xct(RCOK);
+
+        // Entry in page_lsns array is updated by the log insertion
+        extent_id_t ext = pid / extent_size;
+        sysevent::log_alloc_page(pid, page_lsns[ext * extent_size]);
     }
 
     return RCOK;
@@ -169,7 +169,9 @@ rc_t alloc_cache_t::sx_deallocate_page(PageID pid, bool redo)
     freed_pages.push_back(pid);
 
     if (!redo) {
-        sysevent::log_dealloc_page(pid, page_lsns[pid / extent_size]);
+        // Entry in page_lsns array is updated by the log insertion
+        extent_id_t ext = pid / extent_size;
+        sysevent::log_dealloc_page(pid, page_lsns[ext * extent_size]);
     }
 
     return RCOK;

@@ -131,17 +131,17 @@ w_rc_t bf_tree_cleaner::force_volume()
     w_assert0(::posix_memalign((void**)&buf, SM_PAGESIZE, SM_PAGESIZE)==0);
 
     // Flush alloc_cache_t
-    uint32_t last_pid = smlevel_0::vol->get_last_allocated_pid();
-    for(uint32_t i=0; i<last_pid; i+=alloc_cache_t::extent_size) {
+    PageID last_pid = smlevel_0::vol->get_last_allocated_pid();
+    for(PageID i=0; i<=last_pid; i+=alloc_cache_t::extent_size) {
         lsn_t emlsn = smlevel_0::vol->get_alloc_cache()->get_page_lsn(i);
         smlevel_0::vol->read_page_verify(i, buf, emlsn);
         smlevel_0::vol->write_page(i, buf);
     }
 
-    //Flush stnode_cache_t (always PID 1)
+    // Flush stnode_cache_t (always PID 1)
     lsn_t emlsn = smlevel_0::vol->get_stnode_cache()->get_page_lsn();
-    smlevel_0::vol->read_page_verify(1, buf, emlsn);
-    smlevel_0::vol->write_page(1, buf);
+    smlevel_0::vol->read_page_verify(stnode_page::stpid, buf, emlsn);
+    smlevel_0::vol->write_page(stnode_page::stpid, buf);
 
     delete buf;
 
