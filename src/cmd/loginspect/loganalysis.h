@@ -21,6 +21,8 @@ class LogAnalysis : public LogScannerCommand
 public:
     void setupOptions();
     void run();
+private:
+    bool fullScan;
 };
 
 class LogAnalysisHandler : public Handler {
@@ -32,7 +34,8 @@ public:
     virtual void finalize();
 
     unordered_set<tid_t> activeTAs;
-    size_t count;
+    unordered_set<PageID> dirtyPages;
+    size_t xctCount;
 };
 
 #endif
