@@ -401,7 +401,7 @@ ss_m::_construct_once()
     // If not instant restart, pass null dirty page table, which disables REDO
     // recovery based on SPR so that it is done explicitly by restart_m below.
     vol = new vol_t(_options,
-            instantRestart ? &chkpt_info->buf_tab : NULL);
+            instantRestart ? chkpt_info : NULL);
     if (instantRestart) {
         vol->build_caches(truncate);
     }
@@ -597,7 +597,7 @@ ss_m::_destruct_once()
 
     ERROUT(<< "Terminating buffer manager");
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
-    
+
     if(logArchiver) {
         delete logArchiver; // LL: decoupled cleaner in bf still needs archiver
         logArchiver = 0;    //     so we delete it only after bf is gone

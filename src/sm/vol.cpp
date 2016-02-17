@@ -32,13 +32,13 @@
 // Needed to get LSN of restore_begin log record
 #include "logdef_gen.cpp"
 
-vol_t::vol_t(const sm_options& options, buf_tab_t* dirty_pages)
+vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
              : _unix_fd(-1),
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
                _alloc_cache(NULL), _stnode_cache(NULL),
                _failed(false),
-               _restore_mgr(NULL), _dirty_pages(dirty_pages), _backup_fd(-1),
+               _restore_mgr(NULL), _dirty_pages(NULL), _backup_fd(-1),
                _current_backup_lsn(lsn_t::null), _backup_write_fd(-1),
                _log_page_reads(false), _log_page_writes(false)
 {
@@ -57,8 +57,9 @@ vol_t::vol_t(const sm_options& options, buf_tab_t* dirty_pages)
         open_flags |= smthread_t::OPEN_TRUNC | smthread_t::OPEN_CREATE;
     }
 
-
     W_COERCE(me()->open(dbfile.c_str(), open_flags, 0666, _unix_fd));
+
+    _dirty_pages = new buf_tab_t(chkpt_info->buf_tab);
 }
 
 vol_t::~vol_t()

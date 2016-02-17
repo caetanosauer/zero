@@ -406,7 +406,7 @@ void chkpt_t::cleanup()
     for(buf_tab_t::iterator it  = buf_tab.begin();
                             it != buf_tab.end(); ) {
         if(it->second.dirty == false) {
-            buf_tab.erase(it++);
+            it = buf_tab.erase(it);
         }
         else {
             ++it;
@@ -417,7 +417,7 @@ void chkpt_t::cleanup()
     for(xct_tab_t::iterator it  = xct_tab.begin();
                             it != xct_tab.end(); ) {
         if(it->second.state == xct_t::xct_ended) {
-            xct_tab.erase(it++);      //erase xct
+            it = xct_tab.erase(it);
         }
         else {
             ++it;

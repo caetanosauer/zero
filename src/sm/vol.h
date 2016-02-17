@@ -22,7 +22,7 @@ class chkpt_restore_tab_t;
 class vol_t
 {
 public:
-    vol_t(const sm_options&, buf_tab_t* dirty_pages);
+    vol_t(const sm_options&, chkpt_t* chkpt_info);
     virtual ~vol_t();
 
     void shutdown(bool abrupt);
