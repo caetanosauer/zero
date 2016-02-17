@@ -161,10 +161,8 @@ void Command::setupSMOptions()
             "Specify the imposed delay in usec")
     ("sm_errlog", po::value<string>()->default_value("shoremt.err.log"),
             "Path to the error log of the storage manager")
-    ("sm_chkpt_flush_interval", po::value<uint>()->default_value(-1),
+    ("sm_chkpt_interval", po::value<int>(),
             "Interval for checkpoint flushes")
-    ("sm_backgroundflush", po::value<uint>()->default_value(1),
-        "Disable/enable backgroundflushs (0 to disable, 1 to enable)")
     ("sm_log_page_flushers", po::value<uint>()->default_value(1),
         "Number of log page flushers")
     ("sm_preventive_chkpt", po::value<uint>()->default_value(1),
