@@ -87,7 +87,9 @@ PageID alloc_cache_t::get_last_allocated_pid() const
 lsn_t alloc_cache_t::get_page_lsn(PageID pid)
 {
     spinlock_read_critical_section cs(&_latch);
-    return page_lsns[pid];
+    map<PageID, lsn_t>::const_iterator it = page_lsns.find(pid);
+    if (it == page_lsns.end()) { return lsn_t::null; }
+    return it->second;
 }
 
 bool alloc_cache_t::is_allocated(PageID pid)
