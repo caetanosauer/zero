@@ -55,12 +55,15 @@ cmake -DCMAKE_BUILD_TYPE=Debug ..
 Finally, to compile:
 
 ```
-make -j <number_of_cores>
+make -j <number_of_cores> sm
 ```
 
-The `-j` flag enables compilation in parallel on multi-core CPUs. It is a standard feature of the Make building system.
+The `-j` flag enables compilation in parallel on multi-core CPUs. It is a standard feature of the Make building system. The `sm` target builds the static storage manager library, `libsm`.
 
 ## Testing
+
+## Current status
+> As of February 2016, the test cases are not being maintained, so `make test` will likely produce compilation errors. We are working on stabilizing the source code and providing an official releas with support for Instnat Restart and Instant Restore soon. The Zapps tools described below were also incorporated into the Zero source tree, so that benchmarks and tools can be executed with a single code base. Please stay tuned for further updates.
 
 Zero is designed to be used as a library for transactional applications. As such, there is no program to be executed after compilation. The generated storage manager library is `libsm.a`. However, the test suite can be ran with:
 
