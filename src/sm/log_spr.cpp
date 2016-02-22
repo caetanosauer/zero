@@ -133,7 +133,7 @@ rc_t restart_m::_collect_spr_logs(
             W_DO(rc);
         }
         w_assert0(lsn == nxt);
-        DBGOUT1(<< "restart_m::_collect_single_page_recovery_logs, log = " << *lr);
+        // ERROUT(<< "restart_m::_collect_spr_logs, pid = " << pid << ", log = " << *lr);
 
         if (lr->length() > pos) {
             // double capacity of buffer

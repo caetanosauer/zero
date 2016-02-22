@@ -320,8 +320,8 @@ restart_m::redo_log_pass()
                 << resetiosflags(ios::right) << " R: "
                 << (redone ? " redone" : " skipped") );
 
-        ERROUT(<< "redo_log_pass: " << lsn << " " << r.type_str() << " pid " << r.pid()
-                << (redone ? " redone" : " skipped") );
+        // ERROUT(<< "redo_log_pass: " << lsn << " " << r.type_str() << " pid " << r.pid()
+        //         << (redone ? " redone" : " skipped") );
 
     }
 

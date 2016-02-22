@@ -844,6 +844,8 @@ operator<<(ostream& o, const logrec_t& l)
     o << "LSN=" << l.lsn_ck() << " ";
     const char *rb = l.is_rollback()? "U" : "F"; // rollback/undo or forward
 
+    o << "len=" << l.length() << " ";
+
     if (!l.is_single_sys_xct()) {
         o << "TID=" << l.tid() << ' ';
     } else {

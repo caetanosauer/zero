@@ -82,6 +82,7 @@ class prologue_rc_t;
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
 #include "bf_tree.h"
+#include "stopwatch.h"
 
 #include "allocator.h"
 #include "plog_xct.h"
@@ -241,17 +242,8 @@ bool ss_m::shutdown()
 void
 ss_m::_construct_once()
 {
-    FUNC(ss_m::_construct_once);
+    stopwatch_t timer;
 
-    // Use the options and callbacks from ss_m constructor, no change allowed
-
-    // The input paramters were saved during ss_m constructor
-    //   smlevel_0::log_warn_callback  = warn;
-    //   smlevel_0::log_archived_callback  = get;
-
-    // Clear out the fingerprint map for the smthreads.
-    // All smthreads created after this will be compared against
-    // this map for duplication.
     smthread_t::init_fingerprint_map();
 
     if (_instance_cnt++)  {
@@ -297,24 +289,27 @@ ss_m::_construct_once()
         shutdown_clean = true;
     }
 
-    // choose log manager implementation
-    std::string logimpl = _options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
-
+    ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer manager");
 
     bf = new bf_tree_m(_options);
     if (! bf) {
         W_FATAL(eOUTOFMEMORY);
     }
 
+    ERROUT(<< "[" << timer.time_ms() << "] Initializing lock manager");
+
     lm = new lock_m(_options);
     if (! lm)  {
         W_FATAL(eOUTOFMEMORY);
     }
 
+    ERROUT(<< "[" << timer.time_ms() << "] Initializing log manager (part 1)");
+
     /*
      *  Level 1
      */
 #ifndef USE_ATOMIC_COMMIT // otherwise, log and clog will point to the same log object
+    std::string logimpl = _options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
     if (logimpl == logbuf_core::IMPL_NAME) {
         log = new logbuf_core(_options);
     }
@@ -322,6 +317,7 @@ ss_m::_construct_once()
         log = new log_core(_options);
     }
 
+    ERROUT(<< "[" << timer.time_ms() << "] Initializing log manager (part 2)");
     W_COERCE(log->init());
 #else
     /*
@@ -333,6 +329,8 @@ ss_m::_construct_once()
     w_assert0(log);
 #endif
 
+    ERROUT(<< "[" << timer.time_ms() << "] Initializing log archiver");
+
     // LOG ARCHIVER
     bool archiving = _options.get_bool_option("sm_archiving", false);
     if (archiving) {
@@ -340,7 +338,7 @@ ss_m::_construct_once()
         logArchiver->fork();
     }
 
-    ERROUT(<< "Initializing restart manager");
+    ERROUT(<< "[" << timer.time_ms() << "] Initializing restart manager");
 
     // Log analysis provides info required to initialize vol_t
     recovery = new restart_m(_options);
@@ -350,7 +348,7 @@ ss_m::_construct_once()
     bool instantRestart = _options.get_bool_option("sm_restart_instant", true);
     bool truncate = _options.get_bool_option("sm_truncate", false);
 
-    ERROUT(<< "Initializing volume");
+    ERROUT(<< "[" << timer.time_ms() << "] Initializing volume manager");
 
     // If not instant restart, pass null dirty page table, which disables REDO
     // recovery based on SPR so that it is done explicitly by restart_m below.
@@ -362,7 +360,7 @@ ss_m::_construct_once()
 
     smlevel_0::statistics_enabled = _options.get_bool_option("sm_statistics", true);
 
-    ERROUT(<< "Initializing buffer manager and other services");
+    ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer cleaner and other services");
 
     // start buffer pool cleaner when the log module is ready
     W_COERCE(bf->init(_options));
@@ -383,9 +381,8 @@ ss_m::_construct_once()
     me()->mark_pin_count();
 
     do_prefetch = _options.get_bool_option("sm_prefetch", false);
-    DBG(<<"constructor done");
 
-    ERROUT(<< "Performing initial restart");
+    ERROUT(<< "[" << timer.time_ms() << "] Performing offline recovery");
 
     // If not using instant restart, perform log-based REDO before opening up
     if (instantRestart) {
@@ -416,6 +413,8 @@ ss_m::_construct_once()
         //     w_assert0(consistent);
         // }
     }
+
+    ERROUT(<< "[" << timer.time_ms() << "] Finished SM initialization");
 }
 
 void ss_m::_finish_recovery()
