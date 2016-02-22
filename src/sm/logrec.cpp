@@ -766,16 +766,13 @@ void alloc_page_log::redo(fixable_page_h* p)
     alloc_page* apage = (alloc_page*) p->get_generic_page();
     uint32_t index = pid % alloc_page::bits_held;
     apage->set_bit(index);
-
-    // vol_t* volume = smlevel_0::vol;
-    // w_assert0(volume);
-    // volume->alloc_a_page(pid, true);
 }
 
 dealloc_page_log::dealloc_page_log(PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
-    fill((PageID) 0, sizeof(PageID));
+    PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
+    fill(alloc_pid, sizeof(PageID));
 }
 
 void dealloc_page_log::redo(fixable_page_h* p)
@@ -785,10 +782,6 @@ void dealloc_page_log::redo(fixable_page_h* p)
     alloc_page* apage = (alloc_page*) p->get_generic_page();
     uint32_t index = pid % alloc_page::bits_held;
     apage->unset_bit(index);
-
-    // vol_t* volume = smlevel_0::vol;
-    // w_assert0(volume);
-    // volume->deallocate_page(pid, true);
 }
 
 page_img_format_t::page_img_format_t (const btree_page_h& page)
