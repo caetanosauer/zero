@@ -268,6 +268,9 @@ public:
     /**\brief used by partition */
     virtual fileoff_t limit() const = 0;
 
+    virtual rc_t load_fetch_buffers() = 0;
+    virtual void discard_fetch_buffers() = 0;
+
 private:
     // no copying allowed
     log_m &operator=(log_m const &);

@@ -121,6 +121,9 @@ private:
     // force the flush daemon to flush
     void force_a_flush();
 
+    rc_t load_fetch_buffers() { return RCOK; }
+    void discard_fetch_buffers() {};
+
 
     static long         _floor(long offset, long block_size)
     { return (offset/block_size)*block_size; }

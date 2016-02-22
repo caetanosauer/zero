@@ -93,7 +93,6 @@ restart_m::~restart_m()
 void restart_m::log_analysis()
 {
     stopwatch_t timer;
-    sysevent::log(logrec_t::t_loganalysis_begin);
 
     chkpt.scan_log();
 
@@ -564,5 +563,6 @@ void restart_thread_t::run()
     // before recovery is complete
     smlevel_0::recovery->redo_page_pass();
     smlevel_0::recovery->undo_pass();
+    smlevel_0::log->discard_fetch_buffers();
 };
 

@@ -75,8 +75,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "fixable_page_h.h"
 
+#include <algorithm>
 #include <sstream>
 #include <w_strstream.h>
+#include <sys/stat.h>
 
 typedef smlevel_0::fileoff_t fileoff_t;
 
@@ -128,6 +130,24 @@ private:
     bool stop;
     // 80 bytes is enough to hold ticker logrec
     char lrbuf[80];
+};
+
+class fetch_buffer_loader_t : public smthread_t {
+public:
+    fetch_buffer_loader_t(log_core* log)
+        : smthread_t(t_regular, "fetchbuf_loader"), log(log)
+    {
+    }
+
+    virtual ~fetch_buffer_loader_t() {}
+
+    void run()
+    {
+        W_COERCE(log->load_fetch_buffers());
+    }
+
+private:
+    log_core* log;
 };
 
 
@@ -392,6 +412,49 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     // protect against double-acquire
     _storage->acquire_partition_lock(); // caller must release it
 
+    lintel::atomic_thread_fence(lintel::memory_order_consume);
+    if (ll < _fetch_buf_end && ll >= _fetch_buf_begin)
+    {
+        // log record can be found in fetch buffer -- no I/O
+        size_t i = ll.hi() - _fetch_buf_first;
+        if (_fetch_buffers[i]) {
+            rp = (logrec_t*) (_fetch_buffers[i] + ll.lo());
+            w_assert0(rp->lsn() == ll);
+
+            if (rp->type() == logrec_t::t_skip)
+            {
+                if (forward) {
+                    ll = first_lsn(ll.hi() + 1);
+                    _storage->release_partition_lock();
+                    return fetch(ll, rp, nxt, forward);
+                }
+                else { // backward scan
+                    ll = *((lsn_t*) (_fetch_buffers[i] + ll.lo() - sizeof(lsn_t)));
+                }
+
+                rp = (logrec_t*) (_fetch_buffers[i] + ll.lo());
+                w_assert0(rp->lsn() == ll);
+            }
+
+            if (nxt) {
+                if (!forward && ll.lo() == 0) {
+                    W_DO(_storage->last_lsn_in_partition(ll.hi() - 1, *nxt));
+                }
+                else {
+                    if (forward) {
+                        *nxt = ll;
+                        nxt->advance(rp->length());
+                    }
+                    else {
+                        memcpy(nxt, (char*) rp - sizeof(lsn_t), sizeof(lsn_t));
+                    }
+                }
+            }
+
+            return RCOK;
+        }
+    }
+
     // it's not sufficient to flush to ll, since ll is at the *beginning* of
     // what we want to read, so force a flush when necessary
     lsn_t must_be_durable = ll + sizeof(logrec_t);
@@ -563,12 +626,27 @@ log_core::log_core(const sm_options& options)
     // move the primed data where it belongs (watch out, it might overlap)
     memmove(_buf + offset - prime_offset, _buf, prime_offset);
 
-    start_flush_daemon();
     _ticker = NULL;
     if (options.get_bool_option("sm_ticker_enable", false)) {
         bool msec = options.get_bool_option("sm_ticker_msec", false);
         _ticker = new ticker_thread_t(msec);
     }
+
+    // Load fetch buffers
+    int fetchbuf_partitions = options.get_int_option("sm_log_fetch_buf_partitions", 0);
+    if (fetchbuf_partitions > 0) {
+        _fetch_buf_last = _durable_lsn.hi();
+        _fetch_buf_first = _fetch_buf_last - fetchbuf_partitions + 1;
+        _fetch_buf_end = _durable_lsn;
+        _fetch_buf_begin = _durable_lsn;
+    }
+    else {
+        _fetch_buf_last = 0;
+        _fetch_buf_first = 0;
+        _fetch_buf_end = lsn_t::null;
+        _fetch_buf_begin = lsn_t::null;
+    }
+    _fetch_buf_loader = NULL;
 
     if (1) {
         smlevel_0::errlog->clog << debug_prio
@@ -600,9 +678,17 @@ log_core::log_core(const sm_options& options)
 
 rc_t log_core::init()
 {
+    // Consider this the beginning of log analysis so that
+    // we can factor in the time it takes to load the fetch buffers
+    sysevent::log(logrec_t::t_loganalysis_begin);
     if (_ticker) {
         _ticker->fork();
     }
+    if (_fetch_buf_first > 0) {
+        _fetch_buf_loader = new fetch_buffer_loader_t(this);
+        _fetch_buf_loader->fork();
+    }
+    start_flush_daemon();
 
     return RCOK;
 }
@@ -614,6 +700,8 @@ log_core::~log_core()
         _ticker->join();
         delete _ticker;
     }
+
+    discard_fetch_buffers();
 
     delete _storage;
     delete _oldest_lsn_tracker;
@@ -1399,6 +1487,84 @@ rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
         s->set_clr(undo_lsn);
     }
     return RCOK;
+}
+
+rc_t log_core::load_fetch_buffers()
+{
+    _fetch_buffers.resize(_fetch_buf_last - _fetch_buf_first + 1, NULL);
+
+    for (size_t p = _fetch_buf_last; p >= _fetch_buf_first; p--) {
+        int fd;
+        char *const fname = new char[smlevel_0::max_devname];
+        w_auto_delete_array_t<char> ad_fname(fname);
+
+        _storage->make_log_name(p, fname, smlevel_0::max_devname);
+        int flags = smthread_t::OPEN_RDONLY;
+
+        // get file size and whether it exists
+        struct stat file_info;
+        int status = stat(fname, &file_info);
+        if (status < 0) {
+            continue;
+        }
+
+        // Allocate buffer space and open file
+        char* buf = new char[file_info.st_size];
+        _fetch_buffers[p - _fetch_buf_first] = buf;
+        W_DO(me()->open(fname, flags, 0744, fd));
+
+        // Main loop that loads chunks of 32MB in reverse sequential order
+        size_t chunk = 32 * 1024 * 1024;
+        long offset = file_info.st_size - chunk;
+        while (true) {
+            size_t read_size = offset >= 0 ? chunk : chunk + offset;
+            if (offset < 0) { offset = 0; }
+
+            W_DO(me()->pread(fd, buf + offset, read_size, offset));
+
+            // CS TODO: use std::atomic
+            _fetch_buf_begin = lsn_t(p, offset);
+            lintel::atomic_thread_fence(lintel::memory_order_release);
+
+            if (offset == 0) { break; }
+            offset -= read_size;
+        }
+
+        W_DO(me()->close(fd));
+
+        // size_t pos = 0;
+        // while (pos < file_info.st_size) {
+        //     logrec_t* lr = (logrec_t*) (_fetch_buffers[p - _fetch_buf_first] + pos);
+        //     w_assert0(lr->valid_header(lsn_t(p, pos)));
+        //     ERROUT(<< *lr);
+        //     pos += lr->length();
+        // }
+    }
+
+    return RCOK;
+}
+
+void log_core::discard_fetch_buffers()
+{
+    _storage->acquire_partition_lock();
+
+    if (_fetch_buf_loader) {
+        _fetch_buf_loader->join();
+        delete _fetch_buf_loader;
+    }
+
+    for (size_t p = _fetch_buf_first; p <= _fetch_buf_last; p++) {
+        size_t i = p - _fetch_buf_first;
+        if (_fetch_buffers[i]) {
+            delete[] _fetch_buffers[i];
+        }
+    }
+
+    _fetch_buffers.clear();
+    _fetch_buf_first = 0;
+    _fetch_buf_last = 0;
+
+    _storage->release_partition_lock();
 }
 
 // Determine if this lsn is holding up scavenging of logs by (being

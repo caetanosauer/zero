@@ -404,6 +404,8 @@ ss_m::_construct_once()
         // CS TODO: can this be done concurrently by restart thread?
         recovery->undo_pass();
 
+        log->discard_fetch_buffers();
+
         // CS: added this for debugging, but consistency check fails
         // even right after loading -- so it's not a recovery problem
         // vector<StoreID> stores;

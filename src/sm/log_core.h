@@ -76,6 +76,7 @@ struct CArraySlot;
 class PoorMansOldestLsnTracker;
 class plog_xct_t;
 class ticker_thread_t;
+class fetch_buffer_loader_t;
 
 #include <partition.h>
 #include "mcs_lock.h"
@@ -347,10 +348,23 @@ public:
     // declared in log_common
     virtual lsn_t           flush_daemon_work(lsn_t old_mark);
 
+    virtual rc_t load_fetch_buffers();
+    virtual void discard_fetch_buffers();
+
 protected:
 
     char*                _buf; // log buffer: _segsize buffer into which
                          // inserts copy log records with log_core::insert
+
+    /** Buffers for fetch operation -- used during log analysis and
+     * single-page redo. One buffer is used for each partition.
+     * The number of partitions is specified by sm_log_fetch_buf_partitions */
+    vector<char*> _fetch_buffers;
+    uint32_t _fetch_buf_first;
+    uint32_t _fetch_buf_last;
+    lsn_t _fetch_buf_begin;
+    lsn_t _fetch_buf_end;
+    fetch_buffer_loader_t* _fetch_buf_loader;
 
     ticker_thread_t* _ticker = 0;
 
