@@ -30,7 +30,8 @@ public:
 
     virtual void run()
     {
-        sleep(delay);
+        ::sleep(delay);
+        cerr << "Crash thread will now abort program" << endl;
         abort();
     }
 
@@ -148,9 +149,8 @@ void KitsCommand::run()
 
     if (opt_load) {
         shoreEnv->load();
+        cout << "Loading finished!" << endl;
     }
-
-    cout << "Loading finished!" << endl;
 
     // Spawn crash thread if requested
     if (opt_crashDelay >= 0) {
