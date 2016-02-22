@@ -75,6 +75,7 @@ class ConsolidationArray;
 struct CArraySlot;
 class PoorMansOldestLsnTracker;
 class plog_xct_t;
+class ticker_thread_t;
 
 #include <partition.h>
 #include "mcs_lock.h"
@@ -327,6 +328,8 @@ public:
     log_core(const sm_options&);
     virtual           ~log_core();
 
+    virtual rc_t init();
+
     static const std::string IMPL_NAME;
 
     // INTERFACE METHODS BEGIN
@@ -348,6 +351,8 @@ protected:
 
     char*                _buf; // log buffer: _segsize buffer into which
                          // inserts copy log records with log_core::insert
+
+    ticker_thread_t* _ticker = 0;
 
     /**
      * \ingroup CARRAY

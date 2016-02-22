@@ -164,6 +164,8 @@ public:
     log_m() {};
     virtual ~log_m() {};
 
+    virtual rc_t init() = 0;
+
     virtual lsn_t               min_chkpt_rec_lsn() const = 0;
 
     typedef    smlevel_0::partition_number_t partition_number_t;

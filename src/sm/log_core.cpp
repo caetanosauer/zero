@@ -69,6 +69,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "log_core.h"
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
+#include "eventlog.h"
 
 #include "bf_tree.h"
 
@@ -82,6 +83,52 @@ typedef smlevel_0::fileoff_t fileoff_t;
 const std::string log_core::IMPL_NAME = "traditional";
 const uint64_t log_common::DFT_LOGBUFSIZE = 128 << 10;
 fileoff_t log_common::max_logsz = 0;
+
+class ticker_thread_t : public smthread_t
+{
+public:
+    ticker_thread_t(bool msec = false)
+        : smthread_t(t_regular, "ticker"), msec(msec)
+    {
+        interval_usec = 1000; // 1ms
+        if (!msec) {
+            interval_usec *= 1000;
+        }
+        stop = false;
+    }
+
+    virtual ~ticker_thread_t() {}
+
+    void shutdown()
+    {
+        stop = true;
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+    }
+
+    void run()
+    {
+        while (true) {
+            lintel::atomic_thread_fence(lintel::memory_order_acquire);
+            if (stop) {
+                return;
+            }
+            ::usleep(interval_usec);
+            if (msec) {
+                sysevent::log(logrec_t::t_tick_msec);
+            }
+            else {
+                sysevent::log(logrec_t::t_tick_sec);
+            }
+        }
+    }
+
+private:
+    int interval_usec;
+    bool msec;
+    bool stop;
+    // 80 bytes is enough to hold ticker logrec
+    char lrbuf[80];
+};
 
 
 class flush_daemon_thread_t : public smthread_t {
@@ -517,6 +564,11 @@ log_core::log_core(const sm_options& options)
     memmove(_buf + offset - prime_offset, _buf, prime_offset);
 
     start_flush_daemon();
+    _ticker = NULL;
+    if (options.get_bool_option("sm_ticker_enable", false)) {
+        bool msec = options.get_bool_option("sm_ticker_msec", false);
+        _ticker = new ticker_thread_t(msec);
+    }
 
     if (1) {
         smlevel_0::errlog->clog << debug_prio
@@ -546,9 +598,23 @@ log_core::log_core(const sm_options& options)
     }
 }
 
+rc_t log_core::init()
+{
+    if (_ticker) {
+        _ticker->fork();
+    }
+
+    return RCOK;
+}
 
 log_core::~log_core()
 {
+    if (_ticker) {
+        _ticker->shutdown();
+        _ticker->join();
+        delete _ticker;
+    }
+
     delete _storage;
     delete _oldest_lsn_tracker;
 

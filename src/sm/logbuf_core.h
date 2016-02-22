@@ -46,6 +46,7 @@ public:
 public:
     logbuf_core(const sm_options&);
     ~logbuf_core();
+    virtual rc_t init() { return RCOK; };
 
     static const std::string IMPL_NAME;
 
