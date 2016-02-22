@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -88,15 +88,15 @@ typedef smlevel_0::fileoff_t fileoff_t;
  *  Return false if EOF reached. true otherwise.
  *
  *********************************************************************/
-bool log_i::xct_next(lsn_t& lsn, logrec_t& r)  
+bool log_i::xct_next(lsn_t& lsn, logrec_t& r)
 {
-    // Initially (before the first xct_next call, 
+    // Initially (before the first xct_next call,
     // 'cursor' is set to the starting point of the scan
-    // After each xct_next call, 
+    // After each xct_next call,
     // 'cursor' is set to the lsn of the next log record if forward scan
     // or the lsn of the fetched log record if backward scan
     // log.fetch() returns eEOF when it reaches the end of the scan
-    
+
     bool eof = (cursor == lsn_t::null);
 
     if (! eof) {
@@ -104,7 +104,9 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t& r)
         logrec_t* b;
         rc_t rc = log.fetch(lsn, b, &cursor, forward_scan);  // Either forward or backward scan
 
-        memcpy(&r, b, sizeof(logrec_t));
+        if (!rc.is_error())  {
+            memcpy(&r, b, b->length());
+        }
         // release right away, since this is only
         // used in recovery.
         log.release();
@@ -112,11 +114,11 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t& r)
         if (rc.is_error())  {
             last_rc = RC_AUGMENT(rc);
             RC_APPEND_MSG(last_rc, << "trying to fetch lsn " << cursor);
-            
+
             if (last_rc.err_num() == eEOF)
                 eof = true;
             else  {
-                smlevel_0::errlog->clog << fatal_prio 
+                smlevel_0::errlog->clog << fatal_prio
                 << "Fatal error : " << last_rc << flushl;
             }
         }
