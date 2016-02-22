@@ -59,7 +59,9 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
 
     W_COERCE(me()->open(dbfile.c_str(), open_flags, 0666, _unix_fd));
 
-    _dirty_pages = new buf_tab_t(chkpt_info->buf_tab);
+    if (chkpt_info) {
+        _dirty_pages = new buf_tab_t(chkpt_info->buf_tab);
+    }
 }
 
 vol_t::~vol_t()
@@ -492,7 +494,7 @@ rc_t vol_t::read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn)
         p.fix_nonbufferpool_page(buf);
         W_DO(smlevel_0::recovery->recover_single_page(p, emlsn));
         delete_dirty_page(pnum);
-        cerr << "Recovered " << pnum << " to LSN " << emlsn << endl;
+        // cerr << "Recovered " << pnum << " to LSN " << emlsn << endl;
     }
 
     // if (buf->pid != pnum) {
