@@ -728,11 +728,12 @@ chkpt_thread_t::~chkpt_thread_t()
 void
 chkpt_thread_t::run()
 {
-    // Thread waits for an awake signal or for the interval timeout
+    // Thread waits for an awake signal or for the interval timeout;
+    // whichever comes first
     while(! _retire)
     {
         w_assert1(ss_m::chkpt);
-        CRITICAL_SECTION(cs, _awaken_lock);
+        DO_PTHREAD(pthread_mutex_lock(&_awaken_lock));
 
         struct timespec timeout;
         sthread_t::timeout_to_timespec(_interval * 1000, timeout); // in ms
@@ -743,6 +744,9 @@ chkpt_thread_t::run()
         if(_retire) break;
 
         ss_m::chkpt->take();
+
+        // CS: see comment on awaken()
+        DO_PTHREAD(pthread_mutex_unlock(&_awaken_lock));
     }
 }
 
@@ -756,6 +760,15 @@ chkpt_thread_t::retire()
 void
 chkpt_thread_t::awaken()
 {
-    CRITICAL_SECTION(cs, _awaken_lock);
+    // Signal may well be lost, which means checkpoint is already running.
+    // If an unlucky sequence of events causes the signal to be missed while
+    // the checkpoint thread is not running, it should not be a problem since
+    // the caller who is waiting on a checkpoint (e.g.,
+    // log_storage::get_partition_for_flush) should keep retrying in a loop.
+    // Therefore, there's no need for acquiring the mutex here.
+    // Since the chkpt thread runs in an interval, there's also no need to
+    // use some kind of condition variable like _wakeup_received. We might want
+    // to revisit this later and support a chkpt thread that only runs when
+    // recieving a signal (e.g., if _interval < 0).
     DO_PTHREAD(pthread_cond_signal(&_awaken_cond));
 }
