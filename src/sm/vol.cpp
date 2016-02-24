@@ -18,8 +18,6 @@
 #include "sm_du_stats.h"
 #include "sm_options.h"
 
-#include "sm_vtable_enum.h"
-
 #include "alloc_cache.h"
 #include "bf_tree.h"
 #include "restore.h"

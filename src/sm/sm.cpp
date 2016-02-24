@@ -70,7 +70,6 @@ class prologue_rc_t;
 #include "chkpt.h"
 #include "chkpt_serial.h"
 #include "sm.h"
-#include "sm_vtable_enum.h"
 #include "prologue.h"
 #include "vol.h"
 #include "bf_tree.h"

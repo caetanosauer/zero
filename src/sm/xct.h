@@ -315,10 +315,6 @@ public:
 
     friend ostream&             operator<<(ostream&, const xct_t&);
 
-    static int                  collect(vtable_t&, bool names_too);
-    void                        vtable_collect(vtable_row_t &);
-    static void                 vtable_collect_names(vtable_row_t &);
-
     state_t                     state() const;
     void                        set_timeout(timeout_in_ms t) ;
 

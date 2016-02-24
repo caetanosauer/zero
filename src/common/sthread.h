@@ -92,7 +92,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "w_strstream.h"
 #include "stime.h"
 #include "gethrtime.h"
-#include <vtable.h>
 #include <w_list.h>
 #include <vector>
 
@@ -650,18 +649,6 @@ public:
 
     static void       dump_stats(ostream &);
     static void       reset_stats();
-
-    /// Collect a row of a virtual table. One row per thread.
-    /// Subclasses override this.
-    virtual void      vtable_collect(vtable_row_t &); // to be over-ridden
-    /// Stuff the attribute names in this row.
-    static  void      vtable_collect_names(vtable_row_t &); // to be over-ridden
-
-    /// Collect an entire table, one row per thread that the sthreads package
-    /// knows about. If attr_names_too is true, the first row will be
-    /// attribute names.
-    static int        collect(vtable_t&v, bool attr_names_too=true);
-                        // in vtable_sthread.cpp
 
     static void      find_stack(void *address);
     static void      for_each_thread(ThreadFunc& f);

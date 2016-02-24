@@ -1448,7 +1448,6 @@ static    void    get_large_file_size(int64_t &max_os_file_size)
  *  is called, it sets up the environment
  *
  *********************************************************************/
-#include "sthread_vtable_enum.h"
 
 // We'll have the ss_m constructor do this and just to be safe,
 // we'll have fork also do this init.

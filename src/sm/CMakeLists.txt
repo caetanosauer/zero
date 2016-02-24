@@ -37,7 +37,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/lock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_dump.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_lil.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/lock_vtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_raw.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_x.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_carray.cpp
@@ -63,9 +62,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/stnode_page.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/vol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/xct.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/vtable_sm.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/vtable_smthread.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/vtable_xct.cpp)
+)
 
 add_library(sm STATIC ${sm_STAT_SRCS})
 target_link_libraries(sm common numa)

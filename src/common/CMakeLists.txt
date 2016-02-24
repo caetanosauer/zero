@@ -9,7 +9,6 @@ set(common_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/io.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/sdisk_unix.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/sdisk.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/vtable_sthread.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/w_debug.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/rand48.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/block_alloc.cpp
@@ -18,7 +17,6 @@ set(common_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/gethrtime.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/w_compat_strstream.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/stime.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/vtable.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/w_base.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/w_listm.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/tls.cpp
