@@ -30,9 +30,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logarchiver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/mem_mgmt.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_core.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_hashtable.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_seg.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_dump.cpp
@@ -181,12 +178,6 @@ SET (GENFILES_H ${SM_STATS_GENFILES_B_H} ${BF_HTAB_STATS_GENFILES_B_H} ${LOGDEF_
 #   ${CMAKE_CURRENT_SOURCE_DIR}/device.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/fixable_page_h.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.h
-
-#   ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_common.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_core.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_hashtable.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_seg.h
-
 #   ${CMAKE_CURRENT_SOURCE_DIR}/lid.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/lock_bucket.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/lock_cache.h

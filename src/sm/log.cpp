@@ -74,8 +74,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <boost/static_assert.hpp>
 #include <vector>
 
-#include "logbuf_common.h"
-
 
 typedef smlevel_0::fileoff_t fileoff_t;
 

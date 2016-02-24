@@ -59,8 +59,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define PARTITION_H
 #include "w_defines.h"
 
-// LOG_BUFFER switch
-#include "logbuf_common.h"
 #include "logrec.h"
 
 
@@ -89,11 +87,11 @@ public:
     enum { nosize = -1 };
 
     NORET             partition_t() :
-                            _index(0), 
-                            _num(0), 
-                            _mask(0), 
-                            _size(0), 
-                            _eop(0), 
+                            _index(0),
+                            _num(0),
+                            _mask(0),
+                            _size(0),
+                            _eop(0),
                             _owner(0),
                             _fhdl_rd(invalid_fhdl),
                             _fhdl_app(invalid_fhdl)
@@ -109,14 +107,14 @@ public:
 
     /////////////////// DATA
     static int            _artificial_flush_delay;  // in microseconds
-private: 
-    partition_index_t     _index; 
+private:
+    partition_index_t     _index;
     partition_number_t    _num;
     uint32_t     _mask;
     // logical end of partition is _size;
     fileoff_t             _size;
     // physical end of partition
-    fileoff_t             _eop; 
+    fileoff_t             _eop;
     log_storage*             _owner;
     lsn_t                 _last_skip_lsn;
     // Read and append file handles
@@ -163,11 +161,11 @@ public:
                             char* writebuf,
 #endif
                             int fd,
-                            lsn_t lsn, 
-                            const char* const buf, 
-                            long start1, 
-                            long end1, 
-                            long start2, 
+                            lsn_t lsn,
+                            const char* const buf,
+                            long start1,
+                            long end1,
+                            long start2,
                             long end2);
 
     /*
@@ -181,7 +179,7 @@ public:
                 int fd,
                 lsn_t lsn,
                 int64_t size,
-                int64_t write_size, 
+                int64_t write_size,
                 sdisk_base_t::iovec_t *iov,
                 uint32_t seg_cnt);
     // read an entire segment

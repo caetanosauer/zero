@@ -85,9 +85,7 @@ class prologue_rc_t;
 
 #include "allocator.h"
 #include "plog_xct.h"
-#include "logbuf_common.h"
 #include "log_core.h"
-#include "logbuf_core.h"
 #include "eventlog.h"
 
 
@@ -308,14 +306,7 @@ ss_m::_construct_once()
      *  Level 1
      */
 #ifndef USE_ATOMIC_COMMIT // otherwise, log and clog will point to the same log object
-    std::string logimpl = _options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
-    if (logimpl == logbuf_core::IMPL_NAME) {
-        log = new logbuf_core(_options);
-    }
-    else { // traditional
-        log = new log_core(_options);
-    }
-
+    log = new log_core(_options);
     ERROUT(<< "[" << timer.time_ms() << "] Initializing log manager (part 2)");
     W_COERCE(log->init());
 #else
