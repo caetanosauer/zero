@@ -911,8 +911,6 @@ log_storage::_close_min(partition_number_t n)
     // kick the cleaner thread(s)
     //if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
 
-    FUNC(log_storage::close_min);
-
     /*
      *  If a free partition exists, return it.
      */
@@ -1021,8 +1019,6 @@ log_storage::_close_min(partition_number_t n)
 long
 log_storage::prime(char* buf, lsn_t next, size_t block_size, bool read_whole_block)
 {
-    FUNC(log_storage::prime);
-
     // get offset of block that contains "next"
     sm_diskaddr_t b = sm_diskaddr_t(_floor(next.lo(), block_size));
 

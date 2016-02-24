@@ -29,7 +29,6 @@ btree_impl::_ux_insert(
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
-    FUNC(btree_impl::_ux_insert);
     INC_TSTAT(bt_insert_cnt);
     while (true) {
         rc_t rc = _ux_insert_core (store, key, el);
@@ -282,7 +281,6 @@ rc_t btree_impl::_ux_insert_core_tail(StoreID store,
 
 rc_t btree_impl::_sx_reserve_ghost(btree_page_h &leaf, const w_keystr_t &key, int elem_len)
 {
-    FUNC(btree_impl::_sx_reserve_ghost);
     sys_xct_section_t sxs (true); // this transaction will output only one log!
     W_DO(sxs.check_error_on_start());
     rc_t ret = _ux_reserve_ghost_core(leaf, key, elem_len);
@@ -491,7 +489,6 @@ rc_t btree_impl::_ux_overwrite_core(
 rc_t
 btree_impl::_ux_remove(StoreID store, const w_keystr_t &key, const bool undo)
 {
-    FUNC(btree_impl::_ux_remove);
     INC_TSTAT(bt_remove_cnt);
     while (true) {
         rc_t rc = _ux_remove_core (store, key, undo);
@@ -597,7 +594,6 @@ btree_impl::_ux_undo_ghost_mark(StoreID store, const w_keystr_t &key)
     // The delete log record knowns whether the insertion came for page rebalance operation or not
     // so the 'undo' won't happen for those deletions.
 
-    FUNC(btree_impl::_ux_undo_ghost_mark);
     w_assert1(key.is_regular());
     btree_page_h         leaf;
     W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true/*allow retry*/, true /*from undo*/));

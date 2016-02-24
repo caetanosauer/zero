@@ -48,7 +48,6 @@ PageID btree_page_h::child(slotid_t slot) const
 
 btrec_t&
 btrec_t::set(const btree_page_h& page, slotid_t slot) {
-    FUNC(btrec_t::set);
     w_assert3(slot >= 0 && slot < page.nrecs());
 
     _elem.reset();
@@ -1196,7 +1195,6 @@ btree_page_h::robust_search(const char *key_raw, size_t key_raw_len,
 void btree_page_h::search_node(const w_keystr_t& key,
                                slotid_t&         return_slot) const {
     w_assert1(!is_leaf());
-    FUNC(btree_page_h::_search_node);
 
     bool found_key;
     search(key, found_key, return_slot);
@@ -1236,7 +1234,6 @@ void btree_page_h::_update_btree_consecutive_skewed_insertions(slotid_t slot) {
 
 rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, PageID child,
     const lsn_t& child_emlsn) {
-    FUNC(btree_page_h::insert);
 
     w_assert1(is_node());
     w_assert1(slot >= 0 && slot <= nrecs()); // <= intentional to allow appending

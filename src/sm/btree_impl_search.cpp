@@ -24,7 +24,6 @@
 rc_t
 btree_impl::_ux_lookup(StoreID store, const w_keystr_t& key, bool& found,
                        void* el, smsize_t& elen) {
-    FUNC(btree_impl::_ux_lookup);
     INC_TSTAT(bt_find_cnt);
     while (true) {
         rc_t rc = _ux_lookup_core (store, key, found, el, elen);
@@ -89,7 +88,6 @@ rc_t
 btree_impl::_ux_traverse(StoreID store, const w_keystr_t &key,
                          traverse_mode_t traverse_mode, latch_mode_t leaf_latch_mode,
                          btree_page_h &leaf, bool allow_retry, const bool from_undo) {
-    FUNC(btree_impl::_ux_traverse);
     INC_TSTAT(bt_traverse_cnt);
     if (key.is_posinf()) {
         if (traverse_mode == t_fence_contain) {
@@ -158,7 +156,6 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
                                  btree_page_h&                leaf,
                                  PageID&                     leaf_pid_causing_failed_upgrade,
                                  const bool                   from_undo) {
-    FUNC(btree_impl::_ux_traverse_recurse);
     INC_TSTAT(bt_partial_traverse_cnt);
 
     /// cache the flag to avoid calling the functions each time

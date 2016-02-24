@@ -27,7 +27,6 @@ rc_t btree_impl::_sx_defrag_tree(
     bool does_adopt,
     bool does_merge)
 {
-    FUNC(btree_impl::_sx_defrag_tree);
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());
     rc_t ret = _ux_defrag_tree_core (store,
@@ -56,7 +55,6 @@ rc_t btree_impl::_ux_defrag_tree_core(
 
 rc_t btree_impl::_sx_defrag_page(btree_page_h &page)
 {
-    FUNC(btree_impl::_sx_defrag_page);
     sys_xct_section_t sxs (true); // this will emit a single log record
     W_DO(sxs.check_error_on_start());
     rc_t ret = _ux_defrag_page_core (page);

@@ -47,7 +47,6 @@ rc_t btree_impl::_ux_create_tree_core(const StoreID& stid, const PageID& root_pi
 rc_t
 btree_impl::_sx_shrink_tree(btree_page_h& rp)
 {
-    FUNC(btree_impl::_sx_shrink_tree);
     if( rp.nrecs() > 0 || rp.get_foster() != 0) {
         // then still not the time for shrink
         W_DO (_sx_adopt_foster_all_core (rp, true, false));
@@ -117,7 +116,6 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
 rc_t
 btree_impl::_sx_grow_tree(btree_page_h& rp)
 {
-    FUNC(btree_impl::_sx_grow_tree);
     PageID new_pid;
     // allocate a page as separate system transaction
     W_DO(smlevel_0::vol->alloc_a_page(new_pid));

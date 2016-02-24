@@ -298,7 +298,6 @@ rc_t bt_cursor_t::next()
 
 rc_t bt_cursor_t::_find_next(btree_page_h &p, bool &eof)
 {
-    FUNC(bt_cursor_t::_find_next);
     while (true) {
         if (_dont_move_next) {
             _dont_move_next = false;
@@ -320,7 +319,6 @@ rc_t bt_cursor_t::_find_next(btree_page_h &p, bool &eof)
 
 rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
 {
-    FUNC(bt_cursor_t::_advance_one_slot);
     w_assert1(p.is_fixed());
     w_assert1(_slot <= p.nrecs());
 
@@ -448,8 +446,6 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
 
 rc_t bt_cursor_t::_make_rec(const btree_page_h& page)
 {
-    FUNC(bt_cursor_t::_make_rec);
-
     // Copy the record to buffer
     bool ghost;
     _elen = sizeof(_elbuf);

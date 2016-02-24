@@ -46,7 +46,6 @@ btree_m::max_entry_size() {
 rc_t
 btree_m::create(StoreID stid, PageID root)
 {
-    FUNC(btree_m::create);
     DBGTHRD(<<"btree create: stid " << stid);
 
     W_DO(btree_impl::_ux_create_tree_core(stid, root));

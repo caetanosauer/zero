@@ -332,7 +332,6 @@ rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
                                                       btree_page_h &child, bool &pushedup,
                                                       const bool from_recovery)
 {
-    FUNC(btree_impl::_sx_opportunistic_adopt_foster);
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.is_node());
     w_assert1 (child.is_fixed());

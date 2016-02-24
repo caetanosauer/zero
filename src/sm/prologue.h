@@ -75,7 +75,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 // pin_cnt_change : when the prologue_rc_t is destructed, there
 //  can be up to this many extra pins lingering.
 #define SM_PROLOGUE_RC(func_name, is_in_xct, constrnt, pin_cnt_change)         \
-    FUNC(func_name);                                                           \
     prologue_rc_t prologue(prologue_rc_t::is_in_xct,                           \
                            prologue_rc_t::constrnt, (pin_cnt_change));         \
     if (prologue.error_occurred()) return prologue.rc();
@@ -86,7 +85,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 // NOTE: 2nd arg readwrite has to be fully specified by caller
 // so that it can be conditional  (see scan.cpp)
 #define INIT_SCAN_PROLOGUE_RC(func_name, readwrite, pin_cnt_change)            \
-    FUNC(func_name);                                                           \
     prologue_rc_t prologue(prologue_rc_t::in_xct,                              \
             readwrite, (pin_cnt_change));                                      \
     if (prologue.error_occurred()) {                                           \
@@ -95,7 +93,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 // SCAN_METHOD_PROLOGUE_RC is for the methods, which return an rc
 #define SCAN_METHOD_PROLOGUE(func_name, constraint, pin_cnt_change)            \
-    FUNC(func_name);                                                           \
     prologue_rc_t prologue(prologue_rc_t::in_xct,                              \
             prologue_rc_t::constraint,   (pin_cnt_change));                    \
     if (prologue.error_occurred()) {                                           \

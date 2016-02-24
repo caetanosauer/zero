@@ -174,7 +174,6 @@ log_common::log_common(const sm_options& options)
       _shutting_down(false),
       _flush_daemon_running(false)
 {
-    FUNC(log_common::log_common);
     set_option_logsize(options);
 
     // adjust actual size of log buffer (round to segment size)
@@ -395,8 +394,6 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     /*
      * STEP 1: Open the partition
      */
-    FUNC(log_core::fetch);
-
     DBGTHRD(<<"fetching lsn " << ll
         << " , _curr_lsn = " << curr_lsn()
         << " , _durable_lsn = " << durable_lsn());
@@ -588,8 +585,6 @@ void log_core::shutdown()
 log_core::log_core(const sm_options& options)
       : log_common(options)
 {
-    FUNC(log_core::log_core);
-
 #ifdef LOG_DIRECT_IO
     posix_memalign((void**)&_buf, LOG_DIO_ALIGN, _segsize);
 #else

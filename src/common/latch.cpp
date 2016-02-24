@@ -411,7 +411,6 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
     sthread_t::timeout_in_ms timeout,
     latch_holder_t* me)
 {
-    FUNC(latch_t::_acquire);
     DBGTHRD( << "want to acquire in mode "
             << W_ENUM(new_mode) << " " << *this
             );
@@ -533,7 +532,6 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
 int
 latch_t::_release(latch_holder_t* me)
 {
-    FUNC(latch_t::release);
     DBGTHRD(<< "want to release " << *this );
 
     w_assert2(me->_latch == this);
@@ -571,7 +569,6 @@ void latch_t::downgrade() {
 void
 latch_t::_downgrade(latch_holder_t* me)
 {
-    FUNC(latch_t::downgrade);
     DBGTHRD(<< "want to downgrade " << *this );
 
     w_assert3(me->_latch == this);
@@ -641,13 +638,11 @@ void print_latch(const latch_t *l)
 // For use in debugger:
 void print_my_latches()
 {
-    FUNC(print_my_latches);
     holders_print all(latch_holder_t::thread_local_holders);
 }
 
 void print_all_latches()
 {
-    FUNC(print_all_latches);
 // Don't protect: this is for use in a debugger.
 // It's absolutely dangerous to use in a running
 // storage manager, since these lists will be

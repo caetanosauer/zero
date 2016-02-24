@@ -53,8 +53,6 @@ rc_t plog_xct_t::get_logbuf(logrec_t*& lr, int /* type */)
 rc_t plog_xct_t::give_logbuf(logrec_t* lr, const fixable_page_h* p,
                     const fixable_page_h* p2)
 {
-    FUNC(plog_xct_t::give_logbuf);
-
     if (p != NULL) {
         lr->set_page_prev_lsn(lsn_t::null);
         if (p2 != NULL) {

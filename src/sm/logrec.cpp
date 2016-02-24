@@ -204,7 +204,6 @@ logrec_t::valid_header(const lsn_t & lsn) const
  *********************************************************************/
 void logrec_t::redo(fixable_page_h* page)
 {
-    FUNC(logrec_t::redo);
     DBG( << "Redo  log rec: " << *this
         << " size: " << header._len << " xid_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xid_prev()) );
 
@@ -253,7 +252,6 @@ logrec_t::undo(fixable_page_h* page)
 {
     w_assert0(!is_single_sys_xct()); // UNDO shouldn't be called for single-log sys xct
     undoing_context = logrec_t::kind_t(header._type);
-    FUNC(logrec_t::undo);
     DBG( << "Undo  log rec: " << *this
         << " size: " << header._len  << " xid_prevlsn: " << xid_prev());
 

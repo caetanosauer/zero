@@ -84,44 +84,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 *  word "all", the message is printed.
 *
 *
-**** FUNC(fname)  dumps the function name.
-**** RETURN   prints that the function named by __func__ is returning
-*             This macro  MUST appear within braces if used after "if",
-*              "else", "while", etc.
-*
-**** DBG(arg) prints line & file and the message arg if __func__
-*              appears in the debug environment variable.
-*             The argument must be the innermost part of legit C++
-*             print statement, and it works ONLY in C++ sources.
-*
-*  Example :
-*
-* \code
-*    returntype
-*    proc(args)
-*    {
-*        FUNC(proc);
-*       ....body...
-*
-*       DBG(
-*          << "message" << value
-*          << "more message";
-*          if(test) {
-*             cerr << "xyz";
-*          }
-*          cerr
-*       )
-*
-*       ....more body...
-*       if(predicate) {
-*           RETURN value;
-*        }
-*    }
-*  \endcode
-*
- * FUNC, and RETURN macros' definitions depend on how
- * the storage manager is configured.
- * They don't do a lot unless configured with --enable-trace
 */
 #include <cassert>
 #include <pthread.h>
@@ -147,28 +109,6 @@ typedef    ios::fmtflags    w_dbg_fmtflags;
     (strrchr(f, '/') ? strrchr(f, '/') + 1 : f)
 
 
-#define FUNC(fn)\
-  do { \
-    if(_w_debug.flag_on(__func__,_strip_filename(__FILE__))) {              \
-        _w_debug.clog << __LINE__ << " "                   \
-        << _strip_filename(__FILE__) << ": " << __func__   \
-        << flushl;                                         \
-    }                                                      \
-  } while(0)
-
-#define RETURN \
-                do { \
-            if(_w_debug.flag_on(__func__,_strip_filename(__FILE__))) {\
-            w_dbg_fmtflags old = _w_debug.clog.setf(ios::dec, ios::basefield); \
-            _w_debug.clog  << __LINE__ << " " << _strip_filename(__FILE__) << ":" ; \
-            _w_debug.clog.setf(old, ios::basefield); \
-            _w_debug.clog << "return from " << __func__ << flushl; } } while(0); \
-            return
-
-#else /* -UW_TRACE */
-#    define FUNC(fn)
-#    undef RETURN
-#    define RETURN return
 #endif  /* W_TRACE*/
 
 /* ************************************************************************  */

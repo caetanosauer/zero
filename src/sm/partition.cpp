@@ -128,8 +128,6 @@ void
 partition_t::open_for_append(partition_number_t __num,
         const lsn_t& end_hint)
 {
-    FUNC(partition::open_for_append);
-
     // shouldn't be calling this if we're already open
     w_assert3(!is_open_for_append());
     // We'd like to use this assertion, but in the
@@ -869,8 +867,6 @@ again:
 void
 partition_t::_skip(const lsn_t &ll, int fd)
 {
-    FUNC(partition_t::skip);
-
     // Current partition should flush(), not skip()
     w_assert1(_num == 0 || _num != _owner->partition_num());
 
@@ -923,8 +919,6 @@ w_rc_t
 partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
         lsn_t* prev_lsn, int fd)
 {
-    // FUNC(partition::read);
-
     INC_TSTAT(log_fetches);
 
     if(fd == invalid_fhdl) fd = fhdl_rd();
@@ -1031,7 +1025,6 @@ partition_t::open_for_read(
     bool err // = true.  if true, it's an error for the partition not to exist
 )
 {
-    FUNC(partition_t::open_for_read);
     // protected w_assert2(_owner->_partition_lock.is_mine()==true);
     // asserted before call in srv_log.cpp
 
@@ -1220,7 +1213,6 @@ partition_t::peek(
     int *                fdp
 )
 {
-    FUNC(partition_t::peek);
     // this is a static func so we cannot assert this:
     // w_assert2(_owner->_partition_lock.is_mine()==true);
     int fd;

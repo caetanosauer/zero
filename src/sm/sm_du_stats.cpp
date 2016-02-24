@@ -94,7 +94,6 @@ btree_lf_stats_t::add(const btree_lf_stats_t& stats)
 w_rc_t
 btree_lf_stats_t::audit() const
 {
-    FUNC(btree_lf_stats_t::audit);
     w_rc_t result;
     if (total_bytes() % smlevel_0::page_sz != 0) {
         DBG(
@@ -168,7 +167,6 @@ btree_int_stats_t::add(const btree_int_stats_t& stats)
 w_rc_t
 btree_int_stats_t::audit() const
 {
-    FUNC(btree_int_stats_t::audit);
     w_rc_t result;
     if (total_bytes() % smlevel_0::page_sz != 0) {
         DBG(
@@ -239,7 +237,6 @@ btree_stats_t::add(const btree_stats_t& stats)
 w_rc_t
 btree_stats_t::audit() const
 {
-    FUNC(btree_stats_t::audit);
     // BYTE COUNTS
     W_DO(leaf_pg.audit());
     W_DO(int_pg.audit());
@@ -353,7 +350,6 @@ volume_hdr_stats_t::add(const volume_hdr_stats_t& stats)
 w_rc_t
 volume_hdr_stats_t::audit() const
 {
-    FUNC(volume_hdr_stats_t::audit);
     w_rc_t result;
     if (extent_size != smlevel_0::ext_sz) {
         DBG(
@@ -415,7 +411,6 @@ volume_map_stats_t::add(const volume_map_stats_t& stats)
 w_rc_t
 volume_map_stats_t::audit() const
 {
-    FUNC(volume_map_stats_t::audit);
     W_DO(store_directory.audit());
     W_DO(root_index.audit());
 
@@ -512,7 +507,6 @@ sm_du_stats_t::add(const sm_du_stats_t& stats)
 w_rc_t
 sm_du_stats_t::audit() const
 {
-    FUNC(sm_du_stats_t::audit);
     W_DO(btree.audit());
 
     W_DO(volume_hdr.audit());

@@ -701,39 +701,6 @@ DumpBlockedThreads(ostream& o);
 #undef DBGTHRD
 #endif
 #define DBGTHRD(arg) DBG(<< " th." << smthread_t::me()->id << " " arg)
-#ifdef W_TRACE
-/*
- * Redefine FUNC to print the thread id
- * (Be careful here that we are basing our printing on the
- * name given as an argument, not __func__, which would
- * give us the constructor func_helper::func_helper.)
- */
-class func_helper {
-    static __thread int depth;
-    bool entered;
-    const char *file;
-    int line;
-public:
-    func_helper(const char *name,
-            const char *f, int l) : entered(false), file(f), line(l) {
-        if(_w_debug.flag_on(name,file)) {
-        ++depth;
-        entered=true;
-        DBG2(<< " th." << smthread_t::me()->id << " " << name
-                << " " << depth << "-{", file, line);
-        }
-    }
-    ~func_helper() {
-        if(entered) {
-            DBG2(<< " th." << smthread_t::me()->id << " " << depth << "-}",
-                file, line);
-            depth--;
-        }
-    }
-};
-#undef FUNC
-#define FUNC(fn) func_helper local_func_helper(__func__, __FILE__, __LINE__);
-#endif /* W_TRACE */
 
 /**\endcond skip */
 

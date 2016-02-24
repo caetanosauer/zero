@@ -352,7 +352,6 @@ rc_t btree_impl::_sx_merge_foster(btree_page_h &page)
     // it does not get called from normal B-tree operation, in fact, it appears that
     // the normal B-tree operation does not perform page merge currently (feature is not enabled)
 
-    FUNC(btree_impl::_sx_merge_foster);
     w_assert1 (page.latch_mode() == LATCH_EX);
     if (page.get_foster() == 0) {
         return RCOK; // nothing to rebalance
@@ -551,7 +550,6 @@ void btree_impl::_ux_merge_foster_apply_parent(
 
 rc_t btree_impl::_sx_deadopt_foster(btree_page_h &real_parent, slotid_t foster_parent_slot)
 {
-    FUNC(btree_impl::_sx_deadopt_foster);
     sys_xct_section_t sxs(true);
     W_DO(sxs.check_error_on_start());
     rc_t ret = _ux_deadopt_foster_core(real_parent, foster_parent_slot);

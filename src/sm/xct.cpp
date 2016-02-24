@@ -385,7 +385,6 @@ xct_t::xct_core::~xct_core()
  *********************************************************************/
 xct_t::~xct_t()
 {
-    FUNC(xct_t::~xct_t);
     w_assert9(__stats == 0);
 
     if (!_sys_xct && smlevel_0::log) {
@@ -908,7 +907,6 @@ xct_t::_teardown(bool is_chaining) {
 void
 xct_t::change_state(state_t new_state)
 {
-    FUNC(xct_t::change_state);
     w_assert1(one_thread_attached());
 
     // Acquire a write latch, the traditional read latch is used by checkpoint
@@ -1008,7 +1006,6 @@ xct_t::update_threads() const
 rc_t
 xct_t::add_dependent(xct_dependent_t* dependent)
 {
-    FUNC(xct_t::add_dependent);
     CRITICAL_SECTION(xctstructure, *this);
     w_assert9(dependent->_link.member_of() == 0);
 
@@ -1020,7 +1017,6 @@ xct_t::add_dependent(xct_dependent_t* dependent)
 rc_t
 xct_t::remove_dependent(xct_dependent_t* dependent)
 {
-    FUNC(xct_t::remove_dependent);
     CRITICAL_SECTION(xctstructure, *this);
     w_assert9(dependent->_link.member_of() != 0);
 
@@ -1043,7 +1039,6 @@ xct_t::remove_dependent(xct_dependent_t* dependent)
 bool
 xct_t::find_dependent(xct_dependent_t* ptr)
 {
-    FUNC(xct_t::find_dependent);
     xct_dependent_t        *d;
     CRITICAL_SECTION(xctstructure, *this);
     w_assert1(is_1thread_xct_mutex_mine());
@@ -1670,7 +1665,6 @@ void xct_t::_update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) 
 rc_t
 xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h *page2)
 {
-    FUNC(xct_t::give_logbuf);
     // set page LSN chain
     if (page != NULL) {
         l->set_page_prev_lsn(page->lsn());
@@ -1726,7 +1720,6 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
 void
 xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
 {
-    FUNC(xct_t::release_anchor);
 
 #if X_LOG_COMMENT_ON
     if(and_compensate) {
@@ -1979,8 +1972,6 @@ xct_t::_compensate(const lsn_t& lsn, bool undoable)
 rc_t
 xct_t::rollback(const lsn_t &save_pt)
 {
-    FUNC(xct_t::rollback);
-
 #ifdef USE_ATOMIC_COMMIT
     ss_m::errlog->clog  << emerg_prio
     << "Rollback to a save point not yet supported in atomic commit protocol"
@@ -2161,7 +2152,6 @@ done:
 void
 xct_t::attach_thread()
 {
-    FUNC(xct_t::attach_thread);
     smthread_t *thr = g_me();
     CRITICAL_SECTION(xctstructure, *this);
 
@@ -2180,7 +2170,6 @@ xct_t::attach_thread()
 void
 xct_t::detach_thread()
 {
-    FUNC(xct_t::detach_thread);
     CRITICAL_SECTION(xctstructure, *this);
     w_assert3(is_1thread_xct_mutex_mine());
     _core->_threads_attached--;
