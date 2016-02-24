@@ -408,11 +408,9 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     // the proper mutexes. Therefore, we can't do it here.
     // _sanity_check();
 #endif
-
-    // protect against double-acquire
     _storage->acquire_partition_lock(); // caller must release it
 
-    lintel::atomic_thread_fence(lintel::memory_order_consume);
+    lintel::atomic_thread_fence(lintel::memory_order_acquire);
     if (ll < _fetch_buf_end && ll >= _fetch_buf_begin)
     {
         // log record can be found in fetch buffer -- no I/O
@@ -457,6 +455,8 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 
     // it's not sufficient to flush to ll, since ll is at the *beginning* of
     // what we want to read, so force a flush when necessary
+    // CS TODO: this is problematic, because we may wait forever for this flush
+    // if there is no transaction activity.
     lsn_t must_be_durable = ll + sizeof(logrec_t);
     if(must_be_durable > _durable_lsn) {
         W_DO(flush(must_be_durable));
@@ -1548,14 +1548,14 @@ rc_t log_core::load_fetch_buffers()
 
 void log_core::discard_fetch_buffers()
 {
-    _storage->acquire_partition_lock();
-
     if (_fetch_buf_loader) {
         _fetch_buf_loader->join();
         delete _fetch_buf_loader;
     }
 
-    for (size_t p = _fetch_buf_first; p <= _fetch_buf_last; p++) {
+    _storage->acquire_partition_lock();
+
+    for (size_t p = _fetch_buf_first; p > 0 && p <= _fetch_buf_last; p++) {
         size_t i = p - _fetch_buf_first;
         if (_fetch_buffers[i]) {
             delete[] _fetch_buffers[i];
@@ -1565,6 +1565,8 @@ void log_core::discard_fetch_buffers()
     _fetch_buffers.clear();
     _fetch_buf_first = 0;
     _fetch_buf_last = 0;
+    _fetch_buf_begin = lsn_t::null;
+    _fetch_buf_end = lsn_t::null;
 
     _storage->release_partition_lock();
 }
