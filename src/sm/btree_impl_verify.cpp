@@ -17,7 +17,6 @@
 
 // these are for volume-wide verifications
 #include "sm.h"
-#include "pmap.h"
 #include "vol.h"
 #include "xct.h"
 #include "sm_base.h"

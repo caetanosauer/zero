@@ -537,7 +537,6 @@ ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state);
 
 #if defined(SM_SOURCE)
 #    include <fixable_page_h.h>
-#    include <pmap.h>
 #    include <log.h>
 #    include <vol.h>
 
