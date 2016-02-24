@@ -10,7 +10,6 @@
 #include "tatas.h"
 #include "vol.h"
 #include "generic_page.h"
-#include "bf_idx.h"
 #include "bf_hashtable.h"
 #include "bf_tree_cb.h"
 #include <iosfwd>

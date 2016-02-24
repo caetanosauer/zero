@@ -65,7 +65,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sthread.h"
 #include "basics.h"
 #include <w_debug.h>
-#include <sysdefs.h>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <climits>
+#include <w_stream.h>
+#include <w.h>
 #include <vec_t.h>
 #include <latch.h>
 #if defined(SM_SOURCE)

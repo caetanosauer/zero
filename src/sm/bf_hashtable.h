@@ -7,8 +7,9 @@
 
 #include "basics.h"
 #include "w_defines.h"
-#include "bf_idx.h"
 #include <utility>
+
+typedef uint32_t bf_idx;
 
 template<class T>
 class bf_hashbucket;

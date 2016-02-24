@@ -5,7 +5,7 @@
 #ifndef FIXABLE_PAGE_H_H
 #define FIXABLE_PAGE_H_H
 
-#include "bf_idx.h"
+#include "bf_hashtable.h"
 #include "generic_page.h"
 #include "latch.h"
 #include "sm_base.h"

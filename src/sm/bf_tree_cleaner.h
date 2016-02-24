@@ -8,7 +8,6 @@
 #include "w_defines.h"
 #include "sm_base.h"
 #include "smthread.h"
-#include "bf_idx.h"
 #include "lsn.h"
 #include "vol.h"
 #include <AtomicCounter.hpp>

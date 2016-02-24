@@ -6,7 +6,6 @@
 #define BF_TREE_CB_H
 
 #include "w_defines.h"
-#include "bf_idx.h"
 #include "latch.h"
 #include "bf_tree.h"
 #include <string.h>
