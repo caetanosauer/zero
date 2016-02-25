@@ -471,7 +471,6 @@ public:
 };
 
 #include "w_fill.h"
-#include <w_autodel.h>
 #include <w_error.h>
 #include <w_rc.h>
 

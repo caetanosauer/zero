@@ -458,7 +458,7 @@ lsn_t chkpt_t::get_min_rec_lsn() const
 void chkpt_t::serialize()
 {
     // Allocate a buffer for storing log records
-    w_auto_delete_t<logrec_t> logrec(new logrec_t);
+    logrec_t* logrec = new logrec_t;
 
     size_t chunk;
 
@@ -566,7 +566,8 @@ void chkpt_t::serialize()
                                         (const lsn_t*)(&last_lsn[0]),
                                         (const lsn_t*)(&first_lsn[0])), 0);
     }
-    //==========================================================================
+
+    delete logrec;
 }
 
 void chkpt_t::acquire_lock(logrec_t& r)
@@ -689,7 +690,7 @@ void chkpt_m::take()
     INC_TSTAT(log_chkpt_cnt);
 
     // Insert chkpt_begin log record.
-    w_auto_delete_t<logrec_t> logrec(new logrec_t);
+    logrec_t* logrec = new logrec_t;
     lsn_t begin_lsn = lsn_t::null;
     LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
     W_COERCE(ss_m::log->flush_all());
@@ -711,6 +712,8 @@ void chkpt_m::take()
     ss_m::log->set_master(curr_chkpt.get_begin_lsn(),
             curr_chkpt.get_min_rec_lsn(),
             curr_chkpt.get_min_xct_lsn());
+
+    delete logrec;
 }
 
 chkpt_thread_t::chkpt_thread_t(unsigned interval)

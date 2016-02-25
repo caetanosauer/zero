@@ -89,10 +89,6 @@ class prologue_rc_t;
 #include "eventlog.h"
 
 
-#ifdef EXPLICIT_TEMPLATE
-template class w_auto_delete_t<SmStoreMetaStats*>;
-#endif
-
 bool         smlevel_0::shutdown_clean = false;
 bool         smlevel_0::shutting_down = false;
 

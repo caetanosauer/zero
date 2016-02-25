@@ -138,7 +138,6 @@ rc_t LogArchiver::ReaderThread::openPartition()
     int fd;
     char *const fname = new char[smlevel_0::max_devname];
     if (!fname) W_FATAL(fcOUTOFMEMORY);
-    w_auto_delete_array_t<char> ad_fname(fname);
     smlevel_0::log->make_log_name(nextPartition, fname,
             smlevel_0::max_devname);
 
@@ -164,6 +163,7 @@ rc_t LogArchiver::ReaderThread::openPartition()
     }
 
     DBGTHRD(<< "Opened log partition for read " << fname);
+    delete[] fname;
 
     currentFd = fd;
     nextPartition++;

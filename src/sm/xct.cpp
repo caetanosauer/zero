@@ -35,12 +35,6 @@
 
 const std::string xct_t::IMPL_NAME = "traditional";
 
-#ifdef EXPLICIT_TEMPLATE
-template class w_auto_delete_array_t<lockid_t>;
-template class w_auto_delete_array_t<StoreID>;
-
-#endif /* __GNUG__*/
-
 // definition of LOGTRACE is in crash.h
 #define DBGX(arg) DBG(<<" th."<<me()->id << " " << "tid." << _tid  arg)
 
@@ -2006,12 +2000,9 @@ xct_t::rollback(const lsn_t &save_pt)
               << " Roll back " << " " << tid()
               << " to " << save_pt );
 
-    { // Contain the scope of the following __copy__buf:
-
     logrec_t* __copy__buf = new logrec_t; // auto-del
     if(! __copy__buf)
         { W_FATAL(eOUTOFMEMORY); }
-    w_auto_delete_t<logrec_t> auto_del(__copy__buf);
     logrec_t&         r = *__copy__buf;
 
     while (save_pt < nxt)
@@ -2112,9 +2103,7 @@ xct_t::rollback(const lsn_t &save_pt)
         }
     }
 
-    // close scope so the
-    // auto-release will free the log rec copy buffer, __copy__buf
-    }
+    delete __copy__buf;
 
     _undo_nxt = nxt;
     _read_watermark = lsn_t::null;

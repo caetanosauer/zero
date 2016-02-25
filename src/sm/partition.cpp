@@ -1039,7 +1039,6 @@ partition_t::open_for_read(
         char *fname = new char[smlevel_0::max_devname];
         if (!fname)
                 W_FATAL(fcOUTOFMEMORY);
-        w_auto_delete_array_t<char> ad_fname(fname);
 
         _owner->make_log_name(__num, fname, smlevel_0::max_devname);
 
@@ -1084,6 +1083,8 @@ partition_t::open_for_read(
 
         _set_state(m_exists);
         _set_state(m_open_for_read);
+
+        delete[] fname;
     }
     _num = __num;
     w_assert3(exists());
@@ -1235,7 +1236,6 @@ partition_t::peek(
     char *fname = new char[smlevel_0::max_devname];
     if (!fname)
         W_FATAL(fcOUTOFMEMORY);
-    w_auto_delete_array_t<char> ad_fname(fname);
     _owner->make_log_name(__num, fname, smlevel_0::max_devname);
 
     smlevel_0::fileoff_t part_size = fileoff_t(0);
@@ -1328,6 +1328,8 @@ partition_t::peek(
         }
 
     }
+
+    delete[] fname;
 }
 
 void

@@ -119,7 +119,6 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
     char *fname = new char [smlevel_0::max_devname];
     if (!fname)
         W_FATAL(fcOUTOFMEMORY);
-    w_auto_delete_array_t<char> ad_fname(fname);
 
     /* Create a list of lsns for the partitions - this
      * will be used to store any hints about the last
@@ -163,7 +162,6 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             namelen = namelen > orig_namelen ? namelen : orig_namelen;
 
             char *name = new char [namelen+1];
-            w_auto_delete_array_t<char>  cleanup(name);
 
             memset(name, '\0', namelen+1);
             strncpy(name, d, orig_namelen);
@@ -189,6 +187,8 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                     }
                 }
             }
+
+            delete[] name;
         }
 
         //  os_closedir(ldir);
@@ -216,7 +216,6 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
         char *buf = new char[smlevel_0::max_devname+1];
         if (!buf)
                 W_FATAL(fcOUTOFMEMORY);
-        w_auto_delete_array_t<char>  ad_buf(buf);
 
         unsigned int         namelen = prefix_len;
         const char *         dn = dd->d_name;
@@ -224,7 +223,6 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 
         namelen = namelen > orig_namelen ? namelen : orig_namelen;
         char *                name = new char [namelen+1];
-        w_auto_delete_array_t<char>  cleanup(name);
 
         memset(name, '\0', namelen+1);
         strncpy(name, dn, orig_namelen);
@@ -332,6 +330,9 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                                     << flushl;
             W_FATAL(fcINTERNAL);
         }
+
+        delete[] buf;
+        delete[] name;
     }
     os_closedir(ldir);
 
@@ -779,6 +780,8 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                 << _partition_data_size + BLOCK_SIZE
             << endl;
     }
+
+    delete[] fname;
 }
 
 log_storage::~log_storage()
@@ -1335,7 +1338,6 @@ log_storage::destroy_file(partition_number_t n, bool pmsg)
     char        *fname = new char[smlevel_0::max_devname];
     if (!fname)
         W_FATAL(fcOUTOFMEMORY);
-    w_auto_delete_array_t<char> ad_fname(fname);
     make_log_name(n, fname, smlevel_0::max_devname);
     if (unlink(fname) == -1)  {
         w_rc_t e = RC(eOS);
@@ -1350,6 +1352,8 @@ log_storage::destroy_file(partition_number_t n, bool pmsg)
             << "          " << e << flushl;
         }
     }
+
+    delete[] fname;
 }
 
 /**\brief compute size of partition from given max-open-log-bytes size
@@ -1781,7 +1785,6 @@ w_rc_t log_storage::_read_master(
         char*         buf = new char[smlevel_0::max_devname];
         if (!buf)
             W_FATAL(fcOUTOFMEMORY);
-        w_auto_delete_array_t<char> ad_fname(buf);
         w_ostrstream s(buf, int(smlevel_0::max_devname));
         s << _logdir << _SLASH << fname << ends;
 
@@ -1821,6 +1824,8 @@ w_rc_t log_storage::_read_master(
                 << buf << flushl;
             W_COERCE(e);
         }
+
+        delete[] buf;
     }
     return RCOK;
 }

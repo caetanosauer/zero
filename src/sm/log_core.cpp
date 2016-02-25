@@ -1495,10 +1495,9 @@ rc_t log_core::load_fetch_buffers()
 {
     _fetch_buffers.resize(_fetch_buf_last - _fetch_buf_first + 1, NULL);
 
+    char *const fname = new char[smlevel_0::max_devname];
     for (size_t p = _fetch_buf_last; p >= _fetch_buf_first; p--) {
         int fd;
-        char *const fname = new char[smlevel_0::max_devname];
-        w_auto_delete_array_t<char> ad_fname(fname);
 
         _storage->make_log_name(p, fname, smlevel_0::max_devname);
         int flags = smthread_t::OPEN_RDONLY;
@@ -1543,6 +1542,7 @@ rc_t log_core::load_fetch_buffers()
         // }
     }
 
+    delete[] fname;
     return RCOK;
 }
 

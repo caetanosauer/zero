@@ -7,7 +7,6 @@
 #include "sm_base.h"
 #include "bf_tree_cb.h"
 #include "bf_tree.h"
-#include "w_autodel.h"
 #include "generic_page.h"
 #include "fixable_page_h.h"  // just for get_cb in bf_tree_inline.h
 #include "log.h"
