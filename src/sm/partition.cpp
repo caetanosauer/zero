@@ -409,18 +409,6 @@ partition_t::flush(
 
         w_rc_t e = me()->writev(fd, iov, sizeof(iov)/sizeof(iovec_t));
         if (e.is_error()) {
-            smlevel_0::errlog->clog << fatal_prio
-                                    << "ERROR: could not flush log buf:"
-                                    << " fd=" << fd
-                                    << " xfersize="
-                                    << log_storage::BLOCK_SIZE
-                                    << " vec parts: "
-                                    << " " << iov[0].iov_len
-                                    << " " << iov[1].iov_len
-                                    << " " << iov[2].iov_len
-                                    << ":" << endl
-                                    << e
-                                    << flushl;
             cerr
                 << "ERROR: could not flush log buf:"
                 << " fd=" << fd
@@ -432,7 +420,7 @@ partition_t::flush(
                 << " " << iov[2].iov_len
                 << ":" << endl
                 << e
-                << flushl;
+                << endl;
             W_COERCE(e);
         }
     }
@@ -546,7 +534,7 @@ partition_t::flush(
 
         w_rc_t e = me()->writev(fd, iov, sizeof(iov)/sizeof(iovec_t));
         if (e.is_error()) {
-            smlevel_0::errlog->clog << fatal_prio
+            cerr
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
                                 << " xfersize="
@@ -558,20 +546,7 @@ partition_t::flush(
                                 << " " << iov[3].iov_len
                                     << ":" << endl
                                     << e
-                                    << flushl;
-            cerr
-                                    << "ERROR: could not flush log buf:"
-                                    << " fd=" << fd
-                                    << " xfersize=" << log_storage::BLOCK_SIZE
-                                << log_storage::BLOCK_SIZE
-                                << " vec parts: "
-                                << " " << iov[0].iov_len
-                                << " " << iov[1].iov_len
-                                << " " << iov[2].iov_len
-                                << " " << iov[3].iov_len
-                                    << ":" << endl
-                                    << e
-                                    << flushl;
+                                    << endl;
             W_COERCE(e);
         }
 
@@ -737,9 +712,7 @@ again:
 
 #if W_DEBUG_LEVEL > 3
             if( l->type() == logrec_t::t_skip ) {
-                smlevel_0::errlog->clog << info_prio <<
-                "Found skip record " << " at " << pos
-                << flushl;
+                cerr << "Found skip record " << " at " << pos << endl;
             }
 #endif
             if( l->type() == logrec_t::t_skip   &&
@@ -761,12 +734,11 @@ again:
                 // consider end of log to be previous record
 
                 if(err > 1) {
-                    smlevel_0::errlog->clog << error_prio
-                        << "Found unexpected end of log --"
+                    cerr << "Found unexpected end of log --"
                         << " pos " << pos
                         << " with lsn_ck " << lsn_ck
                         << " probably due to a previous crash."
-                        << flushl;
+                        << endl;
                 }
 
                 if(peeked_high) {
@@ -1059,9 +1031,9 @@ partition_t::open_for_read(
 
         if (e.is_error()) {
             if(err) {
-                smlevel_0::errlog->clog << fatal_prio
+                cerr
                     << "Cannot open log file: partition number "
-                    << __num  << " fd" << fd << flushl;
+                    << __num  << " fd" << fd << endl;
                 // fatal
                 W_DO(e);
             } else {
@@ -1124,9 +1096,9 @@ partition_t::close(bool both)
             DBG5(<< " CLOSE " << fhdl_rd());
             e = me()->close(fhdl_rd());
             if (e.is_error()) {
-                smlevel_0::errlog->clog << error_prio
+                cerr
                         << "ERROR: could not close the log file."
-                        << e << endl << flushl;
+                        << e << endl << endl;
                 err_encountered = true;
             }
         }
@@ -1138,9 +1110,9 @@ partition_t::close(bool both)
         DBG5(<< " CLOSE " << fhdl_rd());
         e = me()->close(fhdl_app());
         if (e.is_error()) {
-            smlevel_0::errlog->clog << error_prio
+            cerr
             << "ERROR: could not close the log file."
-            << endl << e << endl << flushl;
+            << endl << e << endl << endl;
             err_encountered = true;
         }
         _fhdl_app = invalid_fhdl;
@@ -1252,8 +1224,8 @@ partition_t::peek(
     w_rc_t e;
     e = me()->open(fname, flags, 0744, fd);
     if (e.is_error()) {
-        smlevel_0::errlog->clog << fatal_prio
-            << "ERROR: cannot open log file: " << endl << e << flushl;
+        cerr
+            << "ERROR: cannot open log file: " << endl << e << endl;
         W_COERCE(e);
     }
     DBG5(<<"partition " << __num << " peek  opened " << fname);
@@ -1261,9 +1233,9 @@ partition_t::peek(
          sthread_base_t::filestat_t statbuf;
          e = me()->fstat(fd, statbuf);
          if (e.is_error()) {
-                smlevel_0::errlog->clog << fatal_prio
+             cerr
                 << " Cannot stat fd " << fd << ":"
-                << endl << e  << flushl;
+                << endl << e  << endl;
                 W_COERCE(e);
          }
          part_size = statbuf.st_size;
@@ -1295,8 +1267,8 @@ partition_t::peek(
         // First: write any-old junk
         e = me()->ftruncate(fd,  log_storage::BLOCK_SIZE );
         if (e.is_error())        {
-             smlevel_0::errlog->clog << fatal_prio
-                << "cannot write garbage block " << flushl;
+            cerr
+                << "cannot write garbage block " << endl;
             W_COERCE(e);
         }
         /* write the lsn of the up-coming skip record */
@@ -1307,8 +1279,8 @@ partition_t::peek(
         // First: write any-old junk
         e = me()->fsync(fd);
         if (e.is_error()) {
-             smlevel_0::errlog->clog << fatal_prio
-                << "cannot sync after skip block " << flushl;
+            cerr
+                << "cannot sync after skip block " << endl;
             W_COERCE(e);
         }
 
@@ -1322,8 +1294,8 @@ partition_t::peek(
         DBG5(<< " CLOSE " << fd);
         e = me()->close(fd);
         if (e.is_error()) {
-            smlevel_0::errlog->clog << fatal_prio
-            << "ERROR: could not close the log file." << flushl;
+            cerr
+            << "ERROR: could not close the log file." << endl;
             W_COERCE(e);
         }
 
@@ -1343,8 +1315,8 @@ partition_t::flush(int fd)
 
     w_rc_t e = me()->fsync(fd);
     if (e.is_error()) {
-         smlevel_0::errlog->clog << fatal_prio
-            << "cannot sync after skip block " << flushl;
+        cerr
+            << "cannot sync after skip block " << endl;
         W_COERCE(e);
     }
 
@@ -1387,7 +1359,7 @@ partition_t::close_for_append()
         DBG5(<< " CLOSE " << f);
         e = me()->close(f);
         if (e.is_error()) {
-            smlevel_0::errlog->clog  << warning_prio
+            cerr
                 << "warning: error in unix log on close(app):"
                     << endl <<  e << endl;
         }
@@ -1404,7 +1376,7 @@ partition_t::close_for_read()
         DBG5(<< " CLOSE " << f);
         e = me()->close(f);
         if (e.is_error()) {
-            smlevel_0::errlog->clog  << warning_prio
+            cerr
                 << "warning: error in unix partition on close(rd):"
                 << endl <<  e << endl;
         }
@@ -1516,14 +1488,6 @@ partition_t::flush(
         //w_rc_t e;
 
         if (e.is_error()) {
-            smlevel_0::errlog->clog << fatal_prio
-                                    << "ERROR: could not flush log buf:"
-                                    << " fd=" << fd
-                                << " xfersize="
-                                << log_storage::BLOCK_SIZE
-                                    << ":" << endl
-                                    << e
-                                    << flushl;
             cerr
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
@@ -1531,7 +1495,7 @@ partition_t::flush(
                                 << log_storage::BLOCK_SIZE
                                     << ":" << endl
                                     << e
-                                    << flushl;
+                                    << endl;
             W_COERCE(e);
         }
 
@@ -1557,15 +1521,15 @@ partition_t::flush(
         void *iov_buf = iov[i].iov_base;
         w_rc_t e = me()->pread(fd, read_buf, iov_len, start() + read_offset);
         if (e.is_error()) {
-            smlevel_0::errlog->clog << fatal_prio
-                                    << "FLUSH VERIFICATION: read failed" << flushl;
+            cerr
+                                    << "FLUSH VERIFICATION: read failed" << endl;
             W_COERCE(e);
             delete read_buf;
             return;
         }
         if (memcmp(iov_buf, read_buf, iov_len)!=0) {
-            smlevel_0::errlog->clog << fatal_prio
-                                    << "FLUSH VERIFICATION FAILED" << flushl;
+            cerr
+                                    << "FLUSH VERIFICATION FAILED" << endl;
             W_FATAL(eINTERNAL);
             delete read_buf;
             return;
@@ -1655,14 +1619,6 @@ partition_t::flush(int fd, lsn_t lsn, int64_t size, int64_t write_size,
         //w_rc_t e;
 
         if (e.is_error()) {
-            smlevel_0::errlog->clog << fatal_prio
-                                    << "ERROR: could not flush log buf:"
-                                    << " fd=" << fd
-                                << " xfersize="
-                                << log_storage::BLOCK_SIZE
-                                    << ":" << endl
-                                    << e
-                                    << flushl;
             cerr
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
@@ -1670,7 +1626,7 @@ partition_t::flush(int fd, lsn_t lsn, int64_t size, int64_t write_size,
                                 << log_storage::BLOCK_SIZE
                                     << ":" << endl
                                     << e
-                                    << flushl;
+                                    << endl;
             W_COERCE(e);
         }
 
@@ -1729,8 +1685,8 @@ partition_t::read_seg(
         /* accept the short I/O error for now */
         // ignore short I/O error
         if(e.err_num() != stSHORTIO) {
-            smlevel_0::errlog->clog << fatal_prio
-                                    << "read(" << int(XFERSIZE) << ")" << flushl;
+            cerr
+                                    << "read(" << int(XFERSIZE) << ")" << endl;
             W_COERCE(e);
         }
     }
@@ -1779,7 +1735,7 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
 //     //     // ignore short I/O error
 //     //     if(e.err_num() != stSHORTIO) {
 //     //         smlevel_0::errlog->clog << fatal_prio
-//     //                                 << "read(" << int(XFERSIZE) << ")" << flushl;
+//     //                                 << "read(" << int(XFERSIZE) << ")" << endl;
 //     //         W_COERCE(e);
 //     //     }
 //     // }
@@ -1809,7 +1765,7 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
 //             // ignore short I/O error
 //             if(e.err_num() != stSHORTIO) {
 //                 smlevel_0::errlog->clog << fatal_prio
-//                                         << "read(" << int(XFERSIZE) << ")" << flushl;
+//                                         << "read(" << int(XFERSIZE) << ")" << endl;
 //                 W_COERCE(e);
 //             }
 //         }
@@ -1907,8 +1863,8 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
 
         if (e.is_error()) {
                 /* accept the short I/O error for now */
-                smlevel_0::errlog->clog << fatal_prio
-                        << "read(" << int(XFERSIZE) << ")" << flushl;
+            cerr
+                        << "read(" << int(XFERSIZE) << ")" << endl;
                 W_COERCE(e);
         }
         b += XFERSIZE;

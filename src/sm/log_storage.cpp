@@ -92,16 +92,12 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
     if (! ldir)
     {
         w_rc_t e = RC(eOS);
-        smlevel_0::errlog->clog << fatal_prio
-            << "Error: could not open the log directory " << dir_name() <<flushl;
+        cerr << "Error: could not open the log directory " << dir_name() <<endl;
         fprintf(stderr, "Error: could not open the log directory %s\n",
                     dir_name());
 
-        smlevel_0::errlog->clog << fatal_prio
-            << "\tNote: the log directory is specified using\n"
-            "\t      the sm_logdir option." << flushl;
-
-        smlevel_0::errlog->clog << flushl;
+        cerr << "\tNote: the log directory is specified using\n"
+            "\t      the sm_logdir option." << endl << endl;
 
         W_COERCE(e);
     }
@@ -146,8 +142,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             );
     if (reformat)
     {
-        smlevel_0::errlog->clog << emerg_prio
-            << "Reformatting logs..." << endl;
+        cerr << "Reformatting logs..." << endl;
 
         while ((dd = os_readdir(ldir)))
         {
@@ -172,8 +167,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                 parse_ok = (strncmp(name,log_prefix(),strlen(log_prefix()))==0);
             }
             if(parse_ok) {
-                smlevel_0::errlog->clog << debug_prio
-                    << "\t" << name << "..." << endl;
+                cerr << "\t" << name << "..." << endl;
 
                 {
                     w_ostrstream s(fname, (int) smlevel_0::max_devname);
@@ -181,8 +175,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                     w_assert1(s);
                     if( unlink(fname) < 0) {
                         w_rc_t e = RC(fcOS);
-                        smlevel_0::errlog->clog << debug_prio
-                            << "unlink(" << fname << "):"
+                        cerr << "unlink(" << fname << "):"
                             << endl << e << endl;
                     }
                 }
@@ -290,8 +283,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                 w_istrstream s(name + prefix_len);
                 uint32_t curr;
                 if (! (s >> curr))  {
-                    smlevel_0::errlog->clog << fatal_prio
-                    << "bad log file \"" << name << "\"" << flushl;
+                    cerr << "bad log file \"" << name << "\"" << endl;
                     W_FATAL(eINTERNAL);
                 }
 
@@ -324,10 +316,9 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
          */
         if (!parse_ok && ! (strcmp(name, ".") == 0 ||
                                 strcmp(name, "..") == 0)) {
-            smlevel_0::errlog->clog << fatal_prio
-                                    << "log_core: cannot parse filename \""
+            cerr << "log_core: cannot parse filename \""
                                     << name << "\".  Maybe a data volume in the logging directory?"
-                                    << flushl;
+                                    << endl;
             W_FATAL(fcINTERNAL);
         }
 
@@ -466,8 +457,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 
             DBGOUT5(<<" seeking to start_pos " << start_pos);
             if (fseek(f, start_pos, SEEK_SET)) {
-                smlevel_0::errlog->clog  << error_prio
-                    << "log read: can't seek to " << start_pos
+                cerr << "log read: can't seek to " << start_pos
                     << " starting log scan at origin"
                     << endl;
                 start_pos = pos;
@@ -534,8 +524,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                         w_rc_t        e = RC(eOS);
                         // reached eof
                         if (! feof(f))  {
-                            smlevel_0::errlog->clog << fatal_prio
-                                << "ERROR: unexpected log file inconsistency." << flushl;
+                            cerr << "ERROR: unexpected log file inconsistency." << endl;
                             W_COERCE(e);
                         }
                         break;
@@ -547,11 +536,9 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                     if ( (lsn_ck.lo() != pos) ||
                             (lsn_ck.hi() != (uint32_t) last_partition ) ) {
                         // found partial log record, end of log is previous record
-                        smlevel_0::errlog->clog << error_prio <<
-                            "Found unexpected end of log -- probably due to a previous crash."
-                            << flushl;
-                        smlevel_0::errlog->clog << error_prio <<
-                            "   Recovery will continue ..." << flushl;
+                        cerr << "Found unexpected end of log -- probably due to a previous crash."
+                            << endl;
+                        cerr << "   Recovery will continue ..." << endl;
                         break;
                     }
 
@@ -574,8 +561,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                 f =  fopen(fname, "a");
                 if (!f) {
                     w_rc_t e = RC(fcOS);
-                    smlevel_0::errlog->clog  << fatal_prio
-                        << "fopen(" << fname << "):" << endl << e << endl;
+                    cerr << "fopen(" << fname << "):" << endl << e << endl;
                     W_COERCE(e);
                 }
                 skip_log *s = new skip_log; // deleted below
@@ -594,8 +580,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 
                 if ( fwrite(s, s->length(), 1, f) != 1)  {
                     w_rc_t        e = RC(eOS);
-                    smlevel_0::errlog->clog << fatal_prio <<
-                        "   fwrite: can't write skip rec to log ..." << flushl;
+                    cerr << "   fwrite: can't write skip rec to log ..." << endl;
                     W_COERCE(e);
                 }
 #ifdef W_TRACE
@@ -630,8 +615,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                     n = fwrite(junk, int(o), 1, f);
                     if ( n != 1)  {
                         w_rc_t e = RC(eOS);
-                        smlevel_0::errlog->clog << fatal_prio <<
-                            "   fwrite: can't round out log block size ..." << flushl;
+                        cerr << "   fwrite: can't round out log block size ..." << endl;
                         W_COERCE(e);
                     }
 
@@ -651,16 +635,15 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 
 
                 if(((eof) % BLOCK_SIZE) != 0) {
-                    smlevel_0::errlog->clog << fatal_prio <<
-                        "   ftell: can't write skip rec to log ..." << flushl;
+                    cerr <<
+                        "   ftell: can't write skip rec to log ..." << endl;
                     W_COERCE(e);
                 }
                 W_IGNORE(e);        /* error not used */
 
                 if (os_fsync(fileno(f)) < 0) {
                     e = RC(eOS);
-                    smlevel_0::errlog->clog << fatal_prio <<
-                        "   fsync: can't sync fsync truncated log ..." << flushl;
+                    cerr << "   fsync: can't sync fsync truncated log ..." << endl;
                     W_COERCE(e);
                 }
 
@@ -673,9 +656,8 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                         e = RCOK;
                     }
                     if (e.is_error()) {
-                        smlevel_0::errlog->clog << fatal_prio
-                            << " Cannot stat fd " << fileno(f)
-                            << ":" << endl << e << endl << flushl;
+                        cerr << " Cannot stat fd " << fileno(f)
+                            << ":" << endl << e << endl << endl;
                         W_COERCE(e);
                     }
                     DBGOUT5(<< "size of " << fname << " is " << statbuf.st_size);
@@ -733,9 +715,8 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
         w_assert1(durable_lsn == curr_lsn); // better be startup/recovery!
 
         if(!p) {
-            smlevel_0::errlog->clog << fatal_prio
-            << "ERROR: could not open log file for partition "
-            << last_partition << flushl;
+            cerr << "ERROR: could not open log file for partition "
+            << last_partition << endl;
             W_FATAL(eINTERNAL);
         }
 
@@ -751,8 +732,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
     cs.exit();
     if(1){
         // Print various interesting info to the log:
-        smlevel_0::errlog->clog << debug_prio
-            << "Log max_partition_size (based on OS max file size)"
+        cerr << "Log max_partition_size (based on OS max file size)"
             << max_partition_size() << endl
             << "Log max_partition_size * PARTITION_COUNT "
                     << max_partition_size() * PARTITION_COUNT << endl
@@ -761,7 +741,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             << "Log min_partition_size*PARTITION_COUNT "
                     << min_partition_size() * PARTITION_COUNT << endl;
 
-        smlevel_0::errlog->clog << debug_prio
+        cerr
             << "Log BLOCK_SIZE (log write size) " << BLOCK_SIZE
             << endl
             << "Log segsize() (log buffer size) " << _segsize
@@ -769,7 +749,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             << "Log segsize()/BLOCK_SIZE " << double(_segsize)/double(BLOCK_SIZE)
             << endl;
 
-        smlevel_0::errlog->clog << debug_prio
+        cerr
             << "User-option smlevel_0::max_logsz " << log_common::max_logsz << endl
             << "Log _partition_data_size " << _partition_data_size
             << endl
@@ -951,8 +931,7 @@ log_storage::_close_min(partition_number_t n)
          */
         {
             w_ostrstream msg;
-            msg << error_prio
-            << "Thread " << me()->id << " "
+            msg << "Thread " << me()->id << " "
             << "Out of log space  ("
             //<< space_left()
             << "); No empty partitions."
@@ -979,7 +958,7 @@ log_storage::_close_min(partition_number_t n)
             w_ostrstream msg;
             msg << " Cannot close min partition -- still in use!" << endl;
             // not mt-safe
-            smlevel_0::errlog->clog << error_prio  << msg.c_str() << flushl;
+            cerr  << msg.c_str() << endl;
         }
         w_assert1(victim->num() < min_chkpt_rec_lsn().hi());
 
@@ -1341,15 +1320,12 @@ log_storage::destroy_file(partition_number_t n, bool pmsg)
     make_log_name(n, fname, smlevel_0::max_devname);
     if (unlink(fname) == -1)  {
         w_rc_t e = RC(eOS);
-        smlevel_0::errlog->clog  << error_prio
-            << "destroy_file " << n << " " << fname << ":" <<endl
+        cerr << "destroy_file " << n << " " << fname << ":" <<endl
              << e << endl;
         if(pmsg) {
-            smlevel_0::errlog->clog << error_prio
-            << "warning : cannot free log file \""
-            << fname << '\"' << flushl;
-            smlevel_0::errlog->clog << error_prio
-            << "          " << e << flushl;
+            cerr << "warning : cannot free log file \""
+            << fname << '\"' << endl;
+            cerr << "          " << e << endl;
         }
     }
 
@@ -1542,9 +1518,8 @@ void log_storage::_write_master(const lsn_t &l, const lsn_t &min)
     FILE* f = fopen(_chkpt_meta_buf, "a");
     if (! f) {
         w_rc_t e = RC(eOS);
-        smlevel_0::errlog->clog << fatal_prio
-            << "ERROR: could not open a new log checkpoint file: "
-            << _chkpt_meta_buf << flushl;
+        cerr << "ERROR: could not open a new log checkpoint file: "
+            << _chkpt_meta_buf << endl;
         W_COERCE(e);
     }
 
@@ -1564,9 +1539,8 @@ void log_storage::_write_master(const lsn_t &l, const lsn_t &min)
 
         if(fwrite(_chkpt_meta_buf, length, 1, f) != 1) {
             w_rc_t e = RC(eOS);
-            smlevel_0::errlog->clog << fatal_prio
-                << "ERROR: could not write log checkpoint file contents"
-                << _chkpt_meta_buf << flushl;
+            cerr << "ERROR: could not write log checkpoint file contents"
+                << _chkpt_meta_buf << endl;
             W_COERCE(e);
         }
     }
@@ -1649,14 +1623,13 @@ rc_t log_storage::_check_version(uint32_t major, uint32_t minor)
         w_error_codes err = (major < _version_major)
                         ? eLOGVERSIONTOOOLD : eLOGVERSIONTOONEW;
 
-        smlevel_0::errlog->clog << fatal_prio
-            << "ERROR: log version too "
+        cerr << "ERROR: log version too "
             << ((err == eLOGVERSIONTOOOLD) ? "old" : "new")
             << " sm ("
             << _version_major << " . " << _version_minor
             << ") log ("
             << major << " . " << minor
-            << flushl;
+            << endl;
 
         return RC(err);
 }
@@ -1769,8 +1742,7 @@ w_rc_t log_storage::_read_master(
                                        listlength, lsnlist, old_style);
         delete [] buf;
         if (rc.is_error()) {
-            smlevel_0::errlog->clog << fatal_prio
-            << "bad master log file \"" << fname << "\"" << flushl;
+            cerr << "bad master log file \"" << fname << "\"" << endl;
             W_COERCE(rc);
         }
         DBG(<<"_parse_master_chkpt_string returns tmp= " << tmp
@@ -1798,18 +1770,16 @@ w_rc_t log_storage::_read_master(
                    trying to parse the information. */
                 void *null = memchr(_chkpt_meta_buf, '\0', CHKPT_META_BUF);
                 if (!null) {
-                    smlevel_0::errlog->clog << fatal_prio
-                        << "invalid master log file format \""
-                        << buf << "\"" << flushl;
+                    cerr << "invalid master log file format \""
+                        << buf << "\"" << endl;
                     W_FATAL(eINTERNAL);
                 }
 
                 w_istrstream s(_chkpt_meta_buf);
                 rc = _parse_master_chkpt_contents(s, listlength, lsnlist);
                 if (rc.is_error())  {
-                    smlevel_0::errlog->clog << fatal_prio
-                        << "bad master log file contents \""
-                        << buf << "\"" << flushl;
+                    cerr << "bad master log file contents \""
+                        << buf << "\"" << endl;
                     W_COERCE(rc);
                 }
             }
@@ -1819,9 +1789,8 @@ w_rc_t log_storage::_read_master(
              * treat empty file ok
              */
             w_rc_t e = RC(eOS);
-            smlevel_0::errlog->clog << fatal_prio
-                << "ERROR: could not open existing log checkpoint file: "
-                << buf << flushl;
+            cerr << "ERROR: could not open existing log checkpoint file: "
+                << buf << endl;
             W_COERCE(e);
         }
 

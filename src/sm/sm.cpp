@@ -124,9 +124,6 @@ LogArchiver* smlevel_0::logArchiver = 0;
 
 lock_m* smlevel_0::lm = 0;
 
-ErrLog*            smlevel_0::errlog;
-
-
 char smlevel_0::zero_page[page_sz];
 
 chkpt_m* smlevel_0::chkpt = 0;
@@ -234,36 +231,9 @@ ss_m::_construct_once()
     smthread_t::init_fingerprint_map();
 
     if (_instance_cnt++)  {
-        // errlog might not be null since in this case there was another instance.
-        if(errlog) {
-            errlog->clog << fatal_prio
-            << "ss_m cannot be instantiated more than once"
-             << flushl;
-        }
+        cerr << "ss_m cannot be instantiated more than once" << endl;
         W_FATAL_MSG(eINTERNAL, << "instantiating sm twice");
     }
-
-    /*
-     *  Level 0
-     */
-    errlog = new ErrLog("ss_m", log_to_unix_file, _options.get_string_option("sm_errlog", "-").c_str());
-    if(!errlog) {
-        W_FATAL(eOUTOFMEMORY);
-    }
-
-
-    std::string error_loglevel = _options.get_string_option("sm_errlog_level", "error");
-    errlog->setloglevel(ErrLog::parse(error_loglevel.c_str()));
-    ///////////////////////////////////////////////////////////////
-    // Henceforth, all errors can go to ss_m::errlog thus:
-    // ss_m::errlog->clog << XXX_prio << ... << flushl;
-    // or
-    // ss_m::errlog->log(log_XXX, "format...%s..%d..", s, n); NB: no newline
-    ///////////////////////////////////////////////////////////////
-#if W_DEBUG_LEVEL > 0
-	// just to be sure errlog is working
-	errlog->clog << debug_prio << "Errlog up and running." << flushl;
-#endif
 
     w_assert1(page_sz >= 1024);
 
@@ -418,15 +388,9 @@ ss_m::_destruct_once()
     --_instance_cnt;
 
     if (_instance_cnt)  {
-        if(errlog) {
-            errlog->clog << warning_prio << "ss_m::~ss_m() : \n"
-             << "\twarning --- destructor called more than once\n"
-             << "\tignored" << flushl;
-        } else {
-            cerr << "ss_m::~ss_m() : \n"
-             << "\twarning --- destructor called more than once\n"
-             << "\tignored" << endl;
-        }
+        cerr << "ss_m::~ss_m() : \n"
+            << "\twarning --- destructor called more than once\n"
+            << "\tignored" << endl;
         return;
     }
 
@@ -522,10 +486,6 @@ ss_m::_destruct_once()
     if(logArchiver) {
         delete logArchiver; // LL: decoupled cleaner in bf still needs archiver
         logArchiver = 0;    //     so we delete it only after bf is gone
-    }
-
-    if (errlog) {
-        delete errlog; errlog = 0;
     }
 
      w_rc_t        e;
@@ -944,7 +904,7 @@ ss_m::start_log_corruption()
     if(log) {
         // flush current log buffer since all future logs will be
         // corrupted.
-        errlog->clog << emerg_prio << "Starting Log Corruption" << flushl;
+        cerr << "Starting Log Corruption" << endl;
         log->start_log_corruption();
     }
     return RCOK;

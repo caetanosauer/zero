@@ -167,9 +167,8 @@ restart_m::redo_log_pass()
     if(redo_lsn < cur_lsn) {
         DBGOUT3(<< "Redoing log from " << redo_lsn
                 << " to " << cur_lsn);
-        smlevel_0::errlog->clog << info_prio
-            << "Redoing log from " << redo_lsn
-            << " to " << cur_lsn << flushl;
+        cerr << "Redoing log from " << redo_lsn
+            << " to " << cur_lsn << endl;
     }
     DBGOUT3( << "LSN " << " A/R/I(pass): " << "LOGREC(TID, TYPE, FLAGS:F/U(fwd/rolling-back) PAGE <INFO>");
 

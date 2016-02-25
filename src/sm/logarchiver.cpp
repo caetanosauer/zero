@@ -470,9 +470,8 @@ os_dirent_t* LogArchiver::ArchiveDirectory::scanDir(os_dir_t& dir)
     if (dir == NULL) {
         dir = os_opendir(archdir.c_str());
         if (!dir) {
-            smlevel_0::errlog->clog << fatal_prio <<
-                "Error: could not open log archive dir: " <<
-                archdir << flushl;
+            cerr << "Error: could not open log archive dir: " <<
+                archdir << endl;
             W_COERCE(RC(eOS));
         }
         //DBGTHRD(<< "Opened log archive directory " << archdir);
@@ -509,8 +508,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
                 DBGTHRD(<< "Found unfinished log archive run. Deleting");
                 string path = archdir + "/" + runName;
                 if (unlink(path.c_str()) < 0) {
-                    smlevel_0::errlog->clog << fatal_prio
-                        << "Log archiver: failed to delete "
+                    cerr << "Log archiver: failed to delete "
                         << runName << endl;
                     W_FATAL(fcOS);
                 }

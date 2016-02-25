@@ -66,10 +66,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <w_stream.h>
 
-#ifndef ERRLOG_H
-#include <errlog.h>
-#endif /* ERRLOG_H */
-
 /**\file w_debug.h
  *\ingroup MACROS
  *
@@ -129,7 +125,7 @@ typedef    ios::fmtflags    w_dbg_fmtflags;
  * should be sent. If DEBUG_FILE is not set, the output goes to
  * stderr.
  */
-class w_debug : public ErrLog {
+class w_debug {
     private:
         char *_flags;
         enum { _all = 0x1, _none = 0x2 };
@@ -161,8 +157,8 @@ extern w_debug _w_debug;
 
 // I wanted to use google-logging (glog), but changing all of the existing code
 // takes time. So, currently it's just std::cout.
-#define ERROUT(a) std::cerr << "[" << hex << pthread_self() << dec << "] " << __FILE__ << " (" << __LINE__ << ") " a << flushl;
-//#define DBGOUT(a) std::cout << "[" << pthread_self() << "] " << __FILE__ << " (" << __LINE__ << ") " a << flushl;
+#define ERROUT(a) std::cerr << "[" << hex << pthread_self() << dec << "] " << __FILE__ << " (" << __LINE__ << ") " a << endl;
+//#define DBGOUT(a) std::cout << "[" << pthread_self() << "] " << __FILE__ << " (" << __LINE__ << ") " a << endl;
 
 // CS: reverted back to shore's old debug mechanism, which allows us
 // to select only output from certain source files. The current mechanism
@@ -172,7 +168,7 @@ extern w_debug _w_debug;
        std::stringstream ss; \
        ss << "[" << hex << pthread_self() << dec << "] " \
             << _strip_filename(file) << " (" << line << ") " a; \
-       std::cerr << ss.str() << flushl;
+       std::cerr << ss.str() << endl;
 
 #define DBGOUT(a) do { \
     if(_w_debug.flag_on(__func__,_strip_filename(__FILE__))) { \
@@ -271,7 +267,7 @@ extern w_debug _w_debug;
         w_dbg_fmtflags old = _w_debug.clog.setf(ios::dec, ios::basefield); \
         _w_debug.clog  << _strip_filename(file) << ":" << line << ":" ; \
         _w_debug.clog.setf(old, ios::basefield); \
-        _w_debug.clog  a    << flushl;
+        _w_debug.clog  a    << endl;
 
 #    define DBG1(a) do {\
     if(_w_debug.flag_on(__func__,__FILE__)) {                \

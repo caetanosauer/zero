@@ -180,30 +180,27 @@ log_common::log_common(const sm_options& options)
     _segsize = log_storage::_ceil(_segsize, SEGMENT_SIZE);
 
     if(max_logsz < 8*int(_segsize)) {
-      errlog->clog << warning_prio <<
+        cerr <<
         "WARNING: Log buffer is bigger than 1/8 partition (probably safe to make it smaller)."
-               << flushl;
+               << endl;
     }
 
     // pretty big limit -- really, the limit is imposed by the OS's
     // ability to read/write
     if (uint64_t(_segsize) < (uint64_t) 4 * smlevel_0::page_sz) {
-        errlog->clog << fatal_prio
-        << "Log buf size (sm_logbufsize = " << (int)_segsize
+        cerr << "Log buf size (sm_logbufsize = " << (int)_segsize
         << " ) is too small for pages of size "
         << unsigned(smlevel_0::page_sz) << " bytes."
-        << flushl;
-        errlog->clog << fatal_prio
-        << "Need to hold at least 4 pages ( " << 4 * smlevel_0::page_sz
+        << endl;
+        cerr << "Need to hold at least 4 pages ( " << 4 * smlevel_0::page_sz
         << ")"
-        << flushl;
+        << endl;
         W_FATAL(eCRASH);
     }
     if (uint64_t(_segsize) > uint64_t(max_int4)) {
-        errlog->clog << fatal_prio
-        << "Log buf size (sm_logbufsize = " << (int)_segsize
+        cerr << "Log buf size (sm_logbufsize = " << (int)_segsize
         << " ) is too big: individual log files can't be large files yet."
-        << flushl;
+        << endl;
         W_FATAL(eCRASH);
     }
 
@@ -244,11 +241,9 @@ log_common::log_common(const sm_options& options)
     if (_segsize < 64 * 1024) {
         // not mt-safe, but this is not going to happen in
         // concurrency scenario
-        smlevel_0::errlog->clog << error_prio
-        << "Log buf size (sm_logbufsize) too small: "
+        cerr << "Log buf size (sm_logbufsize) too small: "
         << _segsize << ", require at least " << 64 * 1024
-        << endl;
-        smlevel_0::errlog->clog << error_prio << endl;
+        << endl << endl;
         fprintf(stderr,
             "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
             _segsize, 64*1024);
@@ -257,32 +252,6 @@ log_common::log_common(const sm_options& options)
 
     w_assert1(is_aligned(_readbuf));
     w_assert1(_curr_lsn == _durable_lsn);
-    if (1) {
-        smlevel_0::errlog->clog << debug_prio
-            << "Log _start " << start_byte() << " end_byte() " << end_byte()
-            << endl
-            << "Log _curr_lsn " << _curr_lsn
-            << " _durable_lsn " << _durable_lsn
-            << endl;
-        smlevel_0::errlog->clog << debug_prio
-            << "Curr epoch  base_lsn " << _cur_epoch.base_lsn
-            << endl
-            << "Curr epoch  base " << _cur_epoch.base
-            << endl
-            << "Curr epoch  start " << _cur_epoch.start
-            << endl
-            << "Curr epoch  end " << _cur_epoch.end
-            << endl;
-        smlevel_0::errlog->clog << debug_prio
-            << "Old epoch  base_lsn " << _old_epoch.base_lsn
-            << endl
-            << "Old epoch  base " << _old_epoch.base
-            << endl
-            << "Old epoch  start " << _old_epoch.start
-            << endl
-            << "Old epoch  end " << _old_epoch.end
-            << endl;
-    }
 }
 
 log_common::~log_common()
@@ -593,8 +562,7 @@ log_core::log_core(const sm_options& options)
 
     std::string logdir = options.get_string_option("sm_logdir", "");
     if (logdir.empty()) {
-        errlog->clog << fatal_prio
-            << "ERROR: sm_logdir must be set to enable logging." << flushl;
+        cerr << "ERROR: sm_logdir must be set to enable logging." << endl;
         W_FATAL(eCRASH);
     }
     const char* path = logdir.c_str();
@@ -649,30 +617,16 @@ log_core::log_core(const sm_options& options)
     _fetch_buf_loader = NULL;
 
     if (1) {
-        smlevel_0::errlog->clog << debug_prio
-            << "Log _start " << start_byte() << " end_byte() " << end_byte()
-            << endl
-            << "Log _curr_lsn " << _curr_lsn
-            << " _durable_lsn " << _durable_lsn
-            << endl;
-        smlevel_0::errlog->clog << debug_prio
-            << "Curr epoch  base_lsn " << _cur_epoch.base_lsn
-            << endl
-            << "Curr epoch  base " << _cur_epoch.base
-            << endl
-            << "Curr epoch  start " << _cur_epoch.start
-            << endl
-            << "Curr epoch  end " << _cur_epoch.end
-            << endl;
-        smlevel_0::errlog->clog << debug_prio
-            << "Old epoch  base_lsn " << _old_epoch.base_lsn
-            << endl
-            << "Old epoch  base " << _old_epoch.base
-            << endl
-            << "Old epoch  start " << _old_epoch.start
-            << endl
-            << "Old epoch  end " << _old_epoch.end
-            << endl;
+        cerr << "Log _start " << start_byte() << " end_byte() " << end_byte() << endl
+            << "Log _curr_lsn " << _curr_lsn << " _durable_lsn " << _durable_lsn << endl;
+        cerr << "Curr epoch  base_lsn " << _cur_epoch.base_lsn
+            << "  base " << _cur_epoch.base
+            << "  start " << _cur_epoch.start
+            << "  end " << _cur_epoch.end << endl;
+        cerr << "Old epoch  base_lsn " << _old_epoch.base_lsn
+            << "  base " << _old_epoch.base
+            << "  start " << _old_epoch.start
+            << "  end " << _old_epoch.end << endl;
     }
 }
 
@@ -1091,8 +1045,7 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
     // important parts of the log to fake crash (by making the
     // log appear to end here).
     if (_log_corruption) {
-        smlevel_0::errlog->clog << error_prio
-        << "Generating corrupt log record at lsn: " << curr_lsn() << flushl;
+        cerr << "Generating corrupt log record at lsn: " << curr_lsn() << endl;
         rec.corrupt();
         // Now turn it off.
         _log_corruption = false;

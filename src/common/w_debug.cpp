@@ -33,9 +33,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <w_debug.h>
 
-
-#ifdef __ERRLOG_C__
-
 // gcc implementation in errlog.cpp since it is in #included there
 
 /* compile this stuff even if -UDEBUG because
@@ -72,8 +69,7 @@ char*       _w_debug::re_error_str = "Bad regular expression";
 // decipher mixed-up debugging output for those cases.
 //
 
-w_debug::w_debug(const char *n, const char *f) :
-    ErrLog(n, log_to_unix_file, f?f:"-")
+w_debug::w_debug(const char *n, const char *f)
 {
 #ifdef USE_REGEX
     //re_ready = false;
@@ -230,5 +226,4 @@ w_debug::flag_on(
 //     }
 //     clog << "--done" << endl;
 // }
-#endif /* __ERRLOG_C__ */
 

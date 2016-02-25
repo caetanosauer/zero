@@ -1947,9 +1947,9 @@ rc_t
 xct_t::rollback(const lsn_t &save_pt)
 {
 #ifdef USE_ATOMIC_COMMIT
-    ss_m::errlog->clog  << emerg_prio
+    cerr
     << "Rollback to a save point not yet supported in atomic commit protocol"
-    << flushl;
+    << endl;
     return RC(eNOABORT);
 #endif
 
@@ -1961,9 +1961,9 @@ xct_t::rollback(const lsn_t &save_pt)
     w_assert0(update_threads()<=1);
 
     if(!log) {
-        ss_m::errlog->clog  << emerg_prio
+        cerr
         << "Cannot roll back with logging turned off. "
-        << flushl;
+        << endl;
         return RC(eNOABORT);
     }
 

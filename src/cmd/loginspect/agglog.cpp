@@ -89,7 +89,7 @@ AggregateHandler::AggregateHandler(bitset<logrec_t::t_max_logrec> filter,
             cout << " " << logrec_t::get_type_str((logrec_t::kind_t) i);
         }
     }
-    cout << flushl;
+    cout << endl;
 }
 
 void AggregateHandler::invoke(logrec_t& r)
@@ -128,7 +128,7 @@ void AggregateHandler::dumpCounts()
             counts[i] = 0;
         }
     }
-    cout << flushl;
+    cout << endl;
 }
 
 void AggregateHandler::finalize()

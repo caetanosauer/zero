@@ -52,12 +52,11 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     long bufpoolsize = options.get_int_option("sm_bufpoolsize", 8192) * 1024 * 1024;
     uint32_t  nbufpages = (bufpoolsize - 1) / smlevel_0::page_sz + 1;
     if (nbufpages < 10)  {
-        smlevel_0::errlog->clog << fatal_prio << "ERROR: buffer size ("
+        cerr << "ERROR: buffer size ("
              << bufpoolsize
-             << "-KB) is too small" << flushl;
-        smlevel_0::errlog->clog << fatal_prio
-            << "       at least " << 32 * smlevel_0::page_sz / 1024
-             << "-KB is needed" << flushl;
+             << "-KB) is too small" << endl;
+        cerr << "       at least " << 32 * smlevel_0::page_sz / 1024
+             << "-KB is needed" << endl;
         W_FATAL(eCRASH);
     }
 

@@ -115,8 +115,7 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t& r)
             if (last_rc.err_num() == eEOF)
                 eof = true;
             else  {
-                smlevel_0::errlog->clog << fatal_prio
-                << "Fatal error : " << last_rc << flushl;
+                cerr << "Fatal error : " << last_rc << endl;
             }
         }
     }

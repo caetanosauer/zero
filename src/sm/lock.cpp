@@ -41,7 +41,7 @@ lock_m::~lock_m()
 extern "C" void lock_dump_locks();
 void lock_dump_locks() {
     smlevel_0::lm->dump(cerr);
-    cerr << flushl;
+    cerr << endl;
 }
 
 void lock_m::dump(ostream &o)

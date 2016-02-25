@@ -70,9 +70,7 @@ void BlockScanner::findFirstFile()
     pnum = numeric_limits<int>::max();
     os_dir_t dir = os_opendir(logdir);
     if (!dir) {
-        smlevel_0::errlog->clog << fatal_prio <<
-            "Error: could not open recovery log dir: " <<
-            logdir << flushl;
+        cerr << "Error: could not open recovery log dir: " << logdir << endl;
         W_COERCE(RC(fcOS));
     }
     os_dirent_t* entry = os_readdir(dir);

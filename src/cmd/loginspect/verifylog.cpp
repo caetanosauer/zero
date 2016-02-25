@@ -59,5 +59,5 @@ void VerifyHandler::invoke(logrec_t& r)
 void VerifyHandler::finalize()
 {
     cout << "Log verification complete!" << endl;
-    cout << "scanned_logrecs " << count << flushl;
+    cout << "scanned_logrecs " << count << endl;
 }
