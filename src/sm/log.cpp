@@ -66,7 +66,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "log.h"
 #include "log_core.h"
 #include "log_lsn_tracker.h"
-#include "crash.h"
 #include "lock_raw.h"
 #include "bf_tree.h"
 #include <algorithm> // for std::swap

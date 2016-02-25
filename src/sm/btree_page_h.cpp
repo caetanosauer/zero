@@ -13,7 +13,6 @@
 #include "btree_page_h.h"
 #include "btree_impl.h"
 #include "sm_du_stats.h"
-#include "crash.h"
 #include "w_key.h"
 #include <string>
 #include <algorithm>

@@ -18,7 +18,6 @@
 #include "xct.h"
 #include "vec_t.h"
 #include "vol.h"
-#include <crash.h>
 
 void btree_m::construct_once()
 {

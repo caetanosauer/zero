@@ -16,7 +16,6 @@
 #include "btree_page_h.h"
 #include "btree_impl.h"
 #include "btcursor.h"
-#include "crash.h"
 #include "xct.h"
 #include "lock_s.h"
 #include <vector>

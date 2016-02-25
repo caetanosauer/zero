@@ -15,7 +15,6 @@
 #include "sm_base.h"
 #include "btree_page_h.h"
 #include "btree_impl.h"
-#include "crash.h"
 #include "vec_t.h"
 #include "w_key.h"
 #include "sm.h"

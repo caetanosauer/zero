@@ -68,7 +68,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm.h"
 #include "vol.h"
 #include "bf_tree.h"
-#include "crash.h"
 #include "restart.h"
 #include "sm_options.h"
 #include "suppress_unused.h"

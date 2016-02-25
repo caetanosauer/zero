@@ -24,7 +24,6 @@
 #include "tls.h"
 #include "chkpt_serial.h"
 #include <sstream>
-#include "crash.h"
 #include "chkpt.h"
 #include "logrec.h"
 #include "bf_tree.h"
@@ -35,7 +34,6 @@
 
 const std::string xct_t::IMPL_NAME = "traditional";
 
-// definition of LOGTRACE is in crash.h
 #define DBGX(arg) DBG(<<" th."<<me()->id << " " << "tid." << _tid  arg)
 
 // If we run into btree shrinking activity, we'll bump up the
@@ -1554,10 +1552,6 @@ xct_t::_flush_logbuf()
             _last_log = 0;
             W_DO(log->insert(*l, &_last_lsn));
 
-            LOGTRACE( << setiosflags(ios::right) << _last_lsn
-                      << resetiosflags(ios::right) << " I: " << *l
-                      );
-
             LOGREC_ACCOUNT(*l, !consuming); // see logrec.h
 
             // log insert effectively set_lsn to the lsn of the *next* byte of
@@ -1731,7 +1725,6 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
         // Now see if this last item was supposed to be
         // compensated:
         if(and_compensate && (_anchor != lsn_t::null)) {
-           VOIDSSMTEST("compensate");
            if(_last_log) {
                if ( _last_log->is_cpsn()) {
                     DBGX(<<"already compensated");
@@ -1995,10 +1988,6 @@ xct_t::rollback(const lsn_t &save_pt)
     lsn_t nxt = _undo_nxt;
 
     DBGOUT3(<<"Initial rollback, from: " << nxt << " to: " << save_pt);
-    LOGTRACE( << setiosflags(ios::right) << nxt
-              << resetiosflags(ios::right)
-              << " Roll back " << " " << tid()
-              << " to " << save_pt );
 
     logrec_t* __copy__buf = new logrec_t; // auto-del
     if(! __copy__buf)
@@ -2010,15 +1999,12 @@ xct_t::rollback(const lsn_t &save_pt)
         rc =  log->fetch(nxt, buf, 0, true);
         if(rc.is_error() && rc.err_num()==eEOF)
         {
-            LOGTRACE2( << "U: end of log looking to fetch nxt=" << nxt);
             DBGX(<< " fetch returns EOF" );
             log->release();
             goto done;
         }
         else
         {
-             LOGTRACE2( << "U: fetch nxt=" << nxt << "  returns rc=" << rc);
-
              logrec_t& temp = *buf;
              w_assert3(!temp.is_skip());
 
@@ -2041,8 +2027,6 @@ xct_t::rollback(const lsn_t &save_pt)
             /*
              *  Undo action of r.
              */
-            LOGTRACE1( << setiosflags(ios::right) << nxt
-                      << resetiosflags(ios::right) << " U: " << r );
 
             PageID pid = r.pid();
             fixable_page_h page;
@@ -2056,7 +2040,6 @@ xct_t::rollback(const lsn_t &save_pt)
             {
                 // A compensation log record
                 w_assert1(r.is_undoable_clr());
-                LOGTRACE2( << "U: compensating to " << r.undo_nxt() );
                 nxt = r.undo_nxt();
                 DBGOUT1(<<"Rollback, log record is compensation, undo_nxt: " << nxt);
             }
@@ -2064,16 +2047,12 @@ xct_t::rollback(const lsn_t &save_pt)
             {
                 // Not a compensation log record, use xid_prev() which is
                 // previous logrec of this xct
-                LOGTRACE2( << "U: undoing to " << r.xid_prev() );
                 nxt = r.xid_prev();
                 DBGOUT1(<<"Rollback, log record is not compensation, xid_prev: " << nxt);
             }
         }
         else  if (r.is_cpsn())
         {
-            LOGTRACE2( << setiosflags(ios::right) << nxt
-                      << resetiosflags(ios::right) << " U: " << r
-                      << " compensating to " << r.undo_nxt() );
             if (r.is_single_sys_xct())
             {
                 nxt = lsn_t::null;
@@ -2088,9 +2067,6 @@ xct_t::rollback(const lsn_t &save_pt)
         else
         {
             // r is not undoable
-            LOGTRACE2( << setiosflags(ios::right) << nxt
-               << resetiosflags(ios::right) << " U: " << r
-               << " skipping to " << r.xid_prev());
             if (r.is_single_sys_xct())
             {
                 nxt = lsn_t::null;
