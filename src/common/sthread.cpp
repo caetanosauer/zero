@@ -96,13 +96,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sthread_stats.h"
 #include "stcore_pthread.h"
 
-#ifdef EXPLICIT_TEMPLATE
-template class w_list_t<sthread_t, queue_based_lock_t>;
-template class w_list_i<sthread_t, queue_based_lock_t>;
-template class w_descend_list_t<sthread_t, queue_based_lock_t, sthread_t::priority_t>;
-template class w_keyed_list_t<sthread_t, queue_based_lock_t, sthread_t::priority_t>;
-#endif
-
 /* thread-local random number generator -- see rand48.h  */
 
 /**\var static __thread rand48 tls_rng

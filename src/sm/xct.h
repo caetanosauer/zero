@@ -248,18 +248,6 @@ public:
         state_t                   _state;
         bool                      _read_only;
 
-        /*
-         * List of stores which this xct will free after completion
-         * Protected by _1thread_xct.
-         */
-        w_list_t<stid_list_elem_t,queue_based_lock_t>    _storesToFree;
-
-        /*
-         * List of load stores:  converted to regular on xct commit,
-         *                act as a temp files during xct
-         */
-        w_list_t<stid_list_elem_t,queue_based_lock_t>    _loadStores;
-
         lintel::Atomic<int> _xct_ended; // used for self-checking (assertions) only
         bool              _xct_aborting; // distinguish abort()ing xct from
         // commit()ing xct when they are in state xct_freeing_space

@@ -47,12 +47,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <errlog_s.h>
 #include <w_strstream.h>
 
-#ifdef EXPLICIT_TEMPLATE
-template class w_list_t<ErrLogInfo,unsafe_list_dummy_lock_t>;
-template class w_list_i<ErrLogInfo,unsafe_list_dummy_lock_t>;
-template class w_keyed_list_t<ErrLogInfo,,unsafe_list_dummy_lock_t simple_string>;
-#endif
-
 /** \cond skip */
 // DEAD static char __c[100];
 // This stream is used *only* to tell if an ostream is a log stream; 

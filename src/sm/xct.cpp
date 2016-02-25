@@ -36,14 +36,6 @@
 const std::string xct_t::IMPL_NAME = "traditional";
 
 #ifdef EXPLICIT_TEMPLATE
-template class w_list_t<xct_t, queue_based_lock_t>;
-template class w_list_i<xct_t, queue_based_lock_t>;
-template class w_list_t<xct_dependent_t,queue_based_lock_t>;
-template class w_list_i<xct_dependent_t,queue_based_lock_t>;
-template class w_keyed_list_t<xct_t, queue_based_lock_t, tid_t>;
-template class w_descend_list_t<xct_t, queue_based_lock_t, tid_t>;
-template class w_list_t<stid_list_elem_t, queue_based_lock_t>;
-template class w_list_i<stid_list_elem_t, queue_based_lock_t>;
 template class w_auto_delete_array_t<lockid_t>;
 template class w_auto_delete_array_t<StoreID>;
 
@@ -248,8 +240,6 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
     _threads_attached(0),
     _state(s),
     _read_only(false),
-    _storesToFree(stid_list_elem_t::link_offset(), &_1thread_xct),
-    _loadStores(stid_list_elem_t::link_offset(), &_1thread_xct),
     _xct_ended(0), // for assertions
     _xct_aborting(0)
 {
@@ -864,9 +854,6 @@ operator<<(ostream& o, const xct_t& x)
     o << " defaultTimeout=";
     print_timeout(o, x.timeout_c());
     o << " first_lsn=" << x._first_lsn << " last_lsn=" << x._last_lsn << "\n" << "   ";
-
-    o << " num_storesToFree=" << x._core->_storesToFree.num_members()
-      << " num_loadStores=" << x._core->_loadStores.num_members() << "\n" << "   ";
 
     o << " in_compensated_op=" << x._in_compensated_op << " anchor=" << x._anchor;
 
@@ -2287,7 +2274,6 @@ xct_t::restore_log_state(switch_t s, bool n )
     (void) set_log_state(s, n);
 }
 
-NORET
 xct_dependent_t::xct_dependent_t(xct_t* xd) : _xd(xd), _registered(false)
 {
 }
@@ -2303,7 +2289,6 @@ xct_dependent_t::register_me() {
     _registered = true;
 }
 
-NORET
 xct_dependent_t::~xct_dependent_t()
 {
     w_assert2(_registered);
