@@ -61,16 +61,11 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define SM_C
 
-#ifdef __GNUG__
-class prologue_rc_t;
-#endif
-
 #include "w.h"
 #include "sm_base.h"
 #include "chkpt.h"
 #include "chkpt_serial.h"
 #include "sm.h"
-#include "prologue.h"
 #include "vol.h"
 #include "bf_tree.h"
 #include "crash.h"
@@ -687,7 +682,6 @@ ss_m::begin_xct(
         sm_stats_info_t*             _stats, // allocated by caller
         timeout_in_ms timeout)
 {
-    SM_PROLOGUE_RC(ss_m::begin_xct, not_in_xct, read_only,  0);
     tid_t tid;
     W_DO(_begin_xct(_stats, tid, timeout));
     return RCOK;
@@ -695,7 +689,6 @@ ss_m::begin_xct(
 rc_t
 ss_m::begin_xct(timeout_in_ms timeout)
 {
-    SM_PROLOGUE_RC(ss_m::begin_xct, not_in_xct, read_only,  0);
     tid_t tid;
     W_DO(_begin_xct(0, tid, timeout));
     return RCOK;
@@ -707,7 +700,6 @@ ss_m::begin_xct(timeout_in_ms timeout)
 rc_t
 ss_m::begin_xct(tid_t& tid, timeout_in_ms timeout)
 {
-    SM_PROLOGUE_RC(ss_m::begin_xct, not_in_xct,  read_only, 0);
     W_DO(_begin_xct(0, tid, timeout));
     return RCOK;
 }
@@ -728,10 +720,8 @@ rc_t
 ss_m::commit_xct(sm_stats_info_t*& _stats, bool lazy,
                  lsn_t* plastlsn)
 {
-    SM_PROLOGUE_RC(ss_m::commit_xct, commitable_xct, read_write, 0);
 
     W_DO(_commit_xct(_stats, lazy, plastlsn));
-    prologue.no_longer_in_xct();
 
     return RCOK;
 }
@@ -760,11 +750,9 @@ ss_m::commit_xct_group(xct_t *list[], int listlen)
 rc_t
 ss_m::commit_xct(bool lazy, lsn_t* plastlsn)
 {
-    SM_PROLOGUE_RC(ss_m::commit_xct, commitable_xct, read_write, 0);
 
     sm_stats_info_t*             _stats=0;
     W_DO(_commit_xct(_stats,lazy,plastlsn));
-    prologue.no_longer_in_xct();
     /*
      * throw away the _stats, since user isn't harvesting...
      */
@@ -779,22 +767,17 @@ ss_m::commit_xct(bool lazy, lsn_t* plastlsn)
 rc_t
 ss_m::abort_xct(sm_stats_info_t*&             _stats)
 {
-    SM_PROLOGUE_RC(ss_m::abort_xct, abortable_xct, read_write, 0);
 
     // Temp removed for debugging purposes only
     // want to see what happens if the abort proceeds (scripts/alloc.10)
     bool was_sys_xct = xct() && xct()->is_sys_xct();
     W_DO(_abort_xct(_stats));
-    if (!was_sys_xct) { // system transaction might be nested
-        prologue.no_longer_in_xct();
-    }
 
     return RCOK;
 }
 rc_t
 ss_m::abort_xct()
 {
-    SM_PROLOGUE_RC(ss_m::abort_xct, abortable_xct, read_write, 0);
     sm_stats_info_t*             _stats=0;
 
     W_DO(_abort_xct(_stats));
@@ -802,7 +785,6 @@ ss_m::abort_xct()
      * throw away _stats, since user is not harvesting them
      */
     delete _stats;
-    prologue.no_longer_in_xct();
 
     return RCOK;
 }
@@ -816,7 +798,6 @@ ss_m::save_work(sm_save_point_t& sp)
     // For now, consider this a read/write operation since you
     // wouldn't be doing this unless you intended to write and
     // possibly roll back.
-    SM_PROLOGUE_RC(ss_m::save_work, in_xct, read_write, 0);
     W_DO( _save_work(sp) );
     return RCOK;
 }
@@ -827,7 +808,6 @@ ss_m::save_work(sm_save_point_t& sp)
 rc_t
 ss_m::rollback_work(const sm_save_point_t& sp)
 {
-    SM_PROLOGUE_RC(ss_m::rollback_work, in_xct, read_write, 0);
     W_DO( _rollback_work(sp) );
     return RCOK;
 }
@@ -881,14 +861,12 @@ ss_m::xct_state_t ss_m::state_xct(const xct_t* x)
 rc_t
 ss_m::chain_xct( sm_stats_info_t*&  _stats, bool lazy)
 {
-    SM_PROLOGUE_RC(ss_m::chain_xct, commitable_xct, read_write, 0);
     W_DO( _chain_xct(_stats, lazy) );
     return RCOK;
 }
 rc_t
 ss_m::chain_xct(bool lazy)
 {
-    SM_PROLOGUE_RC(ss_m::chain_xct, commitable_xct, read_write, 0);
     sm_stats_info_t        *_stats = 0;
     W_DO( _chain_xct(_stats, lazy) );
     /*
@@ -964,7 +942,6 @@ ss_m::config_info(sm_config_info_t& info) {
 rc_t
 ss_m::start_log_corruption()
 {
-    SM_PROLOGUE_RC(ss_m::start_log_corruption, in_xct, read_write, 0);
     if(log) {
         // flush current log buffer since all future logs will be
         // corrupted.
@@ -1129,7 +1106,6 @@ rc_t ss_m::lock(const lockid_t& n, const okvl_mode& m,
 /*rc_t
 ss_m::unlock(const lockid_t& n)
 {
-    SM_PROLOGUE_RC(ss_m::unlock, in_xct, read_only, 0);
     W_DO( lm->unlock(n) );
     return RCOK;
 }
@@ -1139,7 +1115,6 @@ ss_m::unlock(const lockid_t& n)
 rc_t
 ss_m::query_lock(const lockid_t& n, lock_mode_t& m)
 {
-    SM_PROLOGUE_RC(ss_m::query_lock, in_xct, read_only, 0);
     W_DO( lm->query(n, m, xct()->tid()) );
 
     return RCOK;
@@ -1304,7 +1279,6 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
          */
         me()->attach_xct(x);
         {
-        SM_PROLOGUE_RC(ss_m::mount_dev, commitable_xct, read_write, 0);
         W_DO( x->commit_as_group_member() );
         }
         w_assert1(me()->xct() == NULL);
@@ -1504,12 +1478,6 @@ ss_m::get_du_statistics(sm_du_stats_t& du, bool audit)
 rc_t
 ss_m::gather_xct_stats(sm_stats_info_t& _stats, bool reset)
 {
-    // Use commitable_xct to ensure exactly 1 thread attached for
-    // clean collection of all stats,
-    // even those that read-only threads would increment.
-    //
-    SM_PROLOGUE_RC(ss_m::gather_xct_stats, commitable_xct, read_only, 0);
-
     w_assert3(xct() != 0);
     xct_t& x = *xct();
 
