@@ -62,7 +62,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_base.h"
 #include "w_heap.h"
 #include "sm_base.h"
-#include "sm_du_stats.h"
 #include "sm_base.h"
 #include "btree_impl.h"         // Lock re-acquisition
 #include "restart.h"

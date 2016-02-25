@@ -11,6 +11,9 @@
 #include "fixable_page_h.h"
 #include "w_key.h"
 #include "w_endian.h"
+#include "w_base.h"
+
+typedef w_base_t::base_stat_t base_stat_t;
 
 struct btree_lf_stats_t;
 struct btree_int_stats_t;
@@ -1070,6 +1073,73 @@ public:
     }
 };
 
+
+/** btree leaf pages. */
+struct btree_lf_stats_t {
+    base_stat_t        hdr_bs;            /* page header (overhead) */
+    base_stat_t        key_bs;            /* space used for keys      */
+    base_stat_t        data_bs;           /* space for data associated to keys */
+    base_stat_t        entry_overhead_bs; /* e.g., slot header, padding for alignment */
+    base_stat_t        unused_bs;
+    base_stat_t        entry_cnt;
+    base_stat_t        unique_cnt;        /* number of unique entries */
+
+    NORET              btree_lf_stats_t() {clear();}
+    void               add(const btree_lf_stats_t& stats);
+    void               clear();
+    w_rc_t             audit() const;
+    base_stat_t        total_bytes() const;
+    void               print(ostream&, const char *) const;/* pretty print */
+    friend ostream&    operator<<(ostream&, const btree_lf_stats_t& s);
+};
+
+/** btree interior pages. */
+struct btree_int_stats_t {
+    base_stat_t        used_bs;
+    base_stat_t        unused_bs;
+
+    NORET              btree_int_stats_t() {clear();}
+    void               add(const btree_int_stats_t& stats);
+    void               clear();
+    w_rc_t             audit() const;
+    base_stat_t        total_bytes() const;
+    void               print(ostream&, const char *) const;/* pretty print */
+    friend ostream&    operator<<(ostream&, const btree_int_stats_t& s);
+};
+
+// returns by bulk load and
+// btree_m::get_du_statistics
+struct btree_stats_t {
+    btree_lf_stats_t    leaf_pg;  // byte counts for leaf pages
+    btree_int_stats_t    int_pg;   // byte counts for interior pages
+
+    base_stat_t     leaf_pg_cnt; // level-1 pages found by tree traversal
+    base_stat_t     int_pg_cnt;  // level>1 pages found by tree traversal
+    base_stat_t     unlink_pg_cnt; // pages allocated but not accounted-for
+                                // in a tree traversal; allocated count is
+                                // found by first_page/next_page traversal
+                                // of the store's extents
+                    // Given the way this is computed, it would be
+                    // pretty hard to fail an audit.
+                    // It would be nice if unlinked pages could be
+                    // accounted-for in another way for a meaningful audit.
+                     /* unlinked pages are empty and
+                    // will be freed the next
+                    // time they are encountered
+                    // during a traversal
+                    */
+    base_stat_t     unalloc_pg_cnt; // pages not-allocated by extent-traversal
+    base_stat_t     level_cnt;    /* number of levels in btree */
+
+    NORET           btree_stats_t() {clear();}
+    void            add(const btree_stats_t& stats);
+    void            clear();
+    w_rc_t          audit() const;
+    base_stat_t     total_bytes() const;
+    base_stat_t     alloc_pg_cnt() const;
+    void            print(ostream&, const char *) const;/* pretty print */
+    friend ostream& operator<<(ostream&, const btree_stats_t& s);
+};
 
 // ======================================================================
 //   BEGIN: Inline function implementations

@@ -1003,46 +1003,6 @@ ss_m::dump_locks() {
 
 
 
-//#ifdef SLI_HOOKS
-/*--------------------------------------------------------------*
- *  Enable/Disable Shore-SM features                            *
- *--------------------------------------------------------------*/
-
-void ss_m::set_sli_enabled(bool /* enable */)
-{
-    fprintf(stdout, "SLI not supported\n");
-    //lm->set_sli_enabled(enable);
-    //TODO: SHORE-KITS-API
-    assert(0);
-}
-
-void ss_m::set_elr_enabled(bool /* enable */)
-{
-    fprintf(stdout, "ELR not supported\n");
-    //xct_t::set_elr_enabled(enable);
-    //TODO: SHORE-KITS-API
-    assert(0);
-}
-
-rc_t ss_m::set_log_features(char const* /* features */)
-{
-    fprintf(stdout, "Aether not integrated\n");
-    return (RCOK);
-    //return log->set_log_features(features);
-    //TODO: SHORE-KITS-API
-    assert(0);
-}
-
-char const* ss_m::get_log_features()
-{
-    fprintf(stdout, "Aether not integrated\n");
-    return ("NOT-IMPL");
-    //return log->get_log_features();
-    //TODO: SHORE-KITS-API
-    assert(0);
-}
-//#endif
-
 lil_global_table* ss_m::get_lil_global_table() {
     if (lm) {
         return lm->get_lil_global_table();
@@ -1367,62 +1327,6 @@ ss_m::_rollback_work(const sm_save_point_t& sp)
         return RC(eBADSAVEPOINT);
     }
     W_DO( x->rollback(sp) );
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_get_du_statistics()        DU DF                    *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_du_statistics(StoreID stpgid, sm_du_stats_t& du, bool audit)
-{
-    // TODO this should take S lock, not IS
-    PageID root_pid;
-    W_DO(open_store(stpgid, root_pid));
-
-    btree_stats_t btree_stats;
-    W_DO( bt->get_du_statistics(root_pid, btree_stats, audit));
-    if (audit) {
-        W_DO(btree_stats.audit());
-    }
-    du.btree.add(btree_stats);
-    du.btree_cnt++;
-    return RCOK;
-}
-
-
-/*--------------------------------------------------------------*
- *  ss_m::_get_du_statistics()  DU DF                           *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_du_statistics(sm_du_stats_t& du, bool audit)
-{
-    sm_du_stats_t new_stats;
-
-    rc_t rc;
-    // get du stats on every store
-    for (StoreID s = 0; s < stnode_page::max; s++) {
-        DBG(<<" getting stats for store " << s);
-        rc = get_du_statistics(s, new_stats, audit);
-        if (rc.is_error()) {
-            if (rc.err_num() == eBADSTID) {
-                DBG(<<"skipping large object or missing store " << s );
-                continue;  // skip any stores that don't show
-                           // up in the directory index
-                           // in this case it this means stores for
-                           // large object pages
-            } else {
-                return rc;
-            }
-        }
-        DBG(<<"end for loop with s=" << s );
-    }
-
-    if (audit) {
-        W_DO(new_stats.audit());
-    }
-    du.add(new_stats);
-
     return RCOK;
 }
 

@@ -13,7 +13,6 @@
 #include "btree_page_h.h"
 #include "btree_impl.h"
 #include "btcursor.h"
-#include "sm_du_stats.h"
 #include "w_key.h"
 #include "xct.h"
 #include "vec_t.h"
@@ -142,94 +141,6 @@ rc_t btree_m::verify_volume(
         int hash_bits, verify_volume_result &result)
 {
     return btree_impl::_ux_verify_volume(hash_bits, result);
-}
-
-rc_t
-btree_m::_get_du_statistics_recurse(
-    const PageID&        currentpid,
-    btree_stats_t&        _stats,
-    base_stat_t        &lf_cnt,
-    base_stat_t        &int_cnt,
-    btree_lf_stats_t        &lf_stats,
-    btree_int_stats_t       &int_stats,
-    bool                 audit)
-{
-    // CS TODO: currently not supported due to removal of fix_direct
-    return RC(fcNOTIMPLEMENTED);
-
-    btree_page_h next_page;
-    btree_page_h current;
-    PageID nextpid = currentpid;
-    // also check right foster sibling.
-    // this part is now (partially) loop, not recursion to prevent the stack from growing too long
-    while (nextpid != 0) {
-        PageID original_pid = smlevel_0::bf->debug_get_original_pageid(nextpid);
-        btree_page_h page;
-        // W_DO( next_page.fix_direct(original_pid, LATCH_SH));
-        current = next_page;// at this point (after latching next) we don't need to keep the "previous" fixed.
-
-        if (current.level() > 1)  {
-            int_cnt++;
-            W_DO(current.int_stats(int_stats));
-            if (audit) {
-                W_DO(int_stats.audit());
-            }
-            _stats.int_pg.add(int_stats);
-            if (current.pid0()) {
-                nextpid = current.pid0();
-                W_DO(_get_du_statistics_recurse(
-                    nextpid, _stats, lf_cnt, int_cnt,
-                    lf_stats, int_stats, audit));
-            }
-            for (int i = 0; i < current.nrecs(); ++i) {
-                nextpid = current.child(i);
-                W_DO(_get_du_statistics_recurse(
-                    nextpid, _stats, lf_cnt, int_cnt,
-                    lf_stats, int_stats, audit));
-            }
-        } else {
-            lf_cnt++;
-            W_DO(current.leaf_stats(lf_stats));
-            if (audit) {
-                W_DO(lf_stats.audit());
-            }
-            _stats.leaf_pg.add(lf_stats);
-        }
-        nextpid = current.get_foster();
-    }
-    return RCOK;
-}
-rc_t
-btree_m::get_du_statistics(
-    const PageID&        root,
-    btree_stats_t&        _stats,
-    bool                 audit)
-{
-    base_stat_t        lf_cnt = 0;
-    base_stat_t        int_cnt = 0;
-    base_stat_t        level_cnt = 0;
-
-    /*
-       Traverse the btree gathering stats.  This traversal scans across
-       each level of the btree starting at the root.  Unfortunately,
-       this scan misses "unlinked" pages.  Unlinked pages are empty
-       and will be free'd during the next top-down traversal that
-       encounters them.  This traversal should really be DFS so it
-       can find "unlinked" pages, but we leave it as is for now.
-       We account for the unlinked pages after the traversal.
-    */
-    btree_lf_stats_t        lf_stats;
-    btree_int_stats_t       int_stats;
-    W_DO(_get_du_statistics_recurse(
-        root, _stats, lf_cnt, int_cnt,
-        lf_stats, int_stats, audit));
-
-    _stats.unalloc_pg_cnt = 0;
-    _stats.unlink_pg_cnt = 0;
-    _stats.leaf_pg_cnt += lf_cnt;
-    _stats.int_pg_cnt += int_cnt;
-    _stats.level_cnt = MAX(_stats.level_cnt, level_cnt);
-    return RCOK;
 }
 
 void

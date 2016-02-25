@@ -49,7 +49,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/restart.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/restore.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/smindex.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/smstats.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/smthread.cpp
@@ -199,7 +198,6 @@ SET (GENFILES_H ${SM_STATS_GENFILES_B_H} ${BF_HTAB_STATS_GENFILES_B_H} ${LOGDEF_
 #   ${CMAKE_CURRENT_SOURCE_DIR}/restart_s.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/sm_base.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/sm_external.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/sm.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_0.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_0.h

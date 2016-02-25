@@ -71,7 +71,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sm_base.h>
 #endif
 
-#include <sm_du_stats.h> // declares sm_du_stats_t
 #include <smstats.h> // declares sm_stats_info_t and sm_config_info_t
 #include <lsn.h>
 #include <string>
@@ -1353,17 +1352,6 @@ public:
      *
      *****************************************************************/
 
-//#ifdef SLI_HOOKS
-    /* enable/disable SLI globally for all threads created after this
-       point. Does *NOT* disable SLI for existing threads.
-     */
-    static void            set_sli_enabled(bool enabled);
-    static void            set_elr_enabled(bool enabled);
-
-    static rc_t            set_log_features(char const* features);
-    static char const*         get_log_features();
-//#endif
-
     /** Returns the global lock table object for light-weight intent locks. */
     static lil_global_table*  get_lil_global_table();
 
@@ -1387,13 +1375,6 @@ public:
     static rc_t            activate_archiver();
 
     static const sm_options& get_options() { return _options; }
-
-    static rc_t get_du_statistics(StoreID stpgid, sm_du_stats_t& du, bool audit);
-
-    // this is for df statistics  DU DF
-    static rc_t            get_du_statistics(
-        sm_du_stats_t&         du,
-        bool                   audit);
 
 private:
 
