@@ -58,7 +58,7 @@ bf_tree_cleaner::~bf_tree_cleaner()
     // note we use free(), not delete[], which corresponds to posix_memalign
     ::free (buf);
 
-    delete[] _write_buffer_indexes;    
+    delete[] _write_buffer_indexes;
 }
 
 w_rc_t bf_tree_cleaner::wakeup_cleaner()
@@ -80,7 +80,6 @@ w_rc_t bf_tree_cleaner::shutdown()
 {
     _stop_requested = true;
     lintel::atomic_thread_fence(lintel::memory_order_release);
-    lintel::atomic_thread_fence(lintel::memory_order_consume);
     W_DO(join());
     return RCOK;
 }
@@ -116,6 +115,7 @@ w_rc_t bf_tree_cleaner::force_volume()
         bf_idx block_cnt = _bufferpool->_block_cnt;
         for (bf_idx idx = 1; idx < block_cnt; ++idx) {
             // no latching is needed -- fuzzy check
+            // CS TODO: ok, but we do need fences then!
             bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
             if (cb._dirty) {
                 all_clean = false;
@@ -128,7 +128,8 @@ w_rc_t bf_tree_cleaner::force_volume()
     }
 
     generic_page* buf;
-    w_assert0(::posix_memalign((void**)&buf, SM_PAGESIZE, SM_PAGESIZE)==0);
+    int res = posix_memalign((void**) &buf, SM_PAGESIZE, SM_PAGESIZE);
+    w_assert0(res == 0);
 
     // Flush alloc_cache_t
     PageID last_pid = smlevel_0::vol->get_last_allocated_pid();
@@ -143,13 +144,8 @@ w_rc_t bf_tree_cleaner::force_volume()
     smlevel_0::vol->read_page_verify(stnode_page::stpid, buf, emlsn);
     smlevel_0::vol->write_page(stnode_page::stpid, buf);
 
-    delete buf;
+    delete[] buf;
 
-    if (_dirty_shutdown_happening()) {
-        DBGOUT1(<< "joining all cleaner threads up to 100ms...");
-        W_DO(join(sthread_base_t::WAIT_FOREVER));
-    }
-    DBGOUT2(<< "done force_volume!");
     return RCOK;
 }
 

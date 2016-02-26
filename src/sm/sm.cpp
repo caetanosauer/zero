@@ -450,6 +450,7 @@ ss_m::_destruct_once()
         return;
     }
 
+    // CS TODO: get rid of this shutting_down flag, or at least use proper fences.
     // Set shutting_down so that when we disable bg flushing, if the
     // log flush daemon is running, it won't just try to re-activate it.
     shutting_down = true;
@@ -476,13 +477,9 @@ ss_m::_destruct_once()
     bool truncate = _options.get_bool_option("sm_truncate_log", false);
     if (shutdown_clean || truncate) {
         ERROUT(<< "SM performing clean shutdown");
-        // dismount all volumes which aren't locked by a prepared xct
-        // We can't use normal dismounting for the prepared xcts because
-        // they would be logged as dismounted. We need to dismount them
-        // w/o logging turned on.
-        // That happens below.
 
         W_COERCE(bf->force_volume());
+        W_COERCE(log->flush_all());
         me()->check_actual_pin_count(0);
 
         if (truncate) {
@@ -491,6 +488,8 @@ ss_m::_destruct_once()
 
         // Take a synch checkpoint (blocking) after buffer pool flush but before shutting down
         chkpt->take();
+
+        ERROUT(<< "All pages cleaned successfully");
     }
     else {
         ERROUT(<< "SM performing dirty shutdown");

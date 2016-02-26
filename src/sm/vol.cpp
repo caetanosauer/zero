@@ -46,7 +46,7 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
     bool truncate = options.get_bool_option("sm_truncate", false);
     _readonly = options.get_bool_option("sm_vol_readonly", false);
     _log_page_reads = options.get_bool_option("sm_vol_log_reads", false);
-    _log_page_writes = options.get_bool_option("sm_vol_log_writes", false);
+    _log_page_writes = options.get_bool_option("sm_vol_log_writes", true);
 
     spinlock_write_critical_section cs(&_mutex);
 
