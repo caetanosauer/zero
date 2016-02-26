@@ -28,16 +28,13 @@ protected:
     bool opt_load;
     string opt_benchmark;
     string opt_conffile;
-    int opt_bufsize;
     int opt_num_trxs;
     unsigned opt_duration;
     int opt_num_threads;
     int opt_select_trx;
     int opt_queried_sf;
-    unsigned opt_logbufsize;
     bool opt_eager;
     bool opt_truncateLog;
-    unsigned opt_archWorkspace;
     bool opt_skew;
     bool opt_spread;
     unsigned opt_warmup;

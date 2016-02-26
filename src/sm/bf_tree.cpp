@@ -48,8 +48,9 @@ uint64_t bf_tree_m::_bf_swizzle_ex_fails = 0;
 
 bf_tree_m::bf_tree_m(const sm_options& options)
 {
-    int64_t bufpoolsize = options.get_int_option("sm_bufpoolsize", 8192);
-    uint32_t  nbufpages = (bufpoolsize * 1024 - 1) / smlevel_0::page_sz + 1;
+    // sm_bufboolsize given in MB -- default 8GB
+    long bufpoolsize = options.get_int_option("sm_bufpoolsize", 8192) * 1024 * 1024;
+    uint32_t  nbufpages = (bufpoolsize - 1) / smlevel_0::page_sz + 1;
     if (nbufpages < 10)  {
         smlevel_0::errlog->clog << fatal_prio << "ERROR: buffer size ("
              << bufpoolsize

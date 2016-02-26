@@ -45,8 +45,6 @@ void KitsCommand::setupOptions()
     kits.add_options()
         ("benchmark,b", po::value<string>(&opt_benchmark)->required(),
             "Benchmark to execute. Possible values: tpcb, tpcc")
-        // ("config,c", po::value<string>(&opt_conffile)->required(),
-        //     "Path to configuration file")
         ("dbfile,d", po::value<string>(&opt_dbfile)->default_value("db"),
             "Path to database file (required only for loading)")
         ("backup", po::value<string>(&opt_backup)->default_value(""),
@@ -62,8 +60,6 @@ void KitsCommand::setupOptions()
             ->implicit_value(true),
             "If set, log and archive folders are emptied, database files \
             and backups are deleted, and dataset is loaded from scratch")
-        ("bufsize", po::value<int>(&opt_bufsize)->default_value(0),
-            "Size of buffer pool in MB")
         ("trxs", po::value<int>(&opt_num_trxs)->default_value(0),
             "Number of transactions to execute")
         ("duration", po::value<unsigned>(&opt_duration)->default_value(0),
@@ -78,18 +74,12 @@ void KitsCommand::setupOptions()
         ("spread", po::value<bool>(&opt_spread)->default_value(true)
             ->implicit_value(true),
             "Attach each worker thread to a fixed core for improved concurrency")
-        ("logbufsize", po::value<unsigned>(&opt_logbufsize)
-            ->default_value(80),
-            "Size of log buffer (in MB) (default 80)")
         ("eager", po::value<bool>(&opt_eager)->default_value(true)
             ->implicit_value(true),
             "Run log archiving in eager mode")
         ("truncateLog", po::value<bool>(&opt_truncateLog)->default_value(false)
             ->implicit_value(true),
             "Truncate log until last checkpoint after loading")
-        ("archWorkspace", po::value<unsigned>(&opt_archWorkspace)
-            ->default_value(100),
-            "Size of log archiver sort workspace in MB")
         ("skew", po::value<bool>(&opt_skew)->default_value(false)
             ->implicit_value(true),
             "Activate skew on transaction inputs (currently only 80:20 skew \
@@ -436,25 +426,14 @@ void KitsCommand::loadOptions(sm_options& options)
     options.set_string_option("sm_logdir", logdir);
     mkdirs(logdir);
 
-    options.set_int_option("sm_logbufsize", opt_logbufsize * 1024);
-
     if (!archdir.empty()) {
-        options.set_bool_option("sm_archiving", true);
         options.set_string_option("sm_archdir", archdir);
         options.set_bool_option("sm_archiver_eager", opt_eager);
-        options.set_int_option("sm_archiver_workspace_size",
-                opt_archWorkspace * 1048576);
         mkdirs(archdir);
     }
 
     // ticker always turned on
     options.set_bool_option("sm_ticker_enable", true);
-
-    if (opt_bufsize <= 0) {
-        // TODO: default size for buffer pool may depend on SF and benchmark
-        opt_bufsize = 8; // 8 MB
-    }
-    options.set_int_option("sm_bufpoolsize", opt_bufsize * 1024);
 
     options.set_bool_option("sm_truncate_log", opt_truncateLog);
 }
