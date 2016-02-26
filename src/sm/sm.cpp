@@ -498,125 +498,12 @@ ss_m::_destruct_once()
      ERROUT(<< "SM shutdown complete!");
 }
 
-#include "logdef_gen.cpp" // required to regenerate chkpt_end
-
-/*
- * WARNING: this method assumes that all transaction activity has stopped.
- */
 rc_t ss_m::_truncate_log(bool ignore_chkpt)
 {
     DBGTHRD(<< "Truncating log on LSN " << log->durable_lsn());
 
     W_DO(log->truncate());
     W_DO(log->flush_all());
-
-# if 0
-    /*
-     * Take contents from last checkpoint until the end of the log file and
-     * copy them into a new log file, deleting all older files.
-     */
-    lsn_t master = log->master_lsn();
-    lsn_t min_chkpt = log->min_chkpt_rec_lsn();
-    // When this fails, it means either that some pages were not written
-    // out prior to the last checkpoint (min rec_lsn of all CB's on buffer)
-    // or that some transactions are still active
-    w_assert0(ignore_chkpt || master == min_chkpt);
-
-    int partition = master.hi();
-    size_t offset = master.lo();
-
-    const char* logdir = log->dir_name();
-    stringstream ss;
-    int new_part = partition + 1;
-    ss << logdir << '/' << log_storage::log_prefix() << new_part << ends;
-    string newLogFile = ss.str();
-
-    ss.seekp(0);
-    ss << logdir << '/' << log_storage::log_prefix() << partition << ends;
-    string oldLogFile = ss.str();
-
-    int flags = smthread_t::OPEN_RDONLY;
-    int oldFd, newFd;
-    W_DO(me()->open(oldLogFile.c_str(), flags, 0744, oldFd));
-
-    flags = smthread_t::OPEN_WRONLY | smthread_t::OPEN_TRUNC
-        | smthread_t::OPEN_CREATE | smthread_t::OPEN_SYNC;
-    W_DO(me()->open(newLogFile.c_str(), flags, 0744, newFd));
-
-    char* buf = new char[partition_t::XFERSIZE];
-    int done = 0;
-    W_DO(me()->pread_short(oldFd, buf, partition_t::XFERSIZE, offset, done));
-
-    lsn_t newPartLSN = lsn_t(new_part, 0);
-    lsn_t newEndLSN = lsn_t(new_part, 0);
-
-    // fix LSN of all log records
-    // CS TODO: we wouldn't have to do this if logrecs were stored just with the low part
-    size_t pos = 0;
-    while (true) {
-        logrec_t* lr = (logrec_t*) (buf + pos);
-        lsn_t newLSN(new_part, pos);
-        pos += lr->length();
-        w_assert0(lr->length() > 0);
-        memcpy(buf + pos - sizeof(lsn_t), &newLSN, sizeof(lsn_t));
-        if (lr->type() == logrec_t::t_skip) {
-            newEndLSN = lsn_t(new_part, pos - lr->length());
-            break;
-        }
-        if (lr->type() == logrec_t::t_chkpt_end) {
-            // rebuild with correct fields
-            new (lr) chkpt_end_log(newLSN, newPartLSN, newPartLSN);
-        }
-    }
-
-    W_DO(me()->pwrite(newFd, buf, partition_t::XFERSIZE, 0));
-
-    W_DO(me()->close(oldFd));
-    W_DO(me()->close(newFd));
-    delete[] buf;
-
-    // Wait for archiver
-    if (logArchiver) {
-        logArchiver->setEager(false);
-        while (logArchiver->getNextConsumedLSN() < newEndLSN) {
-            logArchiver->activate(newEndLSN);
-            ::usleep(10000); // 10ms
-        }
-        logArchiver->requestFlushSync(newEndLSN);
-        logArchiver->shutdown();
-
-        // generate empty run to fill hole of new partition
-        W_DO(logArchiver->getDirectory()->closeCurrentRun(newEndLSN));
-        delete logArchiver;
-        logArchiver = NULL;
-    }
-
-
-    while (partition > 0) {
-        ss.seekp(0);
-        ss << logdir << '/' << log_storage::log_prefix() << partition << ends;
-        string file = ss.str();
-        unlink(file.c_str());
-        partition--;
-    }
-
-    // delete old chk file and create new one
-    ss.seekp(0);
-    ss << logdir << '/' << log_storage::master_prefix() << 'v'
-        << log_storage::_version_major << '.'
-        << log_storage::_version_minor << '_'
-        << master << '_' << master << ends;
-    unlink(ss.str().c_str());
-
-    ss.seekp(0);
-    ss << logdir << '/' << log_storage::master_prefix() << 'v'
-        << log_storage::_version_major << '.'
-        << log_storage::_version_minor << '_'
-        << new_part << ".0" << '_'
-        << new_part << ".0" << ends;
-    W_DO(me()->open(ss.str().c_str(), flags, 0644, newFd));
-    W_DO(me()->close(newFd));
-#endif
 
     return RCOK;
 }
@@ -896,21 +783,6 @@ ss_m::config_info(sm_config_info_t& info) {
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::start_log_corruption()                        *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::start_log_corruption()
-{
-    if(log) {
-        // flush current log buffer since all future logs will be
-        // corrupted.
-        cerr << "Starting Log Corruption" << endl;
-        log->start_log_corruption();
-    }
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
  *  ss_m::sync_log()                                *
  *--------------------------------------------------------------*/
 rc_t
@@ -1017,32 +889,6 @@ rc_t ss_m::lock(const lockid_t& n, const okvl_mode& m,
     W_DO( lm->lock(n.hash(), m, true, true, !check_only, NULL, timeout) );
     return RCOK;
 }
-
-
-/*--------------------------------------------------------------*
- *  ss_m::unlock()                                *
- *--------------------------------------------------------------*/
-/*rc_t
-ss_m::unlock(const lockid_t& n)
-{
-    W_DO( lm->unlock(n) );
-    return RCOK;
-}
-*/
-
-/*
-rc_t
-ss_m::query_lock(const lockid_t& n, lock_mode_t& m)
-{
-    W_DO( lm->query(n, m, xct()->tid()) );
-
-    return RCOK;
-}
-*/
-
-/*****************************************************************
- * Internal/physical-ID version of all the storage operations
- *****************************************************************/
 
 /*--------------------------------------------------------------*
  *  ss_m::_begin_xct(sm_stats_info_t *_stats, timeout_in_ms timeout) *

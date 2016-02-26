@@ -1066,17 +1066,6 @@ public:
     */
     static rc_t            set_disk_delay(u_int milli_sec);
 
-    /**\cond skip */
-    // TODO : document crash testing facilities
-    /**\brief Simulate a crash
-     * \details
-     * This method tells the log manager to start generating corrupted
-     * log records.  This will make it appear that a crash occurred
-     * at that point in the log.  A call to this method should be
-     * followed immediately by a dirty shutdown of the ssm.
-     */
-    static rc_t            start_log_corruption();
-
     /**
      * \brief Forces a log flush
      * \ingroup SSMLOG
