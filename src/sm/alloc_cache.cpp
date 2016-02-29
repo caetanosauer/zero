@@ -138,6 +138,7 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, bool redo)
     }
     else {
         pid = last_alloc_page + 1;
+        w_assert1(pid != stnode_page::stpid);
 
         if (pid % extent_size == 0) {
             extent_id_t ext = last_alloc_page / extent_size + 1;
