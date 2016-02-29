@@ -84,7 +84,7 @@ typedef smlevel_0::fileoff_t fileoff_t;
 
 const std::string log_core::IMPL_NAME = "traditional";
 const uint64_t log_common::DFT_LOGBUFSIZE = 128 << 10;
-fileoff_t log_common::max_logsz = 0;
+fileoff_t log_common::partition_size = 0;
 
 class ticker_thread_t : public smthread_t
 {
@@ -178,12 +178,6 @@ log_common::log_common(const sm_options& options)
 
     // adjust actual size of log buffer (round to segment size)
     _segsize = log_storage::_ceil(_segsize, SEGMENT_SIZE);
-
-    if(max_logsz < 8*int(_segsize)) {
-        cerr <<
-        "WARNING: Log buffer is bigger than 1/8 partition (probably safe to make it smaller)."
-               << endl;
-    }
 
     // pretty big limit -- really, the limit is imposed by the OS's
     // ability to read/write
@@ -281,22 +275,11 @@ void log_common::set_option_logsize(const sm_options& options, size_t dftLogsize
     if (!options.get_bool_option("sm_logging", true) || smlevel_0::log) return;
 
     std::string logimpl = options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
-    fileoff_t maxlogsize = fileoff_t(options.get_int_option("sm_logsize", dftLogsize));
+    fileoff_t psize = fileoff_t(options.get_int_option("sm_log_partition_size", dftLogsize));
+
     // The option is in units of MB; convert it to bytes.
-    maxlogsize *= 1024 * 1024;
-
-    // maxlogsize is the user-defined maximum open-log size.
-    // Compile-time constants determine the size of a segment,
-    // and the open log size is smlevel_0::max_openlog segments,
-    // so that means we determine the number of segments per
-    // partition thus:
-    // max partition size is user max / smlevel_0::max_openlog.
-    // max partition size must be an integral multiple of segments
-    // plus 1 block. The log manager computes this for us:
-    fileoff_t psize = maxlogsize / smlevel_0::max_openlog;
-
-    // convert partition size to partition data size: (remove overhead)
-    psize = log_storage::partition_size(psize);
+    // Convert partition size to partition data size: (remove overhead)
+    psize = log_storage::partition_size(psize * 1024 * 1024);
 
     /* Enforce the built-in shore limit that a log partition can only
        be as long as the file address in a lsn_t allows for...
@@ -334,11 +317,10 @@ void log_common::set_option_logsize(const sm_options& options, size_t dftLogsize
     }
 
 
-    // maximum size of all open log files together
-    max_logsz = fileoff_t(psize * smlevel_0::max_openlog);
-
-    // take check points every 3 log file segments.
+    // take check points every 3 log file segments. CS TODO: remove
     smlevel_0::chkpt_displacement = log_core::SEGMENT_SIZE * 3;
+
+    log_common::partition_size = psize;
 }
 
 /*********************************************************************

@@ -159,7 +159,7 @@ public:
 #endif
 
     static const uint64_t DFT_LOGBUFSIZE;
-    static fileoff_t max_logsz;
+    static fileoff_t partition_size;
 
     PoorMansOldestLsnTracker* get_oldest_lsn_tracker() { return _oldest_lsn_tracker; }
 
@@ -201,7 +201,7 @@ protected:
 
     void                _sanity_check() const;
 
-    void set_option_logsize(const sm_options&, size_t dft = 8192 /* 8GB */);
+    void set_option_logsize(const sm_options&, size_t dft = 1024 /* 1GB */);
 
     // Set of pointers into _buf (circular log buffer)
     // and associated lsns. See detailed comments at log_core::insert

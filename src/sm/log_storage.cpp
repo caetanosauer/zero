@@ -58,10 +58,10 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
       _partition_size(0),
       _partition_data_size(0),
       _min_chkpt_rec_lsn(log_m::first_lsn(1)),
-      _curr_index(-1),
-      _curr_num(1)
+      _curr_num(1),
+      _curr_partition(NULL)
 {
-
+    // CS TODO: pass sm_options
     _logdir = new char[strlen(path) + 1]; // +1 for \0 byte
     strcpy(_logdir, path);
 
@@ -73,7 +73,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
     // By the time we get here, the max_logsize should already have been
     // adjusted by the sm options-handling code, so it should be
     // a legitimate value now.
-    W_COERCE(_set_size(log_common::max_logsz));
+    W_COERCE(_set_partition_size(log_common::partition_size));
 
     DBGOUT3(<< "SEG SIZE " << _segsize << " PARTITION DATA SIZE " << _partition_data_size);
 
@@ -110,8 +110,6 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
     os_dirent_t *dd=0;
     _master_lsn = lsn_t::null;
 
-    uint32_t min_index = max_uint4;
-
     char *fname = new char [smlevel_0::max_devname];
     if (!fname)
         W_FATAL(fcOUTOFMEMORY);
@@ -120,18 +118,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
      * will be used to store any hints about the last
      * lsns of the partitions (stored with checkpoint meta-info
      */
-    lsn_t lsnlist[PARTITION_COUNT];
-    int   listlength=0;
-    {
-        /*
-         *  initialize partition table
-         */
-        partition_index_t i;
-        for (i = 0; i < PARTITION_COUNT; i++)  {
-            _part[i].init_index(i);
-            _part[i].init(this);
-        }
-    }
+    vector<lsn_t> lsnlist;
 
     /*
      * STEP 2: Reformat log if necessary
@@ -192,7 +179,6 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
      * STEP 3: Scan files in the log directory.
      * When chk file is found, set _master_lsn and _min_chkpt_rec_lsn.
      * For log.* files, look for maximum partition number (last_partition)
-     * and minimum (min_index)
      */
     DBGOUT5(<<"about to readdir"
             << " last_partition "  << last_partition
@@ -231,11 +217,13 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                 << " buf = " << buf
                 << " prefix_len = " << prefix_len
                 << " strlen(buf) = " << strlen(buf));
+        // CS TODO: master should be read first, to guarantee that we have
+        // something on lsnlist before opening log files
         if (parse_ok) {
             lsn_t tmp;
             if (strcmp(buf, master_prefix()) == 0)
             {
-                DBGOUT5(<<"found log file " << buf);
+                DBGOUT5(<<"found master file " << buf);
                 /*
                  *  File name matches master prefix.
                  *  Extract master lsn & lsns of skip-records
@@ -243,8 +231,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                 lsn_t tmp1;
                 bool old_style=false;
                 rc_t rc = _read_master(name, prefix_len,
-                        tmp, tmp1, lsnlist, listlength,
-                        old_style);
+                        tmp, tmp1, lsnlist, old_style);
                 W_COERCE(rc);
 
                 if (tmp < master_lsn())  {
@@ -274,11 +261,9 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 
                 DBGOUT5(<<"parse_ok = " << parse_ok);
 
-            } else if (strcmp(buf, log_prefix()) == 0)  {
+            }
+            else if (strcmp(buf, log_prefix()) == 0)  {
                 DBGOUT5(<<"found log file " << buf);
-                /*
-                 *  File name matches log prefix
-                 */
 
                 w_istrstream s(name + prefix_len);
                 uint32_t curr;
@@ -287,19 +272,24 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                     W_FATAL(eINTERNAL);
                 }
 
-                DBGOUT5(<<"curr " << curr
-                        << " partition_num()==" << partition_num()
-                        << " last_partition_exists " << last_partition_exists
-                        );
+                lsn_t lasthint = lsn_t::null;
+                for (size_t q = 0; q < lsnlist.size(); q++) {
+                    if(lsnlist[q].hi() == curr) {
+                        lasthint = lsnlist[q];
+                    }
+                }
+
+                partition_t* p = new partition_t();
+                p->init(this);
+                p->peek(curr, lasthint, true);
+                p->open_for_read(curr, true);
+
+                _partitions[curr] = p;
+                p->close();
 
                 if (curr >= last_partition) {
                     last_partition = curr;
                     last_partition_exists = true;
-                    DBGOUT5(<<"new last_partition " << curr
-                        << " exits=true" );
-                }
-                if (curr < min_index) {
-                    min_index = curr;
                 }
             } else {
                 DBGOUT5(<<"NO MATCH");
@@ -337,77 +327,8 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
         w_assert3(partition_num() == 1);
         w_assert3(_min_chkpt_rec_lsn.hi() == 1);
         w_assert3(_min_chkpt_rec_lsn.lo() == log_m::first_lsn(1).lo());
-    } else {
-       // ??
     }
-    w_assert3(partition_index() == -1);
 #endif
-
-    DBGOUT5(<<"Last partition is " << last_partition
-        << " existing = " << last_partition_exists
-     );
-
-    /*
-     *  STEP 4: Destroy all partitions less than _min_chkpt_rec_lsn
-     *  Open the rest and close them.
-     *  There might not be an existing last_partition,
-     *  regardless of the value of "reformat"
-     */
-    {
-        partition_number_t n;
-        partition_t        *p;
-
-        DBGOUT5(<<" min_chkpt_rec_lsn " << min_chkpt_rec_lsn()
-                << " last_partition " << last_partition);
-        w_assert3(min_chkpt_rec_lsn().hi() <= last_partition);
-
-        for (n = min_index; n < min_chkpt_rec_lsn().hi(); n++)  {
-            // not an error if we can't unlink (probably doesn't exist)
-            DBGOUT5(<<" destroy_file " << n << "false");
-            destroy_file(n, false);
-        }
-
-        // CS TODO: hack to deal with absence of min_chkpt_rec_lsn
-        n = _min_chkpt_rec_lsn.hi();
-        if (n == 0) {
-            if (last_partition <= 8) {
-                n = 1;
-            }
-            else {
-                n = last_partition - 8;
-            }
-        }
-
-        for (; n <= last_partition; n++)  {
-            // Find out if there's a hint about the length of the
-            // partition (from the checkpoint).  This lsn serves as a
-            // starting point from which to search for the skip_log record
-            // in the file.  It's a performance thing...
-            lsn_t lasthint;
-            for(int q=0; q<listlength; q++) {
-                if(lsnlist[q].hi() == n) {
-                    lasthint = lsnlist[q];
-                }
-            }
-
-            // open and check each file (get its size)
-            DBGOUT5(<<" open " << n << "true, false, true");
-
-            // last argument indicates "in_recovery" more accurately,
-            // we should say "at-startup"
-            p = _open_partition_for_read(n, lasthint, true, true);
-            w_assert3(p == get_partition(n));
-            p->close();
-            unset_current();
-            DBGOUT5(<<" done w/ open " << n );
-        }
-    }
-
-    /* XXXX :  Don't have a static method on
-     * partition_t for start()
-    */
-    /* end of the last valid log record / start of invalid record */
-    fileoff_t pos = 0;
 
     /*
      * STEP 5: Truncate at last complete log rec
@@ -432,6 +353,8 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
          case, we only check the *last* partition opened, not each
          one read.
      */
+    /* end of the last valid log record / start of invalid record */
+    fileoff_t pos = 0;
     {
         DBGOUT5(<<" truncate last complete log rec ");
 
@@ -698,18 +621,13 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
          *  Check its size and all the records in it
          *  by passing "true" for the last argument to open()
          */
-
-        // Find out if there's a hint about the length of the
-        // partition (from the checkpoint).  This lsn serves as a
-        // starting point from which to search for the skip_log record
-        // in the file.  It's a performance thing...
-        lsn_t lasthint;
-        for(int q=0; q<listlength; q++) {
+        lsn_t lasthint = lsn_t::null;
+        for(size_t q = 0; q < lsnlist.size(); q++) {
             if(lsnlist[q].hi() == last_partition) {
                 lasthint = lsnlist[q];
             }
         }
-        // open_partition will set LSN's
+        // open_partition will set LSN's and current
         partition_t *p = _open_partition_for_append(last_partition, lasthint,
                 last_partition_exists, true);
         w_assert1(durable_lsn == curr_lsn); // better be startup/recovery!
@@ -722,58 +640,28 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 
         w_assert3(p->num() == last_partition);
         w_assert3(partition_num() == last_partition);
-        w_assert3(partition_index() == p->index());
 
     }
     DBGOUT2( << "partition num = " << partition_num()
             <<" current_lsn " << curr_lsn
             <<" durable_lsn " << durable_lsn);
 
-    cs.exit();
-    if(1){
-        // Print various interesting info to the log:
-        cerr << "Log max_partition_size (based on OS max file size)"
-            << max_partition_size() << endl
-            << "Log max_partition_size * PARTITION_COUNT "
-                    << max_partition_size() * PARTITION_COUNT << endl
-            << "Log min_partition_size (based on fixed segment size and fixed block size) "
-                    << min_partition_size() << endl
-            << "Log min_partition_size*PARTITION_COUNT "
-                    << min_partition_size() * PARTITION_COUNT << endl;
-
-        cerr
-            << "Log BLOCK_SIZE (log write size) " << BLOCK_SIZE
-            << endl
-            << "Log segsize() (log buffer size) " << _segsize
-            << endl
-            << "Log segsize()/BLOCK_SIZE " << double(_segsize)/double(BLOCK_SIZE)
-            << endl;
-
-        cerr
-            << "User-option smlevel_0::max_logsz " << log_common::max_logsz << endl
-            << "Log _partition_data_size " << _partition_data_size
-            << endl
-            << "Log _partition_data_size/segsize() "
-                << double(_partition_data_size)/double(_segsize)
-            << endl
-            << "Log _partition_data_size/segsize()+BLOCK_SIZE "
-                << _partition_data_size + BLOCK_SIZE
-            << endl;
-    }
-
     delete[] fname;
 }
 
 log_storage::~log_storage()
 {
-    partition_t        *p;
-    for (uint i = 0; i < PARTITION_COUNT; i++) {
-        p = _partition(i);
+    partition_t* p;
+    partition_map_t::iterator it = _partitions.begin();
+    while (it != _partitions.end()) {
+        p = it->second;
         p->close_for_read();
         p->close_for_append();
-        DBG(<< " calling clear");
         p->clear();
+        it++;
     }
+
+    _partitions.clear();
 
     DO_PTHREAD(pthread_mutex_destroy(&_scavenge_lock));
     DO_PTHREAD(pthread_cond_destroy(&_scavenge_cond));
@@ -800,35 +688,10 @@ log_storage::get_partition_for_flush(lsn_t start_lsn,
         w_assert3(n != 0);
 
         {
-            /* FRJ: before starting into the CS below we have to be
-               sure an empty partition waits for us (otherwise we
-               deadlock because partition scavenging is protected by
-               the _partition_lock as well).
-             */
-            DO_PTHREAD(pthread_mutex_lock(&_scavenge_lock));
-        retry:
-            // need predicates, lest we be in shutdown()
-            //if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
-            DBGOUT3(<< "chkpt 1");
-            smlevel_0::chkpt->wakeup_thread();
-            u_int oldest = global_min_lsn().hi();
-            if(oldest + PARTITION_COUNT == start_lsn.file()) {
-                fprintf(stderr,
-                "Cannot open partition %d until partition %d is reclaimed\n",
-                    start_lsn.file(), oldest);
-                fprintf(stderr,
-                "Waiting for reclamation.\n");
-                DO_PTHREAD(pthread_cond_wait(&_scavenge_cond, &_scavenge_lock));
-                goto retry;
-            }
-            DO_PTHREAD(pthread_mutex_unlock(&_scavenge_lock));
-
+            // CS TODO: this may deadlock because recycling also needs _partition_lock
             // grab the lock -- we're about to mess with partitions
             CRITICAL_SECTION(cs, _partition_lock);
             p->close();
-            unset_current();
-            DBG(<<" about to open " << n+1);
-            //                                  end_hint, existing, recovery
             p = _open_partition_for_append(n+1, lsn_t::null, false, false);
         }
 
@@ -859,20 +722,11 @@ fileoff_t log_storage::max_partition_size()
     return  partition_size(tmp);
 }
 
-partition_index_t log_storage::_get_index(uint32_t n) const
+partition_t* log_storage::get_partition(partition_number_t n) const
 {
-    const partition_t        *p;
-    for(int i=0; i<PARTITION_COUNT; i++) {
-        p = _partition(i);
-        if(p->num()==n) return i;
-    }
-    return -1;
-}
-
-partition_t * log_storage::get_partition(partition_number_t n) const
-{
-    partition_index_t i = _get_index(n);
-    return (i<0)? (partition_t *)0 : _partition(i);
+    partition_map_t::const_iterator it = _partitions.find(n);
+    if (it == _partitions.end()) { return NULL; }
+    return it->second;
 }
 
 /*********************************************************************
@@ -887,7 +741,10 @@ partition_t * log_storage::get_partition(partition_number_t n) const
  *  to use the free partition.
  *
  *********************************************************************/
+// CS TODO: disabled for now because we are supporting an unbouded
+// number of partitions -- bounded list & recycling will be implemented later
 // MUTEX: partition
+#if 0
 partition_t        *
 log_storage::_close_min(partition_number_t n)
 {
@@ -975,6 +832,7 @@ log_storage::_close_min(partition_number_t n)
 
     return victim;
 }
+#endif
 
 // Prime buf with the partial block ending at 'next';
 // return the size of that partial block (possibly 0)
@@ -1181,40 +1039,8 @@ log_storage::_open_partition(partition_number_t  __num,
     // see if one's already opened with the given __num
     partition_t *p = get_partition(__num);
 
-#if W_DEBUG_LEVEL > 2
-    if(forappend) {
-        w_assert3(partition_index() == -1);
-        // there should now be *no open partition*
-        partition_t *c;
-        int i;
-        for (i = 0; i < PARTITION_COUNT; i++)  {
-            c = _partition(i);
-            w_assert3(! c->is_current());
-        }
-    }
-#endif
-
-    if(!p) {
-        /*
-         * find an empty partition to use
-         */
-        DBG(<<"find a new partition structure  to use " );
-        p = _close_min(__num);
-        w_assert1(p);
-        p->peek(__num, end_hint, during_recovery);
-    }
-
-
-    if(existing && !forappend) {
-        DBG(<<"about to open for read");
-        w_rc_t err = p->open_for_read(__num);
-        if(err.is_error()) {
-            fprintf(stderr,
-                    "Could not open partition %d for reading.\n",
-                    __num);
-            W_FATAL(eINTERNAL);
-        }
-
+    if(p && existing && !forappend) {
+        W_COERCE(p->open_for_read(__num));
 
         w_assert3(p->is_open_for_read());
         w_assert3(p->num() == __num);
@@ -1223,45 +1049,45 @@ log_storage::_open_partition(partition_number_t  __num,
 
 
     if(forappend) {
+#if W_DEBUG_LEVEL > 2
+        // No other partition may be open for append
+        partition_map_t::iterator it = _partitions.begin();
+        for (; it != _partitions.end(); it++) {
+            w_assert3(!it->second->is_open_for_append());
+        }
+#endif
+        // If creating a new, we should also free up if necessary, as done
+        // in close_min
         /*
          *  This becomes the current partition.
          */
+        if (!p) {
+            p = new partition_t();
+            p->init(this);
+
+            w_assert3(during_recovery || partition_num() == __num - 1);
+            w_assert3(_partitions.find(__num) == _partitions.end());
+            _partitions[__num] = p;
+        }
         p->open_for_append(__num, end_hint);
+        set_current(p);
         w_assert3(p->exists());
         w_assert3(p->is_open_for_append());
     }
+
     return p;
 }
 
 void
-log_storage::unset_current()
+log_storage::set_current(partition_t* p)
 {
-    _curr_index = -1;
-    _curr_num = 0;
-}
-
-void
-log_storage::set_current(
-        partition_index_t i,
-        partition_number_t num
-)
-{
-    w_assert3(_curr_index == -1);
-    w_assert3(_curr_num  == 0 || _curr_num == 1);
-    _curr_index = i;
-    _curr_num = num;
+    _curr_num = p->num();
+    _curr_partition = p;
 }
 
 partition_t * log_storage::curr_partition() const
 {
-    w_assert3(partition_index() >= 0);
-    return _partition(partition_index());
-}
-
-partition_t *
-log_storage::_partition(partition_index_t i) const
-{
-    return i<0 ? (partition_t *)0: (partition_t *) &_part[i];
+    return _curr_partition;
 }
 
 /*
@@ -1279,10 +1105,14 @@ int log_storage::delete_old_partitions(lsn_t lsn)
          *  find min_num -- the lowest of all the partitions
          */
         min_num = partition_num();
-        for (uint i = 0; i < PARTITION_COUNT; i++)  {
-            p = _partition(i);
-            if( p->num() > 0 &&  p->num() < min_num )
+
+        partition_map_t::iterator it = _partitions.begin();
+        while (it != _partitions.end()) {
+            p = it->second;
+            if(p->num() > 0 &&  p->num() < min_num) {
                 min_num = p->num();
+            }
+            it++;
         }
     }
 
@@ -1332,25 +1162,9 @@ log_storage::destroy_file(partition_number_t n, bool pmsg)
     delete[] fname;
 }
 
-/**\brief compute size of partition from given max-open-log-bytes size
- * \details
- * PARTITION_COUNT == smlevel_0::max_openlog is fixed.
- * SEGMENT_SIZE  is fixed.
- * BLOCK_SIZE  is fixed.
- * Only the partition size is determinable by the user; it's the
- * size of a partition file and PARTITION_COUNT*partition-size is
- * therefore the maximum amount of log space openable at one time.
- */
-w_rc_t log_storage::_set_size(fileoff_t size)
+w_rc_t log_storage::_set_partition_size(fileoff_t size)
 {
-    /* The log consists of at most PARTITION_COUNT open files,
-     * each with space for some integer number of segments (log buffers)
-     * plus one extra block for writing skip records.
-     *
-     * Each segment is an integer number of blocks (BLOCK_SIZE), which
-     * is the size of an I/O.  An I/O is padded, if necessary, to BLOCK_SIZE.
-     */
-    fileoff_t usable_psize = size/PARTITION_COUNT - BLOCK_SIZE;
+    fileoff_t usable_psize = size;
 
     // partition must hold at least one buffer...
     if (usable_psize < _segsize) {
@@ -1363,23 +1177,13 @@ w_rc_t log_storage::_set_size(fileoff_t size)
     if(_partition_data_size == 0)
     {
         cerr << "log size is too small: size "<<size<<" usable_psize "<<usable_psize
-        <<", segsize() "<<_segsize<<", blocksize "<<BLOCK_SIZE<< endl
-        <<"need at least "<<_get_min_size()<<" ("<<(_get_min_size()/1024)<<" * 1024 = "<<(1024 *(_get_min_size()/1024))<<") "<< endl;
+        <<", segsize() "<<_segsize<<", blocksize "<<BLOCK_SIZE<< endl;
         W_FATAL(eOUTOFLOGSPACE);
     }
     _partition_size = _partition_data_size + BLOCK_SIZE;
     DBGTHRD(<< "log_storage::_set_size setting _partition_size (limit LIMIT) "
             << _partition_size);
-    /*
-    fprintf(stderr,
-"size %ld usable_psize %ld segsize() %ld _part_data_size %ld _part_size %ld\n",
-            size,
-            usable_psize,
-            segsize(),
-            _partition_data_size,
-            _partition_size
-           );
-    */
+
     return RCOK;
 }
 
@@ -1387,7 +1191,6 @@ void
 log_storage::sanity_check() const
 {
 #if W_DEBUG_LEVEL > 1
-    partition_index_t   i;
     const partition_t*  p;
     bool                found_current=false;
     bool                found_min_lsn=false;
@@ -1396,24 +1199,14 @@ log_storage::sanity_check() const
     // we're in any intermediate state, i.e.,
     // while there's no current index
 
-    if( _curr_index >= 0 ) {
-        w_assert1(_curr_num > 0);
-    } else {
-        // CS: TODO Why is this failing???
-        // initial state: _curr_num == 1
-        // w_assert1(_curr_num == 1);
-    }
-
-    for(i=0; i<PARTITION_COUNT; i++) {
-        p = _partition(i);
+    partition_map_t::const_iterator it = _partitions.begin();
+    for (; it != _partitions.end(); it++) {
+        p = it->second;
         p->sanity_check();
-
-        w_assert1(i ==  p->index());
 
         // at most one open for append at any time
         if(p->num()>0) {
             w_assert1(p->exists());
-            w_assert1(i ==  _get_index(p->num()));
             w_assert1(p ==  get_partition(p->num()));
 
             if(p->is_current()) {
@@ -1422,12 +1215,8 @@ log_storage::sanity_check() const
 
                 w_assert1(p ==  curr_partition());
                 w_assert1(p->num() ==  partition_num());
-                w_assert1(i ==  partition_index());
 
                 w_assert1(p->is_open_for_append());
-            } else if(p->is_open_for_append()) {
-                // FRJ: not always true with concurrent inserts
-                //w_assert1(p->flushed());
             }
 
             // look for global_min_lsn
@@ -1497,11 +1286,11 @@ void log_storage::_make_master_name(
     w_ostrstream s(buf, (int) bufsz);
 
     s << _logdir << _SLASH << _master_prefix;
-    lsn_t         array[2];
+    vector<lsn_t> array;
     array[0] = master_lsn;
     array[1] = min_chkpt_rec_lsn;
 
-    _create_master_chkpt_string(s, 2, array, old_style);
+    _create_master_chkpt_string(s, array, old_style);
     s << ends;
     w_assert1(s);
 }
@@ -1524,11 +1313,11 @@ void log_storage::_write_master(const lsn_t &l, const lsn_t &min)
     }
 
     {        /* write ending lsns into the master chkpt record */
-        lsn_t         array[PARTITION_COUNT];
+        vector<lsn_t> array;
         int j = get_last_lsns(array);
         if(j > 0) {
             w_ostrstream s(_chkpt_meta_buf, CHKPT_META_BUF);
-            _create_master_chkpt_contents(s, j, array);
+            _create_master_chkpt_contents(s, array);
         } else {
             memset(_chkpt_meta_buf, '\0', 1);
         }
@@ -1583,33 +1372,33 @@ log_storage::signal_scavenge_cond()
 }
 
 
-int log_storage::get_last_lsns(lsn_t *array)
+int log_storage::get_last_lsns(vector<lsn_t>& array)
 {
     int j=0;
-    for(int i=0; i < PARTITION_COUNT; i++) {
-        const partition_t *p = this->_partition(i);
+    partition_map_t::iterator it = _partitions.begin();
+    while (it != _partitions.end()) {
+        partition_t* p = it->second;
         DBGTHRD(<<"last skip lsn for " << p->num()
                                        << " " << p->last_skip_lsn());
         if(p->num() > 0 && (p->last_skip_lsn().hi() == p->num())) {
             array[j++] = p->last_skip_lsn();
         }
+        it++;
     }
     return j;
 }
 
 void log_storage::_create_master_chkpt_string(
                 ostream&        s,
-                int                arraysize,
-                const lsn_t*        array,
+                const vector<lsn_t>&        array,
                 bool                old_style)
 {
-    w_assert1(arraysize >= 2);
     if (old_style)  {
         s << array[0] << '.' << array[1];
 
     }  else  {
         s << 'v' << _version_major << '.' << _version_minor ;
-        for(int i=0; i< arraysize; i++) {
+        for(size_t i = 0; i < array.size(); i++) {
                 s << '_' << array[i];
         }
     }
@@ -1636,11 +1425,10 @@ rc_t log_storage::_check_version(uint32_t major, uint32_t minor)
 
 void log_storage::_create_master_chkpt_contents(
                 ostream&        s,
-                int                arraysize,
-                const lsn_t*        array
+                const vector<lsn_t>&        array
                 )
 {
-    for(int i=0; i< arraysize; i++) {
+    for(size_t i=0; i< array.size(); i++) {
             s << '_' << array[i];
     }
     s << ends;
@@ -1648,11 +1436,10 @@ void log_storage::_create_master_chkpt_contents(
 
 rc_t log_storage::_parse_master_chkpt_contents(
                 istream&            s,
-                int&                    listlength,
-                lsn_t*                    lsnlist
+                vector<lsn_t>&                    lsnlist
                 )
 {
-    listlength = 0;
+    size_t listlength = 0;
     char separator;
     while(!s.eof()) {
         s >> separator;
@@ -1673,8 +1460,7 @@ rc_t log_storage::_parse_master_chkpt_string(
                 istream&            s,
                 lsn_t&              master_lsn,
                 lsn_t&              min_chkpt_rec_lsn,
-                int&                    number_of_others,
-                lsn_t*                    others,
+                vector<lsn_t>&                    others,
                 bool&                    old_style)
 {
     uint32_t major = 1;
@@ -1701,7 +1487,7 @@ rc_t log_storage::_parse_master_chkpt_string(
         return RC(eBADMASTERCHKPTFORMAT);
     }
 
-    number_of_others = 0;
+    size_t number_of_others = 0;
     while(!s.eof()) {
         s >> separator;
         if(separator == '\0') break; // end of string
@@ -1725,8 +1511,7 @@ w_rc_t log_storage::_read_master(
         int prefix_len,
         lsn_t &tmp,
         lsn_t& tmp1,
-        lsn_t* lsnlist,
-        int&   listlength,
+        vector<lsn_t>& lsnlist,
         bool&  old_style
 )
 {
@@ -1739,7 +1524,7 @@ w_rc_t log_storage::_read_master(
         w_istrstream s(buf);
 
         rc = _parse_master_chkpt_string(s, tmp, tmp1,
-                                       listlength, lsnlist, old_style);
+                                       lsnlist, old_style);
         delete [] buf;
         if (rc.is_error()) {
             cerr << "bad master log file \"" << fname << "\"" << endl;
@@ -1776,7 +1561,7 @@ w_rc_t log_storage::_read_master(
                 }
 
                 w_istrstream s(_chkpt_meta_buf);
-                rc = _parse_master_chkpt_contents(s, listlength, lsnlist);
+                rc = _parse_master_chkpt_contents(s, lsnlist);
                 if (rc.is_error())  {
                     cerr << "bad master log file contents \""
                         << buf << "\"" << endl;

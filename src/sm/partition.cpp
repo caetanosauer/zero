@@ -99,13 +99,9 @@ bool
 partition_t::is_current()  const
 {
     //  rd could be open
-    if(index() == _owner->partition_index()) {
+    if(num() == _owner->partition_num()) {
         w_assert3(num()>0);
-        w_assert3(_owner->partition_num() == num());
         w_assert3(exists());
-        w_assert3(_owner->curr_partition() == this);
-        w_assert3(_owner->partition_index() == index());
-        w_assert3(this->is_open_for_append());
 
         return true;
     }
@@ -168,7 +164,6 @@ partition_t::open_for_append(partition_number_t __num,
     _set_state(m_exists);
     _set_state(m_open_for_append);
 
-    _owner->set_current( index(), num() );
     return ;
 }
 
@@ -724,7 +719,7 @@ again:
                 }
             } else {
                 // ! skip record or ! first in the partition
-                if ( (lsn_ck.hi()-1) % PARTITION_COUNT != (uint32_t)this->index()) {
+                if (lsn_ck.hi() != num_wanted) {
                     DBG5( <<"unexpected end of log");
                     err = 2;
                 }
@@ -1089,7 +1084,6 @@ partition_t::close(bool both)
         //        w_assert1(dlsn.hi() > num());
         //        _owner->_flush(_owner->curr_lsn());
         //w_assert3(flushed());
-        _owner->unset_current();
     }
     if (both) {
         if (fhdl_rd() != invalid_fhdl) {

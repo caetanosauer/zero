@@ -60,10 +60,11 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "log.h"
 #include <partition.h>
+#include <map>
+#include <vector>
 
 typedef    smlevel_0::partition_number_t partition_number_t;
-enum       { PARTITION_COUNT= smlevel_0::max_openlog };
-typedef    int    partition_index_t;
+typedef std::map<partition_number_t, partition_t*> partition_map_t;
 
 class skip_log; // forward
 
@@ -99,9 +100,7 @@ public:
     void            signal_scavenge_cond();
 
     // for partition_t
-    void                unset_current();
-    void                set_current(partition_index_t, partition_number_t);
-    partition_index_t   partition_index() const { return _curr_index; }
+    void                set_current(partition_t* p);
     virtual partition_number_t  partition_num() const { return _curr_num; }
     partition_t *       get_partition(partition_number_t n) const;
     static long         floor2(long offset, long block_size)
@@ -139,8 +138,6 @@ public:
           can always be flushed.
      */
     size_t              recoverable_space(int pcount) const {
-        // NEH: substituted BLOCK_SIZE for writebufsize()/PARTITION_COUNT
-        // just a guess; writebufsize is no more...
                                return pcount*(_partition_data_size - BLOCK_SIZE);
                             }
 
@@ -177,8 +174,6 @@ private:
     void                _prime(int fd, fileoff_t start, lsn_t next);
     void     destroy_file(partition_number_t n, bool e);
 
-    partition_index_t   _get_index(partition_number_t)const;
-
     partition_t *       _close_min(partition_number_t n);
                                 // the defaults are for the case
                                 // in which we're opening a file to
@@ -209,23 +204,20 @@ private:
     /**\brief Helper for _write_master */
     static void         _create_master_chkpt_contents(
                             ostream&        s,
-                            int             arraysize,
-                            const lsn_t*    array
+                            const vector<lsn_t>&    array
                             );
 
     /**\brief Helper for _make_master_name */
     static void         _create_master_chkpt_string(
                             ostream&        o,
-                            int             arraysize,
-                            const lsn_t*    array,
+                            const vector<lsn_t>&       array,
                             bool            old_style = false
                             );
 
     /**\brief Helper for _read_master */
     static rc_t         _parse_master_chkpt_contents(
                             istream&      s,
-                            int&          listlength,
-                            lsn_t*        lsnlist
+                            vector<lsn_t>&        lsnlist
                             );
 
     /**\brief Helper for _read_master */
@@ -233,8 +225,7 @@ private:
                             istream&      s,
                             lsn_t&        master_lsn,
                             lsn_t&        min_chkpt_rec_lsn,
-                            int&          number_of_others,
-                            lsn_t*        others,
+                            vector<lsn_t>&        others,
                             bool&         old_style
                             );
 
@@ -252,8 +243,7 @@ private:
                             int prefix_len,
                             lsn_t &tmp,
                             lsn_t& tmp1,
-                            lsn_t* lsnlist,
-                            int&   listlength,
+                            vector<lsn_t>& lsnlist,
                             bool&  old_style
                             );
     void                _make_master_name(
@@ -271,25 +261,21 @@ private:
     fileoff_t               _partition_size;
     fileoff_t               _partition_data_size;
     lsn_t                   _min_chkpt_rec_lsn;
-    partition_t         _part[PARTITION_COUNT];
+
+    partition_map_t _partitions;
+    partition_number_t  _curr_num;
+    partition_t* _curr_partition;
+
     skip_log*           _skip_log;
-    partition_index_t   _curr_index; // index of partition
-    partition_number_t  _curr_num;   // partition number
     lsn_t                   _master_lsn;
     mutable queue_based_block_lock_t _partition_lock;
 
     pthread_mutex_t     _scavenge_lock;
     pthread_cond_t      _scavenge_cond;
 
-    w_rc_t          _set_size(fileoff_t psize);
-    fileoff_t       _get_min_size() const {
-                        // Return minimum log size as a function of the
-                        // log buffer size and the partition count
-                        return ( _segsize + BLOCK_SIZE) * PARTITION_COUNT;
-                    }
-    partition_t *   _partition(partition_index_t i) const;
+    w_rc_t          _set_partition_size(fileoff_t psize);
 
-    int             get_last_lsns(lsn_t* array);
+    int             get_last_lsns(vector<lsn_t>& array);
 
 private:
     // forbid copy

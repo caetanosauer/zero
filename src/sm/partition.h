@@ -75,7 +75,6 @@ class log_storage; // forward
 class partition_t {
 public:
     typedef smlevel_0::fileoff_t          fileoff_t;
-    typedef int                           partition_index_t;
     typedef smlevel_0::partition_number_t partition_number_t;
 #if SM_PAGESIZE < 8192
     enum { XFERSIZE = 8192 };
@@ -87,7 +86,6 @@ public:
     enum { nosize = -1 };
 
     NORET             partition_t() :
-                            _index(0),
                             _num(0),
                             _mask(0),
                             _size(0),
@@ -108,7 +106,6 @@ public:
     /////////////////// DATA
     static int            _artificial_flush_delay;  // in microseconds
 private:
-    partition_index_t     _index;
     partition_number_t    _num;
     uint32_t     _mask;
     // logical end of partition is _size;
@@ -134,13 +131,11 @@ private:
 public:
     // exported for unix_log
     void               init(log_storage *owner);
-    void               init_index(partition_index_t i) { _index=i; }
     void               clear();
 
     fileoff_t          size() const   { return _size; }
     void               set_size(fileoff_t v) { _size =  v; }
     partition_number_t num() const   { return _num; }
-    partition_index_t  index() const {  return _index; }
     lsn_t              first_lsn() const { return
                                     first_lsn(uint32_t(_num)); }
     void               open_for_append(partition_number_t n, const lsn_t& hint);
