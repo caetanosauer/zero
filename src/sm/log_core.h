@@ -68,8 +68,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 // in sm_base for the purpose of log callback function argument type
 class      partition_t ; // forward
 
-#define CHKPT_META_BUF 512
-
 class sm_options;
 class ConsolidationArray;
 struct CArraySlot;
@@ -116,17 +114,8 @@ public:
 
     // for flush_daemon_thread_t
     void            flush_daemon();
-
-    // exported from log_storage to log_m interface
-    virtual lsn_t min_chkpt_rec_lsn() const
-        { return _storage->min_chkpt_rec_lsn(); }
     virtual const char* make_log_name(uint32_t n, char* buf, int bufsz)
         { return _storage->make_log_name(n, buf, bufsz); }
-    virtual lsn_t master_lsn() const
-        { return _storage->master_lsn(); }
-    virtual void set_master(const lsn_t& master_lsn, const lsn_t& min_lsn,
-            const lsn_t& min_xct_lsn)
-        { return _storage->set_master(master_lsn, min_lsn, min_xct_lsn); }
     virtual partition_number_t partition_num() const
         { return _storage->partition_num(); }
     virtual smlevel_0::fileoff_t limit() const

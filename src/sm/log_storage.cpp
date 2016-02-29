@@ -57,7 +57,6 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
       _segsize(segsize),
       _partition_size(0),
       _partition_data_size(0),
-      _min_chkpt_rec_lsn(log_m::first_lsn(1)),
       _curr_num(1),
       _curr_partition(NULL)
 {
@@ -108,7 +107,6 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
      */
 
     os_dirent_t *dd=0;
-    _master_lsn = lsn_t::null;
 
     char *fname = new char [smlevel_0::max_devname];
     if (!fname)
@@ -171,6 +169,8 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             delete[] name;
         }
 
+        _write_master();
+
         //  os_closedir(ldir);
         w_assert3(!last_partition_exists);
     }
@@ -224,43 +224,8 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             if (strcmp(buf, master_prefix()) == 0)
             {
                 DBGOUT5(<<"found master file " << buf);
-                /*
-                 *  File name matches master prefix.
-                 *  Extract master lsn & lsns of skip-records
-                 */
-                lsn_t tmp1;
-                bool old_style=false;
-                rc_t rc = _read_master(name, prefix_len,
-                        tmp, tmp1, lsnlist, old_style);
-                W_COERCE(rc);
-
-                if (tmp < master_lsn())  {
-                    /*
-                     *  Swap tmp <-> _master_lsn, tmp1 <-> _min_chkpt_rec_lsn
-                     */
-                    std::swap(_master_lsn, tmp);
-                    std::swap(_min_chkpt_rec_lsn, tmp1);
-                }
-                /*
-                 *  Remove the older master record.
-                 */
-                if (_master_lsn != lsn_t::null) {
-                    _make_master_name(_master_lsn,
-                                      _min_chkpt_rec_lsn,
-                                      fname,
-                                      smlevel_0::max_devname);
-                    (void) unlink(fname);
-                }
-                /*
-                 *  Save the new master record
-                 */
-                _master_lsn = tmp;
-                _min_chkpt_rec_lsn = tmp1;
-                DBGOUT5(<<" _master_lsn=" << _master_lsn
-                 <<" _min_chkpt_rec_lsn=" << _min_chkpt_rec_lsn);
-
-                DBGOUT5(<<"parse_ok = " << parse_ok);
-
+                w_istrstream s(name + prefix_len);
+                W_COERCE(_check_version(s));
             }
             else if (strcmp(buf, log_prefix()) == 0)  {
                 DBGOUT5(<<"found log file " << buf);
@@ -325,8 +290,6 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 #if W_DEBUG_LEVEL > 2
     if(reformat) {
         w_assert3(partition_num() == 1);
-        w_assert3(_min_chkpt_rec_lsn.hi() == 1);
-        w_assert3(_min_chkpt_rec_lsn.lo() == log_m::first_lsn(1).lo());
     }
 #endif
 
@@ -366,33 +329,9 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 
         fileoff_t start_pos = pos;
 
-        /* If the master checkpoint is in the current partition, seek
-           to its position immediately, instead of scanning from the
-           beginning of the log.   If the current partition doesn't have
-           a checkpoint, must read entire paritition until the skip
-           record is found. */
-
-        const lsn_t &seek_lsn = _master_lsn;
-
-        // bool seeked_to_master = false;
-        if (f && seek_lsn.hi() == last_partition) {
-            start_pos = seek_lsn.lo();
-
-            DBGOUT5(<<" seeking to start_pos " << start_pos);
-            if (fseek(f, start_pos, SEEK_SET)) {
-                cerr << "log read: can't seek to " << start_pos
-                    << " starting log scan at origin"
-                    << endl;
-                start_pos = pos;
-            }
-            else {
-                pos = start_pos;
-                // seeked_to_master = true;
-            }
-        }
-        DBGOUT5(<<" pos is now " << pos);
-
-
+        // CS TODO: try to open on LSN higher than 0. This used to be where
+        // we would get the seek position from the master LSN if the partitions
+        // matched.
 
         if (f)  {
             allocaN<logrec_t::hdr_non_ssx_sz> buf;
@@ -1193,7 +1132,6 @@ log_storage::sanity_check() const
 #if W_DEBUG_LEVEL > 1
     const partition_t*  p;
     bool                found_current=false;
-    bool                found_min_lsn=false;
 
     // we should not be calling this when
     // we're in any intermediate state, i.e.,
@@ -1218,31 +1156,11 @@ log_storage::sanity_check() const
 
                 w_assert1(p->is_open_for_append());
             }
-
-            // look for global_min_lsn
-            if(global_min_lsn().hi() == p->num()) {
-                //w_assert1(!found_min_lsn);
-                // don't die in case global_min_lsn() is null lsn
-                found_min_lsn = true;
-            }
         } else {
             w_assert1(!p->is_current());
             w_assert1(!p->exists());
         }
-        (void) found_min_lsn;
     }
-    /*
-     * CS TODO: the global_min_lsn does not have to be found if it is equal
-     * to the mininum diry page LSN found in the buffer during a checkpoint
-     * (a.k.a. min_rec_lsn). If that were the case, then the log could never
-     * be recycled if there are old pages which are never updated. It makes
-     * absolutely no sense. The real problem is, I think, that the rec_lsn
-     * in the buffer is set to the page lsn, which works but is terribly
-     * inneffective and overly pessimistic.
-     *
-     * See GitHub issue #19
-     */
-    // w_assert1(found_min_lsn || (global_min_lsn()== lsn_t::null));
 #endif
 }
 
@@ -1262,85 +1180,6 @@ log_storage::make_log_name(uint32_t idx, char* buf, int bufsz)
       << _log_prefix << idx << ends;
     w_assert1(s);
     return buf;
-}
-
-void log_storage::set_master(const lsn_t& mlsn, const lsn_t  & min_rec_lsn,
-        const lsn_t &min_xct_lsn)
-{
-    CRITICAL_SECTION(cs, _partition_lock);
-    lsn_t min_lsn = std::min(min_rec_lsn, min_xct_lsn);
-
-    _write_master(mlsn, min_lsn);
-
-    _master_lsn = mlsn;
-    _min_chkpt_rec_lsn = min_lsn;
-}
-
-void log_storage::_make_master_name(
-    const lsn_t&         master_lsn,
-    const lsn_t&        min_chkpt_rec_lsn,
-    char*                 buf,
-    int                        bufsz,
-    bool                old_style)
-{
-    w_ostrstream s(buf, (int) bufsz);
-
-    s << _logdir << _SLASH << _master_prefix;
-    vector<lsn_t> array;
-    array[0] = master_lsn;
-    array[1] = min_chkpt_rec_lsn;
-
-    _create_master_chkpt_string(s, array, old_style);
-    s << ends;
-    w_assert1(s);
-}
-
-void log_storage::_write_master(const lsn_t &l, const lsn_t &min)
-{
-    /*
-     *  create new master record
-     */
-    char _chkpt_meta_buf[CHKPT_META_BUF];
-    _make_master_name(l, min, _chkpt_meta_buf, CHKPT_META_BUF);
-    DBGTHRD(<< "writing checkpoint master: " << _chkpt_meta_buf);
-
-    FILE* f = fopen(_chkpt_meta_buf, "a");
-    if (! f) {
-        w_rc_t e = RC(eOS);
-        cerr << "ERROR: could not open a new log checkpoint file: "
-            << _chkpt_meta_buf << endl;
-        W_COERCE(e);
-    }
-
-    {        /* write ending lsns into the master chkpt record */
-        vector<lsn_t> array;
-        int j = get_last_lsns(array);
-        if(j > 0) {
-            w_ostrstream s(_chkpt_meta_buf, CHKPT_META_BUF);
-            _create_master_chkpt_contents(s, array);
-        } else {
-            memset(_chkpt_meta_buf, '\0', 1);
-        }
-        int length = strlen(_chkpt_meta_buf) + 1;
-        DBG(<< " #lsns=" << j
-            << " write this to master checkpoint record: " <<
-                _chkpt_meta_buf);
-
-        if(fwrite(_chkpt_meta_buf, length, 1, f) != 1) {
-            w_rc_t e = RC(eOS);
-            cerr << "ERROR: could not write log checkpoint file contents"
-                << _chkpt_meta_buf << endl;
-            W_COERCE(e);
-        }
-    }
-    fclose(f);
-
-    /*
-     *  destroy old master record
-     */
-    _make_master_name(_master_lsn,
-                _min_chkpt_rec_lsn, _chkpt_meta_buf, CHKPT_META_BUF);
-    (void) unlink(_chkpt_meta_buf);
 }
 
 void
@@ -1371,215 +1210,48 @@ log_storage::signal_scavenge_cond()
     DO_PTHREAD(pthread_cond_signal(&_scavenge_cond));
 }
 
-
-int log_storage::get_last_lsns(vector<lsn_t>& array)
-{
-    int j=0;
-    partition_map_t::iterator it = _partitions.begin();
-    while (it != _partitions.end()) {
-        partition_t* p = it->second;
-        DBGTHRD(<<"last skip lsn for " << p->num()
-                                       << " " << p->last_skip_lsn());
-        if(p->num() > 0 && (p->last_skip_lsn().hi() == p->num())) {
-            array[j++] = p->last_skip_lsn();
-        }
-        it++;
-    }
-    return j;
-}
-
-void log_storage::_create_master_chkpt_string(
-                ostream&        s,
-                const vector<lsn_t>&        array,
-                bool                old_style)
-{
-    if (old_style)  {
-        s << array[0] << '.' << array[1];
-
-    }  else  {
-        s << 'v' << _version_major << '.' << _version_minor ;
-        for(size_t i = 0; i < array.size(); i++) {
-                s << '_' << array[i];
-        }
-    }
-}
-
-rc_t log_storage::_check_version(uint32_t major, uint32_t minor)
-{
-        if (major == _version_major && minor <= _version_minor)
-                return RCOK;
-
-        w_error_codes err = (major < _version_major)
-                        ? eLOGVERSIONTOOOLD : eLOGVERSIONTOONEW;
-
-        cerr << "ERROR: log version too "
-            << ((err == eLOGVERSIONTOOOLD) ? "old" : "new")
-            << " sm ("
-            << _version_major << " . " << _version_minor
-            << ") log ("
-            << major << " . " << minor
-            << endl;
-
-        return RC(err);
-}
-
-void log_storage::_create_master_chkpt_contents(
-                ostream&        s,
-                const vector<lsn_t>&        array
-                )
-{
-    for(size_t i=0; i< array.size(); i++) {
-            s << '_' << array[i];
-    }
-    s << ends;
-}
-
-rc_t log_storage::_parse_master_chkpt_contents(
-                istream&            s,
-                vector<lsn_t>&                    lsnlist
-                )
-{
-    size_t listlength = 0;
-    char separator;
-    while(!s.eof()) {
-        s >> separator;
-        if(!s.eof()) {
-            w_assert9(separator == '_' || separator == '.');
-            s >> lsnlist[listlength];
-            DBG(<< listlength << ": extra lsn = " <<
-                lsnlist[listlength]);
-            if(!s.fail()) {
-                listlength++;
-            }
-        }
-    }
-    return RCOK;
-}
-
-rc_t log_storage::_parse_master_chkpt_string(
-                istream&            s,
-                lsn_t&              master_lsn,
-                lsn_t&              min_chkpt_rec_lsn,
-                vector<lsn_t>&                    others,
-                bool&                    old_style)
+rc_t log_storage::_check_version(istream& s)
 {
     uint32_t major = 1;
     uint32_t minor = 0;
+
     char separator;
-
     s >> separator;
-
-    if (separator == 'v')  {                // has version, otherwise default to 1.0
-        old_style = false;
+    if (separator == 'v')  {
         s >> major >> separator >> minor;
         w_assert9(separator == '.');
-        s >> separator;
-        w_assert9(separator == '_');
-    }  else  {
-        old_style = true;
-        s.putback(separator);
     }
 
-    s >> master_lsn >> separator >> min_chkpt_rec_lsn;
-    w_assert9(separator == '_' || separator == '.');
+    if (major == _version_major && minor <= _version_minor)
+        return RCOK;
 
-    if (!s)  {
-        return RC(eBADMASTERCHKPTFORMAT);
-    }
+    w_error_codes err = (major < _version_major)
+        ? eLOGVERSIONTOOOLD : eLOGVERSIONTOONEW;
 
-    size_t number_of_others = 0;
-    while(!s.eof()) {
-        s >> separator;
-        if(separator == '\0') break; // end of string
+    cerr << "ERROR: log version too "
+        << ((err == eLOGVERSIONTOOOLD) ? "old" : "new")
+        << " sm ("
+        << _version_major << " . " << _version_minor
+        << ") log ("
+        << major << " . " << minor
+        << endl;
 
-        if(!s.eof()) {
-            w_assert9(separator == '_' || separator == '.');
-            s >> others[number_of_others];
-            DBG(<< number_of_others << ": extra lsn = " <<
-                others[number_of_others]);
-            if(!s.fail()) {
-                number_of_others++;
-            }
-        }
-    }
-
-    return _check_version(major, minor);
+    return RC(err);
 }
 
-w_rc_t log_storage::_read_master(
-        const char *fname,
-        int prefix_len,
-        lsn_t &tmp,
-        lsn_t& tmp1,
-        vector<lsn_t>& lsnlist,
-        bool&  old_style
-)
+void log_storage::_write_master()
 {
-    rc_t         rc;
-    {
-        /* make a copy */
-        int        len = strlen(fname+prefix_len) + 1;
-        char *buf = new char[len];
-        memcpy(buf, fname+prefix_len, len);
-        w_istrstream s(buf);
+    char* buf = new char[smlevel_0::max_devname];
+    w_ostrstream s(buf, (int) smlevel_0::max_devname);
+    s << _logdir << _SLASH << _master_prefix << "v" << _version_major
+        << "." << _version_minor << ends;
 
-        rc = _parse_master_chkpt_string(s, tmp, tmp1,
-                                       lsnlist, old_style);
-        delete [] buf;
-        if (rc.is_error()) {
-            cerr << "bad master log file \"" << fname << "\"" << endl;
-            W_COERCE(rc);
-        }
-        DBG(<<"_parse_master_chkpt_string returns tmp= " << tmp
-            << " tmp1=" << tmp1
-            << " old_style=" << old_style);
+    FILE* f = fopen(buf, "a");
+    if (! f) {
+        w_rc_t e = RC(eOS);
+        cerr << "ERROR: could not open a new chk file: " << buf << endl;
+        W_COERCE(e);
     }
-
-    /*
-     * read the file for the rest of the lsn list
-     */
-    {
-        char*         buf = new char[smlevel_0::max_devname];
-        if (!buf)
-            W_FATAL(fcOUTOFMEMORY);
-        w_ostrstream s(buf, int(smlevel_0::max_devname));
-        s << _logdir << _SLASH << fname << ends;
-
-        FILE* f = fopen(buf, "r");
-        if(f) {
-            char _chkpt_meta_buf[CHKPT_META_BUF];
-            int n = fread(_chkpt_meta_buf, 1, CHKPT_META_BUF, f);
-            if(n  > 0) {
-                /* Be paranoid about checking for the null, since a lack
-                   of it could send the istrstream driving through memory
-                   trying to parse the information. */
-                void *null = memchr(_chkpt_meta_buf, '\0', CHKPT_META_BUF);
-                if (!null) {
-                    cerr << "invalid master log file format \""
-                        << buf << "\"" << endl;
-                    W_FATAL(eINTERNAL);
-                }
-
-                w_istrstream s(_chkpt_meta_buf);
-                rc = _parse_master_chkpt_contents(s, lsnlist);
-                if (rc.is_error())  {
-                    cerr << "bad master log file contents \""
-                        << buf << "\"" << endl;
-                    W_COERCE(rc);
-                }
-            }
-            fclose(f);
-        } else {
-            /* backward compatibility with minor version 0:
-             * treat empty file ok
-             */
-            w_rc_t e = RC(eOS);
-            cerr << "ERROR: could not open existing log checkpoint file: "
-                << buf << endl;
-            W_COERCE(e);
-        }
-
-        delete[] buf;
-    }
-    return RCOK;
+    delete[] buf;
 }
+

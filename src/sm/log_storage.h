@@ -92,8 +92,6 @@ public:
                             bool read_whole_block = true);
     void            acquire_partition_lock();
     void            release_partition_lock();
-    void            set_master(const lsn_t& master_lsn, const lsn_t& min_lsn,
-                            const lsn_t& min_xct_lsn);
 
     void            acquire_scavenge_lock();
     void            release_scavenge_lock();
@@ -112,22 +110,6 @@ public:
 
     const char *        dir_name() { return _logdir; }
 
-    lsn_t               master_lsn() const {
-                            ASSERT_FITS_IN_POINTER(lsn_t);
-                            // else need to grab the partition mutex
-                            return _master_lsn;
-                        }
-
-    // public for use in xct_impl in log-full handling...
-    /**\brief
-     * \details
-     * Set at constructor time and when a new master is created (set_master)
-     */
-    lsn_t               min_chkpt_rec_lsn() const {
-                            ASSERT_FITS_IN_POINTER(lsn_t);
-                            // else need to grab the partition mutex
-                            return _min_chkpt_rec_lsn;
-                        }
     // used by partition_t
     skip_log*       get_skip_log()  { return _skip_log; }
 
@@ -163,13 +145,6 @@ public:
     static fileoff_t          min_partition_size();
     static fileoff_t          max_partition_size();
 
-    // use in dump_page_lsn_chain (log_spr.cpp)
-    // TODO fix dump function and delete this -- not thread safe!
-    void reset_master_lsn(lsn_t master) { _master_lsn = master; }
-
-    lsn_t               global_min_lsn() const
-        {  return std::min(_master_lsn, _min_chkpt_rec_lsn); }
-
 private:
     void                _prime(int fd, fileoff_t start, lsn_t next);
     void     destroy_file(partition_number_t n, bool e);
@@ -201,57 +176,9 @@ private:
                                     false, during_recovery);
                           }
 
-    /**\brief Helper for _write_master */
-    static void         _create_master_chkpt_contents(
-                            ostream&        s,
-                            const vector<lsn_t>&    array
-                            );
+    static rc_t         _check_version(istream& s);
+    void _write_master();
 
-    /**\brief Helper for _make_master_name */
-    static void         _create_master_chkpt_string(
-                            ostream&        o,
-                            const vector<lsn_t>&       array,
-                            bool            old_style = false
-                            );
-
-    /**\brief Helper for _read_master */
-    static rc_t         _parse_master_chkpt_contents(
-                            istream&      s,
-                            vector<lsn_t>&        lsnlist
-                            );
-
-    /**\brief Helper for _read_master */
-    static rc_t         _parse_master_chkpt_string(
-                            istream&      s,
-                            lsn_t&        master_lsn,
-                            lsn_t&        min_chkpt_rec_lsn,
-                            vector<lsn_t>&        others,
-                            bool&         old_style
-                            );
-
-    /**\brief Helper for parse_master_chkpt_string */
-    static rc_t         _check_version(
-                            uint32_t        major,
-                            uint32_t        minor
-                            );
-    // helper for set_master
-    void                _write_master(const lsn_t &l, const lsn_t &min);
-
-    // used by implementation
-    w_rc_t              _read_master(
-                            const char *fname,
-                            int prefix_len,
-                            lsn_t &tmp,
-                            lsn_t& tmp1,
-                            vector<lsn_t>& lsnlist,
-                            bool&  old_style
-                            );
-    void                _make_master_name(
-                            const lsn_t&        master_lsn,
-                            const lsn_t&        min_chkpt_rec_lsn,
-                            char*               buf,
-                            int                 bufsz,
-                            bool                old_style = false);
     bool _partition_exists(partition_number_t pnum);
 
 
@@ -260,14 +187,12 @@ private:
     long            _segsize;
     fileoff_t               _partition_size;
     fileoff_t               _partition_data_size;
-    lsn_t                   _min_chkpt_rec_lsn;
 
     partition_map_t _partitions;
     partition_number_t  _curr_num;
     partition_t* _curr_partition;
 
     skip_log*           _skip_log;
-    lsn_t                   _master_lsn;
     mutable queue_based_block_lock_t _partition_lock;
 
     pthread_mutex_t     _scavenge_lock;

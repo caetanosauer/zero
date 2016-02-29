@@ -118,11 +118,6 @@ private:
 chkpt_m::chkpt_m(const sm_options& options)
     : _chkpt_thread(NULL), _chkpt_count(0)
 {
-    _chkpt_last = ss_m::log->master_lsn();
-    if(_chkpt_last == lsn_t::null) {
-        _chkpt_last = lsn_t(1,0);
-    }
-
     int interval = options.get_int_option("sm_chkpt_interval", -1);
     if (interval >= 0) {
         _chkpt_thread = new chkpt_thread_t(interval);
@@ -707,11 +702,6 @@ void chkpt_m::take()
     chkpt_serial_m::write_release();
 
     W_COERCE(ss_m::log->flush_all());
-    DBGOUT1(<<"Setting master_lsn to " << curr_chkpt.get_begin_lsn());
-    // CS TODO: get rid of master lsn
-    ss_m::log->set_master(curr_chkpt.get_begin_lsn(),
-            curr_chkpt.get_min_rec_lsn(),
-            curr_chkpt.get_min_xct_lsn());
 
     delete logrec;
 }

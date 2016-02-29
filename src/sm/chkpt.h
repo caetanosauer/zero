@@ -172,7 +172,6 @@ public:
 private:
     chkpt_thread_t*  _chkpt_thread;
     long             _chkpt_count;
-    lsn_t            _chkpt_last;
     chkpt_t          curr_chkpt;
 
     void             _acquire_lock(logrec_t& r, chkpt_t& new_chkpt);

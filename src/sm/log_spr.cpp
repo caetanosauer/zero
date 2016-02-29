@@ -26,12 +26,10 @@ void page_evict_log::redo(fixable_page_h* page) {
 }
 
 // CS TODO: why isnt this in restart.cpp??
-void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn) {
-    lsn_t master = smlevel_0::log->master_lsn();
-    o << "Dumping Page LSN Chain for PID=" << pid << ", MAXLSN=" << max_lsn
-        << ", MasterLSN=" << master << "..." << std::endl;
-
-    log_i           scan(*smlevel_0::log, master);
+void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn)
+{
+    lsn_t scan_start = smlevel_0::log->durable_lsn();
+    log_i           scan(*smlevel_0::log, scan_start);
     logrec_t        buf;
     lsn_t           lsn;
     // Scan all log entries until EMLSN
@@ -58,12 +56,6 @@ void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const ls
         }
         o << std::endl;
     }
-
-    // after the dumping, recovers the original master_lsn because log_i increased it.
-    // of course, this is not safe if there are other transactions going.
-    // but, this method is for debugging.
-    // CS: commented out -- tests seem fine without this
-    //_storage->reset_master_lsn(master);
 }
 
 rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn)

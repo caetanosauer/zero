@@ -166,8 +166,6 @@ public:
 
     virtual rc_t init() = 0;
 
-    virtual lsn_t               min_chkpt_rec_lsn() const = 0;
-
     typedef    smlevel_0::partition_number_t partition_number_t;
 
     /**\brief Do whatever needs to be done before destructor is called, then destruct.
@@ -227,7 +225,6 @@ public:
 
 
     virtual lsn_t               durable_lsn() const = 0;
-    virtual lsn_t               master_lsn() const = 0;
 
     // not called from the implementation:
     virtual rc_t                insert(logrec_t &r, lsn_t* ret) = 0;
@@ -240,19 +237,6 @@ public:
     virtual void        release() = 0; // used by log_i
     virtual rc_t        flush(const lsn_t& lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL) = 0;
 
-    virtual void                set_master(const lsn_t& master_lsn,
-                            const lsn_t& min_lsn,
-                            const lsn_t& min_xct_lsn) = 0;
-
-
-    // used by bf_m
-    lsn_t               global_min_lsn() const {
-                          return std::min(master_lsn(), min_chkpt_rec_lsn()); }
-    lsn_t               global_min_lsn(lsn_t const &a) const {
-                          return std::min(global_min_lsn(), a); }
-    // used by implementation
-    lsn_t               global_min_lsn(lsn_t const &a, lsn_t const &b) const {
-                          return std::min(global_min_lsn(a), b); }
 
     // flush won't return until target lsn before durable_lsn(), so
     // back off by one byte so we don't depend on other inserts to

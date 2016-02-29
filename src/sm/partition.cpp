@@ -627,16 +627,8 @@ again:
     w_rc_t rc;
 
     while(pos.lo() < this->_eop) {
-        DBG5("pos.lo() = " << pos.lo()
-                << " and eop=" << this->_eop);
-        if(recovery) {
-            // increase the starting point as much as possible.
-            // to decrease the time for recovery
-            if(pos.hi() == _owner->master_lsn().hi() &&
-               pos.lo() < _owner->master_lsn().lo())  {
-                      pos = _owner->master_lsn();
-            }
-        }
+        // CS TODO: try to open on further lsn -- this is where we would check
+        // the master lsn and set pos to its lo() if the partition matches
         DBG5( <<"reading pos=" << pos <<" eop=" << this->_eop);
 
         rc = read(_peekbuf, l, pos, NULL, fd);
@@ -1153,8 +1145,6 @@ partition_t::sanity_check() const
 void
 partition_t::destroy()
 {
-    w_assert3(num() < _owner->global_min_lsn().hi());
-
     if(num()>0) {
         w_assert3(exists());
         w_assert3(! is_current() );
