@@ -598,7 +598,7 @@ log_core::log_core(const sm_options& options)
         W_FATAL(eCRASH);
     }
     const char* path = logdir.c_str();
-    bool reformat = options.get_bool_option("sm_reformat_log", false);
+    bool reformat = options.get_bool_option("sm_format", false);
 
     _storage = new log_storage(path, reformat, _curr_lsn, _durable_lsn,
             _flush_lsn, _segsize);

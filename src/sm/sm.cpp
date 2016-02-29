@@ -285,7 +285,7 @@ ss_m::_construct_once()
      */
     shutting_down = false;
     shutdown_clean = _options.get_bool_option("sm_shutdown_clean", false);
-    if (_options.get_bool_option("sm_truncate_log", false)) {
+    if (_options.get_bool_option("sm_format", false)) {
         shutdown_clean = true;
     }
 
@@ -346,7 +346,7 @@ ss_m::_construct_once()
     chkpt_t* chkpt_info = recovery->get_chkpt();
 
     bool instantRestart = _options.get_bool_option("sm_restart_instant", true);
-    bool truncate = _options.get_bool_option("sm_truncate", false);
+    bool format = _options.get_bool_option("sm_format", false);
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing volume manager");
 
@@ -355,7 +355,7 @@ ss_m::_construct_once()
     vol = new vol_t(_options,
             instantRestart ? chkpt_info : NULL);
     if (instantRestart) {
-        vol->build_caches(truncate);
+        vol->build_caches(format);
     }
 
     smlevel_0::statistics_enabled = _options.get_bool_option("sm_statistics", true);
@@ -396,7 +396,7 @@ ss_m::_construct_once()
             recovery->redo_page_pass();
         }
         // metadata caches can only be constructed now
-        vol->build_caches(truncate);
+        vol->build_caches(format);
         // system now ready for UNDO
         // CS TODO: can this be done concurrently by restart thread?
         recovery->undo_pass();
@@ -474,15 +474,15 @@ ss_m::_destruct_once()
     (void) nprepared; // Used only for debugging assert
 
     // log truncation requires clean shutdown
-    bool truncate = _options.get_bool_option("sm_truncate_log", false);
-    if (shutdown_clean || truncate) {
+    bool format = _options.get_bool_option("sm_format", false);
+    if (shutdown_clean || format) {
         ERROUT(<< "SM performing clean shutdown");
 
         W_COERCE(bf->force_volume());
         W_COERCE(log->flush_all());
         me()->check_actual_pin_count(0);
 
-        if (truncate) {
+        if (format) {
             W_COERCE(_truncate_log());
         }
 

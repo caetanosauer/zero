@@ -422,7 +422,7 @@ void KitsCommand::ensureEmptyPath(string path)
 void KitsCommand::loadOptions(sm_options& options)
 {
     options.set_string_option("sm_dbfile", opt_dbfile);
-    options.set_bool_option("sm_truncate", opt_load);
+    options.set_bool_option("sm_format", opt_load);
     options.set_string_option("sm_logdir", logdir);
     mkdirs(logdir);
 
