@@ -303,12 +303,8 @@ void btree_test_env::empty_dir(const char *folder_name)
 
 void btree_test_env::SetUp()
 {
-#ifdef LOG_DIRECT_IO
-    char tests_dir[MAXPATHLEN] = "/var/tmp/";
-#else
     //char tests_dir[MAXPATHLEN] = "/dev/shm/";
     char tests_dir[MAXPATHLEN] = "/var/tmp/";
-#endif
     strcat(tests_dir, getenv("USER"));
     assure_dir(tests_dir);
     strcat(tests_dir, "/btree_test_env");

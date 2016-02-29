@@ -56,11 +56,6 @@ X_ADD_TESTCASE(test_insert_many btree_test_env)
 X_ADD_TESTCASE(test_btree_insert_100K btree_test_env)
 X_ADD_TESTCASE(test_btree_durability btree_test_env)
 
-X_ADD_TESTCASE(test_logbuf btree_test_env)
-X_ADD_TESTCASE(test_logbuf_multi_thread btree_test_env)
-X_ADD_TESTCASE(test_logbuf_spr btree_test_env)
-X_ADD_TESTCASE(test_logbuf_scan btree_test_env)
-
 X_ADD_TESTCASE(test_vol btree_test_env)
 
 X_ADD_TESTCASE(test_logarchiver logfactory)

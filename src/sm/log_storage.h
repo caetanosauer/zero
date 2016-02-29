@@ -147,7 +147,7 @@ public:
 
 private:
     void                _prime(int fd, fileoff_t start, lsn_t next);
-    void     destroy_file(partition_number_t n, bool e);
+    void     destroy_file(partition_number_t n);
 
     partition_t *       _close_min(partition_number_t n);
                                 // the defaults are for the case

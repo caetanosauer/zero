@@ -170,13 +170,6 @@ protected:
     char*           _readbuf;
     char *          readbuf() { return _readbuf; }
 
-    // exported to partition_t
-#ifdef LOG_DIRECT_IO
-    // a temp buffer used by partition_t::flush to do alignment adjustment for direct IO
-    char*           _writebuf;
-    char *          writebuf() { return _writebuf; }
-#endif
-
     long _start; // byte number of oldest unwritten byte
     long                 start_byte() const { return _start; }
 

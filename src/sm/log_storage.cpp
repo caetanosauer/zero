@@ -765,7 +765,6 @@ log_storage::_close_min(partition_number_t n)
         w_assert3(! victim->is_open_for_append());
         w_assert3(! victim->is_open_for_read());
     }
-    w_assert1(! victim->is_current() );
 
     victim->clear();
 
@@ -904,11 +903,13 @@ rc_t log_storage::last_lsn_in_partition(partition_number_t pnum, lsn_t& lsn)
         return RCOK;
     }
     if (p->size() == 0) {
+        // CS TODO: surely we can to better than this
         // this is a special case
         // when the partition does not exist,
         // _open_partition_for_read->_open_partitionp->peek would create an empty file
         // we must remove this file immediately
         p->close(true);
+        destroy_file(p->num());
         p->destroy();
         lsn = lsn_t::null;
         return RCOK;
@@ -1074,6 +1075,7 @@ int log_storage::delete_old_partitions(lsn_t lsn)
         DBGTHRD( << "scavenging log " << p->num() << endl );
         count++;
         p->close(true);
+        destroy_file(p->num());
         p->destroy();
     }
 
@@ -1081,7 +1083,7 @@ int log_storage::delete_old_partitions(lsn_t lsn)
 }
 
 void
-log_storage::destroy_file(partition_number_t n, bool pmsg)
+log_storage::destroy_file(partition_number_t n)
 {
     char        *fname = new char[smlevel_0::max_devname];
     if (!fname)
@@ -1091,11 +1093,6 @@ log_storage::destroy_file(partition_number_t n, bool pmsg)
         w_rc_t e = RC(eOS);
         cerr << "destroy_file " << n << " " << fname << ":" <<endl
              << e << endl;
-        if(pmsg) {
-            cerr << "warning : cannot free log file \""
-            << fname << '\"' << endl;
-            cerr << "          " << e << endl;
-        }
     }
 
     delete[] fname;
@@ -1147,17 +1144,14 @@ log_storage::sanity_check() const
             w_assert1(p->exists());
             w_assert1(p ==  get_partition(p->num()));
 
-            if(p->is_current()) {
+            if(p->num() == partition_num()) {
                 w_assert1(!found_current);
                 found_current = true;
-
                 w_assert1(p ==  curr_partition());
-                w_assert1(p->num() ==  partition_num());
-
                 w_assert1(p->is_open_for_append());
             }
         } else {
-            w_assert1(!p->is_current());
+            w_assert1(p->num() != partition_num());
             w_assert1(!p->exists());
         }
     }

@@ -164,9 +164,6 @@ log_common::log_common(const sm_options& options)
     :
       _log_corruption(false),
       _readbuf(NULL),
-#ifdef LOG_DIRECT_IO
-      _writebuf(NULL),
-#endif
       _start(0),
       _end(0),
       _segsize(options.get_int_option("sm_logbufsize", DFT_LOGBUFSIZE)),
@@ -213,24 +210,11 @@ log_common::log_common(const sm_options& options)
     // since xfer size is fixed (8K).
     // It has to big enough to read the maximum-sized log record, clearly
     // more than a page.
-#ifdef LOG_DIRECT_IO
-#if SM_PAGESIZE < 8192
-    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, log_storage::BLOCK_SIZE*4);
-    //_readbuf = new char[BLOCK_SIZE*4];
-    // we need two blocks for the write buffer because the skip log record may span two blocks
-    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, log_storage::BLOCK_SIZE*2);
-#else
-    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, SM_PAGESIZE*4);
-    //_readbuf = new char[SM_PAGESIZE*4];
-    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, SM_PAGESIZE*2);
-#endif
-#else
 #if SM_PAGESIZE < 8192
     _readbuf = new char[log_storage::BLOCK_SIZE*4];
 #else
     _readbuf = new char[SM_PAGESIZE*4];
 #endif
-#endif // LOG_DIRECT_IO
 
     if (_segsize < 64 * 1024) {
         // not mt-safe, but this is not going to happen in
@@ -252,13 +236,7 @@ log_common::~log_common()
 {
     w_assert1(_durable_lsn == _curr_lsn);
 
-#ifdef LOG_DIRECT_IO
-    free(_readbuf);
-    free(_writebuf);
-    _writebuf = NULL;
-#else
     delete [] _readbuf;
-#endif
     _readbuf = NULL;
 
     delete _carray;
@@ -536,11 +514,7 @@ void log_core::shutdown()
 log_core::log_core(const sm_options& options)
       : log_common(options)
 {
-#ifdef LOG_DIRECT_IO
-    posix_memalign((void**)&_buf, LOG_DIO_ALIGN, _segsize);
-#else
     _buf = new char[_segsize];
-#endif
 
     std::string logdir = options.get_string_option("sm_logdir", "");
     if (logdir.empty()) {
@@ -642,11 +616,7 @@ log_core::~log_core()
     delete _storage;
     delete _oldest_lsn_tracker;
 
-#ifdef LOG_DIRECT_IO
-    free(_buf);
-#else
     delete [] _buf;
-#endif
     _buf = NULL;
 }
 
@@ -1334,9 +1304,6 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
 
     // Flush the log buffer
     p->flush(
-#ifdef LOG_DIRECT_IO
-            writebuf(),
-#endif
             p->fhdl_app(), start_lsn, _buf, start1, end1, start2, end2
     );
 

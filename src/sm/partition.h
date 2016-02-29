@@ -85,14 +85,9 @@ public:
     enum { invalid_fhdl = -1 };
     enum { nosize = -1 };
 
-    NORET             partition_t() :
-                            _num(0),
-                            _mask(0),
-                            _size(0),
-                            _eop(0),
-                            _owner(0),
-                            _fhdl_rd(invalid_fhdl),
-                            _fhdl_app(invalid_fhdl)
+    partition_t() :
+        _num(0), _mask(0), _size(0), _eop(0), _owner(0),
+        _fhdl_rd(invalid_fhdl), _fhdl_app(invalid_fhdl)
     {
         _peekbuf = new char[sizeof(logrec_t)];
     }
@@ -125,7 +120,7 @@ private:
     /* store end lsn at the beginning of each partition; updated
     * when partition closed
     */
-    void             flush(int fd);
+    void             fsync(int fd);
     lsn_t            first_lsn(uint32_t pnum) const { return lsn_t( pnum, 0); }
 
 public:
@@ -142,7 +137,6 @@ public:
     w_rc_t             open_for_read(partition_number_t n, bool err=true);
     void               close_for_append();
     void               close_for_read();
-    bool               is_current() const;
     void               peek(partition_number_t n,
                             const lsn_t&    end_hint,
                             bool,
@@ -152,9 +146,6 @@ public:
                             lsn_t* prev_lsn = NULL,
                             int fd = invalid_fhdl);
     void               flush(
-#ifdef LOG_DIRECT_IO
-                            char* writebuf,
-#endif
                             int fd,
                             lsn_t lsn,
                             const char* const buf,
@@ -162,26 +153,6 @@ public:
                             long end1,
                             long start2,
                             long end2);
-
-    /*
-     * Methods used by logbuf_core
-     */
-    // new flush, which can flush multiple segments
-    void  flush(
-#ifdef LOG_DIRECT_IO
-                char* writebuf,
-#endif
-                int fd,
-                lsn_t lsn,
-                int64_t size,
-                int64_t write_size,
-                sdisk_base_t::iovec_t *iov,
-                uint32_t seg_cnt);
-    // read an entire segment
-    w_rc_t read_seg(lsn_t ll, char *buf, uint32_t size, int fd = invalid_fhdl);
-    // read one log record
-    w_rc_t read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd = invalid_fhdl);
-
 
     const lsn_t&       last_skip_lsn() const { return _last_skip_lsn; }
 #if W_DEBUG_LEVEL > 2
@@ -214,9 +185,6 @@ public:
 
 private:
     char *             _readbuf();
-#ifdef LOG_DIRECT_IO
-    char *             _writebuf();
-#endif
 
     void               _set_state(uint32_t m) { _mask |= m ; }
     void               _clr_state(uint32_t m) { _mask &= ~m ; }
