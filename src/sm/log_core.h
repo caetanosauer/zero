@@ -313,7 +313,7 @@ public:
 
     // INTERFACE METHODS BEGIN
 
-    virtual rc_t            insert(logrec_t &r, lsn_t* l);
+    virtual rc_t            insert(logrec_t &r, lsn_t* l = NULL);
     virtual rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
     virtual rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
     virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
