@@ -379,20 +379,9 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
         }
     }
 
-    // it's not sufficient to flush to ll, since ll is at the *beginning* of
-    // what we want to read, so force a flush when necessary
-    // CS TODO: this is problematic, because we may wait forever for this flush
-    // if there is no transaction activity.
-    lsn_t must_be_durable = ll + sizeof(logrec_t);
-    if(must_be_durable > _durable_lsn) {
-        W_DO(flush(must_be_durable));
-    }
-    if (forward && ll >= curr_lsn()) {
-        w_assert0(ll == curr_lsn());
-        // reading the curr_lsn during recovery yields a skip log record,
-        // but since there is no next partition to open, scan must stop
-        // here, without handling skip below
-        // exception/error should not be used for control flow (TODO)
+    if (forward && ll >= durable_lsn()) {
+        w_assert0(ll == durable_lsn());
+        // reading the durable_lsn during recovery yields a skip log record,
         return RC(eEOF);
     }
     if (!forward && ll == lsn_t::null) {

@@ -1986,6 +1986,7 @@ xct_t::rollback(const lsn_t &save_pt)
 
     // undo_nxt is the lsn of last recovery log for this txn
     lsn_t nxt = _undo_nxt;
+    W_DO(log->flush(nxt));
 
     DBGOUT3(<<"Initial rollback, from: " << nxt << " to: " << save_pt);
 
