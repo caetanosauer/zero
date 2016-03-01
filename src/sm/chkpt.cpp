@@ -63,7 +63,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define CHKPT_C
 
 #include "sm_base.h"
-#include "chkpt_serial.h"
 #include "chkpt.h"
 #include "btree_logrec.h"       // Lock re-acquisition
 #include "bf_tree.h"
@@ -679,7 +678,7 @@ void chkpt_t::dump(ostream& os)
 
 void chkpt_m::take()
 {
-    chkpt_serial_m::write_acquire();
+    chkpt_mutex.acquire_write();
     DBGOUT1(<<"BEGIN chkpt_m::take");
 
     INC_TSTAT(log_chkpt_cnt);
@@ -699,11 +698,19 @@ void chkpt_m::take()
                 curr_chkpt.get_min_xct_lsn()), 0);
 
     // Release the 'write' mutex so the next checkpoint request can come in
-    chkpt_serial_m::write_release();
+    chkpt_mutex.release_write();
 
     W_COERCE(ss_m::log->flush_all());
 
     delete logrec;
+}
+
+lsn_t chkpt_m::get_curr_rec_lsn()
+{
+    chkpt_mutex.acquire_read();
+    lsn_t ret = curr_chkpt.get_min_rec_lsn();
+    chkpt_mutex.release_read();
+    return ret;
 }
 
 chkpt_thread_t::chkpt_thread_t(unsigned interval)

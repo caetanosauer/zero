@@ -19,7 +19,6 @@
 #include "sm_base.h"
 #include "vol.h"
 #include "alloc_cache.h"
-#include "chkpt_serial.h"
 
 #include <boost/static_assert.hpp>
 #include <ostream>
@@ -1058,10 +1057,6 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, PageID *pid, StoreID
             // Unable to the read acquire latch, cannot continue, raise an internal error
             DBGOUT2 (<< "Error when acquiring LATCH_SH for checkpoint buffer pool. cb._pid_shpid = "
                      << cb._pid_shpid << ", rc = " << latch_rc);
-
-            // Called by checkpoint operation which is holding a 'write' mutex on checkpoint
-            // To be a good citizen, release the 'write' mutex before raise error
-            chkpt_serial_m::write_release();
 
             W_FATAL_MSG(fcINTERNAL, << "unable to latch a buffer pool page");
             return;

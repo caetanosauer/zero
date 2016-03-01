@@ -168,11 +168,13 @@ public:
 public:
     void take();
     void wakeup_thread();
+    lsn_t get_curr_rec_lsn();
 
 private:
     chkpt_thread_t*  _chkpt_thread;
     long             _chkpt_count;
     chkpt_t          curr_chkpt;
+    occ_rwlock       chkpt_mutex;
 
     void             _acquire_lock(logrec_t& r, chkpt_t& new_chkpt);
 

@@ -64,7 +64,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "w.h"
 #include "sm_base.h"
 #include "chkpt.h"
-#include "chkpt_serial.h"
 #include "sm.h"
 #include "vol.h"
 #include "bf_tree.h"

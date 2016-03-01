@@ -22,7 +22,6 @@
 
 #include <sm.h>
 #include "tls.h"
-#include "chkpt_serial.h"
 #include <sstream>
 #include "chkpt.h"
 #include "logrec.h"
