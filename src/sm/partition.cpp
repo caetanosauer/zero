@@ -65,6 +65,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "logtype_gen.h"
 #include "log.h"
 #include "log_storage.h"
+#include <sys/stat.h>
 
 // needed for skip_log
 #include "logdef_gen.cpp"
@@ -299,7 +300,7 @@ partition_t::flush(
         ADD_TSTAT(log_bytes_written, grand_total);
     } // end copy skip record
 
-    this->fsync(fd); // fsync
+    fsync_delayed(fd); // fsync
 }
 
 /*
@@ -723,11 +724,7 @@ partition_t::open_for_read(
     // if not already in the list and opened
     //
     if(fhdl_rd() == invalid_fhdl) {
-        char *fname = new char[smlevel_0::max_devname];
-        if (!fname)
-                W_FATAL(fcOUTOFMEMORY);
-
-        smlevel_0::log->make_log_name(__num, fname, smlevel_0::max_devname);
+        string fname = _owner->make_log_name(__num);
 
         int fd;
         w_rc_t e;
@@ -735,7 +732,7 @@ partition_t::open_for_read(
                 << "open_for_read OPEN " << fname);
 
         int flags = smthread_t::OPEN_RDONLY;
-        e = me()->open(fname, flags, 0, fd);
+        e = me()->open(fname.c_str(), flags, 0, fd);
 
         DBG5(<< " OPEN " << fname << " returned " << fd);
 
@@ -765,12 +762,11 @@ partition_t::open_for_read(
 
         _set_state(m_exists);
         _set_state(m_open_for_read);
-
-        delete[] fname;
     }
     _num = __num;
     w_assert3(exists());
     w_assert3(is_open_for_read());
+    w_assert3(num() == __num);
     // might not be flushed, but if
     // it isn't, surely it's flushed up to
     // the offset we're reading
@@ -896,10 +892,7 @@ partition_t::peek(
     _clr_state(m_exists);
     _clr_state(m_flushed);
 
-    char *fname = new char[smlevel_0::max_devname];
-    if (!fname)
-        W_FATAL(fcOUTOFMEMORY);
-    smlevel_0::log->make_log_name(__num, fname, smlevel_0::max_devname);
+    string fname = _owner->make_log_name(__num);
 
     smlevel_0::fileoff_t part_size = fileoff_t(0);
 
@@ -909,7 +902,7 @@ partition_t::peek(
     int flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC | smthread_t::OPEN_CREATE;
 
     w_rc_t e;
-    e = me()->open(fname, flags, 0744, fd);
+    e = me()->open(fname.c_str(), flags, 0744, fd);
     if (e.is_error()) {
         cerr
             << "ERROR: cannot open log file: " << endl << e << endl;
@@ -987,12 +980,10 @@ partition_t::peek(
         }
 
     }
-
-    delete[] fname;
 }
 
 void
-partition_t::fsync(int fd)
+partition_t::fsync_delayed(int fd)
 {
     static int64_t attempt_flush_delay = 0;
     // We only cound the fsyncs called as
@@ -1071,3 +1062,239 @@ partition_t::close_for_read()
     }
 }
 
+size_t partition_t::truncate_for_append(partition_number_t pnum,
+        const string& fname)
+{
+    /*
+         The goal of this code is to determine where is the last complete
+         log record in the log file and truncate the file at the
+         end of that record.  It detects this by scanning the file and
+         either reaching eof or else detecting an incomplete record.
+         If it finds an incomplete record then the end of the preceding
+         record is where it will truncate the file.
+
+         The file is scanned by attempting to fread the length of a log
+         record header.        If this fread does not read enough bytes, then
+         we've reached an incomplete log record.  If it does read enough,
+         then the buffer should contain a valid log record header and
+         it is checked to determine the complete length of the record.
+         Fseek is then called to advance to the end of the record.
+         If the fseek fails then it indicates an incomplete record.
+
+         *  NB:
+         This is done here rather than in peek() since in the unix-file
+         case, we only check the *last* partition opened, not each
+         one read.
+     */
+    /* end of the last valid log record / start of invalid record */
+    fileoff_t pos = 0;
+    DBGOUT5(<<" truncate last complete log rec ");
+
+    DBGOUT5(<<" checking " << fname);
+
+    FILE *f =  fopen(fname.c_str(), "r");
+    DBGOUT5(<<" opened " << fname << " fp " << f << " pos " << pos);
+
+    fileoff_t start_pos = pos;
+
+    // CS TODO: try to open on LSN higher than 0. This used to be where
+    // we would get the seek position from the master LSN if the partitions
+    // matched.
+
+    // CS TODO: caller should actually check if file exists
+    if (!f) { return 0; }
+
+    allocaN<logrec_t::hdr_non_ssx_sz> buf;
+
+    // this is now a bit more complicated because some log record
+    // is ssx log, which has a shorter header.
+    // (see hdr_non_ssx_sz/hdr_single_sys_xct_sz in logrec_t)
+    int n;
+    // this might be ssx log, so read only minimal size (hdr_single_sys_xct_sz) first
+    const int log_peek_size = logrec_t::hdr_single_sys_xct_sz;
+    DBGOUT5(<<"fread " << fname << " log_peek_size= " << log_peek_size);
+    while ((n = fread(buf, 1, log_peek_size, f)) == log_peek_size)
+    {
+        DBGOUT5(<<" pos is now " << pos);
+        logrec_t  *l = (logrec_t*) (void*) buf;
+
+        if( l->type() == logrec_t::t_skip) {
+            break;
+        }
+
+        smsize_t len = l->length();
+        DBGOUT5(<<"scanned log rec type=" << int(l->type())
+                << " length=" << l->length());
+
+        if(len < l->header_size()) {
+            // Must be garbage and we'll have to truncate this
+            // partition to size 0
+            w_assert1(pos == start_pos);
+        } else {
+            w_assert1(len >= l->header_size());
+
+            DBGOUT5(<<"hdr_sz " << l->header_size() );
+            DBGOUT5(<<"len " << len );
+            // seek to lsn_ck at end of record
+            // Subtract out log_peek_size because we already
+            // read that (thus we have seeked past it)
+            // Subtract out lsn_t to find beginning of lsn_ck.
+            len -= (log_peek_size + sizeof(lsn_t));
+
+            //NB: this is a RELATIVE seek
+            DBGOUT5(<<" pos is now " << pos);
+            DBGOUT5(<<"seek additional +" << len << " for lsn_ck");
+            if (fseek(f, len, SEEK_CUR))  {
+                if (feof(f))  break;
+            }
+            DBGOUT5(<<"ftell says pos is " << ftell(f));
+
+            lsn_t lsn_ck;
+            n = fread(&lsn_ck, 1, sizeof(lsn_ck), f);
+            DBGOUT5(<<"read lsn_ck return #bytes=" << n );
+            if (n != sizeof(lsn_ck))  {
+                w_rc_t        e = RC(eOS);
+                // reached eof
+                if (! feof(f))  {
+                    cerr << "ERROR: unexpected log file inconsistency." << endl;
+                    W_COERCE(e);
+                }
+                break;
+            }
+            DBGOUT5(<<"pos = " <<  pos
+                    << " lsn_ck = " <<lsn_ck);
+
+            // make sure log record's lsn matched its position in file
+            if ( (lsn_ck.lo() != pos) ||
+                    (lsn_ck.hi() != (uint32_t) pnum ) ) {
+                // found partial log record, end of log is previous record
+                cerr << "Found unexpected end of log -- probably due to a previous crash."
+                    << endl;
+                cerr << "   Recovery will continue ..." << endl;
+                break;
+            }
+
+            pos = ftell(f) ;
+        }
+    }
+    fclose(f);
+
+
+
+    DBGOUT5(<<"explicit truncating " << fname << " to " << pos);
+    w_assert0(os_truncate(fname.c_str(), pos )==0);
+
+    //
+    // but we can't just use truncate() --
+    // we have to truncate to a size that's a mpl
+    // of the page size. First append a skip record
+    DBGOUT5(<<"explicit opening  " << fname );
+    f =  fopen(fname.c_str(), "a");
+    if (!f) {
+        w_rc_t e = RC(fcOS);
+        cerr << "fopen(" << fname << "):" << endl << e << endl;
+        W_COERCE(e);
+    }
+    skip_log *s = new skip_log; // deleted below
+    s->set_lsn_ck( lsn_t(uint32_t(pnum), sm_diskaddr_t(pos)) );
+
+
+    DBGOUT5(<<"writing skip_log at pos " << pos << " with lsn "
+            << s->get_lsn_ck()
+            << "and size " << s->length()
+           );
+#ifdef W_TRACE
+    {
+        DBGOUT5(<<"eof is now " << ftell(f));
+    }
+#endif
+
+    if ( fwrite(s, s->length(), 1, f) != 1)  {
+        w_rc_t        e = RC(eOS);
+        cerr << "   fwrite: can't write skip rec to log ..." << endl;
+        W_COERCE(e);
+    }
+#ifdef W_TRACE
+    {
+        DBGTHRD(<<"eof is now " << ftell(f));
+    }
+#endif
+    fileoff_t o = pos;
+    o += s->length();
+    o = o % XFERSIZE;
+    DBGOUT5(<<"BLOCK_SIZE " << int(BLOCK_SIZE));
+    if(o > 0) {
+        o = XFERSIZE - o;
+        char *junk = new char[int(o)]; // delete[] at close scope
+        if (!junk)
+            W_FATAL(fcOUTOFMEMORY);
+#ifdef ZERO_INIT
+#if W_DEBUG_LEVEL > 4
+        fprintf(stderr, "ZERO_INIT: Clearing before write %d %s\n",
+                __LINE__
+                , __FILE__);
+#endif
+        memset(junk,'\0', int(o));
+#endif
+
+        DBGOUT5(<<"writing junk of length " << o);
+#ifdef W_TRACE
+        {
+            DBGOUT5(<<"eof is now " << ftell(f));
+        }
+#endif
+        n = fwrite(junk, int(o), 1, f);
+        if ( n != 1)  {
+            w_rc_t e = RC(eOS);
+            cerr << "   fwrite: can't round out log block size ..." << endl;
+            W_COERCE(e);
+        }
+
+#ifdef W_TRACE
+        {
+            DBGOUT5(<<"eof is now " << ftell(f));
+        }
+#endif
+        delete[] junk;
+        o = 0;
+    }
+    delete s; // skip_log
+
+    fileoff_t eof = ftell(f);
+    w_rc_t e = RC(eOS);        /* collect the error in case it is needed */
+    DBGOUT5(<<"eof is now " << eof);
+
+
+    if(((eof) % XFERSIZE) != 0) {
+        cerr <<
+            "   ftell: can't write skip rec to log ..." << endl;
+        W_COERCE(e);
+    }
+    W_IGNORE(e);        /* error not used */
+
+    if (os_fsync(fileno(f)) < 0) {
+        e = RC(eOS);
+        cerr << "   fsync: can't sync fsync truncated log ..." << endl;
+        W_COERCE(e);
+    }
+
+#if W_DEBUG_LEVEL > 2
+    {
+        os_stat_t statbuf;
+        if (os_fstat(fileno(f), &statbuf) == -1) {
+            e = RC(eOS);
+        } else {
+            e = RCOK;
+        }
+        if (e.is_error()) {
+            cerr << " Cannot stat fd " << fileno(f)
+                << ":" << endl << e << endl << endl;
+            W_COERCE(e);
+        }
+        DBGOUT5(<< "size of " << fname << " is " << statbuf.st_size);
+    }
+#endif
+    fclose(f);
+
+    return pos;
+}

@@ -402,7 +402,9 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     }
 
     // Find and open the partition
-    partition_t* p = _storage->find_partition(ll, true, false, forward);
+    partition_t* p = _storage->get_partition(ll.hi());
+    p->open_for_read(ll.hi());
+    w_assert1(p);
 
     /*
      * STEP 2: Read log record from the partition
@@ -423,8 +425,7 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 
             p = _storage->get_partition(ll.hi());
             if(!p) {
-                //p = _open_partition_for_read(ll.hi(), lsn_t::null, false, false);
-                p = _storage->find_partition(ll, false, false, forward);
+                return RC(eEOF);
             }
 
             // re-read
@@ -467,11 +468,6 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 
     DBGTHRD(<<"fetch at lsn " << ll  << " returns " << *rp
             << " with next " << nxt ? *nxt : lsn_t::null);
-
-#if W_DEBUG_LEVEL > 2
-    // CS: see comment above
-    // _sanity_check();
-#endif
 
     // caller must release the _partition_lock mutex
     return RCOK;
@@ -1190,13 +1186,6 @@ void log_common::flush_daemon()
         last_completed_flush_lsn=lsn) ;
 }
 
-void log_common::_sanity_check() const
-{
-    w_assert1(durable_lsn() <= curr_lsn());
-    w_assert1(durable_lsn() >= first_lsn(1));
-    _storage->sanity_check();
-}
-
 /**\brief Flush unflushed-portion of log buffer.
  * @param[in] old_mark Durable lsn from last flush. Flush records later than this.
  * \details
@@ -1310,10 +1299,6 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
     long written = (end2 - start2) + (end1 - start1);
     p->set_size(start_lsn.lo()+written);
 
-#if W_DEBUG_LEVEL > 2
-    _sanity_check();
-#endif
-
     _durable_lsn = end_lsn;
     _start = new_start;
 
@@ -1397,16 +1382,15 @@ rc_t log_core::load_fetch_buffers()
 {
     _fetch_buffers.resize(_fetch_buf_last - _fetch_buf_first + 1, NULL);
 
-    char *const fname = new char[smlevel_0::max_devname];
     for (size_t p = _fetch_buf_last; p >= _fetch_buf_first; p--) {
         int fd;
 
-        _storage->make_log_name(p, fname, smlevel_0::max_devname);
+        string fname = _storage->make_log_name(p);
         int flags = smthread_t::OPEN_RDONLY;
 
         // get file size and whether it exists
         struct stat file_info;
-        int status = stat(fname, &file_info);
+        int status = stat(fname.c_str(), &file_info);
         if (status < 0) {
             continue;
         }
@@ -1414,7 +1398,7 @@ rc_t log_core::load_fetch_buffers()
         // Allocate buffer space and open file
         char* buf = new char[file_info.st_size];
         _fetch_buffers[p - _fetch_buf_first] = buf;
-        W_DO(me()->open(fname, flags, 0744, fd));
+        W_DO(me()->open(fname.c_str(), flags, 0744, fd));
 
         // Main loop that loads chunks of 32MB in reverse sequential order
         size_t chunk = 32 * 1024 * 1024;
@@ -1443,8 +1427,6 @@ rc_t log_core::load_fetch_buffers()
         //     pos += lr->length();
         // }
     }
-
-    delete[] fname;
     return RCOK;
 }
 

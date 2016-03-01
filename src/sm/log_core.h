@@ -114,10 +114,8 @@ public:
 
     // for flush_daemon_thread_t
     void            flush_daemon();
-    virtual const char* make_log_name(uint32_t n, char* buf, int bufsz)
-        { return _storage->make_log_name(n, buf, bufsz); }
-    virtual partition_number_t partition_num() const
-        { return _storage->partition_num(); }
+    virtual string make_log_name(partition_number_t n)
+        { return _storage->make_log_name(n); }
     virtual smlevel_0::fileoff_t limit() const
         { return _storage->limit(); }
     virtual void release()
@@ -180,8 +178,6 @@ protected:
     long                 segsize() const { return _segsize; }
 
     lsn_t                _flush_lsn;
-
-    void                _sanity_check() const;
 
     void set_option_logsize(const sm_options&, size_t dft = 1024 /* 1GB */);
 

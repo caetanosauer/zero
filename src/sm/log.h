@@ -187,9 +187,7 @@ public:
      * \details
      * Used by xct for error-reporting and callback-handling.
      */
-    virtual const char * make_log_name(uint32_t n,
-                        char*              buf,
-                        int                bufsz) = 0;
+    virtual string make_log_name(partition_number_t n) = 0;
 
     /**\brief Infect the log.
      * \details
@@ -246,8 +244,6 @@ public:
                           return flush(curr_lsn().advance(-1), block); }
 
     virtual PoorMansOldestLsnTracker* get_oldest_lsn_tracker() = 0;
-
-    virtual partition_number_t  partition_num() const = 0;
 
     /**\brief used by partition */
     virtual fileoff_t limit() const = 0;

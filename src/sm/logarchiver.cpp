@@ -136,13 +136,10 @@ rc_t LogArchiver::ReaderThread::openPartition()
 
     // open file for read -- copied from partition_t::peek()
     int fd;
-    char *const fname = new char[smlevel_0::max_devname];
-    if (!fname) W_FATAL(fcOUTOFMEMORY);
-    smlevel_0::log->make_log_name(nextPartition, fname,
-            smlevel_0::max_devname);
+    string fname = smlevel_0::log->make_log_name(nextPartition);
 
     int flags = smthread_t::OPEN_RDONLY;
-    W_COERCE(me()->open(fname, flags, 0744, fd));
+    W_COERCE(me()->open(fname.c_str(), flags, 0744, fd));
 
     sthread_base_t::filestat_t statbuf;
     W_DO(me()->fstat(fd, statbuf));
@@ -163,7 +160,6 @@ rc_t LogArchiver::ReaderThread::openPartition()
     }
 
     DBGTHRD(<< "Opened log partition for read " << fname);
-    delete[] fname;
 
     currentFd = fd;
     nextPartition++;
@@ -527,24 +523,19 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
     // no runs found in archive log -- start from first available partition
     if (startLSN.hi() == 0 && smlevel_0::log) {
         int nextPartition = startLSN.hi();
-        char *const fname = new char[smlevel_0::max_devname];
-        if (!fname) W_FATAL(fcOUTOFMEMORY);
 
         int max = smlevel_0::log->durable_lsn().hi();
 
         while (nextPartition <= max) {
-            smlevel_0::log->make_log_name(nextPartition, fname,
-                    smlevel_0::max_devname);
+            string fname = smlevel_0::log->make_log_name(nextPartition);
 
             // check if file exists
             struct stat st;
-            if (stat(fname, &st) == 0) {
+            if (stat(fname.c_str(), &st) == 0) {
                 break;
             }
             nextPartition++;
         }
-
-        delete[] fname;
 
         if (nextPartition > max) {
             W_FATAL_MSG(fcINTERNAL,

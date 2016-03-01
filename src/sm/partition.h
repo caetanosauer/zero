@@ -120,13 +120,16 @@ private:
     /* store end lsn at the beginning of each partition; updated
     * when partition closed
     */
-    void             fsync(int fd);
+    void             fsync_delayed(int fd);
     lsn_t            first_lsn(uint32_t pnum) const { return lsn_t( pnum, 0); }
 
 public:
     // exported for unix_log
     void               init(log_storage *owner);
     void               clear();
+
+    static size_t truncate_for_append(partition_number_t pnum,
+            const string& fname);
 
     fileoff_t          size() const   { return _size; }
     void               set_size(fileoff_t v) { _size =  v; }
