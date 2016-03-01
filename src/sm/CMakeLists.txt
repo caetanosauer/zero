@@ -57,7 +57,13 @@ set(sm_STAT_SRCS
 )
 
 add_library(sm STATIC ${sm_STAT_SRCS})
-target_link_libraries(sm common numa)
+target_link_libraries(sm
+    common
+    numa
+    boost_program_options
+    boost_system
+    boost_filesystem
+    )
 
 # CS: target that uses plog_xct, i.e., atomic commit protocol
 add_library(sm_plog STATIC ${sm_STAT_SRCS})

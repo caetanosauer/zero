@@ -33,9 +33,6 @@ set(zapps_LIBS
     common
     # third-party dependencies
     pthread
-    boost_program_options
-    boost_system
-    boost_filesystem
 )
 
 target_link_libraries(zapps ${zapps_LIBS})
