@@ -130,13 +130,8 @@ w_rc_t bf_tree_cleaner::force_volume()
     int res = posix_memalign((void**) &buf, SM_PAGESIZE, SM_PAGESIZE);
     w_assert0(res == 0);
 
-    // Flush alloc_cache_t
-    PageID last_pid = smlevel_0::vol->get_last_allocated_pid();
-    for(PageID i=0; i<=last_pid; i+=alloc_cache_t::extent_size) {
-        lsn_t emlsn = smlevel_0::vol->get_alloc_cache()->get_page_lsn(i);
-        smlevel_0::vol->read_page_verify(i, buf, emlsn);
-        smlevel_0::vol->write_page(i, buf);
-    }
+    lsn_t dur_lsn = smlevel_0::log->durable_lsn();
+    W_DO(smlevel_0::vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
 
     // Flush stnode_cache_t (always PID 1)
     lsn_t emlsn = smlevel_0::vol->get_stnode_cache()->get_page_lsn();
@@ -528,6 +523,8 @@ w_rc_t bf_tree_cleaner::_do_work()
     if (!_candidates_buffer.empty()) {
         W_DO(_clean_volume(_candidates_buffer));
     }
+
+    // CS TODO: invoke alloc_cache_t::write_dirty_pages to flush alloc pages
 
     _requested_volume = false;
     lintel::atomic_thread_fence(lintel::memory_order_release);

@@ -9,6 +9,7 @@
 #include "alloc_page.h"
 #include "latch.h"
 #include <vector>
+#include <unordered_set>
 
 class bf_fixed_m;
 
@@ -38,6 +39,22 @@ public:
      */
     rc_t sx_deallocate_page(PageID pid, bool redo = false);
 
+    /**
+     * Writes out any allocation page whose page LSN is greater than the given
+     * rec_lsn. Since we don't maintain a page image by flipping a bit and
+     * marking a page dirty upon every allocation (allocating a page requires
+     * just incrementing a counter and generating an SSX log record), this
+     * requires rebuilding the page images. We use single-page recovery for
+     * that, but only on the pages that require propagation, i.e., only those
+     * of loaded extents with greater PageLSN.
+     *
+     * For any extent for which loaded_extents[ext] == true, all free pages
+     * with id lower than last_alloc_page are guaranteed to be in the free
+     * list. Extents for which loaded_extents[ext] == false, on the other hand,
+     * are guaranteed to be up-do-date on disk.
+     */
+    rc_t write_dirty_pages(lsn_t rec_lsn);
+
     bool is_allocated (PageID pid);
 
     PageID get_last_allocated_pid() const;
@@ -64,7 +81,9 @@ private:
      * be the more flexible and robust option.
      */
     PageID last_alloc_page;
-    list<PageID> freed_pages;
+
+    typedef unordered_set<PageID> pid_set;
+    pid_set freed_pages;
 
     /**
      * Bitmap of extents whose allocation pages were already loaded. This is

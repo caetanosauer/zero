@@ -34,6 +34,7 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
 
 rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, bool is_last_ext)
 {
+    // Perform I/O without holding latch
     PageID alloc_pid = ext * extent_size;
     fixable_page_h p;
     W_DO(p.fix_direct(alloc_pid, LATCH_SH, false, false));
@@ -65,7 +66,7 @@ rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, bool is_last_ext)
             }
         }
         else if (last_alloc != 0) {
-            freed_pages.push_back(alloc_pid + j);
+            freed_pages.insert(alloc_pid + j);
         }
 
         j--;
@@ -108,14 +109,8 @@ bool alloc_cache_t::is_allocated(PageID pid)
 
     if (pid > last_alloc_page) { return false; }
 
-    list<PageID>::const_iterator iter;
-    for (iter = freed_pages.begin(); iter != freed_pages.end(); iter++) {
-        if (*iter == pid) {
-            return false;
-        }
-    }
-
-    return true;
+    pid_set::const_iterator iter = freed_pages.find(pid);
+    return (iter == freed_pages.end());
 }
 
 rc_t alloc_cache_t::sx_allocate_page(PageID& pid, bool redo)
@@ -128,12 +123,9 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, bool redo)
             last_alloc_page = pid;
         }
         // if pid is on freed list, remove
-        list<PageID>::iterator iter = freed_pages.begin();
-        while (iter != freed_pages.end()) {
-            if (*iter == pid) {
-                freed_pages.erase(iter);
-            }
-            iter++;
+        pid_set::iterator iter = freed_pages.find(pid);
+        if (iter != freed_pages.end()) {
+            freed_pages.erase(iter);
         }
     }
     else {
@@ -167,13 +159,56 @@ rc_t alloc_cache_t::sx_deallocate_page(PageID pid, bool redo)
     spinlock_write_critical_section cs(&_latch);
 
     // Just add to list of freed pages
-    freed_pages.push_back(pid);
+    freed_pages.insert(pid);
 
     if (!redo) {
         // Entry in page_lsns array is updated by the log insertion
         extent_id_t ext = pid / extent_size;
         sysevent::log_dealloc_page(pid, page_lsns[ext * extent_size]);
     }
+
+    return RCOK;
+}
+
+rc_t alloc_cache_t::write_dirty_pages(lsn_t rec_lsn)
+{
+    generic_page* buf = NULL;
+    lsn_t page_lsn = lsn_t::null;
+    extent_id_t last_extent = 0;
+
+    // We just have to iterate over the extents in the page_lsns table, since
+    // those are the only ones which were modified since the system started.
+    {
+        spinlock_read_critical_section cs (&_latch);
+        last_extent = last_alloc_page / extent_size;
+    }
+
+    map<PageID, lsn_t>::const_iterator iter;
+    for (extent_id_t ext = 0; ext <= last_extent; ext++) {
+        PageID alloc_pid = ext * extent_size;
+        // While in the critical section, just verify if the extent alloc page
+        // needs to be written, to avoid blocking threads trying to allocate
+        // pages for too long.
+        {
+            spinlock_read_critical_section cs(&_latch);
+            iter = page_lsns.find(alloc_pid);
+            if (iter == page_lsns.end()) { continue; }
+            if (iter->second < rec_lsn) { continue; }
+            page_lsn = iter->second;
+        }
+
+        if (!buf) {
+            int res = posix_memalign((void**) &buf, SM_PAGESIZE, SM_PAGESIZE);
+            w_assert0(res == 0);
+        }
+
+        // Read old page image into buffer, replay updates with SPR, and write
+        // it back
+        W_DO(smlevel_0::vol->read_page_verify(alloc_pid, buf, page_lsn));
+        W_DO(smlevel_0::vol->write_page(alloc_pid, buf));
+    }
+
+    if (buf) { delete[] buf; }
 
     return RCOK;
 }
