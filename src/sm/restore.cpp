@@ -107,7 +107,6 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
 {
     w_assert0(restore);
     firstNotRestored = PageID(0);
-    firstDataPid = restore->getFirstDataPid();
     lastUsedPid = restore->getLastUsedPid();
     trySinglePass =
         options.get_bool_option("sm_restore_sched_singlepass", true);
@@ -149,7 +148,6 @@ PageID RestoreScheduler::next(bool peek)
     }
     else if (trySinglePass) {
         // if queue is empty, find the first not-yet-restored PID
-        if (next < firstDataPid) { next = firstDataPid; }
         while (next <= lastUsedPid && restore->isRestored(next)) {
             // if next pid is already restored, then the whole segment is
             next = next + restore->getSegmentSize();
@@ -158,8 +156,7 @@ PageID RestoreScheduler::next(bool peek)
             firstNotRestored = next + restore->getSegmentSize();
         }
 
-        if (next < firstDataPid) { next = firstDataPid; }
-        else if (next > lastUsedPid) { next = 0; }
+        if (next > lastUsedPid) { next = 0; }
 
         if (!peek) { INC_TSTAT(restore_sched_seq); }
     }
@@ -238,7 +235,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
         bool takeBackup)
     : smthread_t(t_regular, "Restore Manager"),
     archive(archive), volume(volume), numRestoredPages(0),
-    metadataRestored(false), useBackup(useBackup), takeBackup(takeBackup),
+    useBackup(useBackup), takeBackup(takeBackup),
     failureLSN(lsn_t::null), pinCount(0)
 {
     w_assert0(archive);
@@ -272,7 +269,6 @@ RestoreMgr::RestoreMgr(const sm_options& options,
      * the volume, which is required to control restore progress. The maximum
      * allocated page id, delivered by alloc_cache, is also needed
      */
-    firstDataPid = volume->first_data_pageid();
     lastUsedPid = volume->get_last_allocated_pid();
 
     asyncWriter = NULL;
@@ -386,7 +382,7 @@ void RestoreMgr::setInstant(bool instant)
 
 bool RestoreMgr::requestRestore(const PageID& pid, generic_page* addr)
 {
-    if (pid < firstDataPid || pid > lastUsedPid) {
+    if (pid > lastUsedPid) {
         return false;
     }
 
@@ -420,70 +416,6 @@ bool RestoreMgr::requestRestore(const PageID& pid, generic_page* addr)
         }
     }
     return false;
-}
-
-/**
- * Metadata pages consist of
- * - PID 1: List of stores, managed by stnode_cache_t
- * - PIDs 2 until firstDataPid-1: Page allocation bitmap, managed by
- *   alloc_cache_t
- *
- * Current implementation does log allocations and store operations, but they
- * do not refer to the updated metadata page ID, and thus cannot be recovered
- * in a traditional way using a pageLSN.
- *
- * In order to restore a device's metadata, which is a pre-requisite for
- * correct recovery (and thus must be done before opening the system for
- * transactions), we require that all metadata-related log records since the
- * device creation are replayed.  This introduces two assumptions: 1) metadata
- * operations must be idempotent; and 2) recycling of old log archive
- * partitions (currently not implemented) must not throw away metadata log
- * records
- *
- * The two classes of metadata operation are page allocations and store
- * operations, both of which satisfy assumption 1.  Assumption 2 is not a
- * concern yet, because we do not support recycling the log archive.
- *
- * Currently, log records of metadata operations are always found on the
- * special page ID 0, but they could refer to any page ID outside the data
- * region (pid < firstDataPid). Thus, proper metadata restore consists of
- * simply replaying all such log records. Since the whole history must be kept,
- * a backup is also not required and never used.
- *
- * In the future, if we implement log archive recycling, this could be
- * optimized by regenerating new metadata log records based on the current
- * system state (i.e., one alloc_a_page log record for each allocated page)
- */
-void RestoreMgr::restoreMetadata()
-{
-    if (metadataRestored) {
-        return;
-    }
-
-    LogArchiver::ArchiveScanner logScan(archive);
-
-    // open scan on pages [0, firstDataPid) to get all metadata operations
-    LogArchiver::ArchiveScanner::RunMerger* merger =
-        logScan.open(0, firstDataPid, lsn_t::null, logReadSize);
-
-    logrec_t* lr;
-    while (merger->next(lr)) {
-        PageID lrpid = lr->pid();
-        w_assert1(lrpid < firstDataPid);
-        lr->redo(NULL);
-    }
-
-    // no need to write back pages: done either asynchronously by
-    // bf_fixed_m/page cleaner or unmount/shutdown.
-
-    metadataRestored = true;
-
-    // send signal to waiting threads (acquire mutex to avoid lost signal)
-    DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
-    DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
-    DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
-
-    delete merger;
 }
 
 void RestoreMgr::restoreSegment(char* workspace,
@@ -628,10 +560,6 @@ void RestoreMgr::restoreLoop()
         unsigned segment = getSegmentForPid(requested);
         PageID firstPage = getPidForSegment(segment);
 
-        if (firstPage + segmentSize <= firstDataPid) {
-            continue;
-        }
-
         if (replayedBitmap->get(segment)) {
             continue;
         }
@@ -645,22 +573,6 @@ void RestoreMgr::restoreLoop()
         PageID endPID = preemptive ? 0 : firstPage + segmentSize;
 
         size_t actualSegmentSize = segmentSize;
-        if (firstPage < firstDataPid) {
-            // CS TODO: we need to revisit the metadata restore process.  It is
-            // not part of the normal restore loop, so we need to adjust the
-            // restore boundaries for the first segments. We also don't want to
-            // replay metadata log records if it's not correct to do so (as it
-            // is currently the case)
-            if (firstPage + segmentSize < firstDataPid) {
-                // we can skip this segment, since it is purely metadata
-                DBG (<< "Skipped metadata segment " << segment);
-                finishSegment(workspace, segment, segmentSize);
-                INC_TSTAT(restore_skipped_segs);
-                continue;
-            }
-            startPID = firstDataPid;
-            actualSegmentSize -= firstDataPid % segmentSize;
-        }
 
         lsn_t backupLSN = volume->get_backup_lsn();
 
@@ -695,13 +607,6 @@ void RestoreMgr::restoreLoop()
 void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
 {
     replayedBitmap->set(segment);
-
-    // segments below the first data PID are metadata segments and should
-    // not be writen by restore directly
-    if (getPidForSegment(segment + 1) <= firstDataPid) {
-        DBG(<< "Ignoring finish of segment " << segment);
-        return;
-    }
 
     /*
      * Now that the segment is restored, copy it into the buffer pool frame
@@ -758,15 +663,6 @@ void RestoreMgr::writeSegment(char* workspace, unsigned segment, size_t count)
     if (count > 0) {
         PageID firstPage = getPidForSegment(segment);
         w_assert0(count <= segmentSize);
-        w_assert1(getPidForSegment(segment+1) > firstDataPid);
-
-        // adjust wirte begin for the segment containing the first data page
-        if (firstPage < firstDataPid) {
-            size_t amount = firstDataPid - firstPage;
-            firstPage = firstDataPid;
-            count -= amount;
-            workspace += amount * sizeof(generic_page);
-        }
 
         // write pages back to replacement device (or backup)
         if (takeBackup) {
@@ -849,15 +745,10 @@ void RestoreMgr::run()
         usleep(1000); // 1 ms
     }
 
-    // restoreMetadata();
-    metadataRestored = true;
-    numRestoredPages = firstDataPid;
-
     // if doing offline or single-pass restore, prefetch all segments
     if (!scheduler->isOnDemand() || !instantRestore) {
-        unsigned first = getSegmentForPid(firstDataPid);
         unsigned last = getSegmentForPid(lastUsedPid);
-        for (unsigned i = first; i <= last; i++) {
+        for (unsigned i = 0; i <= last; i++) {
             backup->prefetch(i);
         }
     }

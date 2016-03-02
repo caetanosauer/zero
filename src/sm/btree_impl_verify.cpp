@@ -364,7 +364,8 @@ rc_t btree_impl::_ux_verify_volume(
     w_assert1(vol);
     generic_page buf;
     PageID endpid = (PageID) (vol->num_used_pages());
-    for (PageID pid = vol->first_data_pageid(); pid < endpid; ++pid) {
+    // CS TODO should skip non-btree PIDs
+    for (PageID pid = 0; pid < endpid; ++pid) {
         // TODO we should skip large chunks of unused areas to speedup.
         // TODO we should scan more than one page at a time to speedup.
         if (!vol->is_allocated_page(pid)) {

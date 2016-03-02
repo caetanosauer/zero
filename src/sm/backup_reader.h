@@ -48,7 +48,6 @@ public:
 
 protected:
     char* buffer;
-    PageID firstDataPid;
 };
 
 /** \brief Dummy backup reader that always returns the same unmodified buffer.

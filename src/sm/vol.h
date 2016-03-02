@@ -27,8 +27,6 @@ public:
 
     void shutdown(bool abrupt);
 
-    // CS TODO
-    PageID     first_data_pageid() const { return 0; }
     size_t      num_used_pages() const;
 
     alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}

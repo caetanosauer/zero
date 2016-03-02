@@ -150,10 +150,9 @@ void page_cleaner_decoupled::run() {
 
         DBGTHRD(<< "Cleaner thread activated from " << completed_lsn);
 
-        PageID first_page = smlevel_0::vol->first_data_pageid();
         LogArchiver::ArchiveScanner logScan(smlevel_0::logArchiver->getDirectory());
         // CS TODO block size
-        LogArchiver::ArchiveScanner::RunMerger* merger = logScan.open(first_page, 0,
+        LogArchiver::ArchiveScanner::RunMerger* merger = logScan.open(0, 0,
                 completed_lsn, 1048576);
 
         generic_page* page = NULL;

@@ -823,8 +823,6 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx,
     DBGOUT3(<<"REDO phase: loading page " << shpid
             << " into buffer pool frame " << idx);
 
-    w_assert1(shpid >= smlevel_0::vol->first_data_pageid());
-
     // Load the physical page from disk
     W_DO(smlevel_0::vol->read_page(shpid, &_buffer[idx]));
 

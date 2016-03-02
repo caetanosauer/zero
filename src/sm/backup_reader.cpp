@@ -34,7 +34,6 @@ BackupOnDemandReader::BackupOnDemandReader(vol_t* volume, size_t segmentSize)
       volume(volume), segmentSize(segmentSize)
 {
     w_assert1(volume);
-    firstDataPid = volume->first_data_pageid();
     W_IFDEBUG1(fixedSegment = -1);
 }
 
@@ -44,7 +43,6 @@ char* BackupOnDemandReader::fix(unsigned segment)
     w_assert1(fixedSegment < 0);
 
     // CS: TODO call getPidForSegment
-    // PageID offset = PageID(segment * segmentSize) + firstDataPid;
     PageID offset = PageID(segment * segmentSize);
     W_COERCE(volume->read_backup(offset, segmentSize, buffer));
 
@@ -67,7 +65,6 @@ BackupPrefetcher::BackupPrefetcher(vol_t* volume, size_t numSegments,
       fixWaiting(false), shutdownFlag(false), lastEvicted(numSegments - 1)
 {
     w_assert1(volume);
-    firstDataPid = volume->first_data_pageid();
 
     // initialize all slots as free
     slots = new int[numSegments];
@@ -290,7 +287,6 @@ void BackupPrefetcher::run()
 
         DBG(<< "Prefetching segment " << next);
         // perform the read into the slot found
-        // PageID firstPage = PageID(next * segmentSize) + firstDataPid;
         firstPage = PageID(next * segmentSize);
         if (firstPage >= volume->num_used_pages()) {
             return;
