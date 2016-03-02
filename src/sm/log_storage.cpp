@@ -35,11 +35,11 @@ const string log_storage::log_regex = "log\\.[1-9][0-9]*";
 log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
         lsn_t& durable_lsn, lsn_t& flush_lsn, long segsize)
     :
+        _logpath(path),
         _segsize(segsize),
         _partition_size(0),
         _partition_data_size(0),
-        _curr_partition(NULL),
-        _logpath(path)
+        _curr_partition(NULL)
 {
     _logdir = new char[strlen(path) + 1]; // +1 for \0 byte
     strcpy(_logdir, path);
@@ -75,13 +75,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             }
 
             long pnum = std::stoi(fname.substr(log_prefix.length()));
-            partition_t* p = new partition_t();
-            p->init(this);
-            p->peek(pnum, lsn_t::null /* end_hint */, true);
-            p->open_for_read(pnum, true);
-
-            _partitions[pnum] = p;
-            p->close();
+            _partitions[pnum] = new partition_t(this, pnum);
 
             if (pnum >= last_partition) {
                 last_partition = pnum;
@@ -108,7 +102,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
         p = get_partition(last_partition);
         w_assert0(p);
     }
-    p->open_for_append(last_partition, lsn_t::null /* end hint */);
+    W_COERCE(p->open_for_append());
     _curr_partition = p;
     w_assert1(durable_lsn == curr_lsn);
 
@@ -129,7 +123,6 @@ log_storage::~log_storage()
         p = it->second;
         p->close_for_read();
         p->close_for_append();
-        p->clear();
         it++;
     }
 
@@ -160,14 +153,11 @@ log_storage::get_partition_for_flush(lsn_t start_lsn,
             // CS TODO: this may deadlock because recycling also needs _partition_lock
             // grab the lock -- we're about to mess with partitions
             CRITICAL_SECTION(cs, _partition_lock);
-            p->close();
+            W_COERCE(p->close_for_append());
             p = create_partition(n+1);
-            p->open_for_append(n+1, lsn_t::null);
+            W_COERCE(p->open_for_append());
             _curr_partition = p;
         }
-
-        // it's a new partition -- size is now 0
-        w_assert3(curr_partition()->size()== 0);
     }
 
     return p;
@@ -303,54 +293,33 @@ log_storage::_close_min(partition_number_t n)
 }
 #endif
 
-// Prime buf with the partial block ending at 'next';
-// return the size of that partial block (possibly 0)
+// Prime buf with the partial block ending at 'next'; return the size of that
+// partial block (possibly 0)
 //
-// We are about to write a record for a certain lsn(next).
-// If we haven't been appending to this file (e.g., it's
-// startup), we need to make sure the first part of the buffer
-// contains the last partial block in the file, so that when
-// we append that block to the file, we aren't clobbering the
-// tail of the file (partition).
+// We are about to write a record for a certain lsn(next).  If we haven't been
+// appending to this file (e.g., it's startup), we need to make sure the first
+// part of the buffer contains the last partial block in the file, so that when
+// we append that block to the file, we aren't clobbering the tail of the file
+// (partition).
 //
-// This reads from the given file descriptor, the necessary
-// block to cover the lsn.
-//
-// The start argument (offset from beginning of file (fd) of
-// start of partition) is for support on raw devices; for unix
-// files, it's always zero, since the beginning of the partition
-// is the beginning of the file (fd).
-//
-// This method is public to allow calling from partition_t, which
-// uses this to prime its own buffer for writing a skip record.
-// It is called from the private _prime to prime the segment-sized
-// log buffer _buf.
+// This reads from the given file descriptor, the necessary block to cover the
+// lsn.
 long
-log_storage::prime(char* buf, lsn_t next, size_t block_size, bool read_whole_block)
+log_storage::prime(char* buf, lsn_t next, size_t block_size)
 {
     // get offset of block that contains "next"
     sm_diskaddr_t b = sm_diskaddr_t(_floor(next.lo(), block_size));
 
+    // Offset of next within the block we're about to read
     long prime_offset = next.lo() - b;
-    /*
-     * CS: Handle case where next is exactly at a block border.
-     * This is used by logbuf_core, where read_whole_block == false.
-     * In that case, we must read the whole segment.
-     * Another way to think of this is that we did not explicitly
-     * require reading the whole block, but the position of next is
-     * telling us to read a whole block.
-     */
-    if (!read_whole_block && prime_offset == 0 && next.lo() > 0) {
-        prime_offset = block_size;
-        b -= block_size;
-    }
-
     w_assert3(prime_offset >= 0);
+
     if(prime_offset > 0) {
-        size_t read_size = read_whole_block ? block_size : prime_offset;
-        w_assert3(read_size > 0);
+        w_assert3(block_size > 0);
         partition_t* p = curr_partition();
-        W_COERCE(me()->pread(p->fhdl_app(), buf, read_size, b));
+        logrec_t* dummy;
+        W_COERCE(p->read(buf, dummy, next, NULL));
+        w_assert3((char*) dummy - buf == prime_offset);
     }
     return prime_offset;
 }
@@ -363,16 +332,20 @@ rc_t log_storage::last_lsn_in_partition(partition_number_t pnum, lsn_t& lsn)
         return RCOK;
     }
 
-    W_COERCE(p->open_for_read(pnum, true));
+    // CS TODO: since we removed the peek function, we need a new mechanism
+    // to maintain partition size (maybe a metadata block)
+    return RC(eNOTIMPLEMENTED);
 
-    if (p->size() == partition_t::nosize) {
-        lsn = lsn_t::null;
-        return RCOK;
-    }
+    // W_COERCE(p->open_for_read());
 
-    // this partition is already opened
-    lsn = lsn_t(pnum, p->size());
-    return RCOK;
+    // if (p->size() == partition_t::nosize) {
+    //     lsn = lsn_t::null;
+    //     return RCOK;
+    // }
+
+    // // this partition is already opened
+    // lsn = lsn_t(pnum, p->size());
+    // return RCOK;
 }
 
 partition_t* log_storage::create_partition(partition_number_t pnum)
@@ -391,8 +364,7 @@ partition_t* log_storage::create_partition(partition_number_t pnum)
         W_FATAL_MSG(eINTERNAL, << "Partition " << pnum << " already exists");
     }
 
-    p = new partition_t();
-    p->init(this);
+    p = new partition_t(this, pnum);
 
     w_assert3(_partitions.find(pnum) == _partitions.end());
     _partitions[pnum] = p;

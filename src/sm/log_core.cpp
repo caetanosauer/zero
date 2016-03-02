@@ -392,7 +392,7 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 
     // Find and open the partition
     partition_t* p = _storage->get_partition(ll.hi());
-    p->open_for_read(ll.hi());
+    p->open_for_read();
     w_assert1(p);
 
     /*
@@ -400,8 +400,7 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
      */
     lsn_t prev_lsn = lsn_t::null;
     DBGOUT3(<< "fetch @ lsn: " << ll);
-    W_COERCE(p->read(readbuf(), rp, ll, forward ? NULL : &prev_lsn,
-            partition_t::invalid_fhdl));
+    W_COERCE(p->read(readbuf(), rp, ll, forward ? NULL : &prev_lsn));
     w_assert0(rp->get_lsn_ck() == ll);
 
     // handle skip log record
@@ -428,8 +427,7 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
             w_assert0(prev_lsn != lsn_t::null);
             ll = prev_lsn;
             DBGOUT3(<< "fetch @ lsn: " << ll);
-            W_COERCE(p->read(readbuf(), rp, ll, &prev_lsn,
-                        partition_t::invalid_fhdl));
+            W_COERCE(p->read(readbuf(), rp, ll, &prev_lsn));
             w_assert0(rp->get_lsn_ck() == ll);
         }
     }
@@ -1281,12 +1279,10 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
             start2, end2);
 
     // Flush the log buffer
-    p->flush(
-            p->fhdl_app(), start_lsn, _buf, start1, end1, start2, end2
-    );
+    W_COERCE(p->flush(start_lsn, _buf, start1, end1, start2, end2));
 
     long written = (end2 - start2) + (end1 - start1);
-    p->set_size(start_lsn.lo()+written);
+    // p->set_size(start_lsn.lo()+written);
 
     _durable_lsn = end_lsn;
     _start = new_start;
