@@ -362,7 +362,8 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 
             if (nxt) {
                 if (!forward && ll.lo() == 0) {
-                    W_DO(_storage->last_lsn_in_partition(ll.hi() - 1, *nxt));
+                    partition_t* p = _storage->get_partition(ll.hi() - 1);
+                    *nxt = p ? lsn_t(p->num(), p->get_size()) : lsn_t::null;
                 }
                 else {
                     if (forward) {
@@ -439,7 +440,8 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
                 *nxt = lsn_t::null;
             }
             else {
-                W_DO(_storage->last_lsn_in_partition(ll.hi() - 1, *nxt));
+                partition_t* p = _storage->get_partition(ll.hi() - 1);
+                *nxt = p ? lsn_t(p->num(), p->get_size()) : lsn_t::null;
             }
         }
         else {
@@ -1282,7 +1284,7 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
     W_COERCE(p->flush(start_lsn, _buf, start1, end1, start2, end2));
 
     long written = (end2 - start2) + (end1 - start1);
-    // p->set_size(start_lsn.lo()+written);
+    p->set_size(start_lsn.lo()+written);
 
     _durable_lsn = end_lsn;
     _start = new_start;

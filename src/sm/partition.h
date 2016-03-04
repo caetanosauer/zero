@@ -78,16 +78,15 @@ public:
 private:
     partition_number_t    _num;
     log_storage*          _owner;
+    long                  _size;
     int                   _fhdl_rd;
     int                   _fhdl_app;
     static int            _artificial_flush_delay;  // in microseconds
 
     void             fsync_delayed(int fd);
+    rc_t scan_for_size(bool must_be_skip);
 
 public:
-    static size_t truncate_for_append(partition_number_t pnum,
-            const string& fname);
-
     partition_number_t num() const   { return _num; }
 
     rc_t open_for_append();
@@ -115,6 +114,10 @@ public:
     {
         return (_fhdl_app != invalid_fhdl);
     }
+
+    size_t get_size(bool must_be_skip = true);
+
+    void set_size(size_t size) { _size = size; }
 
 };
 

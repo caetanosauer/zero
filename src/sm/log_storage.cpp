@@ -90,18 +90,17 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 
 
 
-    // Truncate and open current partition for append
-    size_t pos = partition_t::truncate_for_append(last_partition,
-            make_log_name(last_partition));
-    lsn_t new_lsn(last_partition, pos);
-    curr_lsn = durable_lsn = flush_lsn = new_lsn;
-
     partition_t* p = get_partition(last_partition);
     if (!p) {
         create_partition(last_partition);
         p = get_partition(last_partition);
         w_assert0(p);
     }
+
+    size_t pos = p->get_size(false);
+    lsn_t new_lsn(last_partition, pos);
+    curr_lsn = durable_lsn = flush_lsn = new_lsn;
+
     W_COERCE(p->open_for_append());
     _curr_partition = p;
     w_assert1(durable_lsn == curr_lsn);
@@ -324,30 +323,6 @@ log_storage::prime(char* buf, lsn_t next, size_t block_size)
     return prime_offset;
 }
 
-rc_t log_storage::last_lsn_in_partition(partition_number_t pnum, lsn_t& lsn)
-{
-    partition_t* p = get_partition(pnum);
-    if(!p) {
-        lsn = lsn_t::null;
-        return RCOK;
-    }
-
-    // CS TODO: since we removed the peek function, we need a new mechanism
-    // to maintain partition size (maybe a metadata block)
-    return RC(eNOTIMPLEMENTED);
-
-    // W_COERCE(p->open_for_read());
-
-    // if (p->size() == partition_t::nosize) {
-    //     lsn = lsn_t::null;
-    //     return RCOK;
-    // }
-
-    // // this partition is already opened
-    // lsn = lsn_t(pnum, p->size());
-    // return RCOK;
-}
-
 partition_t* log_storage::create_partition(partition_number_t pnum)
 {
 #if W_DEBUG_LEVEL > 2
@@ -365,6 +340,7 @@ partition_t* log_storage::create_partition(partition_number_t pnum)
     }
 
     p = new partition_t(this, pnum);
+    p->set_size(0);
 
     w_assert3(_partitions.find(pnum) == _partitions.end());
     _partitions[pnum] = p;

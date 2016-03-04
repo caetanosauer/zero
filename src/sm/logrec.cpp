@@ -183,15 +183,7 @@ logrec_t::fill_xct_attr(const tid_t& tid, const lsn_t& last)
 bool
 logrec_t::valid_header(const lsn_t & lsn) const
 {
-    if (header._len < sizeof(baseLogHeader)
-        || header._type >= logrec_t::t_max_logrec
-        || cat() == t_bad_cat
-        || header._len > sizeof(logrec_t)
-        || (lsn != lsn_t::null && lsn != *_lsn_ck()))
-    {
-        return false;
-    }
-    return true;
+    return header.is_valid() && (lsn == lsn_t::null || lsn == *_lsn_ck());
 }
 
 

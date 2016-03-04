@@ -113,6 +113,8 @@ struct baseLogHeader
      */
     lsn_t               _page_prv;
     /* 16+8 = 24 */
+
+    bool is_valid() const;
 };
 
 struct xidChainLogHeader
@@ -144,6 +146,7 @@ class logrec_t {
 public:
     friend rc_t xct_t::give_logbuf(logrec_t*, const fixable_page_h *, const fixable_page_h *);
     friend class sysevent;
+    friend class baseLogHeader;
 
 #include "logtype_gen.h"
     void             fill(
@@ -328,6 +331,14 @@ public:
     // new is overloaded
     void* operator new(size_t, void* p) { return p; }
 };
+
+inline bool baseLogHeader::is_valid() const
+{
+    return (_len >= sizeof(baseLogHeader)
+            && _type < logrec_t::t_max_logrec
+            && _cat != logrec_t::t_bad_cat
+            && _len <= sizeof(logrec_t));
+}
 
 /**
  * \brief Base struct for log records that touch multi-pages.
