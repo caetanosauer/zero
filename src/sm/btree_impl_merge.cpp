@@ -149,8 +149,9 @@ rc_t btree_impl::_ux_rebalance_foster_core(
     // first, mark both dirty.
     page.set_dirty();
     foster_p.set_dirty();
-    bool registered = smlevel_0::bf->register_write_order_dependency(page._pp, foster_p._pp);
-    w_assert0(registered);
+    // CS TODO: removed support for careful write ordering
+    // bool registered = smlevel_0::bf->register_write_order_dependency(page._pp, foster_p._pp);
+    // w_assert0(registered);
 
     // TODO(Restart)... see the same fence key setting code in btree_impl::_ux_rebalance_foster_apply
     // the assumption is the fence keys in destination page has been set up already

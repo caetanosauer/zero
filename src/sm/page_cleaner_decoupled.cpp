@@ -301,9 +301,6 @@ w_rc_t page_cleaner_decoupled::flush_workspace() {
 
                 // cb._rec_lsn = _write_buffer[i].lsn.data();
                 cb._rec_lsn = lsn_t::null.data();
-                cb._dependency_idx = 0;
-                cb._dependency_lsn = 0;
-                cb._dependency_shpid = 0;
             }
             cb.latch().latch_release();
         }

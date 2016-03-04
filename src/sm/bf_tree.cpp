@@ -356,7 +356,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             cb.clear_except_latch();
             cb._pin_cnt = 0;
             cb._pid_shpid = shpid;
-            cb._dependency_lsn = 0;
             cb._rec_lsn = page->lsn.data();
             if (virgin_page) {
                 // Virgin page, we are not setting _rec_lsn (initial dirty)
@@ -499,161 +498,6 @@ w_rc_t bf_tree_m::wakeup_cleaners() {
 }
 
 ///////////////////////////////////   Dirty Page Cleaner END       ///////////////////////////////////
-
-
-///////////////////////////////////   WRITE-ORDER-DEPENDENCY BEGIN ///////////////////////////////////
-bool bf_tree_m::register_write_order_dependency(const generic_page* page, const generic_page* dependency) {
-    w_assert1(page);
-    w_assert1(dependency);
-    w_assert1(page->pid != dependency->pid);
-
-    uint32_t idx = page - _buffer;
-    w_assert1 (_is_active_idx(idx));
-    bf_tree_cb_t &cb = get_cb(idx);
-    w_assert1(cb.latch().held_by_me());
-
-    uint32_t dependency_idx = dependency - _buffer;
-    w_assert1 (_is_active_idx(dependency_idx));
-    bf_tree_cb_t &dependency_cb = get_cb(dependency_idx);
-    w_assert1(dependency_cb.latch().held_by_me());
-
-    // each page can have only one out-going dependency
-    if (cb._dependency_idx != 0) {
-        w_assert1 (cb._dependency_shpid != 0); // the OLD dependency pid
-        if (cb._dependency_idx == dependency_idx) {
-            // okay, it points to the same block
-
-            if (cb._dependency_shpid == dependency_cb._pid_shpid) {
-                // fine. it's just update of minimal lsn with max of the two.
-                cb._dependency_lsn = dependency_cb._rec_lsn > cb._dependency_lsn ? dependency_cb._rec_lsn : cb._dependency_lsn;
-                return true;
-            } else {
-                // this means now the old dependency is already evicted. so, we can forget about it.
-                cb._dependency_idx = 0;
-                cb._dependency_shpid = 0;
-                cb._dependency_lsn = 0;
-            }
-        } else {
-            // this means we might be requesting more than one dependency...
-            // let's check the old dependency is still active
-            // if  (_check_dependency_still_active(cb)) {
-            //     // the old dependency is still active. we can't make another dependency
-            //     DBGOUT3(<< "WOD failed on " << page->pid << "->" << dependency->pid
-            //             << " because dependency still active on CB");
-            //     return false;
-            // }
-            // CS TODO: disabled!
-            return false;
-        }
-    }
-
-    // this is the first dependency
-    w_assert1(cb._dependency_idx == 0);
-    w_assert1(cb._dependency_shpid == 0);
-    w_assert1(cb._dependency_lsn == 0);
-
-    // check a cycle of dependency
-    if (dependency_cb._dependency_idx != 0) {
-        // CS TODO: disabled! (Write-order dependency is broken anyway)
-        // if (_check_dependency_cycle (idx, dependency_idx)) {
-        //     return false;
-        // }
-    }
-
-    //okay, let's register the dependency
-    cb._dependency_idx = dependency_idx;
-    cb._dependency_shpid = dependency_cb._pid_shpid;
-    cb._dependency_lsn = dependency_cb._rec_lsn;
-    DBGOUT3(<< "WOD registered: " << page->pid << "->" << dependency->pid);
-
-    return true;
-}
-
-// CS TODO: disabled!
-#if 0
-bool bf_tree_m::_check_dependency_cycle(bf_idx source, bf_idx start_idx) {
-    w_assert1(source != start_idx);
-    bf_idx dependency_idx = start_idx;
-    bool dependency_needs_unpin = false;
-    bool found_cycle = false;
-    while (true) {
-        if (dependency_idx == source) {
-            found_cycle = true;
-            break;
-        }
-        bf_tree_cb_t &dependency_cb = get_cb(dependency_idx);
-        w_assert1(dependency_cb._pin_cnt >= 0);
-        bf_idx next_dependency_idx = dependency_cb._dependency_idx;
-        if (next_dependency_idx == 0) {
-            break;
-        }
-        bool increased = _increment_pin_cnt_no_assumption (next_dependency_idx);
-        if (!increased) {
-            // it's already evicted or being evicted. we can ignore it.
-            break; // we can stop here.
-        } else {
-            // move on to next
-            bf_tree_cb_t &next_dependency_cb = get_cb(next_dependency_idx);
-            bool still_active = _compare_dependency_lsn(dependency_cb, next_dependency_cb);
-            // okay, we no longer need the previous. unpin the previous one.
-            if (dependency_needs_unpin) {
-                _decrement_pin_cnt_assume_positive(dependency_idx);
-            }
-            dependency_idx = next_dependency_idx;
-            dependency_needs_unpin = true;
-            if (!still_active) {
-                break;
-            }
-        }
-    }
-    if (dependency_needs_unpin) {
-        _decrement_pin_cnt_assume_positive(dependency_idx);
-    }
-    return found_cycle;
-}
-
-bool bf_tree_m::_compare_dependency_lsn(const bf_tree_cb_t& cb, const bf_tree_cb_t &dependency_cb) const {
-    w_assert1(cb._pin_cnt >= 0);
-    w_assert1(cb._dependency_idx != 0);
-    w_assert1(cb._dependency_shpid != 0);
-    w_assert1(dependency_cb._pin_cnt >= 0);
-    return dependency_cb._used && dependency_cb._dirty // it's still dirty
-        && dependency_cb._pid_vol == cb._pid_vol // it's still the vol and
-        && dependency_cb._pid_shpid == cb._dependency_shpid // page it was referring..
-        && dependency_cb._rec_lsn <= cb._dependency_lsn; // and not flushed after the registration
-}
-bool bf_tree_m::_check_dependency_still_active(bf_tree_cb_t& cb) {
-    w_assert1(cb._pin_cnt >= 0);
-    bf_idx next_idx = cb._dependency_idx;
-    if (next_idx == 0) {
-        return false;
-    }
-
-    w_assert1(cb._dependency_shpid != 0);
-
-    bool still_active;
-    {
-        bool increased = _increment_pin_cnt_no_assumption (next_idx);
-        if (!increased) {
-            // it's already evicted or being evicted. we can ignore it.
-            still_active = false;
-        } else {
-            still_active = _compare_dependency_lsn(cb, get_cb(next_idx));
-            _decrement_pin_cnt_assume_positive(next_idx);
-        }
-    }
-
-    if (!still_active) {
-        // reset the values to help future inquiry
-        cb._dependency_idx = 0;
-        cb._dependency_shpid = 0;
-        cb._dependency_lsn = 0;
-    }
-    return still_active;
-}
-#endif
-
-///////////////////////////////////   WRITE-ORDER-DEPENDENCY END ///////////////////////////////////
 
 void bf_tree_m::switch_parent(PageID pid, generic_page* parent)
 {
@@ -935,9 +779,6 @@ void bf_tree_m::debug_dump(std::ostream &o) const
             o << ", _swizzled=" << cb._swizzled;
             o << ", _pin_cnt=" << cb._pin_cnt;
             o << ", _rec_lsn=" << cb._rec_lsn;
-            o << ", _dependency_idx=" << cb._dependency_idx;
-            o << ", _dependency_shpid=" << cb._dependency_shpid;
-            o << ", _dependency_lsn=" << cb._dependency_lsn;
             o << ", _refbit_approximate=" << cb._refbit_approximate;
             o << ", ";
             cb.latch().print(o);

@@ -222,7 +222,6 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
     DBG(<< "Cleaner activated with " << candidates.size() << " candidate frames");
     unsigned cleaned_count = 0;
 
-    // TODO this method should separate dirty pages that have dependency and flush them after others.
     if (_sort_buffer_size < candidates.size()) {
         size_t new_buffer_size = 2 * candidates.size();
         uint64_t* new_sort_buffer = new uint64_t[new_buffer_size];
@@ -470,9 +469,6 @@ w_rc_t bf_tree_cleaner::_flush_write_buffer(size_t from, size_t consecutive, uns
 
             // cb._rec_lsn = _write_buffer[i].lsn.data();
             cb._rec_lsn = lsn_t::null.data();
-            cb._dependency_idx = 0;
-            cb._dependency_lsn = 0;
-            cb._dependency_shpid = 0;
         }
 
         cb.latch().latch_release();
@@ -510,15 +506,6 @@ w_rc_t bf_tree_cleaner::_do_work()
         // DBGOUT3(<< "Picked page for cleaning: idx = " << idx
         //         << " vol = " << cb._pid_vol
         //         << " shpid = " << cb._pid_shpid);
-
-        // also add dependent pages. note that this might cause a duplicate. we deal with duplicates in _clean_volume()
-        bf_idx didx = cb._dependency_idx;
-        if (didx != 0) {
-            bf_tree_cb_t &dcb = _bufferpool->get_cb(didx);
-            if (dcb._dirty && dcb._used && dcb._rec_lsn <= cb._dependency_lsn) {
-                _candidates_buffer.push_back (didx);
-            }
-        }
     }
     if (!_candidates_buffer.empty()) {
         W_DO(_clean_volume(_candidates_buffer));

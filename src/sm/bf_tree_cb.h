@@ -49,29 +49,6 @@
  * atomic-inc when for some reason you are sure there are at least one more pins on the
  * block, such as when you are incrementing for the case of 3) above.
  *
- *
- * \Section Careful-Write-Order
- *
- * To avoid logging some physical actions such as page split, we implemented careful write
- * ordering in bufferpool.  For simplicity and scalability, we restrict 2 things on
- * careful-write-order.
- *
- * One is obvious.  We don't allow a cycle in dependency.  Another isn't.  We don't allow
- * one page to be dependent (written later than) to more than one pages.
- *
- * We once had an implementation of write order dependency without the second restriction,
- * but we needed std::list in each block with pointers in both directions.  Quite
- * heavy-weight.  So, while the second surgery, we made it much simpler and scalable by
- * adding the restriction.
- *
- * Because of this restriction, we don't need a fancy data structure to maintain
- * dependency.  It's just one pointer from a control block to another.  And we don't have
- * back pointers.  The pointer is lazily left until when the page is considered for
- * eviction.
- *
- * The drawback of this change is that page split/merge might have to give up using the
- * logging optimization more often, however it's anyway rare and the optimization can be
- * opportunistic rather than mandatory.
  */
 struct bf_tree_cb_t {
     /** clears all properties. */
@@ -151,35 +128,11 @@ struct bf_tree_cb_t {
     /// replacement priority; protected by ??
     char                        _replacement_priority;      // +1 -> 31
 
-    // CS TODO: replacing old in-doubt flag
+    // CS TODO: replacing old in-doubt flag and dependency stuff
     uint8_t                        _filler32;      // +1 -> 32
+    uint64_t                     _filler40; // +8 -> 40
+    uint64_t                     _filler48; // +8 -> 48
 
-    /// if not zero, this page must be written out after this dependency page; protected by ??
-    bf_idx _dependency_idx;// +4 -> 36
-
-    /**
-     * used with _dependency_idx.  As of registration of the dependency, the page in
-     * _dependency_idx had this pid (volid was implicitly same as myself).  If now it's
-     * different, the page was written out and then evicted surely at/after
-     * _dependency_lsn, so that's fine.  protected by ??
-     */
-    PageID _dependency_shpid;// +4 -> 40
-
-    /**
-     * used with _dependency_idx.  this is the _rec_lsn of the dependent page as of the
-     * registration of the dependency.  So, if the _rec_lsn of the page is now strictly
-     * larger than this value, it was flushed at least once after that, so the dependency
-     * is resolved.  protected by ??
-     *
-     * Overload this field to use it as last_write_lsn for REDO Single-Page-Recovery purpose, we can
-     * overload this field because last_write_lsn is only used during the initial recover
-     * of a page through Single-Page-Recovery (as the emlsn), it is not used once a page has been
-     * recovered through Single-Page-Recovery after the system crash recover
-     * The last write lsn is identified during Log Analysis phase, when used as
-     * last_write_lsn, it is written during Log Analysis phase and read during
-     * REDO phase
-     */
-    lsndata_t _dependency_lsn;// +8 -> 48
 
     /**
      * number of swizzled pointers to children; protected by ??
