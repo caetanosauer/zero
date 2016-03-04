@@ -83,10 +83,10 @@ ConsolidationArray::~ConsolidationArray() {
 }
 
 
-CArraySlot* ConsolidationArray::join_slot(
-    int32_t size, carray_slotid_t &idx, carray_status_t &old_count) {
+CArraySlot* ConsolidationArray::join_slot(int32_t size, carray_status_t &old_count)
+{
     w_assert1(size > 0);
-    idx =  (carray_slotid_t) ::pthread_self();
+    carray_slotid_t idx =  (carray_slotid_t) ::pthread_self();
     while (true) {
         // probe phase
         CArraySlot* info = NULL;
@@ -106,10 +106,13 @@ CArraySlot* ConsolidationArray::join_slot(
             carray_status_t new_count = join_carray_status(old_count, size);
             carray_status_t old_count_cas_tmp = old_count;
             if(lintel::unsafe::atomic_compare_exchange_strong<carray_status_t>(
-                &info->count, &old_count_cas_tmp, new_count)) {
+                &info->count, &old_count_cas_tmp, new_count))
+            {
                 // CAS succeeded. All done.
+                w_assert1(old_count != 0 || _active_slots[idx] == info);
                 return info;
-            } else {
+            }
+            else {
                 // the status has been changed.
                 w_assert1(old_count != old_count_cas_tmp);
                 old_count = old_count_cas_tmp;
@@ -186,13 +189,20 @@ CArraySlot* ConsolidationArray::grab_delegated_expose(CArraySlot* info) {
     return NULL;
 }
 
-void ConsolidationArray::replace_active_slot(uint32_t active_index) {
-    w_assert1(_active_slots[active_index]->vthis()->count > SLOT_AVAILABLE);
+void ConsolidationArray::replace_active_slot(CArraySlot* info)
+{
+    w_assert1(info->count > SLOT_AVAILABLE);
     while (SLOT_UNUSED != _all_slots[_slot_mark].count) {
         if(++_slot_mark == ALL_SLOT_COUNT) {
             _slot_mark = 0;
         }
     }
     _all_slots[_slot_mark].count = SLOT_AVAILABLE;
-    _active_slots[active_index] = _all_slots + _slot_mark;
+
+    // Look for pointer to the slot in the active array
+    for (int i = 0; i < _active_slot_count; i++) {
+        if (_active_slots[i] == info) {
+            _active_slots[i] = _all_slots + _slot_mark;
+        }
+    }
 }

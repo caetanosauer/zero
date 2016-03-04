@@ -258,11 +258,10 @@ public:
     /**
      * Grabs some active slot and \b atomically joins the slot.
      * @param[in] size log size to add
-     * @param[out] idx index in _active_slots of the joined slot.
      * @param[out] status \b atomically obtained status of the joined slot
      * @return the slot we have just joined
      */
-    CArraySlot*         join_slot(int32_t size, carray_slotid_t &idx, carray_status_t &status);
+    CArraySlot*         join_slot(int32_t size, carray_status_t &status);
 
     /**
      * join the memcpy-complete queue but don't spin yet.
@@ -295,12 +294,12 @@ public:
 
     /**
      * Retire the given slot from active slot, upgrading an unused thread to an active slot.
-     * @param[in] active_index \b _active_slots's (not _all_slots's) index of slot to replace.
+     * @param[slot] slot to replace
      * @pre current thread is the leader of the slot
-     * @pre _active_slots[active_index]->count > SLOT_AVAILABLE, in other words thte slot is
+     * @pre slot->count > SLOT_AVAILABLE, in other words thte slot is
      * already owned and no other thread can disturb this change.
      */
-    void                replace_active_slot(carray_slotid_t active_index);
+    void                replace_active_slot(CArraySlot* slot);
 
 private:
     int                 _indexof(const CArraySlot* slot) const;

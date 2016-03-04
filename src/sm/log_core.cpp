@@ -918,9 +918,8 @@ rc_t log_core::_join_carray(CArraySlot*& info, long& pos, int32_t size)
     */
 
     // consolidate
-    carray_slotid_t idx;
     carray_status_t old_count;
-    info = _carray->join_slot(size, idx, old_count);
+    info = _carray->join_slot(size, old_count);
 
     pos = ConsolidationArray::extract_carray_log_size(old_count);
     if(old_count == ConsolidationArray::SLOT_AVAILABLE) {
@@ -931,9 +930,10 @@ rc_t log_core::_join_carray(CArraySlot*& info, long& pos, int32_t size)
         _insert_lock.acquire(&info->me);
 
         w_assert1(info->vthis()->count > ConsolidationArray::SLOT_AVAILABLE);
+        w_assert1(pos == 0);
 
         // swap out this slot and mark it busy
-        _carray->replace_active_slot(idx);
+        _carray->replace_active_slot(info);
 
         // negate the count to signal waiting threads and mark the slot busy
         old_count = lintel::unsafe::atomic_exchange<carray_status_t>(
