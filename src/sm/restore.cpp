@@ -4,6 +4,7 @@
 
 #include "restore.h"
 #include "logarchiver.h"
+#include "log_core.h"
 #include "vol.h"
 #include "sm_options.h"
 #include "backup_reader.h"

@@ -5,6 +5,7 @@
 
 #include "logarchiver.h"
 #include "sm_options.h"
+#include "log_core.h"
 
 #include <algorithm>
 #include <sm_base.h>

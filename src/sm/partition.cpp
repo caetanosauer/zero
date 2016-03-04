@@ -63,7 +63,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "sm_base.h"
 #include "logtype_gen.h"
-#include "log.h"
 #include "log_storage.h"
 #include <sys/stat.h>
 
@@ -248,17 +247,7 @@ rc_t partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
 
         b += XFERSIZE;
 
-        //
-        // This could be written more simply from
-        // a logical standpoint, but using this
-        // first_time makes it a wee bit more readable
-        //
         if (first_time) {
-            if( rp->length() > sizeof(logrec_t) ||
-            rp->length() < rp->header_size() ) {
-                w_assert0(ll.hi() == 0); // in peek()
-                return RC(eEOF);
-            }
             first_time = false;
             leftover = rp->length() - (b - off);
             DBG5(<<" leftover now=" << leftover);
@@ -288,14 +277,8 @@ rc_t partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
             DBG5(<<" leftover now=" << leftover);
         }
     }
-    DBG5( << "readbuf@ " << W_ADDR(readbuf)
-        << " first 4 chars are: "
-        << (int)(*((char *)readbuf))
-        << (int)(*((char *)readbuf+1))
-        << (int)(*((char *)readbuf+2))
-        << (int)(*((char *)readbuf+3))
-    );
-    w_assert1(rp != NULL);
+    w_assert0(rp != NULL);
+    w_assert0(rp->valid_header(ll));
     return RCOK;
 }
 

@@ -19,7 +19,7 @@
 #include "btree_page_h.h"
 #include "btree_impl.h"
 #include "lock.h"
-#include "log.h"
+#include "log_core.h"
 #include "vec_t.h"
 #include "tls.h"
 #include "block_alloc.h"

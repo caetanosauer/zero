@@ -19,6 +19,7 @@
 
 #include "log_storage.h"
 #include "log_core.h"
+
 // needed for skip_log (TODO fix this)
 #include "logdef_gen.cpp"
 
@@ -32,35 +33,81 @@ const string log_storage::log_regex = "log\\.[1-9][0-9]*";
  * found in the last block of the last partition -- this logic was moved
  * from the various prime methods of the old log_core.
  */
-log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
-        lsn_t& durable_lsn, lsn_t& flush_lsn, long segsize)
+log_storage::log_storage(const sm_options& options)
     :
-        _logpath(path),
-        _segsize(segsize),
         _partition_size(0),
         _partition_data_size(0),
-        _curr_partition(NULL)
+        _curr_partition(NULL),
+        _skip_log(new skip_log)
 {
-    _logdir = new char[strlen(path) + 1]; // +1 for \0 byte
-    strcpy(_logdir, path);
+    std::string logdir = options.get_string_option("sm_logdir", "");
+    if (logdir.empty()) {
+        cerr << "ERROR: sm_logdir must be set to enable logging." << endl;
+        W_FATAL(eCRASH);
+    }
+    _logpath = logdir;
 
-    _skip_log = new skip_log;
-
-    // By the time we get here, the max_logsize should already have been
-    // adjusted by the sm options-handling code, so it should be
-    // a legitimate value now.
-    W_COERCE(_set_partition_size(log_common::partition_size));
-
-    // FRJ: we don't actually *need* this (no trx around yet), but we
-    // don't want to trip the assertions that watch for it.
-    CRITICAL_SECTION(cs, _partition_lock);
-
-    partition_number_t  last_partition = 1;
+    bool reformat = options.get_bool_option("sm_format", false);
 
     if (!reformat && !fs::exists(_logpath)) {
         cerr << "Error: could not open the log directory " << dir_name() <<endl;
         W_COERCE(RC(eOS));
     }
+
+    // option in MB
+    fileoff_t psize = 1024 * 1024 *
+        fileoff_t(options.get_int_option("sm_log_partition_size", 1024));
+    psize = _floor(psize - BLOCK_SIZE, log_core::SEGMENT_SIZE) + BLOCK_SIZE;
+
+    if (psize > log_storage::max_partition_size()) {
+        // we might not be able to do this:
+        fileoff_t tmp = log_storage::max_partition_size();
+        tmp /= 1024;
+
+        std::cerr << "Partition data size " << psize
+                << " exceeds limit (" << log_storage::max_partition_size() << ") "
+                << " imposed by the size of an lsn."
+                << std::endl;
+        std::cerr << " Choose a smaller sm_logsize." << std::endl;
+        std::cerr << " Maximum is :" << tmp << std::endl;
+        W_FATAL(eCRASH);
+    }
+
+    if (psize < log_storage::min_partition_size()) {
+        fileoff_t tmp = fileoff_t(log_storage::min_partition_size());
+        tmp *= smlevel_0::max_openlog;
+        tmp /= 1024;
+        std::cerr
+            << "Partition data size (" << psize
+            << ") is too small for " << endl
+            << " a segment ("
+            << log_storage::min_partition_size()   << ")" << endl
+            << "Partition data size is computed from sm_logsize;"
+            << " minimum sm_logsize is " << tmp << endl;
+        W_FATAL(eCRASH);
+    }
+
+
+    // partition must hold at least one buffer...
+    size_t segsize = options.get_int_option("sm_logbufsize", 128 << 10);
+    if (psize < segsize) {
+        W_FATAL(eOUTOFLOGSPACE);
+    }
+
+    // largest integral multiple of segsize() not greater than usable_psize:
+    _partition_data_size = _floor(psize, segsize);
+
+    if(_partition_data_size == 0)
+    {
+        cerr << "log size is too small: size "<<psize<<" psize "<<psize
+        <<", segsize() "<< segsize <<", blocksize "<<BLOCK_SIZE<< endl;
+        W_FATAL(eOUTOFLOGSPACE);
+    }
+    _partition_size = _partition_data_size + BLOCK_SIZE;
+    DBGTHRD(<< "log_storage::_set_size setting _partition_size (limit LIMIT) "
+            << _partition_size);
+
+    partition_number_t  last_partition = 1;
 
     fs::directory_iterator it(_logpath), eod;
     std::regex rx(log_regex, std::regex::basic);
@@ -97,13 +144,8 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
         w_assert0(p);
     }
 
-    size_t pos = p->get_size(false);
-    lsn_t new_lsn(last_partition, pos);
-    curr_lsn = durable_lsn = flush_lsn = new_lsn;
-
     W_COERCE(p->open_for_append());
     _curr_partition = p;
-    w_assert1(durable_lsn == curr_lsn);
 
     if(!p) {
         cerr << "ERROR: could not open log file for partition "
@@ -128,7 +170,6 @@ log_storage::~log_storage()
     _partitions.clear();
 
     delete _skip_log;
-    delete _logdir;
 }
 
 partition_t *
@@ -162,12 +203,6 @@ log_storage::get_partition_for_flush(lsn_t start_lsn,
     return p;
 }
 
-fileoff_t log_storage::partition_size(long psize)
-{
-     long p = psize - BLOCK_SIZE;
-     return _floor(p, log_core::SEGMENT_SIZE) + BLOCK_SIZE;
-}
-
 fileoff_t log_storage::min_partition_size()
 {
      return _floor(log_core::SEGMENT_SIZE, log_core::SEGMENT_SIZE)
@@ -178,7 +213,7 @@ fileoff_t log_storage::max_partition_size()
 {
     fileoff_t tmp = sthread_t::max_os_file_size;
     tmp = tmp > lsn_t::max.lo() ? lsn_t::max.lo() : tmp;
-    return  partition_size(tmp);
+    return _floor(tmp - BLOCK_SIZE, log_core::SEGMENT_SIZE) + BLOCK_SIZE;
 }
 
 partition_t* log_storage::get_partition(partition_number_t n) const
@@ -348,34 +383,27 @@ partition_t* log_storage::create_partition(partition_number_t pnum)
     return p;
 }
 
+// rc_t log_storage::delete_old_partitions(partition_number_t older_than,
+//         unsigned how_many)
+// {
+//     // Must hold partition lock
+//     partition_map_t::iterator it = _partitions.begin();
+//     for (; it != _partitions.end(); it++) {
+//         if (it->first < older_than) {
+//             delete it->second;
+//             it = _partitions.erase(it);
+//         }
+//         else {
+//             it++;
+//         }
+//     }
+
+//     return RCOK;
+// }
+
 partition_t * log_storage::curr_partition() const
 {
     return _curr_partition;
-}
-
-w_rc_t log_storage::_set_partition_size(fileoff_t size)
-{
-    fileoff_t usable_psize = size;
-
-    // partition must hold at least one buffer...
-    if (usable_psize < _segsize) {
-        W_FATAL(eOUTOFLOGSPACE);
-    }
-
-    // largest integral multiple of segsize() not greater than usable_psize:
-    _partition_data_size = _floor(usable_psize, _segsize);
-
-    if(_partition_data_size == 0)
-    {
-        cerr << "log size is too small: size "<<size<<" usable_psize "<<usable_psize
-        <<", segsize() "<<_segsize<<", blocksize "<<BLOCK_SIZE<< endl;
-        W_FATAL(eOUTOFLOGSPACE);
-    }
-    _partition_size = _partition_data_size + BLOCK_SIZE;
-    DBGTHRD(<< "log_storage::_set_size setting _partition_size (limit LIMIT) "
-            << _partition_size);
-
-    return RCOK;
 }
 
 string log_storage::make_log_name(partition_number_t pnum) const

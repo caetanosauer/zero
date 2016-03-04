@@ -9,7 +9,7 @@
 #include "bf_tree.h"
 #include "generic_page.h"
 #include "fixable_page_h.h"  // just for get_cb in bf_tree_inline.h
-#include "log.h"
+#include "log_core.h"
 #include "vol.h"
 #include <string.h>
 #include <vector>

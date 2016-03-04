@@ -28,7 +28,7 @@
 #include "sm_options.h"
 #include "latch.h"
 #include "btree_page_h.h"
-#include "log.h"
+#include "log_core.h"
 #include "xct.h"
 #include <logfunc_gen.h>
 

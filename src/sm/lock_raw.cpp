@@ -12,7 +12,7 @@
 
 #include "sm_base.h"
 #include "sthread.h"
-#include "log.h"
+#include "log_core.h"
 #include "log_lsn_tracker.h"
 
 // Following includes are to have the ability to handle on_demand UNDO for Restart operation

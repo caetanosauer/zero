@@ -3,7 +3,7 @@
 #include "sm_vas.h"
 #include "btree.h"
 #include "btcursor.h"
-#include "log.h"
+#include "log_core.h"
 
 btree_test_env *test_env;
 

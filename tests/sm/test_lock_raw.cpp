@@ -6,7 +6,7 @@
 #include "lock_raw.h"
 #include "lock_core.h"
 #include "sm_base.h"
-#include "log.h"
+#include "log_core.h"
 #include "log_lsn_tracker.h"
 #include "lock.h"
 #include "w_okvl_inl.h"

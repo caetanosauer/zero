@@ -96,7 +96,6 @@ class vol_t;
 class BackupManager;
 class bf_tree_m;
 class comm_m;
-class log_m;
 class log_core;
 class lock_m;
 class LogArchiver;
@@ -308,7 +307,7 @@ public:
     static bf_tree_m* bf;
     static lock_m* lm;
 
-    static log_m* log;
+    static log_core* log;
     static log_core* clog;
     static LogArchiver* logArchiver;
 
@@ -332,11 +331,6 @@ public:
     static bool         lock_caching_default;
     static bool         do_prefetch;
     static bool         statistics_enabled;
-
-    // This variable controls checkpoint frequency.
-    // Checkpoints are taken every chkpt_displacement bytes
-    // written to the log.
-    static fileoff_t chkpt_displacement;
 
     // This is a zeroed page for use wherever initialized memory
     // is needed.
@@ -542,7 +536,6 @@ ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state);
 
 #if defined(SM_SOURCE)
 #    include <fixable_page_h.h>
-#    include <log.h>
 #    include <vol.h>
 
 #    if defined(FILE_C) || defined(SMFILE_C)

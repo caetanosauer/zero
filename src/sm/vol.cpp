@@ -15,6 +15,7 @@
 #include "sm_base.h"
 #include "stnode_page.h"
 #include "vol.h"
+#include "log_core.h"
 #include "sm_options.h"
 
 #include "alloc_cache.h"

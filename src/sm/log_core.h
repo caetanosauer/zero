@@ -62,7 +62,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #include <AtomicCounter.hpp>
-#include <log.h>
 #include <vector> // only for _collect_single_page_recovery_logs()
 
 // in sm_base for the purpose of log callback function argument type
@@ -81,22 +80,31 @@ class fetch_buffer_loader_t;
 #include "tatas.h"
 #include "log_storage.h"
 
-class log_common : public log_m
+class log_core
 {
+    // CArray interface needs to be exposed to plog_xct_t to implement
+    // atomic commit protocol.
+    friend class plog_xct_t;
 public:
-    log_common(const sm_options&);
-    virtual ~log_common();
+    log_core(const sm_options&);
+    virtual           ~log_core();
 
+    rc_t init();
 
-    virtual lsn_t               curr_lsn()  const
-        // no lock needed -- atomic read of a monotonically increasing value
-        { return _curr_lsn; }
+    static const std::string IMPL_NAME;
 
-    lsn_t               durable_lsn() const
-    {
-        ASSERT_FITS_IN_POINTER(lsn_t); // else need to join the insert queue
-        return _durable_lsn;
-    }
+    rc_t            insert(logrec_t &r, lsn_t* l = NULL);
+    rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
+    rc_t    flush_all(bool block=true) {
+                          return flush(curr_lsn().advance(-1), block); }
+    rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
+    rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
+    void            shutdown();
+    rc_t            truncate();
+
+    lsn_t curr_lsn() const { return _curr_lsn; }
+
+    lsn_t durable_lsn() const { return _durable_lsn; }
 
     void start_flush_daemon()
     {
@@ -104,25 +112,14 @@ public:
         _flush_daemon->fork();
     }
 
-    virtual lsn_t getLastMountLSN() const { return _lastMountLSN; }
-    virtual void setLastMountLSN(lsn_t m)
-    {
-        w_assert2(m >= _lastMountLSN);
-        _lastMountLSN = m;
-    }
+    long                 segsize() const { return _segsize; }
 
-
-    // for flush_daemon_thread_t
     void            flush_daemon();
-    virtual string make_log_name(partition_number_t n)
-        { return _storage->make_log_name(n); }
-    virtual smlevel_0::fileoff_t limit() const
-        { return _storage->limit(); }
-    virtual void release()
-        { _storage->release_partition_lock(); }
-    virtual const char* dir_name() const
-        { return _storage->dir_name(); }
 
+    lsn_t           flush_daemon_work(lsn_t old_mark);
+
+    rc_t load_fetch_buffers();
+    void discard_fetch_buffers();
 
     // DO NOT MAKE SEGMENT_SIZE smaller than 3 pages!  Since we need to
     // fit at least a single max-sized log record in a segment.
@@ -145,41 +142,46 @@ public:
     enum { SEGMENT_SIZE= 128 * log_storage::BLOCK_SIZE };
 #endif
 
-    static const uint64_t DFT_LOGBUFSIZE;
-    static fileoff_t partition_size;
+    // Functions delegated to log_storage (CS TODO)
+    string make_log_name(uint32_t p)
+    {
+        return _storage->make_log_name(p);
+    }
 
-    PoorMansOldestLsnTracker* get_oldest_lsn_tracker() { return _oldest_lsn_tracker; }
+    void release()
+    {
+        _storage->release_partition_lock();
+    }
+
+    PoorMansOldestLsnTracker* get_oldest_lsn_tracker()
+    {
+        return _oldest_lsn_tracker;
+    }
+
+    static lsn_t first_lsn(uint32_t pnum) { return lsn_t(pnum, 0); }
 
 protected:
-    virtual lsn_t           flush_daemon_work(lsn_t old_mark) = 0;
 
-    log_storage*    _storage;
-    PoorMansOldestLsnTracker* _oldest_lsn_tracker;
+    char*                _buf; // log buffer: _segsize buffer into which
+                         // inserts copy log records with log_core::insert
 
-    enum { invalid_fhdl = -1 };
-
-    lsn_t           _curr_lsn;
-    lsn_t           _durable_lsn;
-    lsn_t           _lastMountLSN;
-
-    bool            _log_corruption;
-    void            start_log_corruption() { _log_corruption = true; }
+    /** Buffers for fetch operation -- used during log analysis and
+     * single-page redo. One buffer is used for each partition.
+     * The number of partitions is specified by sm_log_fetch_buf_partitions */
+    vector<char*> _fetch_buffers;
+    uint32_t _fetch_buf_first;
+    uint32_t _fetch_buf_last;
+    lsn_t _fetch_buf_begin;
+    lsn_t _fetch_buf_end;
+    fetch_buffer_loader_t* _fetch_buf_loader;
 
     char*           _readbuf;
     char *          readbuf() { return _readbuf; }
 
-    long _start; // byte number of oldest unwritten byte
-    long                 start_byte() const { return _start; }
+    ticker_thread_t* _ticker;
 
-    long _end; // byte number of insertion point
-    long                 end_byte() const { return _end; }
-
-    long _segsize; // log buffer size
-    long                 segsize() const { return _segsize; }
-
-    lsn_t                _flush_lsn;
-
-    void set_option_logsize(const sm_options&, size_t dft = 1024 /* 1GB */);
+    lsn_t           _curr_lsn;
+    lsn_t           _durable_lsn;
 
     // Set of pointers into _buf (circular log buffer)
     // and associated lsns. See detailed comments at log_core::insert
@@ -203,10 +205,39 @@ protected:
         epoch volatile* vthis() { return this; }
     };
 
-    /** \ingroup CARRAY */
+
+    /**
+     * \ingroup CARRAY
+     *  @{
+     */
     epoch                _buf_epoch;
     epoch                _cur_epoch;
     epoch                _old_epoch;
+
+    void _acquire_buffer_space(CArraySlot* info, long size);
+    lsn_t _copy_to_buffer(logrec_t &rec, long pos, long size, CArraySlot* info);
+    bool _update_epochs(CArraySlot* info);
+    rc_t _join_carray(CArraySlot*& info, long& pos, int32_t size);
+    rc_t _leave_carray(CArraySlot* info, int32_t size);
+    void _copy_raw(CArraySlot* info, long& pos, const char* data, size_t size);
+    /** @}*/
+
+    log_storage*    _storage;
+    PoorMansOldestLsnTracker* _oldest_lsn_tracker;
+
+    enum { invalid_fhdl = -1 };
+
+    long _start; // byte number of oldest unwritten byte
+    long                 start_byte() const { return _start; }
+
+    long _end; // byte number of insertion point
+    long                 end_byte() const { return _end; }
+
+    long _segsize; // log buffer size
+
+    lsn_t                _flush_lsn;
+
+    /** \ingroup CARRAY */
 
     /*
      * See src/internals.h, section LOG_M_INTERNAL
@@ -281,85 +312,47 @@ protected:
      * \ingroup CARRAY
      */
     ConsolidationArray*  _carray;
-};
-
-/**
- * \brief Core Implementation of Log Manager
- * \ingroup SSMLOG
- * \details
- * This is the internal implementation class used from log_m.
- * This class contains the dirty details which should not be exposed to other modules.
- * It is similar to what people call "pimpl" or "compiler firewall".
- * @see log_m
- */
-class log_core : public log_common
-{
-    // CArray interface needs to be exposed to plog_xct_t to implement
-    // atomic commit protocol.
-    friend class plog_xct_t;
-public:
-    NORET           log_core(
-                             const char* path,
-                             long bsize, // segment size for the log buffer, set through "sm_logbufsize"
-                             bool reformat,
-                             int carray_active_slot_count
-                             );
-    log_core(const sm_options&);
-    virtual           ~log_core();
-
-    virtual rc_t init();
-
-    static const std::string IMPL_NAME;
-
-    // INTERFACE METHODS BEGIN
-
-    virtual rc_t            insert(logrec_t &r, lsn_t* l = NULL);
-    virtual rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
-    virtual rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
-    virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
-    virtual void            shutdown();
-    virtual rc_t            truncate();
-
-
-    // INTERFACE METHODS END
-
-    // declared in log_common
-    virtual lsn_t           flush_daemon_work(lsn_t old_mark);
-
-    virtual rc_t load_fetch_buffers();
-    virtual void discard_fetch_buffers();
-
-protected:
-
-    char*                _buf; // log buffer: _segsize buffer into which
-                         // inserts copy log records with log_core::insert
-
-    /** Buffers for fetch operation -- used during log analysis and
-     * single-page redo. One buffer is used for each partition.
-     * The number of partitions is specified by sm_log_fetch_buf_partitions */
-    vector<char*> _fetch_buffers;
-    uint32_t _fetch_buf_first;
-    uint32_t _fetch_buf_last;
-    lsn_t _fetch_buf_begin;
-    lsn_t _fetch_buf_end;
-    fetch_buffer_loader_t* _fetch_buf_loader;
-
-    ticker_thread_t* _ticker = 0;
-
-    /**
-     * \ingroup CARRAY
-     *  @{
-     */
-    void _acquire_buffer_space(CArraySlot* info, long size);
-    lsn_t _copy_to_buffer(logrec_t &rec, long pos, long size, CArraySlot* info);
-    bool _update_epochs(CArraySlot* info);
-    rc_t _join_carray(CArraySlot*& info, long& pos, int32_t size);
-    rc_t _leave_carray(CArraySlot* info, int32_t size);
-    void _copy_raw(CArraySlot* info, long& pos, const char* data, size_t size);
-    /** @}*/
 
 }; // log_core
 
+
+/**
+ * \brief Log-scan iterator
+ * \ingroup SSMLOG
+ * \details
+ * Used in restart to scan the log.
+ */
+class log_i {
+public:
+    /// start a scan of the given log a the given log sequence number.
+    NORET                        log_i(log_core& l, const lsn_t& lsn, const bool forward = true) ;
+    NORET                        ~log_i();
+
+    /// Get the next log record for transaction, put its sequence number in argument \a lsn
+    bool                         xct_next(lsn_t& lsn, logrec_t*& r);
+    bool                         xct_next(lsn_t& lsn, logrec_t& r);
+
+    /// Get the return code from the last next() call.
+    w_rc_t&                      get_last_rc();
+private:
+    log_core&                       log;
+    lsn_t                        cursor;
+    w_rc_t                       last_rc;
+    bool                         forward_scan;
+}; // log_i
+
+inline NORET
+log_i::log_i(log_core& l, const lsn_t& lsn, const bool forward)  // Default: true for forward scan
+    : log(l), cursor(lsn), forward_scan(forward)
+{ }
+
+inline
+log_i::~log_i()
+{ last_rc.verify(); }
+
+inline w_rc_t&
+log_i::get_last_rc()
+{ return last_rc; }
 /*<std-footer incl-file-exclusion='LOG_H'>  -- do not edit anything below this line -- */
 
 #endif          /*</std-footer>*/

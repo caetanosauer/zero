@@ -4,6 +4,7 @@
 #include "logrec.h"
 #include "fixable_page_h.h"
 #include "bf_tree_cb.h"
+#include "log_core.h"
 
 bool _dirty_shutdown_happening_now() {
     return (ss_m::shutting_down && !ss_m::shutdown_clean);

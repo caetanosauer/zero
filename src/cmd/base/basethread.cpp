@@ -55,7 +55,7 @@ void basethread_t::start_log(string logdir)
 {
     if (!smlevel_0::log) {
         // instantiate log manager
-        log_m* log;
+        log_core* log;
         cerr << "Initializing log manager ... " << flush;
         _options.set_string_option("sm_logdir", logdir);
         _options.set_int_option("sm_logsize", 10000 * 1024);

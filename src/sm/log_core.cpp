@@ -64,7 +64,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_options.h"
 #include "sm_base.h"
 #include "logtype_gen.h"
-#include "log.h"
 #include "logrec.h"
 #include "log_core.h"
 #include "log_carray.h"
@@ -81,10 +80,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sys/stat.h>
 
 typedef smlevel_0::fileoff_t fileoff_t;
-
-const std::string log_core::IMPL_NAME = "traditional";
-const uint64_t log_common::DFT_LOGBUFSIZE = 128 << 10;
-fileoff_t log_common::partition_size = 0;
 
 class ticker_thread_t : public smthread_t
 {
@@ -152,154 +147,13 @@ private:
 
 
 class flush_daemon_thread_t : public smthread_t {
-    log_common* _log;
+    log_core* _log;
 public:
-    flush_daemon_thread_t(log_common* log) :
+    flush_daemon_thread_t(log_core* log) :
          smthread_t(t_regular, "flush_daemon", WAIT_NOT_USED), _log(log) { }
 
     virtual void run() { _log->flush_daemon(); }
 };
-
-log_common::log_common(const sm_options& options)
-    :
-      _log_corruption(false),
-      _readbuf(NULL),
-      _start(0),
-      _end(0),
-      _segsize(options.get_int_option("sm_logbufsize", DFT_LOGBUFSIZE)),
-      _waiting_for_flush(false),
-      _shutting_down(false),
-      _flush_daemon_running(false)
-{
-    set_option_logsize(options);
-
-    // adjust actual size of log buffer (round to segment size)
-    _segsize = log_storage::_ceil(_segsize, SEGMENT_SIZE);
-
-    // pretty big limit -- really, the limit is imposed by the OS's
-    // ability to read/write
-    if (uint64_t(_segsize) < (uint64_t) 4 * smlevel_0::page_sz) {
-        cerr << "Log buf size (sm_logbufsize = " << (int)_segsize
-        << " ) is too small for pages of size "
-        << unsigned(smlevel_0::page_sz) << " bytes."
-        << endl;
-        cerr << "Need to hold at least 4 pages ( " << 4 * smlevel_0::page_sz
-        << ")"
-        << endl;
-        W_FATAL(eCRASH);
-    }
-    if (uint64_t(_segsize) > uint64_t(max_int4)) {
-        cerr << "Log buf size (sm_logbufsize = " << (int)_segsize
-        << " ) is too big: individual log files can't be large files yet."
-        << endl;
-        W_FATAL(eCRASH);
-    }
-
-    DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
-    DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
-    DO_PTHREAD(pthread_cond_init(&_flush_cond, NULL));
-
-    uint32_t carray_slots = options.get_int_option("sm_carray_slots",
-                        ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
-    _carray = new ConsolidationArray(carray_slots);
-
-    /* Create thread o flush the log */
-    _flush_daemon = new flush_daemon_thread_t(this);
-
-    // NOTE: GROT must make this a function of page size, and of xfer size,
-    // since xfer size is fixed (8K).
-    // It has to big enough to read the maximum-sized log record, clearly
-    // more than a page.
-#if SM_PAGESIZE < 8192
-    _readbuf = new char[log_storage::BLOCK_SIZE*4];
-#else
-    _readbuf = new char[SM_PAGESIZE*4];
-#endif
-
-    if (_segsize < 64 * 1024) {
-        // not mt-safe, but this is not going to happen in
-        // concurrency scenario
-        cerr << "Log buf size (sm_logbufsize) too small: "
-        << _segsize << ", require at least " << 64 * 1024
-        << endl << endl;
-        fprintf(stderr,
-            "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
-            _segsize, 64*1024);
-        W_FATAL(eINTERNAL);
-    }
-
-    w_assert1(is_aligned(_readbuf));
-    w_assert1(_curr_lsn == _durable_lsn);
-}
-
-log_common::~log_common()
-{
-    w_assert1(_durable_lsn == _curr_lsn);
-
-    delete [] _readbuf;
-    _readbuf = NULL;
-
-    delete _carray;
-
-    DO_PTHREAD(pthread_mutex_destroy(&_wait_flush_lock));
-    DO_PTHREAD(pthread_cond_destroy(&_wait_cond));
-    DO_PTHREAD(pthread_cond_destroy(&_flush_cond));
-}
-
-void log_common::set_option_logsize(const sm_options& options, size_t dftLogsize)
-{
-    // the logging system should not be running.  if it is
-    // then don't set the option
-    if (!options.get_bool_option("sm_logging", true) || smlevel_0::log) return;
-
-    std::string logimpl = options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
-    fileoff_t psize = fileoff_t(options.get_int_option("sm_log_partition_size", dftLogsize));
-
-    // The option is in units of MB; convert it to bytes.
-    // Convert partition size to partition data size: (remove overhead)
-    psize = log_storage::partition_size(psize * 1024 * 1024);
-
-    /* Enforce the built-in shore limit that a log partition can only
-       be as long as the file address in a lsn_t allows for...
-       This is really the limit of a LSN, since LSNs map 1-1 with disk
-       addresses.
-       Also that it can't be larger than the os allows
-   */
-
-    if (psize > log_storage::max_partition_size()) {
-        // we might not be able to do this:
-        fileoff_t tmp = log_storage::max_partition_size();
-        tmp /= 1024;
-
-        std::cerr << "Partition data size " << psize
-                << " exceeds limit (" << log_storage::max_partition_size() << ") "
-                << " imposed by the size of an lsn."
-                << std::endl;
-        std::cerr << " Choose a smaller sm_logsize." << std::endl;
-        std::cerr << " Maximum is :" << tmp << std::endl;
-        W_FATAL(eCRASH);
-    }
-
-    if (psize < log_storage::min_partition_size()) {
-        fileoff_t tmp = fileoff_t(log_storage::min_partition_size());
-        tmp *= smlevel_0::max_openlog;
-        tmp /= 1024;
-        std::cerr
-            << "Partition data size (" << psize
-            << ") is too small for " << endl
-            << " a segment ("
-            << log_storage::min_partition_size()   << ")" << endl
-            << "Partition data size is computed from sm_logsize;"
-            << " minimum sm_logsize is " << tmp << endl;
-        W_FATAL(eCRASH);
-    }
-
-
-    // take check points every 3 log file segments. CS TODO: remove
-    smlevel_0::chkpt_displacement = log_core::SEGMENT_SIZE * 3;
-
-    log_common::partition_size = psize;
-}
 
 /*********************************************************************
  *
@@ -348,7 +202,7 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
             if (rp->type() == logrec_t::t_skip)
             {
                 if (forward) {
-                    ll = first_lsn(ll.hi() + 1);
+                    ll = lsn_t(ll.hi() + 1, 0);
                     _storage->release_partition_lock();
                     return fetch(ll, rp, nxt, forward);
                 }
@@ -410,7 +264,7 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
         if (forward) {
             DBGTHRD(<<"seeked to skip" << ll );
             DBGTHRD(<<"getting next partition.");
-            ll = first_lsn(ll.hi() + 1);
+            ll = lsn_t(ll.hi() + 1, 0);
 
             p = _storage->get_partition(ll.hi());
             if(!p) {
@@ -497,21 +351,80 @@ void log_core::shutdown()
  *
  *********************************************************************/
 log_core::log_core(const sm_options& options)
-      : log_common(options)
+    :
+      _readbuf(NULL),
+      _start(0),
+      _end(0),
+      _segsize(options.get_int_option("sm_logbufsize", 128 << 10)),
+      _waiting_for_flush(false),
+      _shutting_down(false),
+      _flush_daemon_running(false)
 {
-    _buf = new char[_segsize];
+    // adjust actual size of log buffer (round to segment size)
+    _segsize = log_storage::_ceil(_segsize, SEGMENT_SIZE);
 
-    std::string logdir = options.get_string_option("sm_logdir", "");
-    if (logdir.empty()) {
-        cerr << "ERROR: sm_logdir must be set to enable logging." << endl;
+    // pretty big limit -- really, the limit is imposed by the OS's
+    // ability to read/write
+    if (uint64_t(_segsize) < (uint64_t) 4 * smlevel_0::page_sz) {
+        cerr << "Log buf size (sm_logbufsize = " << (int)_segsize
+        << " ) is too small for pages of size "
+        << unsigned(smlevel_0::page_sz) << " bytes."
+        << endl;
+        cerr << "Need to hold at least 4 pages ( " << 4 * smlevel_0::page_sz
+        << ")"
+        << endl;
         W_FATAL(eCRASH);
     }
-    const char* path = logdir.c_str();
-    bool reformat = options.get_bool_option("sm_format", false);
+    if (uint64_t(_segsize) > uint64_t(max_int4)) {
+        cerr << "Log buf size (sm_logbufsize = " << (int)_segsize
+        << " ) is too big: individual log files can't be large files yet."
+        << endl;
+        W_FATAL(eCRASH);
+    }
 
-    _storage = new log_storage(path, reformat, _curr_lsn, _durable_lsn,
-            _flush_lsn, _segsize);
+    DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
+    DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
+    DO_PTHREAD(pthread_cond_init(&_flush_cond, NULL));
+
+    uint32_t carray_slots = options.get_int_option("sm_carray_slots",
+                        ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
+    _carray = new ConsolidationArray(carray_slots);
+
+    /* Create thread o flush the log */
+    _flush_daemon = new flush_daemon_thread_t(this);
+
+    // NOTE: GROT must make this a function of page size, and of xfer size,
+    // since xfer size is fixed (8K).
+    // It has to big enough to read the maximum-sized log record, clearly
+    // more than a page.
+#if SM_PAGESIZE < 8192
+    _readbuf = new char[log_storage::BLOCK_SIZE*4];
+#else
+    _readbuf = new char[SM_PAGESIZE*4];
+#endif
+
+    if (_segsize < 64 * 1024) {
+        // not mt-safe, but this is not going to happen in
+        // concurrency scenario
+        cerr << "Log buf size (sm_logbufsize) too small: "
+        << _segsize << ", require at least " << 64 * 1024
+        << endl << endl;
+        fprintf(stderr,
+            "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
+            _segsize, 64*1024);
+        W_FATAL(eINTERNAL);
+    }
+
+    w_assert1(is_aligned(_readbuf));
+    _buf = new char[_segsize];
+
+
+    _storage = new log_storage(options);
     long prime_offset = _storage->prime(_buf, _durable_lsn, log_storage::BLOCK_SIZE);
+
+    partition_t* p = _storage->curr_partition();
+    _curr_lsn = _durable_lsn = _flush_lsn = lsn_t(p->num(), p->get_size());
+    cerr << "Initialized curr_lsn to " << _curr_lsn << endl;
 
     _oldest_lsn_tracker = new PoorMansOldestLsnTracker(1 << 20);
 
@@ -603,6 +516,17 @@ log_core::~log_core()
 
     delete [] _buf;
     _buf = NULL;
+
+    w_assert1(_durable_lsn == _curr_lsn);
+
+    delete [] _readbuf;
+    _readbuf = NULL;
+
+    delete _carray;
+
+    DO_PTHREAD(pthread_mutex_destroy(&_wait_flush_lock));
+    DO_PTHREAD(pthread_cond_destroy(&_wait_cond));
+    DO_PTHREAD(pthread_cond_destroy(&_flush_cond));
 }
 
 void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
@@ -978,16 +902,6 @@ rc_t log_core::_leave_carray(CArraySlot* info, int32_t size)
 
 rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
 {
-    // If log corruption is turned on,  zero out
-    // important parts of the log to fake crash (by making the
-    // log appear to end here).
-    if (_log_corruption) {
-        cerr << "Generating corrupt log record at lsn: " << curr_lsn() << endl;
-        rec.corrupt();
-        // Now turn it off.
-        _log_corruption = false;
-    }
-
     w_assert1(rec.length() <= sizeof(logrec_t));
     int32_t size = rec.length();
 
@@ -1117,7 +1031,7 @@ rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flu
  * This method handles the wait/block of the daemon thread,
  * and when awake, calls its main-work method, flush_daemon_work.
  */
-void log_common::flush_daemon()
+void log_core::flush_daemon()
 {
     /* Algorithm: attempt to flush non-durable portion of the buffer.
      * If we empty out the buffer, block until either enough
@@ -1442,19 +1356,48 @@ void log_core::discard_fetch_buffers()
     _storage->release_partition_lock();
 }
 
-// Determine if this lsn is holding up scavenging of logs by (being
-// on a presumably hot page, and) being a rec_lsn that's in the oldest open
-// log partition and that oldest partition being sufficiently aged....
-/*
- * CS: does not seem to be used -- commented out for now.
- */
-//bool log_core::squeezed_by(const lsn_t &self)  const
-//{
-    //// many partitions are open
-    //return
-    //((curr_lsn().file() - global_min_lsn().file()) >=  (PARTITION_COUNT-2))
-        //&&
-    //(self.file() == global_min_lsn().file())  // the given lsn
-                                              //// is in the oldest file
-    //;
-//}
+/*********************************************************************
+ *
+ *  log_i::xct_next(lsn, r)
+ *
+ *  Read the next record into r and return its lsn in lsn.
+ *  Return false if EOF reached. true otherwise.
+ *
+ *********************************************************************/
+bool log_i::xct_next(lsn_t& lsn, logrec_t& r)
+{
+    // Initially (before the first xct_next call,
+    // 'cursor' is set to the starting point of the scan
+    // After each xct_next call,
+    // 'cursor' is set to the lsn of the next log record if forward scan
+    // or the lsn of the fetched log record if backward scan
+    // log.fetch() returns eEOF when it reaches the end of the scan
+
+    bool eof = (cursor == lsn_t::null);
+
+    if (! eof) {
+        lsn = cursor;
+        logrec_t* b;
+        rc_t rc = log.fetch(lsn, b, &cursor, forward_scan);  // Either forward or backward scan
+
+        if (!rc.is_error())  {
+            memcpy(&r, b, b->length());
+        }
+        // release right away, since this is only
+        // used in recovery.
+        log.release();
+
+        if (rc.is_error())  {
+            last_rc = RC_AUGMENT(rc);
+            RC_APPEND_MSG(last_rc, << "trying to fetch lsn " << cursor);
+
+            if (last_rc.err_num() == eEOF)
+                eof = true;
+            else  {
+                cerr << "Fatal error : " << last_rc << endl;
+            }
+        }
+    }
+
+    return ! eof;
+}

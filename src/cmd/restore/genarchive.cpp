@@ -1,4 +1,5 @@
 #include "genarchive.h"
+#include "log_core.h"
 
 #include <fstream>
 

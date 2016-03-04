@@ -58,7 +58,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define LOG_STORAGE_H
 #include "w_defines.h"
 
-#include "log.h"
+#include "sm_options.h"
 #include <partition.h>
 #include <map>
 #include <vector>
@@ -80,8 +80,7 @@ class log_storage {
     friend class partition_t;
 
 public:
-    log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
-        lsn_t& durable_lsn, lsn_t& flush_lsn, long segsize);
+    log_storage(const sm_options&);
     virtual ~log_storage();
 
     partition_t*    get_partition_for_flush(lsn_t start_lsn,
@@ -120,18 +119,14 @@ public:
     static long         _ceil(long offset, long block_size)
                             { return _floor(offset + block_size - 1, block_size); }
 
-    static fileoff_t          partition_size(long psize);
     static fileoff_t          min_partition_size();
     static fileoff_t          max_partition_size();
 
 private:
-    void                _prime(int fd, fileoff_t start, lsn_t next);
     partition_t* create_partition(partition_number_t pnum);
 
-private:
     fs::path        _logpath;
     char*           _logdir;
-    long            _segsize;
     fileoff_t               _partition_size;
     fileoff_t               _partition_data_size;
 
@@ -141,9 +136,6 @@ private:
     skip_log*           _skip_log;
     mutable queue_based_block_lock_t _partition_lock;
 
-    w_rc_t          _set_partition_size(fileoff_t psize);
-
-private:
     // forbid copy
     log_storage(const log_storage&);
     log_storage& operator=(const log_storage&);

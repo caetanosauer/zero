@@ -101,8 +101,6 @@ bool        smlevel_0::do_prefetch = false;
 
 bool        smlevel_0::statistics_enabled = true;
 
-smlevel_0::fileoff_t        smlevel_0::chkpt_displacement = 0;
-
 /*
  * _being_xct_mutex: Used to prevent xct creation during volume dismount.
  * Its sole purpose is to be sure that we don't have transactions
@@ -117,7 +115,7 @@ static srwlock_t          _begin_xct_mutex;
 BackupManager* smlevel_0::bk = 0;
 vol_t* smlevel_0::vol = 0;
 bf_tree_m* smlevel_0::bf = 0;
-log_m* smlevel_0::log = 0;
+log_core* smlevel_0::log = 0;
 log_core* smlevel_0::clog = 0;
 LogArchiver* smlevel_0::logArchiver = 0;
 

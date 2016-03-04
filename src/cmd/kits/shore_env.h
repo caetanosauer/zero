@@ -33,6 +33,7 @@
 
 // #include "k_defines.h"
 #include "sm_vas.h"
+#include "log_core.h"
 
 #include <map>
 

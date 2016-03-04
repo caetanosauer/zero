@@ -16,6 +16,7 @@
 #include <string>
 #include <algorithm>
 #include "restart.h"
+#include "log_core.h"
 
 
 PageID btree_page_h::pid0() const

@@ -4,7 +4,7 @@
 #include "btree.h"
 #include "btree_page_h.h"
 #include "btree_impl.h"
-#include "log.h"
+#include "log_code.h"
 #include "w_error.h"
 
 #include <vector>
@@ -42,7 +42,7 @@ w_rc_t bf_get_empty(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_EQ (root_pid.store(), root_s->pid.store());
     EXPECT_EQ (root_pid.vol(), root_s->pid.vol());
     bf_m::unfix(root_s, false, 1);
-    
+
     return RCOK;
 }
 
@@ -85,7 +85,7 @@ w_rc_t bf_get_many(ss_m* ssm, test_volume_t *test_volume) {
     }
     W_DO(test_env->commit_xct());
     W_DO(x_btree_verify(ssm, stid));
-    
+
     // write out all pages and discard from bufferpool
     W_DO(bf_m::force_all(true));
 
@@ -107,7 +107,7 @@ w_rc_t bf_get_many(ss_m* ssm, test_volume_t *test_volume) {
         lpid_t child_pid = root_pid;
         child_pid.page = pids[i];
         generic_page *child_s = NULL;
-        
+
         smlevel_0::store_flag_t stflags;
         w_rc_t rc = bf_m::fix(child_s, child_pid, 0, LATCH_SH, false, stflags, true, smlevel_0::st_unallocated);
         if (rc.is_error()) {
@@ -132,7 +132,7 @@ w_rc_t bf_get_many(ss_m* ssm, test_volume_t *test_volume) {
     for (size_t i = 0; i < child_pages.size(); ++i) {
         bf_m::unfix(child_pages[i], false, 1);
     }
-    
+
     return RCOK;
 }
 
@@ -206,9 +206,9 @@ w_rc_t bf_careful_write_order(ss_m* ssm, test_volume_t *test_volume) {
         p[i].set_lsns(currlsn);
         p[i].set_dirty();
     }
-    
+
     bf_core_m *core = bf_m_test::get_core();
-        
+
     // 1->2, 1->0, 0->2, 2->3
     // so, if 2 is kept fixed, only 3 can be written out
     W_DO(bf_m::register_write_order_dependency(&(p[1].persistent_part()), &(p[2].persistent_part())));
@@ -218,7 +218,7 @@ w_rc_t bf_careful_write_order(ss_m* ssm, test_volume_t *test_volume) {
     p[0].unfix_dirty();
     p[1].unfix_dirty();
     p[3].unfix_dirty();
-    
+
     cout << "p[2] is still fixed. wait for cleaner..." << endl;
     bf_m::activate_background_flushing(NULL, true); // aggressive=true to kick cleaner in urgent mode
     ::usleep(200*1000);
@@ -260,7 +260,7 @@ w_rc_t bf_careful_write_order(ss_m* ssm, test_volume_t *test_volume) {
         EXPECT_TRUE (bp->dirty());
         core->unpin(bp);
     }
-    
+
     cout << "finally, call cleaner with all pages unfixed to check if all pages will be written out..." << endl;
     p[2].unfix_dirty();
     for (int i = 0; i < 3; ++i) {
@@ -315,7 +315,7 @@ w_rc_t bf_careful_write_order_cycle(ss_m* ssm, test_volume_t *test_volume) {
         p[i].set_lsns(currlsn);
         p[i].set_dirty();
     }
-    
+
     // 1->2, 0->1. these are fine.
     W_DO(bf_m::register_write_order_dependency(&(p[1].persistent_part()), &(p[2].persistent_part())));
     W_DO(bf_m::register_write_order_dependency(&(p[0].persistent_part()), &(p[1].persistent_part())));

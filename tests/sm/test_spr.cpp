@@ -3,7 +3,7 @@
 #include "btree.h"
 #include "btree_page_h.h"
 #include "btree_impl.h"
-#include "log.h"
+#include "log_core.h"
 #include "w_error.h"
 #include "backup.h"
 

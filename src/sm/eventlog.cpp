@@ -1,4 +1,5 @@
 #include "eventlog.h"
+#include "log_core.h"
 
 #include "logdef_gen.cpp"
 

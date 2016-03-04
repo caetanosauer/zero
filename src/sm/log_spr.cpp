@@ -8,7 +8,7 @@
 #include "sm_base.h"
 #include "logdef_gen.cpp"
 
-#include "log.h"
+#include "log_core.h"
 #include "restart.h"
 #include "log_spr.h"
 #include "logrec.h"
