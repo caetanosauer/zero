@@ -38,7 +38,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/log_storage.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/log.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logrec.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logstub.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/page_cleaner_decoupled.cpp
@@ -193,7 +192,6 @@ SET (GENFILES_H ${SM_STATS_GENFILES_B_H} ${BF_HTAB_STATS_GENFILES_B_H} ${LOGDEF_
 #   ${CMAKE_CURRENT_SOURCE_DIR}/log_core.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/log.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/logrec.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/partition.h
 #   ${CMAKE_CURRENT_SOURCE_DIR}/pmap.h
