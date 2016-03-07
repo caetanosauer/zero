@@ -1,22 +1,15 @@
 # global include directories
 INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/config
-  ${CMAKE_SOURCE_DIR}/src/fc
   ${CMAKE_SOURCE_DIR}/src/common
-  ${CMAKE_SOURCE_DIR}/src/sthread
   ${CMAKE_SOURCE_DIR}/src/sm
-  ${CMAKE_SOURCE_DIR}/src/latches
-  ${CMAKE_SOURCE_DIR}/src/Lintel
 ) 
 
 # to look for generated headers
 INCLUDE_DIRECTORIES (
   ${CMAKE_BINARY_DIR}/config
-  ${CMAKE_BINARY_DIR}/src/fc
   ${CMAKE_BINARY_DIR}/src/common
-  ${CMAKE_BINARY_DIR}/src/sthread
   ${CMAKE_BINARY_DIR}/src/sm
-  ${CMAKE_BINARY_DIR}/src/Lintel
 )
 
 INCLUDE_DIRECTORIES (${CMAKE_SOURCE_DIR}/gtest-1.7.0/include)
@@ -28,7 +21,4 @@ IF (COMPILER_IS_GCC)
 ENDIF (COMPILER_IS_GCC)
 
 add_subdirectory(common)
-add_subdirectory(fc)
-add_subdirectory(sthread)
 add_subdirectory(sm)
-add_subdirectory(latches)
