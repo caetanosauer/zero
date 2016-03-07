@@ -99,7 +99,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         uint32_t& unswizzled_count, evict_urgency_t /* urgency */,
         uint32_t preferred_count)
 {
-    W_DO(wakeup_cleaners());
+    W_DO(_cleaner->wakeup_cleaner());
     if (preferred_count == 0) {
         preferred_count = EVICT_BATCH_RATIO * _block_cnt + 1;
     }
@@ -133,7 +133,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
             idx = 0;
         }
         if (idx == _eviction_current_frame - 1) {
-            W_DO(wakeup_cleaners());
+            W_DO(_cleaner->wakeup_cleaner());
             if (evicted_count == 0) {
                 DBG(<< "Eviction stuck! Nonleafs: " << nonleaf_count
                         << " invalid parents: " << invalid_parents

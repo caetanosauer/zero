@@ -234,6 +234,7 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
     }
 
     // again, we don't take latch at this point because this sorting is just for efficiency.
+    // CS TODO: collect pid on list too, to avoid CB lookups here
     size_t sort_buf_used = 0;
     for (size_t i = 0; i < candidates.size(); ++i) {
         bf_idx idx = candidates[i];
@@ -332,12 +333,14 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
             // also copy the new checksum to make the original (bufferpool) page consistent.
             // we can do this out of latch scope because it's never used in race condition.
             // this is mainly for testcases and such.
+            // // CS TODO delete this!
             page_buffer[idx].checksum = _write_buffer[write_buffer_cur].checksum;
             // DBGOUT3(<< "Checksum for " << _write_buffer[write_buffer_cur].pid
             //         << " is " << _write_buffer[write_buffer_cur].checksum);
 
 
             if (tobedeleted) {
+                // CS TODO: what's up with this stuff???
                 // as it's deleted, no one should be accessing it now. we can do everything without latch
                 DBGOUT2(<< "physically delete a page by buffer pool:" << page_buffer[idx].pid);
                 // this operation requires a xct for logging. we create a ssx for this reason.
@@ -365,7 +368,8 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
                 prev_idx = idx;
                 prev_shpid = shpid;
             }
-        }
+        } // for i in 0 .. sort_buf_used
+
         if (skipped_something)
         {
             // CS: TODO instead of waiting forever, cleaner should have a

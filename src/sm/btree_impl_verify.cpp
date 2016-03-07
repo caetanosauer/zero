@@ -359,7 +359,7 @@ bool verification_context::is_bitmap_clean () const
 rc_t btree_impl::_ux_verify_volume(
     int hash_bits, verify_volume_result &result)
 {
-    W_DO(ss_m::force_volume()); // this might block if there is a concurrent transaction
+    W_DO(smlevel_0::bf->get_cleaner()->force_volume());
     vol_t *vol = ss_m::vol;
     w_assert1(vol);
     generic_page buf;

@@ -487,18 +487,6 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 
 ///////////////////////////////////   Page fix/unfix END         ///////////////////////////////////
 
-///////////////////////////////////   Dirty Page Cleaner BEGIN       ///////////////////////////////////
-w_rc_t bf_tree_m::force_volume() {
-    return _cleaner->force_volume();
-}
-
-// CS TODO use templace for cleaner
-w_rc_t bf_tree_m::wakeup_cleaners() {
-    return _cleaner->wakeup_cleaner();
-}
-
-///////////////////////////////////   Dirty Page Cleaner END       ///////////////////////////////////
-
 void bf_tree_m::switch_parent(PageID pid, generic_page* parent)
 {
     bf_idx_pair p;
@@ -842,7 +830,7 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
 
     // first, flush out all dirty pages. we assume there is no concurrent transaction
     // which produces dirty pages from here on. if there is, booomb.
-    W_DO(force_volume());
+    W_DO(_cleaner->force_volume());
 
     // clear all properties. could call uninstall_volume for each of them,
     // but nuking them all is faster.

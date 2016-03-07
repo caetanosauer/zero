@@ -419,7 +419,7 @@ ss_m::_destruct_once()
     if (shutdown_clean || format) {
         ERROUT(<< "SM performing clean shutdown");
 
-        W_COERCE(bf->force_volume());
+        W_COERCE(bf->get_cleaner()->force_volume());
         W_COERCE(log->flush_all());
         me()->check_actual_pin_count(0);
 
@@ -738,10 +738,6 @@ ss_m::activate_archiver()
         logArchiver->activate(lsn_t::null, false);
     }
     return RCOK;
-}
-
-rc_t ss_m::force_volume() {
-    return bf->force_volume();
 }
 
 /*--------------------------------------------------------------*

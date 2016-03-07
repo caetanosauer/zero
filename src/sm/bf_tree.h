@@ -23,7 +23,6 @@ class test_bf_tree;
 class test_bf_fixed;
 class bf_tree_cleaner;
 class bf_tree_cleaner_slave_thread_t;
-class page_cleaner;
 class btree_page_h;
 struct EvictionContext;
 
@@ -404,13 +403,6 @@ public:
       */
     PageID normalize_shpid(PageID shpid) const;
 
-    /** Immediately writes out all dirty pages in the given volume.*/
-    w_rc_t force_volume ();
-    /** Immediately writes out all dirty pages.*/
-    w_rc_t force_all ();
-    /** Wakes up all cleaner threads, starting them if not started yet. */
-    w_rc_t wakeup_cleaners ();
-
     /**
      * Dumps all contents of this bufferpool.
      * this method is solely for debugging. It's slow and unsafe.
@@ -487,6 +479,8 @@ public:
     w_rc_t load_for_redo(bf_idx idx, PageID shpid);
 
     size_t get_size() { return _block_cnt; }
+
+    page_cleaner_base* get_cleaner() { return _cleaner; }
 
 private:
 
