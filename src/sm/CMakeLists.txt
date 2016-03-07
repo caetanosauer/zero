@@ -62,6 +62,7 @@ target_link_libraries(sm
     boost_program_options
     boost_system
     boost_filesystem
+    boost_regex
     )
 
 # CS: target that uses plog_xct, i.e., atomic commit protocol

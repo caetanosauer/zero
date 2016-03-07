@@ -4,13 +4,17 @@
 
 #include "w_defines.h"
 
+// CS TODO: this has to come before sm_base because w_base.h defines
+// a macro called "align", which is probably the name of a function
+// or something inside boost regex
+#include <boost/regex.hpp>
+
 #define SM_SOURCE
 #define LOG_STORAGE_C
 
 #include "sm_base.h"
 #include "chkpt.h"
 
-#include <regex>
 #include <cstdio>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -110,12 +114,12 @@ log_storage::log_storage(const sm_options& options)
     partition_number_t  last_partition = 1;
 
     fs::directory_iterator it(_logpath), eod;
-    std::regex rx(log_regex, std::regex::basic);
+    boost::regex rx(log_regex, boost::regex::basic);
     for (; it != eod; it++) {
         fs::path fpath = it->path();
         string fname = fpath.filename().string();
 
-        if (regex_match(fname, rx)) {
+        if (boost::regex_match(fname, rx)) {
             if (reformat) {
                 fs::remove(fpath);
                 continue;
