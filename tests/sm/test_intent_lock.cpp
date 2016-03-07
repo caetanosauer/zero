@@ -24,18 +24,18 @@ const int TEST_STORE_ID3 = 4;
 
 class lock_thread_t : public smthread_t {
 public:
-        lock_thread_t(vid_t vol, snum_t store, okvl_mode::element_lock_mode vol_mode, okvl_mode::element_lock_mode store_mode) 
+        lock_thread_t(StoreID store, okvl_mode::element_lock_mode store_mode)
                 : smthread_t(t_regular, "lock_thread_t"),
-                _vol(vol), _store(store), _vol_mode(vol_mode), _store_mode(store_mode),
+                _store(store), _store_mode(store_mode),
                 _done(false), _exitted(false) {
             _thid = next_thid++;
         }
         ~lock_thread_t()  {}
         virtual void run() {
             _begin();
-            std::cout << ":T" << _thid << ": req vol=" << _vol << ", mode=" << _vol_mode << ".." << std::endl;
+            std::cout << ":T" << _thid << ": req store=" << _store << ", mode=" << _store_mode << ".." << std::endl;
             for (int retries = 100; retries>0; retries--) {
-                _rc = ss_m::lm->intent_vol_lock(_vol, _vol_mode);
+                _rc = ss_m::lm->intent_store_lock(_store, _store_mode);
                 if (_rc.is_error() && _rc.err_num() != eDEADLOCK)
                     break;
             }
@@ -49,11 +49,11 @@ public:
                 return;
             }
             report_time();
-            std::cout << ":T" << _thid << ": got vol=" << _vol << ", mode=" << _vol_mode << "." << std::endl;
+            std::cout << ":T" << _thid << ": got store=" << _store << ", mode=" << _store_mode << "." << std::endl;
             if (_store != 0) {
                 report_time();
                 std::cout << ":T" << _thid << ": req store=" << _store << ", mode=" << _store_mode << ".." << std::endl;
-                stid_t stid (_vol, _store);
+                StoreID stid = _store;
                 _rc = ss_m::lm->intent_store_lock(stid, _store_mode);
                 report_time();
                 if (_rc.is_error()) {
@@ -76,7 +76,7 @@ public:
             ::gettimeofday(&_start,NULL);
             _rc = ss_m::begin_xct();
             EXPECT_FALSE(_rc.is_error()) << _rc;
-            g_xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);            
+            g_xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);
             report_time();
             std::cout << ":T" << _thid << " begins." << std::endl;
         }
@@ -93,12 +93,11 @@ public:
             timersub(&now, &_start, &result);
             cout << (result.tv_sec * 1000000 + result.tv_usec);
         }
-        
+
         int  return_value() const { return 0; }
 
-    vid_t _vol;
-    snum_t _store;
-    okvl_mode::element_lock_mode _vol_mode, _store_mode;
+    StoreID _store;
+    okvl_mode::element_lock_mode _store_mode;
     rc_t _rc;
     bool _done;
     bool _exitted;
@@ -110,20 +109,19 @@ w_rc_t read_write_livelock(ss_m*, test_volume_t *) {
     EXPECT_TRUE(test_env->_use_locks);
 
     W_DO(test_env->begin_xct());
-    W_DO(ss_m::lm->intent_vol_lock(TEST_VOL_ID, okvl_mode::X));
 
     // write a2
-    lock_thread_t t2 (TEST_VOL_ID, 0, okvl_mode::S, okvl_mode::S);
+    lock_thread_t t2 (0, okvl_mode::S);
     W_DO(t2.fork());
     ::usleep (SHORTTIME_USEC);
     EXPECT_FALSE(t2._done);
     EXPECT_FALSE(t2._exitted);
-    
+
     W_DO(test_env->commit_xct());
     W_DO(t2.join());
     EXPECT_TRUE(t2._done);
     EXPECT_TRUE(t2._exitted);
-    
+
     return RCOK;
 }
 

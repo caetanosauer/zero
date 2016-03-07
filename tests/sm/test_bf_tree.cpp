@@ -6,7 +6,6 @@
 #include "log_core.h"
 #include "w_error.h"
 
-#include "bf_fixed.h"
 #include "bf_tree_cb.h"
 #include "bf_tree.h"
 #include "sm_base.h"
@@ -32,7 +31,7 @@ public:
 
 
     /** manually emulate the btree page layout */
-    static void _add_child_pointer (btree_page *page, shpid_t child) {
+    static void _add_child_pointer (btree_page *page, PageID child) {
         btree_page_h p;
         p.fix_nonbufferpool_page(reinterpret_cast<generic_page*>(page)); // <<<>>>
         if (!page->insert_item(p.nrecs()+1, false, 0, child, 0)) {
@@ -78,8 +77,7 @@ void run_bf_test(w_rc_t (*func)(ss_m*, test_volume_t*),
     options.set_int_option("sm_rawlock_gc_max_segment_count",
         (size == LARGE ? 200 : (size == NORMAL ? 100 : 50)));
 
-    int quota = (size == LARGE ? 4096 : (size == NORMAL ? 1024 : 256));
-    EXPECT_EQ(test_env->runBtreeTest(func, false, quota, options), 0);
+    EXPECT_EQ(test_env->runBtreeTest(func, false, options), 0);
 }
 
 TEST (TreeBufferpoolTest, AlignmentCheck) {
@@ -101,8 +99,8 @@ w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume) {
     bf_tree_m &pool(*smlevel_0::bf);
     for (size_t i = 1; i < 4; ++i) {
         generic_page *page = NULL;
-        lpid_t pid (test_volume->_vid, i + 10);
-        W_DO(pool.fix_virgin_root(page, stid_t(test_volume->_vid, i), i + 10));
+        PageID pid = i+10;
+        W_DO(pool.fix_root(page, i, LATCH_SH, false, true));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
             ::memset(page, 0, sizeof(generic_page));
@@ -119,13 +117,12 @@ w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume) {
 
         // fix again
         page = NULL;
-        W_DO(pool.fix_root(page, stid_t(test_volume->_vid, i), LATCH_SH, false));
+        W_DO(pool.fix_root(page, i, LATCH_SH, false, false));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
             btree_page *bp = reinterpret_cast<btree_page*>(page);
-            EXPECT_EQ(i + 10, page->pid.page);
+            EXPECT_EQ(i + 10, page->pid);
             EXPECT_EQ(i, page->store);
-            EXPECT_EQ(test_volume->_vid, page->pid.vol());
             EXPECT_EQ(thelsn, bp->lsn);
             EXPECT_EQ(1, bp->btree_level);
             pool.unfix(page);
@@ -141,11 +138,11 @@ TEST (TreeBufferpoolTest, FixVirginRoot) {
 w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
     bf_tree_m &pool(*smlevel_0::bf);
     lsn_t thelsn = smlevel_0::log->curr_lsn();
-    lpid_t root_pid(test_volume->_vid, 11);
-    stid_t stid(test_volume->_vid, 1);
+    PageID root_pid = 11;
+    StoreID stid = 1;
 
     generic_page *root_page = NULL;
-    W_DO(pool.fix_virgin_root(root_page, stid, 11));
+    W_DO(pool.fix_root(root_page, stid, LATCH_EX, false, true));
     EXPECT_TRUE (root_page != NULL);
     ::memset(root_page, 0, sizeof(generic_page));
     btree_page *rbp = reinterpret_cast<btree_page*>(root_page);
@@ -157,10 +154,10 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
     rbp->init_items();
     for (size_t i = 0; i < 3; ++i) {
         generic_page *page = NULL;
-        lpid_t pid (test_volume->_vid, root_pid.page + 1 + i);
-        test_bf_tree::_add_child_pointer (rbp, pid.page);
+        PageID pid = root_pid + 1 + i;
+        test_bf_tree::_add_child_pointer (rbp, pid);
 
-        W_DO(pool.fix_nonroot(page, root_page, pid.vol(), pid.page, LATCH_EX, false, true));
+        W_DO(pool.fix_nonroot(page, root_page, pid, LATCH_EX, false, true));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
             ::memset(page, 0, sizeof(generic_page));
@@ -176,12 +173,11 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
 
         // fix again
         page = NULL;
-        W_DO(pool.fix_nonroot(page, root_page, pid.vol(), pid.page, LATCH_SH, false, false));
+        W_DO(pool.fix_nonroot(page, root_page, pid, LATCH_SH, false, false));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
             btree_page *bp = reinterpret_cast<btree_page*>(page);
-            EXPECT_EQ(pid.page, page->pid.page);
-            EXPECT_EQ(test_volume->_vid, page->pid.vol());
+            EXPECT_EQ(pid, page->pid);
             EXPECT_EQ(thelsn, bp->lsn);
             EXPECT_EQ(t_btree_p, page->tag);
             EXPECT_EQ(1, bp->btree_level);
@@ -199,7 +195,7 @@ TEST (TreeBufferpoolTest, FixVirginChild) {
 }
 
 // make big enough database for tests
-w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid) {
+w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, StoreID &stid, PageID &root_pid) {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     const int recsize = SM_PAGESIZE / 6;
@@ -226,16 +222,16 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t 
         W_DO(ssm->create_assoc(stid, key, data));
         W_DO(ssm->commit_xct());
 
-        W_DO(ssm->force_buffers());
+        W_DO(smlevel_0::bf->get_cleaner()->force_volume());
     }
     W_DO(x_btree_verify(ssm, stid));
-    W_DO(ssm->force_buffers()); // clean them up
+    W_DO(smlevel_0::bf->get_cleaner()->force_volume());
     return RCOK;
 }
 
 w_rc_t test_bf_evict(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO (prepare_test(ssm, test_volume, stid, root_pid));
 
     btree_page_h root_p;
@@ -249,13 +245,13 @@ w_rc_t test_bf_evict(ss_m* ssm, test_volume_t *test_volume) {
     const size_t keep_latch_i = 23; // this page will be kept latched
     std::map<size_t, lsn_t> dirty_lsns;
     for (size_t i = 0; i < 30; ++i) {
-        lpid_t pid (root_pid.vol(), root_p.child(i));
+        PageID pid = root_p.child(i);
         if (i == keep_latch_i) {
-            W_DO(keep_latch_p.fix_nonroot(root_p, pid.vol(), pid.page, LATCH_SH));
+            W_DO(keep_latch_p.fix_nonroot(root_p, pid, LATCH_SH));
             continue;
         }
         btree_page_h child_p;
-        W_DO(child_p.fix_nonroot(root_p, pid.vol(), pid.page, i % 5 == 0 ? LATCH_EX : LATCH_SH));
+        W_DO(child_p.fix_nonroot(root_p, pid, i % 5 == 0 ? LATCH_EX : LATCH_SH));
         if (i % 5 == 0) {
             // do some operation to make this page dirty
             w_keystr_t key;
@@ -273,11 +269,10 @@ w_rc_t test_bf_evict(ss_m* ssm, test_volume_t *test_volume) {
         if (i == keep_latch_i) {
             EXPECT_FALSE(keep_latch_p.is_dirty());
         } else {
-            lpid_t pid (root_pid.vol(), root_p.child(i));
+            PageID pid = root_p.child(i);
             btree_page_h child_p;
-            W_DO(child_p.fix_nonroot(root_p, pid.vol(), pid.page, LATCH_SH));
-            EXPECT_EQ(pid.page, child_p.pid().page) << "i" << i;
-            EXPECT_EQ(test_volume->_vid, child_p.pid().vol());
+            W_DO(child_p.fix_nonroot(root_p, pid, LATCH_SH));
+            EXPECT_EQ(pid, child_p.pid()) << "i" << i;
             EXPECT_EQ(1, child_p.level());
             if (i % 5 == 0) {
                 std::map<size_t, lsn_t>::const_iterator di = dirty_lsns.find(i);
@@ -308,11 +303,11 @@ TEST (TreeBufferpoolTest, EvictSwizzle) {
 
 w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_swizzle) {
     bf_tree_m &pool(*smlevel_0::bf);
-    lpid_t root_pid(test_volume->_vid, 3);
+    PageID root_pid = 3;
 
     generic_page *root_page = NULL;
-    stid_t stid(test_volume->_vid, 1);
-    W_DO(pool.fix_virgin_root(root_page, stid, root_pid.page));
+    StoreID stid = 1;
+    W_DO(pool.fix_root(root_page, stid, LATCH_EX, false, true));
     EXPECT_TRUE (root_page != NULL);
     ::memset(root_page, 0, sizeof(generic_page));
     btree_page *rbp = reinterpret_cast<btree_page*>(root_page);
@@ -330,8 +325,8 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
     pool.debug_dump_page_pointers(std::cout, root_page);
     for (size_t i = 0; i < 20; ++i) {
         generic_page *page = NULL;
-        lpid_t pid (test_volume->_vid, root_pid.page + 1 + i);
-        test_bf_tree::_add_child_pointer (rbp, pid.page);
+        PageID pid = root_pid + 1 + i;
+        test_bf_tree::_add_child_pointer (rbp, pid);
 
         if (enable_swizzle) {
 #ifdef BP_MAINTAIN_PARENT_PTR
@@ -342,7 +337,7 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
         } else {
             EXPECT_EQ ((int) (1), root_cb._pin_cnt);
         }
-        W_DO(pool.fix_nonroot(page, root_page, pid.vol(), pid.page, LATCH_EX, false, true));
+        W_DO(pool.fix_nonroot(page, root_page, pid, LATCH_EX, false, true));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
             bf_tree_cb_t &cb (*test_bf_tree::get_bf_control_block(&pool, page));
@@ -391,14 +386,13 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
     // fix again
     for (size_t i = 0; i < 20; ++i) {
         generic_page *page = NULL;
-        lpid_t pid (test_volume->_vid, root_pid.page + 1 + i);
-        W_DO(pool.fix_nonroot(page, root_page, pid.vol(), pid.page, LATCH_SH, false, false));
+        PageID pid = root_pid + 1 + i;
+        W_DO(pool.fix_nonroot(page, root_page, pid, LATCH_SH, false, false));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
             btree_page *bp = reinterpret_cast<btree_page*>(page);
             bf_tree_cb_t &cb (*test_bf_tree::get_bf_control_block(&pool, page));
-            EXPECT_EQ(pid.page, page->pid.page);
-            EXPECT_EQ(test_volume->_vid, page->pid.vol());
+            EXPECT_EQ(pid, page->pid);
             EXPECT_EQ(1, bp->btree_level);
             EXPECT_TRUE(cb._dirty);
             if (enable_swizzle) {
@@ -459,7 +453,7 @@ TEST (TreeBufferpoolTest, NoSwizzle) {
 // w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
 
 //     bf_tree_m &pool(*smlevel_0::bf);
-//     lpid_t root_pid(test_volume->_vid, 3);
+//     PageID root_pid(test_volume->_vid, 3);
 
 //     btree_page *root_page = NULL;
 //     W_DO(pool.fix_virgin_root(root_page, test_volume->_vid, 1, root_pid.page));
@@ -474,7 +468,7 @@ TEST (TreeBufferpoolTest, NoSwizzle) {
 //     EXPECT_EQ(1, root_cb._pin_cnt); // root page is always swizzled, so pin_cnt is 1.
 //     EXPECT_TRUE (pool.is_swizzled(root_page));
 
-//     lpid_t child_pid(test_volume->_vid, 1, root_pid.page + 1);
+//     PageID child_pid(test_volume->_vid, 1, root_pid.page + 1);
 //     test_bf_tree::_add_child_pointer (root_page, child_pid.page);
 //     btree_page *child_page = NULL;
 //     W_DO(pool.fix_nonroot(child_page, root_page, child_pid.vol(), child_pid.page, LATCH_EX, true, true));
@@ -491,7 +485,7 @@ TEST (TreeBufferpoolTest, NoSwizzle) {
 //     EXPECT_EQ(test_bf_tree::get_bf_idx(&pool, root_page), child_cb._parent);
 //     EXPECT_TRUE (pool.is_swizzled(child_page));
 
-//     lpid_t sibling_pid(test_volume->_vid, 1, root_pid.page + 2);
+//     PageID sibling_pid(test_volume->_vid, 1, root_pid.page + 2);
 //     child_page->btree_foster = sibling_pid.page; // add as a foster child
 //     generic_page *sibling_page = NULL;
 //     W_DO(pool.fix_nonroot(sibling_page, child_page, sibling_pid.vol(), sibling_pid.page, LATCH_EX, true, true));

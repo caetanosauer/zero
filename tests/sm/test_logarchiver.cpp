@@ -5,12 +5,13 @@
 
 #define private public
 
+#include "log_core.h"
 #include "logarchiver.h"
 #include "logfactory.h"
 
 btree_test_env* test_env;
-stid_t stid;
-lpid_t root_pid;
+StoreID stid;
+PageID root_pid;
 char HUNDRED_BYTES[100];
 
 // use small block to test boundaries
@@ -97,16 +98,16 @@ rc_t generateFakeArchive(LogArchiver::ArchiveDirectory* dir,
 rc_t emptyHeapAndCheck(LogArchiver::ArchiverHeap& heap)
 {
     logrec_t* lr;
-    lpid_t prevPage = lpid_t(0,0);
+    PageID prevPage = 0;
     lsn_t prevLSN = lsn_t::null;
     while (heap.size() > 0) {
         lr = heap.top();
         EXPECT_TRUE(lr->lsn_ck() != prevLSN);
-        EXPECT_TRUE(lr->construct_pid() >= prevPage);
-        if (lr->construct_pid() == prevPage) {
+        EXPECT_TRUE(lr->pid() >= prevPage);
+        if (lr->pid() == prevPage) {
             EXPECT_TRUE(lr->lsn_ck() > prevLSN);
         }
-        prevPage = lr->construct_pid();
+        prevPage = lr->pid();
         prevLSN = lr->lsn_ck();
         heap.pop();
     }
@@ -118,7 +119,7 @@ LogArchiver::ArchiveScanner::RunMerger*
 buildRunMergerFromDirectory(LogArchiver::ArchiveDirectory& dir)
 {
     std::vector<string> files;
-    W_COERCE(dir.listFiles(&files));
+    W_COERCE(dir.listFiles(files));
     LogArchiver::ArchiveScanner::RunMerger* merger =
         new LogArchiver::ArchiveScanner::RunMerger();
 
@@ -130,7 +131,7 @@ buildRunMergerFromDirectory(LogArchiver::ArchiveDirectory& dir)
 
         LogArchiver::ArchiveScanner::RunScanner* rs =
             new LogArchiver::ArchiveScanner::RunScanner(
-                beginLSN, endLSN, lpid_t::null, lpid_t::null, 0, &dir);
+                beginLSN, endLSN, 0, 0, 0, &dir);
 
         merger->addInput(rs);
     }
@@ -243,7 +244,7 @@ rc_t runScannerTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
     generateFakeArchive(&dir, BLOCK_SIZE*8, 1, total);
 
     std::vector<string> files;
-    W_DO(dir.listFiles(&files));
+    W_DO(dir.listFiles(files));
 
     EXPECT_EQ(1, files.size());
 
@@ -253,19 +254,19 @@ rc_t runScannerTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
             true);
 
     LogArchiver::ArchiveScanner::RunScanner rs
-        (beginLSN, endLSN, lpid_t::null, lpid_t::null, 0, &dir);
+        (beginLSN, endLSN, 0, 0, 0, &dir);
 
-    lpid_t prevPID = lpid_t::null;
+    PageID prevPID = 0;
     lsn_t prevLSN = lsn_t::null;
     unsigned count = 0;
     logrec_t* lr;
     while (rs.next(lr)) {
         EXPECT_TRUE(lr->valid_header(lr->lsn_ck()));
-        EXPECT_TRUE(lr->construct_pid().page >= prevPID.page);
+        EXPECT_TRUE(lr->pid() >= prevPID);
         EXPECT_TRUE(lr->lsn_ck() != prevLSN);
         EXPECT_TRUE(lr->lsn_ck() >= rs.runBegin);
         EXPECT_TRUE(lr->lsn_ck() < rs.runEnd);
-        prevPID = lr->construct_pid();
+        prevPID = lr->pid();
         prevLSN = lr->lsn_ck();
         count++;
     }
@@ -285,7 +286,7 @@ rc_t runScannerWithIndex(ss_m*, test_volume_t*)
     generateFakeArchive(&dir, BLOCK_SIZE*8, 1, total);
 
     std::vector<string> files;
-    W_DO(dir.listFiles(&files));
+    W_DO(dir.listFiles(files));
     EXPECT_EQ(1, files.size());
     lsn_t beginLSN = LogArchiver::ArchiveDirectory::parseLSN(files[0].c_str(),
             false);
@@ -293,19 +294,19 @@ rc_t runScannerWithIndex(ss_m*, test_volume_t*)
             true);
 
     LogArchiver::ArchiveScanner::RunScanner rs
-        (beginLSN, endLSN, lpid_t::null, lpid_t::null, 0, &dir);
+        (beginLSN, endLSN, 0, 0, 0, &dir);
 
-    lpid_t prevPID = lpid_t::null;
+    PageID prevPID = 0;
     lsn_t prevLSN = lsn_t::null;
     unsigned count = 0;
     logrec_t* lr;
     while (rs.next(lr)) {
         EXPECT_TRUE(lr->valid_header(lr->lsn_ck()));
-        EXPECT_TRUE(lr->construct_pid().page >= prevPID.page);
+        EXPECT_TRUE(lr->pid() >= prevPID);
         EXPECT_TRUE(lr->lsn_ck() != prevLSN);
         EXPECT_TRUE(lr->lsn_ck() >= rs.runBegin);
         EXPECT_TRUE(lr->lsn_ck() < rs.runEnd);
-        prevPID = lr->construct_pid();
+        prevPID = lr->pid();
         prevLSN = lr->lsn_ck();
         count++;
     }
@@ -325,15 +326,15 @@ rc_t runMergerSeqTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
     LogArchiver::ArchiveScanner::RunMerger* merger =
         buildRunMergerFromDirectory(dir);
 
-    lpid_t prevPID = lpid_t::null;
+    PageID prevPID = 0;
     lsn_t prevLSN = lsn_t::null;
     unsigned count = 0;
     logrec_t* lr;
     while (merger->next(lr)) {
         EXPECT_TRUE(lr->valid_header(lr->lsn_ck()));
-        EXPECT_TRUE(lr->construct_pid().page >= prevPID.page);
+        EXPECT_TRUE(lr->pid() >= prevPID);
         EXPECT_TRUE(lr->lsn_ck() != prevLSN);
-        prevPID = lr->construct_pid();
+        prevPID = lr->pid();
         prevLSN = lr->lsn_ck();
         count++;
     }
@@ -364,14 +365,14 @@ rc_t runMergerFullTest(ss_m* ssm, test_volume_t* test_vol)
     LogArchiver::ArchiveScanner::RunMerger* merger =
         buildRunMergerFromDirectory(dir);
 
-    lpid_t prevPID = lpid_t::null;
+    PageID prevPID = 0;
     lsn_t prevLSN = lsn_t::null;
     logrec_t* lr;
     while (merger->next(lr)) {
         EXPECT_TRUE(lr->valid_header(lr->lsn_ck()));
-        EXPECT_TRUE(lr->construct_pid().page >= prevPID.page);
+        EXPECT_TRUE(lr->pid() >= prevPID);
         EXPECT_TRUE(lr->lsn_ck() != prevLSN);
-        prevPID = lr->construct_pid();
+        prevPID = lr->pid();
         prevLSN = lr->lsn_ck();
     }
 
@@ -393,7 +394,7 @@ rc_t archIndexTestSingle(ss_m*, test_volume_t*)
     generateFakeArchive(&dir, BLOCK_SIZE*8, 1, total);
 
     std::vector<string> files;
-    W_DO(dir.listFiles(&files));
+    W_DO(dir.listFiles(files));
     EXPECT_EQ(1, files.size());
     lsn_t beginLSN = LogArchiver::ArchiveDirectory::parseLSN(files[0].c_str(),
             false);
@@ -401,44 +402,42 @@ rc_t archIndexTestSingle(ss_m*, test_volume_t*)
             true);
 
     LogArchiver::ArchiveScanner::RunScanner rs
-        (beginLSN, endLSN, lpid_t::null, lpid_t::null, 0, &dir);
+        (beginLSN, endLSN, 0, 0, 0, &dir);
 
     LogArchiver::ArchiveIndex* index = dir.getIndex();
     LogArchiver::ArchiveIndex::ProbeResult* result;
 
     size_t bpos = sizeof(LogArchiver::BlockAssembly::BlockHeader);
     size_t currBlock = 0;
-    lpid_t firstPIDinBlock = lpid_t::null;
+    PageID firstPIDinBlock = 0;
     size_t lastBlockWithSamePID = 0;
     logrec_t* lr = NULL;
     while (rs.next(lr)) {
-        lpid_t pid = lr->construct_pid();
+        PageID pid = lr->pid();
         if (bpos + lr->length() > blockSize) {
             currBlock++;
             bpos = sizeof(LogArchiver::BlockAssembly::BlockHeader);
             firstPIDinBlock = pid;
         }
-        if (firstPIDinBlock.page != pid.page) {
+        if (firstPIDinBlock != pid) {
             lastBlockWithSamePID = currBlock;
         }
         bpos += lr->length();
 
-        result = index->probeFirst(pid, lpid_t::null, lr->lsn_ck());
-        EXPECT_TRUE(result);
+        vector<LogArchiver::ArchiveIndex::ProbeResult> probes;
+        index->probe(probes, pid, 0, lr->lsn());
+        EXPECT_TRUE(probes.size() == 0);
+        result = &probes[0];
 
         EXPECT_EQ(pid, result->pidBegin);
         EXPECT_EQ(beginLSN, result->runBegin);
         EXPECT_EQ(endLSN, result->runEnd);
-        if (pid.page != firstPIDinBlock.page) {
-            EXPECT_EQ(currBlock * blockSize, result->offsetBegin);
+        if (pid != firstPIDinBlock) {
+            EXPECT_EQ(currBlock * blockSize, result->offset);
         }
         else {
-            EXPECT_EQ(lastBlockWithSamePID * blockSize, result->offsetBegin);
+            EXPECT_EQ(lastBlockWithSamePID * blockSize, result->offset);
         }
-
-        // only one run -- no further results expected
-        index->probeNext(result);
-        EXPECT_TRUE(!result);
     }
 
     return RCOK;

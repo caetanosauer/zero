@@ -5,9 +5,7 @@
 #include "btree_impl.h"
 #include "log_core.h"
 #include "w_error.h"
-#include "backup.h"
 
-#include "bf_fixed.h"
 #include "bf_tree_cb.h"
 #include "bf_tree.h"
 #include "sm_base.h"
@@ -27,17 +25,17 @@ btree_test_env *test_env;
  */
 
 w_rc_t flush_and_evict(ss_m* ssm) {
-    W_DO(ssm->force_buffers()); // clean them up
+    W_DO(ss_m::bf->get_cleaner()->force_volume());
     // also, evict all to update EMLSN
     uint32_t evicted_count, unswizzled_count;
     W_DO(ssm->bf->evict_blocks(evicted_count, unswizzled_count, EVICT_COMPLETE));
     // then flush it, this time just for root node
-    W_DO(ssm->force_buffers());
+    W_DO(ss_m::bf->get_cleaner()->force_volume());
     return RCOK;
 }
 
-w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid,
-                    shpid_t &target_pid, w_keystr_t &target_key0, w_keystr_t &target_key1) {
+w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, StoreID &stid, PageID &root_pid,
+                    PageID &target_pid, w_keystr_t &target_key0, w_keystr_t &target_key1) {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     const int recsize = SM_PAGESIZE / 6;
@@ -63,7 +61,7 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t 
     }
     W_DO(ssm->commit_xct());
     W_DO(x_btree_verify(ssm, stid));
-    W_DO(ssm->force_buffers()); // clean them up
+    W_DO(ss_m::bf->get_cleaner()->force_volume());
 
     {
         btree_page_h root_p;
@@ -71,20 +69,16 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t 
         EXPECT_TRUE(root_p.nrecs() > 4);
         target_pid = root_p.child(1);
         btree_page_h target_p;
-        W_DO(target_p.fix_nonroot(root_p, stid.vol, target_pid, LATCH_SH));
+        W_DO(target_p.fix_nonroot(root_p, target_pid, LATCH_SH));
         EXPECT_GE(2, target_p.nrecs());
         target_p.get_key(0, target_key0);
         target_p.get_key(1, target_key1);
     }
     W_DO(flush_and_evict(ssm));
-
-    // then take a backup. this is the page image to start Single-Page-Recovery from.
-    x_delete_backup(ssm, test_volume);
-    W_DO(x_take_backup(ssm, test_volume));
     return RCOK;
 }
 
-void corrupt_page(test_volume_t *test_volume, shpid_t target_pid) {
+void corrupt_page(test_volume_t *test_volume, PageID target_pid) {
     std::cout << "=========== Corrupting page " << target_pid << " in "
         << test_volume->_device_name << " for test===============" << std::endl;
     // Bypass bufferpool to corrupt it
@@ -124,9 +118,9 @@ bool is_consecutive_chars(char* str, char c, int len) {
     return true;
 }
 w_rc_t test_nochange(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
-    shpid_t target_pid;
+    StoreID stid;
+    PageID root_pid;
+    PageID target_pid;
     w_keystr_t target_key0, target_key1;
     W_DO (prepare_test(ssm, test_volume, stid, root_pid, target_pid, target_key0, target_key1));
     // no change after backup and immediately corrupt
@@ -145,12 +139,6 @@ w_rc_t test_nochange(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_EQ((smsize_t)(SM_PAGESIZE / 6), buf_len);
     EXPECT_TRUE(is_consecutive_chars(buf, 'a', SM_PAGESIZE / 6));
 
-    //Clean up backup file
-    BackupManager *bk = ssm->bk;
-    vid_t vid = test_volume->_vid;
-    x_delete_backup(ssm, test_volume);
-    EXPECT_FALSE(bk->volume_exists(vid));
-
     return RCOK;
 }
 TEST (SprTest, NoChange) {
@@ -160,9 +148,9 @@ TEST (SprTest, NoChange) {
 }
 
 w_rc_t test_one_change(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
-    shpid_t target_pid;
+    StoreID stid;
+    PageID root_pid;
+    PageID target_pid;
     w_keystr_t target_key0, target_key1;
     W_DO (prepare_test(ssm, test_volume, stid, root_pid, target_pid, target_key0, target_key1));
     // After taking backup, remove target_key1, then propagate EMLSN change
@@ -186,12 +174,6 @@ w_rc_t test_one_change(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_FALSE(found);
     W_DO(ssm->commit_xct());
 
-    //Clean up backup file
-    BackupManager *bk = ssm->bk;
-    vid_t vid = test_volume->_vid;
-    x_delete_backup(ssm, test_volume);
-    EXPECT_FALSE(bk->volume_exists(vid));
-
     return RCOK;
 }
 TEST (SprTest, OneChange) {
@@ -201,9 +183,9 @@ TEST (SprTest, OneChange) {
 }
 
 w_rc_t test_two_changes(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
-    shpid_t target_pid;
+    StoreID stid;
+    PageID root_pid;
+    PageID target_pid;
     w_keystr_t target_key0, target_key1;
     W_DO (prepare_test(ssm, test_volume, stid, root_pid, target_pid, target_key0, target_key1));
     // After taking backup, remove target_key0/1, then propagate EMLSN change
@@ -226,12 +208,6 @@ w_rc_t test_two_changes(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_FALSE(found);
     W_DO(ssm->commit_xct());
 
-    //Clean up backup file
-    BackupManager *bk = ssm->bk;
-    vid_t vid = test_volume->_vid;
-    x_delete_backup(ssm, test_volume);
-    EXPECT_FALSE(bk->volume_exists(vid));
-
     return RCOK;
 }
 TEST (SprTest, TwoChanges) {
@@ -243,9 +219,9 @@ TEST (SprTest, TwoChanges) {
 bool test_multi_pages_corrupt_source_page = false;
 bool test_multi_pages_corrupt_destination_page = false;
 w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
-    shpid_t target_pid;
+    StoreID stid;
+    PageID root_pid;
+    PageID target_pid;
     w_keystr_t target_key0, target_key1;
     W_DO (prepare_test(ssm, test_volume, stid, root_pid, target_pid, target_key0, target_key1));
 
@@ -269,7 +245,7 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
         EXPECT_TRUE(found);
     }
     // this should have caused page split and adoption.
-    shpid_t destination_pid = 0; // the new page should be next to target_pid
+    PageID destination_pid = 0; // the new page should be next to target_pid
     {
         btree_page_h root_p;
         W_DO(root_p.fix_root(stid, LATCH_SH));
@@ -315,12 +291,6 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
         EXPECT_TRUE(is_consecutive_chars(buf, 'a', recsize));
     }
     W_DO(ssm->commit_xct());
-
-    //Clean up backup file
-    BackupManager *bk = ssm->bk;
-    vid_t vid = test_volume->_vid;
-    x_delete_backup(ssm, test_volume);
-    EXPECT_FALSE(bk->volume_exists(vid));
 
     return RCOK;
 }

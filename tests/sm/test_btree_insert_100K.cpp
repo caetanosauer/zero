@@ -10,20 +10,20 @@ btree_test_env *test_env;
 
 /* Hypothesis: Together, b-link trees + fence keys reduce lock/latch
  *  contention, enabling higher insert rates than original ShoreMT.
- * 
+ *
  * Procedure:
  *   For now: Create a b-tree and insert XXXX random keys in a single stream.
  *   Later: Repeat at various MPL.
- * 
- * Measure: 
+ *
+ * Measure:
  *    For now:  total runtime, throughput
  *    Later: I/O, lock and latch contention
- * 
+ *
  */
 
 w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     w_keystr_t key;
@@ -33,12 +33,12 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
     size_t const domain = 100000;
     size_t const records = 100000;
     size_t produced = 0; // produced output records
-    int ibuffer; // hold the random int 
-    
+    int ibuffer; // hold the random int
+
     ::srand(12345); // use fixed seed for repeatability and easier debugging
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
-    while ( produced < records ) 
+    while ( produced < records )
     {
        std::stringstream buffer, buffer2;
        ibuffer = rand () % domain;
@@ -66,9 +66,9 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
           test_env->set_xct_query_lock();
           printf("Processed %d keys\n",produced);
         }
-         
+
        produced++;
-    } 
+    }
     W_DO(ssm->commit_xct());
     return RCOK;
 }
@@ -84,11 +84,11 @@ sm_options make_options() {
 
 TEST (BtreeBasicTest2, DoSome) {
     test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(dosome, false, 4096, make_options()), 0);
+    EXPECT_EQ(test_env->runBtreeTest(dosome, false, make_options()), 0);
 }
 TEST (BtreeBasicTest2, DoSomeLock) {
     test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(dosome, true, 4096, make_options()), 0);
+    EXPECT_EQ(test_env->runBtreeTest(dosome, true, make_options()), 0);
 }
 
 

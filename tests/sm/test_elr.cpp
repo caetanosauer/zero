@@ -14,10 +14,10 @@ btree_test_env *test_env;
 
 w_rc_t read_single(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(test_env->_use_locks);
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(test_env->begin_xct());
     g_xct()->set_elr_mode(xct_t::elr_none);
     EXPECT_EQ (xct_t::elr_none, g_xct()->get_elr_mode());
@@ -49,7 +49,7 @@ w_rc_t read_single(ss_m* ssm, test_volume_t *test_volume) {
         EXPECT_EQ (std::string("a1"), s.minkey);
         EXPECT_EQ (std::string("a4"), s.maxkey);
     }
-    
+
     std::string data;
 
     W_DO(test_env->begin_xct());
@@ -80,7 +80,7 @@ w_rc_t read_single(ss_m* ssm, test_volume_t *test_volume) {
         EXPECT_EQ (std::string("a1"), s.minkey);
         EXPECT_EQ (std::string("a4"), s.maxkey);
     }
-    
+
     return RCOK;
 }
 
@@ -89,9 +89,9 @@ TEST (ElrTest, ReadSingle) {
     EXPECT_EQ(test_env->runBtreeTest(read_single, true), 0);
 }
 
-rc_t _prep(ss_m* ssm, test_volume_t *test_volume, stid_t &stid) {
+rc_t _prep(ss_m* ssm, test_volume_t *test_volume, StoreID &stid) {
     EXPECT_TRUE(test_env->_use_locks);
-    lpid_t root_pid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert(stid, "a1", "data1"));
@@ -102,20 +102,20 @@ rc_t _prep(ss_m* ssm, test_volume_t *test_volume, stid_t &stid) {
 }
 
 w_rc_t read_write_single(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
     // this testcase isn't multi-threaded. so tests are limited.
     // testcases below do more than this. (but longer code)
-    
+
     std::string data;
     const xct_t::elr_mode_t modes[4] = {xct_t::elr_none, xct_t::elr_s, xct_t::elr_sx, xct_t::elr_clv};
     for (int i = 0; i < 4; ++i) {
         xct_t::elr_mode_t mode = modes[i];
-        
+
         W_DO(test_env->begin_xct());
         g_xct()->set_elr_mode(mode);
         W_DO(test_env->btree_insert(stid, "a4", "data4"));
-        W_DO(test_env->btree_lookup(stid, "a2", data));    
+        W_DO(test_env->btree_lookup(stid, "a2", data));
         W_DO(test_env->btree_remove(stid, "a4"));
         W_DO(test_env->commit_xct());
     }
@@ -128,7 +128,7 @@ w_rc_t read_write_single(ss_m* ssm, test_volume_t *test_volume) {
         EXPECT_EQ (std::string("a1"), s.minkey);
         EXPECT_EQ (std::string("a3"), s.maxkey);
     }
-    
+
     return RCOK;
 }
 
@@ -142,7 +142,7 @@ xct_t::elr_mode_t s_elr_mode = xct_t::elr_none;
 
 class lookup_thread_t : public smthread_t {
 public:
-        lookup_thread_t(stid_t stid, const char* key) 
+        lookup_thread_t(StoreID stid, const char* key)
                 : smthread_t(t_regular, "lookup_thread_t"),
                 _stid(stid), _key(key), _read(false), _exitted(false) {}
         ~lookup_thread_t()  {}
@@ -155,7 +155,7 @@ public:
             EXPECT_FALSE(rc.is_error()) << rc;
             g_xct()->set_elr_mode(s_elr_mode);
             g_xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);
-            
+
             report_time();
             std::cout << ":thread:looking up " << _key << ".." << std::endl;
             char data[20];
@@ -167,7 +167,7 @@ public:
             report_time();
             std::cout << ":thread:found " << _key << ". committing..." << std::endl;
             _read = true;
-            
+
             rc = ss_m::commit_xct();
             report_time();
             std::cout << ":thread:committed after seeing " << _key << "." << std::endl;
@@ -180,10 +180,10 @@ public:
             timersub(&now, &_start, &result);
             cout << (result.tv_sec * 1000000 + result.tv_usec);
         }
-        
+
         int  return_value() const { return 0; }
 
-    stid_t _stid;
+    StoreID _stid;
     const char* _key;
     bool _read;
     bool _exitted;
@@ -209,21 +209,21 @@ void spin_sleep (int usec) {
 
 // no ELR, same-tuple case
 w_rc_t read_write_multi_no_elr_same(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
-    
+
     // xct1: insert a tuple to root page
     W_DO(test_env->begin_xct());
     g_xct()->set_elr_mode(s_elr_mode);
     W_DO(test_env->btree_insert(stid, "a4", "data"));
-    
+
     // xct2: read it
     lookup_thread_t lookup_thread (stid, "a4");
     EXPECT_FALSE(lookup_thread._read);
     EXPECT_FALSE(lookup_thread._exitted);
     W_DO(lookup_thread.fork());
     spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC * 10); // should be enough
-    
+
     // now xct2 should be blocking on a4
     EXPECT_FALSE(lookup_thread._read);
     EXPECT_FALSE(lookup_thread._exitted);
@@ -233,13 +233,13 @@ w_rc_t read_write_multi_no_elr_same(ss_m* ssm, test_volume_t *test_volume) {
 
     EXPECT_FALSE(lookup_thread._read);
     EXPECT_FALSE(lookup_thread._exitted);
-    
+
     W_DO(test_env->commit_xct());
     spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC * 10);
 
     EXPECT_TRUE(lookup_thread._read);
     EXPECT_TRUE(lookup_thread._exitted);
-    
+
     W_DO(lookup_thread.join());
 
     return RCOK;
@@ -260,21 +260,21 @@ TEST (ElrTest, ReadWriteMultiSOnlyELRSame) {
 
 // SX and CLV ELR, same-tuple case. this behaves differently
 w_rc_t read_write_multi_sx_elr_same(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
-    
+
     // xct1: insert a tuple to root page
     W_DO(test_env->begin_xct());
     g_xct()->set_elr_mode(s_elr_mode);
     W_DO(test_env->btree_insert(stid, "a4", "data"));
-    
+
     // xct2: read it
     lookup_thread_t lookup_thread (stid, "a4");
     EXPECT_FALSE(lookup_thread._read);
     EXPECT_FALSE(lookup_thread._exitted);
     W_DO(lookup_thread.fork());
     spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC * 10);
-    
+
     // now xct2 should be blocking on a4
     EXPECT_FALSE(lookup_thread._read);
     EXPECT_FALSE(lookup_thread._exitted);
@@ -320,14 +320,14 @@ TEST (ElrTest, ReadWriteMultiCLVELRSame) {
 
 // no ELR, different-tuple case
 w_rc_t read_write_multi_no_elr_different(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
-    
+
     // xct1: insert a tuple to root page
     W_DO(test_env->begin_xct());
     g_xct()->set_elr_mode(s_elr_mode);
     W_DO(test_env->btree_insert(stid, "a5", "data"));
-    
+
     // xct2: read irrelevant tuple, but in same page
     lookup_thread_t lookup_thread (stid, "a2");
     EXPECT_FALSE(lookup_thread._read);
@@ -335,11 +335,11 @@ w_rc_t read_write_multi_no_elr_different(ss_m* ssm, test_volume_t *test_volume) 
     W_DO(lookup_thread.fork());
 
     spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC * 5); // before SX/CLV-ELR times out...
-    
+
     // It should be already over -- no waiting for watermarks
     EXPECT_TRUE(lookup_thread._read);
     EXPECT_TRUE(lookup_thread._exitted);
-            
+
     W_DO(test_env->commit_xct());
 
     W_DO(lookup_thread.join());
@@ -362,14 +362,14 @@ TEST (ElrTest, ReadWriteMultiSOnlyELRDifferent) {
 
 // SX & CLV ELR, different-tuple case. VERY different from others
 w_rc_t read_write_multi_sx_elr_different(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
-    
+
     // xct1: insert a tuple to root page
     W_DO(test_env->begin_xct());
     g_xct()->set_elr_mode(s_elr_mode);
     W_DO(test_env->btree_insert(stid, "a4", "data"));
-    
+
     // xct2: read irrelevant tuple, but in same page
     lookup_thread_t lookup_thread (stid, "a2");
     EXPECT_FALSE(lookup_thread._read);
@@ -392,7 +392,7 @@ w_rc_t read_write_multi_sx_elr_different(ss_m* ssm, test_volume_t *test_volume) 
     spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC * 10);
     EXPECT_TRUE(lookup_thread._read);
     EXPECT_TRUE(lookup_thread._exitted);
-    
+
     W_DO(test_env->commit_xct());
 
     W_DO(lookup_thread.join());

@@ -11,8 +11,8 @@ btree_test_env *test_env;
  */
 
 w_rc_t insert_simple(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(test_env->begin_xct());
@@ -40,10 +40,10 @@ TEST (BtreeBasicTest, InsertSimpleLock) {
 }
 
 w_rc_t insert_toolong_fail(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert (stid, "a1", "data1lkjdflgjldfjgkldfjg1"));
     W_DO(test_env->btree_insert (stid, "ab2", "data1lkjdflgjldfjgkldfjg2"));
@@ -65,7 +65,7 @@ w_rc_t insert_toolong_fail(ss_m* ssm, test_volume_t *test_volume) {
         cerr << "wtf" << endl;
     }
     W_DO(test_env->commit_xct());
-    
+
     x_btree_scan_result s;
     W_DO(test_env->btree_scan(stid, s));
     EXPECT_EQ (5, s.rownum);
@@ -84,10 +84,10 @@ TEST (BtreeBasicTest, InsertTooLongfailLock) {
 }
 
 w_rc_t insert_dup_fail(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert (stid, "key005", "data5"));
     W_DO(test_env->btree_insert (stid, "key004", "data4"));
@@ -102,7 +102,7 @@ w_rc_t insert_dup_fail(ss_m* ssm, test_volume_t *test_volume) {
         cerr << "wtf: no duplicate?" << endl;
     }
     W_DO(test_env->commit_xct());
-    
+
     x_btree_scan_result s;
     W_DO(test_env->btree_scan(stid, s));
     EXPECT_EQ (3, s.rownum);
@@ -121,10 +121,10 @@ TEST (BtreeBasicTest, InsertDupFailLock) {
 }
 
 w_rc_t insert_remove(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert (stid, "key005", "data5"));
     W_DO(test_env->btree_insert (stid, "key004", "data4"));
@@ -132,7 +132,7 @@ w_rc_t insert_remove(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(test_env->btree_remove (stid, "key006"));
     W_DO(test_env->btree_insert (stid, "key006", "data7"));
     W_DO(test_env->commit_xct());
-    
+
     x_btree_scan_result s;
     W_DO(test_env->btree_scan(stid, s));
     EXPECT_EQ (3, s.rownum);
@@ -151,10 +151,10 @@ TEST (BtreeBasicTest, InsertRemoveLock) {
 }
 
 w_rc_t insert_remove_fail(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert (stid, "key005", "data5"));
     W_DO(test_env->btree_insert (stid, "key004", "data4"));
@@ -187,10 +187,10 @@ TEST (BtreeBasicTest, InsertRemoveFailLock) {
 }
 
 w_rc_t insert_remove_fail_repeat(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert (stid, "key005", "data5"));
     W_DO(test_env->btree_insert (stid, "key004", "data4"));
@@ -225,34 +225,34 @@ TEST (BtreeBasicTest, InsertRemoveFailRepeatLock) {
 }
 
 w_rc_t insert_update(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert (stid, "key005", "data5"));
     W_DO(test_env->btree_insert (stid, "key004", "data4"));
     W_DO(test_env->btree_insert (stid, "key006", "data6"));
     W_DO(test_env->btree_update (stid, "key006", "data7"));
     W_DO(test_env->commit_xct());
-    
+
     x_btree_scan_result s;
     W_DO(test_env->btree_scan(stid, s));
     EXPECT_EQ (3, s.rownum);
     EXPECT_EQ (std::string("key004"), s.minkey);
     EXPECT_EQ (std::string("key006"), s.maxkey);
-    
+
     W_DO(x_btree_verify(ssm, stid));
-    
+
     W_DO(test_env->begin_xct());
     std::string data;
     test_env->btree_lookup(stid, "key006", data);
     EXPECT_EQ (std::string("data7"), data);
-    
+
     W_DO(test_env->btree_update (stid, "key006", "d"));
     test_env->btree_lookup(stid, "key006", data);
     EXPECT_EQ (std::string("d"), data);
-    
+
     W_DO(test_env->btree_update (stid, "key006", "dksjdfljslkdfjskldjf"));
     test_env->btree_lookup(stid, "key006", data);
     EXPECT_EQ (std::string("dksjdfljslkdfjskldjf"), data);
@@ -273,29 +273,29 @@ TEST (BtreeBasicTest, InsertUpdateLock) {
 }
 
 w_rc_t insert_overwrite(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert (stid, "key005", "data5"));
     W_DO(test_env->btree_insert (stid, "key004", "data4"));
     W_DO(test_env->btree_insert (stid, "key006", "data6"));
     W_DO(test_env->btree_overwrite (stid, "key006", "b", 2));
     W_DO(test_env->commit_xct());
-    
+
     x_btree_scan_result s;
     W_DO(test_env->btree_scan(stid, s));
     EXPECT_EQ (3, s.rownum);
     EXPECT_EQ (std::string("key004"), s.minkey);
     EXPECT_EQ (std::string("key006"), s.maxkey);
-    
+
     W_DO(x_btree_verify(ssm, stid));
-    
+
     std::string data;
     test_env->btree_lookup_and_commit(stid, "key006", data);
     EXPECT_EQ (std::string("daba6"), data);
-    
+
     return RCOK;
 }
 
@@ -309,10 +309,10 @@ TEST (BtreeBasicTest, InsertOverwriteLock) {
 }
 
 w_rc_t insert_overwrite_fail(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert (stid, "key005", "data5"));
     W_DO(test_env->btree_insert (stid, "key004", "data4"));
@@ -323,7 +323,7 @@ w_rc_t insert_overwrite_fail(ss_m* ssm, test_volume_t *test_volume) {
     rc_t rc2 = test_env->btree_overwrite (stid, "key006", "b", 6);
     EXPECT_EQ (eRECWONTFIT, rc2.err_num());
     W_DO(test_env->commit_xct());
-    
+
     return RCOK;
 }
 
@@ -337,10 +337,10 @@ TEST (BtreeBasicTest, InsertOverwriteFailLock) {
 }
 
 w_rc_t insert_many(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
     w_keystr_t key;

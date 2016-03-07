@@ -10,14 +10,14 @@ btree_test_env *test_env;
  * Unit test for rolling back transaction in BTree.
  */
 w_rc_t rollback_insert(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa1", "data1", test_env->get_use_locks()));
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa2", "data2", test_env->get_use_locks()));
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa3", "data3", test_env->get_use_locks()));
-    
+
     W_DO (x_btree_verify(ssm, stid));
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
@@ -57,14 +57,14 @@ TEST (BtreeRollbackTest, RollbackInsertLock) {
 }
 
 w_rc_t rollback_delete(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa1", "data1", test_env->get_use_locks()));
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa2", "data2", test_env->get_use_locks()));
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa3", "data3", test_env->get_use_locks()));
-    
+
     W_DO (x_btree_verify(ssm, stid));
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
@@ -104,14 +104,14 @@ TEST (BtreeRollbackTest, RollbackDeleteLock) {
 }
 
 w_rc_t rollback_mixed(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa1", "data1", test_env->get_use_locks()));
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa2", "data2", test_env->get_use_locks()));
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa3", "data3", test_env->get_use_locks()));
-    
+
     W_DO (x_btree_verify(ssm, stid));
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
@@ -152,14 +152,14 @@ TEST (BtreeRollbackTest, RollbackMixedLock) {
 }
 
 w_rc_t rollback_split(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa1", "data1", test_env->get_use_locks()));
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa2", "data2", test_env->get_use_locks()));
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa3", "data3", test_env->get_use_locks()));
-    
+
     W_DO (x_btree_verify(ssm, stid));
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();

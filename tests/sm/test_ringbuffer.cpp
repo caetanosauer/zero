@@ -13,7 +13,7 @@ class producer_t : public smthread_t {
     void run() {
         for (int i = 0; i < produce_count; i++) {
             char* b = buf->producerRequest();
-            uint4_t r = rand() % 1000000;
+            uint32_t r = rand() % 1000000;
             DBGTHRD(<< "Produced value: " << r);
             memcpy(b, &r, 4);
             usleep(4000 + (rand() % 3000)); // between 4-7ms
@@ -26,7 +26,7 @@ class consumer_t : public smthread_t {
     void run() {
         char* b = buf->consumerRequest();
         while (b) {
-            uint4_t r;
+            uint32_t r;
             memcpy(&r, b, 4);
             DBGTHRD(<< "Consumed value: " << r);
             usleep(4000 + (rand() % 3000)); // between 4-7ms

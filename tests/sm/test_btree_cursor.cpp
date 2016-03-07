@@ -10,7 +10,7 @@ btree_test_env *test_env;
  * Unit test for cursor.
  */
 
-w_rc_t prep_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid) {
+w_rc_t prep_test(ss_m* ssm, test_volume_t *test_volume, StoreID &stid, PageID &root_pid) {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert(stid, "10", "dat1"));
@@ -57,8 +57,8 @@ rc_t check_result (bt_cursor_t &cursor, int from, int to, bool forward) {
 }
 
 w_rc_t full_scan(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(prep_test(ssm, test_volume, stid, root_pid));
 
     W_DO(test_env->begin_xct());
@@ -99,8 +99,8 @@ TEST (BtreeCursorTest, FullScanLock) {
 }
 
 w_rc_t low_cond(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(prep_test(ssm, test_volume, stid, root_pid));
 
     W_DO(test_env->begin_xct());
@@ -165,8 +165,8 @@ TEST (BtreeCursorTest, LowCondLock) {
 }
 
 w_rc_t upp_cond(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(prep_test(ssm, test_volume, stid, root_pid));
     W_DO(test_env->begin_xct());
 
@@ -231,8 +231,8 @@ TEST (BtreeCursorTest, UppCondLock) {
 }
 
 w_rc_t both_cond(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(prep_test(ssm, test_volume, stid, root_pid));
     W_DO(test_env->begin_xct());
 
@@ -318,12 +318,12 @@ rc_t check_result2 (bt_cursor_t &cursor, int from, int to, bool forward) {
 }
 
 w_rc_t span_pages(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     char keystr[3] = "";
-    
+
     const size_t datsize = (SM_PAGESIZE / 6);
     //const size_t datsize = btree_m::max_entry_size() - sizeof(keystr);
     w_assert1(datsize <= btree_m::max_entry_size() - sizeof(keystr));
@@ -371,7 +371,7 @@ w_rc_t span_pages(ss_m* ssm, test_volume_t *test_volume) {
         bt_cursor_t cursor_back (stid, reg_key("378"), false, reg_key("812"), true, false);
         W_DO(check_result2(cursor_back, 38, 81, false));
     }
-    
+
     W_DO(test_env->commit_xct());
     return RCOK;
 }

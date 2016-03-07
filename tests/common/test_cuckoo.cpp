@@ -12,7 +12,6 @@ typedef unsigned short uint16_t;
 #include "rand48.h"
 #include <iostream>
 #include "gtest/gtest.h"
-#include <errlog_s.h>
 
 // MUST be initialized before the hashes below.
 static __thread rand48 tls_rng = RAND48_INITIALIZER;
@@ -55,8 +54,8 @@ operator << (ostream &o, const bfpid_t &p)
             return o;
 }
 
-unsigned 
-hash(int h, bfpid_t const &pid) 
+unsigned
+hash(int h, bfpid_t const &pid)
 {
     if(debug) cout << "h=" << h << " pid=" << pid << endl;
     EXPECT_GE(h, 0);
@@ -94,16 +93,16 @@ void dump()
         DUMP2(i);
     }
 }
-    
+
 
 void testit() {
     ::srand (4344); // for repeatability
     for (int i = 0; i < HASH_COUNT; ++i) {
         _hash_seeds[i] = ((uint32_t) ::rand() << 16) + ::rand();
     }
-    
-    
-    
+
+
+
     cout << "tries=" << tries << endl;
 
     dump();
@@ -123,13 +122,13 @@ void testit() {
     << endl
     << "\t nbufpages=" << nbufpages << " of page size " << page_sz << ","
     << endl
-    << "\t nbuckets (from bf_core_m constructor)="  << nbuckets << "," 
+    << "\t nbuckets (from bf_core_m constructor)="  << nbuckets << ","
     << endl;
     if(use_prime) {
         cout << "\t use prime " ;
     }
-    cout 
-        << " _size=" << _prime 
+    cout
+        << " _size=" << _prime
     << endl;
 
     _size = _prime;
@@ -157,7 +156,7 @@ void testit() {
 
             buckets[int(h)]++;
         }
-                    
+
     }
 
     int worst=0;

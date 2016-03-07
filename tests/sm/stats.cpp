@@ -11,7 +11,7 @@ Stats::Stats()
     :
     probType(logrec_t::t_max_logrec, (float) 1.0 / logrec_t::t_max_logrec),
     probLengthIndex(logrec_t::t_max_logrec, vector<float>(241, (float)1.0 / 241)),
-    lengthIndexToLength(logrec_t::t_max_logrec, vector<uint4_t>(241,0)),
+    lengthIndexToLength(logrec_t::t_max_logrec, vector<uint32_t>(241,0)),
     gen(1729), /* seed is 1729, as a good omen */
     typeDist(probType)
 {
@@ -27,7 +27,7 @@ Stats::Stats(unsigned _lengthDim)
     :
     probType(logrec_t::t_max_logrec, 0),
     probLengthIndex(logrec_t::t_max_logrec, vector<float>(_lengthDim,0.0)),
-    lengthIndexToLength(logrec_t::t_max_logrec, vector<uint4_t>(_lengthDim,0))
+    lengthIndexToLength(logrec_t::t_max_logrec, vector<uint32_t>(_lengthDim,0))
 {
 }
 

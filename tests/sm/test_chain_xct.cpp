@@ -12,10 +12,10 @@ btree_test_env *test_env;
  */
 
 w_rc_t insert_twice(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert (stid, "key004", "data4"));
     W_DO(ss_m::chain_xct(true));
@@ -23,7 +23,7 @@ w_rc_t insert_twice(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ss_m::chain_xct(false));
     W_DO(test_env->btree_insert (stid, "key006", "data6"));
     W_DO(test_env->commit_xct());
-    
+
     x_btree_scan_result s;
     W_DO(test_env->btree_scan(stid, s));
     EXPECT_EQ (3, s.rownum);
@@ -43,10 +43,10 @@ TEST (ChainXctTest, InsertTwiceLock) {
 }
 
 w_rc_t pipeline_many(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     char keystr[7];
     keystr[0] = 'k';
     keystr[1] = 'e';

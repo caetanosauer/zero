@@ -47,9 +47,9 @@ template <int LEN> ostream &operator<<(ostream &o,
 template <int LEN> bool operator==(const opaque_quantity<LEN> &l,
                    const opaque_quantity<LEN> &r);
 
-/**\brief A set of untyped bytes. 
+/**\brief A set of untyped bytes.
  *
- * \details 
+ * \details
  *
  * This is just a blob.  Not necessarily large object,
  * but it is an untyped group of bytes. Used for
@@ -58,8 +58,8 @@ template <int LEN> bool operator==(const opaque_quantity<LEN> &l,
  * for preparing a 2PC transaction, so it has to flow
  * through the API.
  */
-template <int LEN> 
-class opaque_quantity 
+template <int LEN>
+class opaque_quantity
 {
 
 private:
@@ -85,15 +85,15 @@ private:
     friend bool
     operator== <LEN> (
         const opaque_quantity<LEN>    &l,
-        const opaque_quantity<LEN>    &r); 
+        const opaque_quantity<LEN>    &r);
 
-    friend ostream & 
+    friend ostream &
     operator<< <LEN> (
-        ostream &o, 
+        ostream &o,
         const opaque_quantity<LEN>    &b);
 
     opaque_quantity<LEN>    &
-    operator=(const opaque_quantity<LEN>    &r) 
+    operator=(const opaque_quantity<LEN>    &r)
     {
         (void) set_length(r.length());
         memcpy(_opaque,r._opaque,length());
@@ -154,8 +154,8 @@ private:
         return (sizeof(_length) + length());
     }
     uint32_t          set_length(uint32_t l) {
-        if(is_aligned()) { 
-            _length = l; 
+        if(is_aligned()) {
+            _length = l;
         } else {
             char *m = (char *)&_length;
             memcpy(m, &l, sizeof(_length));
@@ -207,11 +207,7 @@ private:
         o << '"';
         const unsigned char *cp = &_opaque[0];
         for (uint32_t i = 0; i < print_length; i++, cp++) {
-            if (isprint(*cp))
-                o << *cp;
-            else {
-                W_FORM(o)("\\x%02X", *cp); 
-            }
+            o << *cp;
         }
 
         return o << '"';
@@ -221,15 +217,15 @@ private:
 
 template <int LEN>
 bool operator==(const opaque_quantity<LEN> &a,
-    const opaque_quantity<LEN>    &b) 
+    const opaque_quantity<LEN>    &b)
 {
     return ((a.length()==b.length()) &&
         (memcmp(a._opaque,b._opaque,a.length())==0));
 }
 
 template <int LEN>
-ostream & 
-operator<<(ostream &o, const opaque_quantity<LEN>    &b) 
+ostream &
+operator<<(ostream &o, const opaque_quantity<LEN>    &b)
 {
     return b.print(o);
 }

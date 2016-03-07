@@ -6,7 +6,6 @@
 
 #include "sthread.h"
 #include "sthread_stats.h"
-#include "sthread_vtable_enum.h"
 #include "w_strstream.h"
 
 #include <iostream>
@@ -161,16 +160,6 @@ void io_thread_t::run()
 
 void print_histograms(ostream &o)
 {
-        static vtable_t  t;
-        if (sthread_t::collect(t, true)<0)
-                o << "THREADS: error" << endl;
-        else {
-                o << "THREAD " <<endl;
-                t.operator<<(o);
-        }
-
-        o << "-----------------" << endl;
-
 }
 
 

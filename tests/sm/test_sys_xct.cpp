@@ -45,7 +45,7 @@ TEST (SystemTransactionTest, EmptyXct) {
 
 w_rc_t empty_nested_xct(ss_m *ssm, test_volume_t *) {
     size_t original_depth = me()->get_tcb_depth();
-    
+
     // commit -> commit
     W_DO(ssm->begin_xct());
     EXPECT_EQ(original_depth + 1, me()->get_tcb_depth());
@@ -63,7 +63,7 @@ w_rc_t empty_nested_xct(ss_m *ssm, test_volume_t *) {
     }
     W_DO(ssm->commit_xct());
     EXPECT_EQ(original_depth, me()->get_tcb_depth());
-    
+
     // commit -> abort
     W_DO(ssm->begin_xct());
     {
@@ -78,7 +78,7 @@ w_rc_t empty_nested_xct(ss_m *ssm, test_volume_t *) {
     }
     W_DO(ssm->commit_xct());
     EXPECT_EQ(original_depth, me()->get_tcb_depth());
-    
+
     // abort -> commit
     W_DO(ssm->begin_xct());
     {
@@ -93,7 +93,7 @@ w_rc_t empty_nested_xct(ss_m *ssm, test_volume_t *) {
     }
     W_DO(ssm->commit_xct());
     EXPECT_EQ(original_depth, me()->get_tcb_depth());
-    
+
     // abort -> abort
     W_DO(ssm->begin_xct());
     {
@@ -138,8 +138,8 @@ TEST (SystemTransactionTest, FailUserNest) {
 }
 
 w_rc_t usercommit_syscommit(ss_m *ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa1", "data1"));
@@ -149,7 +149,7 @@ w_rc_t usercommit_syscommit(ss_m *ssm, test_volume_t *test_volume) {
     W_DO (x_btree_verify(ssm, stid));
 
     size_t original_depth = me()->get_tcb_depth();
-    
+
     // user commit -> sys commit
     W_DO(ssm->begin_xct());
     W_DO(x_btree_insert(ssm, stid, "aa6", "data6"));
@@ -167,7 +167,7 @@ w_rc_t usercommit_syscommit(ss_m *ssm, test_volume_t *test_volume) {
         EXPECT_EQ (std::string("aa1"), s.minkey);
         EXPECT_EQ (std::string("aa7"), s.maxkey);
     }
-    
+
     W_DO (x_btree_verify(ssm, stid));
 
     return RCOK;
@@ -179,8 +179,8 @@ TEST (SystemTransactionTest, UserCommitSysCommit) {
 }
 
 w_rc_t userabort_syscommit(ss_m *ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa1", "data1"));
@@ -190,7 +190,7 @@ w_rc_t userabort_syscommit(ss_m *ssm, test_volume_t *test_volume) {
     W_DO (x_btree_verify(ssm, stid));
 
     size_t original_depth = me()->get_tcb_depth();
-    
+
     // user abort -> sys commit
     W_DO(ssm->begin_xct());
     W_DO(x_btree_insert(ssm, stid, "aa6", "data6"));
@@ -208,7 +208,7 @@ w_rc_t userabort_syscommit(ss_m *ssm, test_volume_t *test_volume) {
         EXPECT_EQ (std::string("aa1"), s.minkey);
         EXPECT_EQ (std::string("aa7"), s.maxkey);
     }
-    
+
     W_DO (x_btree_verify(ssm, stid));
 
     return RCOK;
@@ -221,8 +221,8 @@ TEST (SystemTransactionTest, UserAbortSysCommit) {
 
 
 w_rc_t userabort_sysabort(ss_m *ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(x_btree_insert_and_commit (ssm, stid, "aa1", "data1"));
@@ -232,7 +232,7 @@ w_rc_t userabort_sysabort(ss_m *ssm, test_volume_t *test_volume) {
     W_DO (x_btree_verify(ssm, stid));
 
     size_t original_depth = me()->get_tcb_depth();
-    
+
     // user abort -> sys abort
     W_DO(ssm->begin_xct());
     W_DO(x_btree_remove(ssm, stid, "aa1"));
@@ -250,7 +250,7 @@ w_rc_t userabort_sysabort(ss_m *ssm, test_volume_t *test_volume) {
         EXPECT_EQ (std::string("aa1"), s.minkey);
         EXPECT_EQ (std::string("aa5"), s.maxkey);
     }
-    
+
     W_DO (x_btree_verify(ssm, stid));
 
     return RCOK;

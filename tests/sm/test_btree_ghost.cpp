@@ -17,8 +17,8 @@ btree_test_env *test_env;
  * Unit test for ghost records.
  */
 w_rc_t ghost_mark(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(x_btree_insert_and_commit (ssm, stid, "key1", "data1", test_env->get_use_locks()));
@@ -50,8 +50,8 @@ TEST (BtreeGhostTest, MarkLock) {
 }
 
 w_rc_t ghost_reclaim(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(x_btree_insert_and_commit (ssm, stid, "key1", "data", test_env->get_use_locks()));
@@ -84,8 +84,8 @@ TEST (BtreeGhostTest, ReclaimLock) {
 }
 
 w_rc_t ghost_reserve(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(x_btree_insert_and_commit (ssm, stid, "key1", "data", test_env->get_use_locks()));
@@ -122,8 +122,8 @@ TEST (BtreeGhostTest, ReserveLock) {
 }
 
 w_rc_t ghost_reserve_xct(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(x_btree_insert_and_commit (ssm, stid, "key1", "data", test_env->get_use_locks()));
@@ -174,8 +174,8 @@ TEST (BtreeGhostTest, ReserveXctLock) {
 }
 
 w_rc_t insert_remove_defrag(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(x_btree_insert_and_commit (ssm, stid, "key005", "data5", test_env->get_use_locks()));

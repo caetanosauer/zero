@@ -15,12 +15,12 @@ TEST(RandomTest, All) {
     }
     for(i=1; i<25; i++) {
         cout << "i= "<< i << " ";
-        W_FORM2(cout, ("%10.10f ",generator.drand()) );
+        cout << generator.drand();
         cout <<endl;
     }
     for(i=1; i<25; i++) {
         cout << "i= "<< i << " ";
-        W_FORM2(cout, ("%d (0->25) ",generator.randn(25)) );
+        cout << "(0->25)" << generator.randn(25);
         cout <<endl;
     }
     cout << "done." << endl;

@@ -25,9 +25,6 @@
 #include "sm_base.h"
 #include "srwlock.h"
 
-// log buffer
-#include "logbuf_common.h"
-
 #include "../nullbuf.h"
 #if W_DEBUG_LEVEL <= 3
 nullbuf null_obj;

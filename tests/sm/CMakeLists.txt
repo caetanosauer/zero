@@ -18,7 +18,6 @@ target_link_libraries(logfactory btree_test_env)
 #################################################
 
 X_ADD_TESTCASE(test_alloc btree_test_env)
-X_ADD_TESTCASE(test_backup btree_test_env)
 X_ADD_TESTCASE(test_bf_tree btree_test_env)
 #X_ADD_TESTCASE(test_fix_with_Q btree_test_env)   # should fail for now until have QSX latch integrated
 X_ADD_TESTCASE(test_btree_create btree_test_env)
@@ -34,11 +33,6 @@ X_ADD_TESTCASE(test_chain_xct btree_test_env)
 X_ADD_TESTCASE(test_checksum btree_test_env)
 X_ADD_TESTCASE(test_crash btree_test_env)                       # Serial and traditional recovery test suite
 X_ADD_TESTCASE(test_restart btree_test_env)                     # Serial and traditional recovery test suite
-X_ADD_TESTCASE(test_restart_bugs btree_test_env)                # Recovery test suite used for debugging purpose
-X_ADD_TESTCASE(test_concurrent_restart1 btree_test_env)         # Simple concurrent recovery test suite 1
-X_ADD_TESTCASE(test_concurrent_restart2 btree_test_env)         # Simple concurrent recovery test suite 2
-X_ADD_TESTCASE(test_concurrent_restart_complex btree_test_env)  # Complex concurrent recovery test suite
-# X_ADD_TESTCASE(test_restart_performance btree_test_env)         # Restart performance test, enable when running performace test
                                                                 # normally disabled so the code does not get compiled or executed during functional test run
 X_ADD_TESTCASE(test_deadlock btree_test_env)
 X_ADD_TESTCASE(test_emlsn btree_test_env)
@@ -54,9 +48,6 @@ X_ADD_TESTCASE(test_log_lsn_tracker btree_test_env)
 X_ADD_TESTCASE(test_sys_xct btree_test_env)
 X_ADD_TESTCASE(test_insert_many btree_test_env)
 X_ADD_TESTCASE(test_btree_insert_100K btree_test_env)
-X_ADD_TESTCASE(test_btree_durability btree_test_env)
-
-X_ADD_TESTCASE(test_vol btree_test_env)
 
 X_ADD_TESTCASE(test_logarchiver logfactory)
 X_ADD_TESTCASE(test_logfactory logfactory)

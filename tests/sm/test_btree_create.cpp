@@ -4,6 +4,7 @@
 #include "btree.h"
 #include "vol.h"
 #include "btree_page_h.h"
+#include "bf_tree.h"
 
 btree_test_env *test_env;
 
@@ -12,8 +13,8 @@ btree_test_env *test_env;
  */
 
 w_rc_t create_test(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(ssm->begin_xct());
@@ -29,11 +30,11 @@ TEST (BtreeCreateTest, Create) {
 
 w_rc_t create_test2(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->begin_xct());
-    stid_t stid;
-    W_DO(ssm->create_index(test_volume->_vid, stid));
+    StoreID stid;
+    W_DO(ssm->create_index(stid));
     W_DO(ssm->abort_xct());
 
-    lpid_t root_pid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(ssm->begin_xct());
@@ -48,19 +49,18 @@ TEST (BtreeCreateTest, Create2) {
 }
 
 w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
-    W_DO(ssm->force_buffers());
+    W_DO(smlevel_0::bf->get_cleaner()->force_volume());
     generic_page buf;
 
     // CS: why reading 5 pages?? (magic number)
-    for (shpid_t shpid = 1; shpid < 5; ++shpid) {
-        lpid_t pid (stid, shpid);
+    for (PageID shpid = 1; shpid < 5; ++shpid) {
 
         cout << "checking pid " << shpid << ":";
-        W_IGNORE(smlevel_0::vol->get(test_volume->_vid)->read_page(pid.page, &buf));
+        W_IGNORE(smlevel_0::vol->read_page(shpid, &buf));
         cout << "full-pid=" << buf.pid << ",";
         switch (buf.tag) {
             case t_bad_p: cout << "t_bad_p"; break;

@@ -3,6 +3,7 @@
 #include "btree.h"
 #include "btree_page_h.h"
 #include "btree_impl.h"
+#include "bf_tree.h"
 
 btree_test_env *test_env;
 /**
@@ -19,17 +20,17 @@ TEST (ChecksumTest, Calculate) {
         c2[i] = (char) i;
         c3[i] = (char) (i + 10);
     }
-    
+
     EXPECT_EQ (p1.calculate_checksum(), p2.calculate_checksum());
     EXPECT_NE (p1.calculate_checksum(), p3.calculate_checksum());
     EXPECT_NE (p1.calculate_checksum(), p4.calculate_checksum());
     EXPECT_NE (p3.calculate_checksum(), p4.calculate_checksum());
 }
 w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(x_btree_verify(ssm, stid));
 
     W_DO(ssm->begin_xct());
@@ -46,7 +47,7 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
     }
     W_DO(ssm->commit_xct());
     W_DO(x_btree_verify(ssm, stid));
-    
+
     w_keystr_t neginf;
     neginf.construct_neginfkey();
 
@@ -58,7 +59,7 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
         W_DO (btree_impl::_ux_traverse(stid, neginf, btree_impl::t_fence_low_match, LATCH_SH, leaf));
         EXPECT_TRUE (leaf.is_fixed());
         EXPECT_TRUE (leaf.is_leaf());
-        
+
         generic_page dummy_p;
         ::memset (&dummy_p, 0, sizeof (generic_page));
         correct_checksum = leaf.get_generic_page()->calculate_checksum();
@@ -67,7 +68,8 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->commit_xct());
 
     // write out the page to set checksum by bufferpool
-    W_DO(ss_m::force_buffers()); // also discards the pages from bufferpool (this test requires to re-read from disk!)
+    W_DO(ss_m::bf->get_cleaner()->force_volume());
+    // also discards the pages from bufferpool (this test requires to re-read from disk!)
 
     // check it again
     W_DO(ssm->begin_xct());

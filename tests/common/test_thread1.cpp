@@ -45,8 +45,8 @@ struct ping_pong_t {
 
         pong_thread_t   *ping;
         pong_thread_t   *pong;
-        
-        ping_pong_t() : whoseShot(0), ping(0), pong(0) { 
+
+        ping_pong_t() : whoseShot(0), ping(0), pong(0) {
                 DO_PTHREAD(pthread_mutex_init(&theBall, NULL));
                 DO_PTHREAD(pthread_cond_init(&paddle[0], NULL));
                 DO_PTHREAD(pthread_cond_init(&paddle[1], NULL));
@@ -62,7 +62,7 @@ class wait_for_t {
         int     have;
 
 public:
-        wait_for_t(int expecting) : expected(expecting), have(0) { 
+        wait_for_t(int expecting) : expected(expecting), have(0) {
                 DO_PTHREAD(pthread_mutex_init(&_lock, NULL));
                 DO_PTHREAD(pthread_cond_init(&_done, NULL));
         }
@@ -134,7 +134,7 @@ bool    TestErrorInThread = true;
 bool    verbose = false;
 
 worker_thread_t         **worker;
-int                     *ack; 
+int                     *ack;
 
 void playPong()
 {
@@ -147,7 +147,7 @@ void playPong()
         games = new ping_pong_t[PongGames];
         if (!games)
                 W_FATAL(fcOUTOFMEMORY);
-        
+
         wait_for_t      imdone(PongGames * 2);
 
         for (i = 0; i < PongGames; i++) {
@@ -225,7 +225,7 @@ TEST (ThreadTest1, All)
             worker = new worker_thread_t *[NumThreads];
             if (!worker)
                     W_FATAL(fcOUTOFMEMORY);
-    
+
             /* print some stuff */
             for(i=0; i<NumThreads; ++i) {
                         OUT << "creating i= " << i << endl; FLUSHOUT;
@@ -243,7 +243,7 @@ TEST (ThreadTest1, All)
                 }
 
                 ::usleep(2);
-    
+
             for(i=0; i<NumThreads; ++i) {
                         OUT << "joining i= " << i << endl; FLUSHOUT;
 
@@ -316,7 +316,7 @@ TEST (ThreadTest1, All)
         }
 }
 
-    
+
 
 worker_thread_t::worker_thread_t(int _id)
     : work_id(_id)
@@ -348,7 +348,7 @@ pong_thread_t::pong_thread_t(ping_pong_t &which_game,
 : game(which_game), id(_id), note(notify_me)
 {
         w_ostrstream_buf        s(128);         // XXX magic number
-        W_FORM2(s,("pong[%d]", id));
+        s << "pong[" << id << "]";
         s << ends;
         rename(s.c_str());
 }
@@ -358,8 +358,8 @@ void pong_thread_t::run()
 {
     int i;
     int self = id;
-        
-        { 
+
+        {
                 CRITICAL_SECTION(cs, game.theBall);
                 for(i=0; i<PongTimes; ++i){
                         while(game.whoseShot != self){
@@ -389,8 +389,8 @@ timer_thread_t::timer_thread_t()
 
 void timer_thread_t::run()
 {
-        OUT << "timeThread going to sleep ";
-    W_FORM2(_out,("for %d ms\n", SleepTime));
+    OUT << "timeThread going to sleep ";
+    _out << "for " << SleepTime << " ms";
 
     sthread_t::sleep(SleepTime);
     _out << "timeThread awakened and die" << endl;

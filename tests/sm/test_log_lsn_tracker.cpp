@@ -2,7 +2,7 @@
 #include <AtomicCounter.hpp>
 #include "gtest/gtest.h"
 #include "log_lsn_tracker.h"
-#include "../fc/local_random.h"
+#include "../common/local_random.h"
 
 TEST(LogLsnTrackerTest, Simple) {
     PoorMansOldestLsnTracker tracker(1 << 10);

@@ -13,7 +13,7 @@ btree_test_env *test_env;
  * \ingroup Single-Page-Recovery
  */
 
-w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid) {
+w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, StoreID &stid, PageID &root_pid) {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     // very large records to cause splits
@@ -38,19 +38,19 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t 
     }
     W_DO(ssm->commit_xct());
     W_DO(x_btree_verify(ssm, stid));
-    W_DO(ssm->force_buffers());
+    W_DO(smlevel_0::bf->get_cleaner()->force_volume());
     W_DO(ssm->checkpoint());
     return RCOK;
 }
 
 
 w_rc_t dump_simple(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO (prepare_test(ssm, test_volume, stid, root_pid));
-    ssm->dump_page_lsn_chain(std::cout, lpid_t(1, 3));
-    ssm->dump_page_lsn_chain(std::cout, lpid_t(1, 4));
-    ssm->dump_page_lsn_chain(std::cout, lpid_t(1, 5));
+    ssm->dump_page_lsn_chain(std::cout, 3);
+    ssm->dump_page_lsn_chain(std::cout, 4);
+    ssm->dump_page_lsn_chain(std::cout, 5);
     ssm->dump_page_lsn_chain(std::cout);
     return RCOK;
 }

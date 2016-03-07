@@ -37,14 +37,13 @@ private:
         enum {
             max_sz = 3 * sizeof(generic_page),
             hdr_sz = (
-                sizeof(uint2_t) +   // _len
+                sizeof(uint16_t) +   // _len
                 sizeof(u_char) +    // _type
                 sizeof(u_char) +    //  _cat
                 sizeof(tid_t) +     // _tid
-                sizeof(shpid_t) +   // _shpid
-                sizeof(vid_t) +     // _vid
-                sizeof(uint2_t) +   // _page_tag
-                sizeof(snum_t) +    // _snum
+                sizeof(PageID) +   // _shpid
+                sizeof(uint16_t) +   // _page_tag
+                sizeof(StoreID) +    // _snum
                 sizeof(lsn_t) +     // _prev // ctns possibly 4 extra
                 sizeof(lsn_t) +     // _prev_page
                 0
@@ -55,19 +54,18 @@ private:
             data_sz = max_sz - (hdr_sz + sizeof(lsn_t))
         };
 
-        uint2_t        _len;
+        uint16_t        _len;
         u_char      _type;
         u_char      _cat;
-        shpid_t     _shpid;
+        PageID     _shpid;
         tid_t       _tid;
-        vid_t       _vid;
-        uint2_t     _page_tag;
-        snum_t      _snum;
+        uint16_t     _page_tag;
+        StoreID      _snum;
         lsn_t       _prev;
         lsn_t       _prev_page;
         char       _data[data_sz + sizeof(lsn_t)];
 
-        const lsn_t     get_lsn_ck() const { 
+        const lsn_t     get_lsn_ck() const {
                             lsn_t    tmp = *_lsn_ck();
                             return tmp;
                         }
@@ -113,7 +111,7 @@ private:
         xidChainLogHeader xidInfo;
         char _data[max_sz - sizeof(baseLogHeader) - sizeof(xidChainLogHeader)];
 
-        const lsn_t          get_lsn_ck() const { 
+        const lsn_t          get_lsn_ck() const {
                                     lsn_t    tmp = *_lsn_ck();
                                     return tmp;
                              }
@@ -133,12 +131,12 @@ private:
             w_assert3(alignon(header._len, 8));
             const char* this_ptr = reinterpret_cast<const char*>(this);
             return reinterpret_cast<const lsn_t*>(this_ptr + header._len - sizeof(lsn_t));
-        }        
+        }
     };
 
     Stats stats;
 
-    /* Every INCR_TH records generated, increase the max_page_id by a ratio 
+    /* Every INCR_TH records generated, increase the max_page_id by a ratio
      * of INCR_RATIO.
      */
     const unsigned INCR_TH;

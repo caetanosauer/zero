@@ -1,5 +1,7 @@
 #include "btree_test_env.h"
 
+#include "bf_tree.h"
+#include "log_core.h"
 #include "logarchiver.h"
 #include "restore.h"
 #include "vol.h"
@@ -17,8 +19,8 @@ typedef w_rc_t rc_t;
 
 btree_test_env* test_env;
 sm_options options;
-stid_t stid;
-lpid_t root_pid;
+StoreID stid;
+PageID root_pid;
 
 /******************************************************************************
  * Auxiliary functions
@@ -90,7 +92,7 @@ rc_t lookupPages(size_t numPages)
 
 vol_t* failVolume(test_volume_t* test_volume, bool clear_buffer)
 {
-    vol_t* volume = smlevel_0::vol->get(test_volume->_vid);
+    vol_t* volume = smlevel_0::vol;
     W_COERCE(volume->mark_failed(clear_buffer));
     return volume;
 }
@@ -100,32 +102,26 @@ void verifyVolumesEqual(string pathExp, string pathAct)
 {
     // vol_t instances can be created regardless of whether they are already
     // mounted on the volume manager
-    vol_t volExp;
-    volExp.mount(pathExp.c_str());
-    vol_t volAct;
-    volAct.mount(pathAct.c_str());
+    options.set_string_option("sm_dbfile", pathExp);
+    vol_t volExp(options, NULL);
+    options.set_string_option("sm_dbfile", pathAct);
+    vol_t volAct(options, NULL);
 
-    vid_t vid = volExp.vid();
-    EXPECT_EQ(vid, volAct.vid());
-
-    size_t num_pages = volExp.num_pages();
-    EXPECT_EQ(num_pages, volAct.num_pages());
+    size_t num_pages = volExp.num_used_pages();
+    EXPECT_EQ(num_pages, volAct.num_used_pages());
 
     alloc_cache_t* allocExp = volExp.get_alloc_cache();
     alloc_cache_t* allocAct = volAct.get_alloc_cache();
 
-    EXPECT_EQ(allocExp->get_total_free_page_count(),
-            allocAct->get_total_free_page_count());
-
     generic_page bufExp, bufAct;
-    for (shpid_t p = shpid_t(1); p < num_pages; p++) {
-        bool isAlloc = allocExp->is_allocated_page(p);
-        EXPECT_EQ(isAlloc, allocAct->is_allocated_page(p));
+    for (PageID p = PageID(1); p < num_pages; p++) {
+        bool isAlloc = allocExp->is_allocated(p);
+        EXPECT_EQ(isAlloc, allocAct->is_allocated(p));
         if (isAlloc) {
             volExp.read_page(p, &bufExp);
             volAct.read_page(p, &bufAct);
 
-            EXPECT_EQ(lpid_t(vid, p), bufAct.pid);
+            EXPECT_EQ(PageID(p), bufAct.pid);
 
             // CS TODO -- checksums don't match, probably because of CLSN,
             // which is set on backup, but empty on original
@@ -141,9 +137,6 @@ void verifyVolumesEqual(string pathExp, string pathAct)
             }
         }
     }
-
-    volExp.dismount(true);
-    volAct.dismount(true);
 }
 
 rc_t singlePageTest(ss_m* ssm, test_volume_t* test_volume)
@@ -174,7 +167,7 @@ rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
 
     archiveLog(ssm);
 
-    vol_t* volume = smlevel_0::vol->get(test_volume->_vid);
+    vol_t* volume = smlevel_0::vol;
     W_DO(volume->mark_failed());
 
     generic_page page;
@@ -186,9 +179,9 @@ rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
 rc_t takeBackupTest(ss_m* ssm, test_volume_t* test_volume)
 {
     W_DO(populatePages(ssm, test_volume, 3 * SEGMENT_SIZE));
-    ssm->force_volume(test_volume->_vid);
+    W_DO(ss_m::bf->get_cleaner()->force_volume());
     archiveLog(ssm);
-    vol_t* volume = smlevel_0::vol->get(test_volume->_vid);
+    vol_t* volume = smlevel_0::vol;
 
     string backupPath = string(test_env->vol_dir) + "/backup";
     volume->take_backup(backupPath);

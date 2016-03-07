@@ -11,7 +11,7 @@
 #include "lock.h"
 #include "w_okvl_inl.h"
 #include "w_endian.h"
-#include "../fc/local_random.h"
+#include "../common/local_random.h"
 
 sm_options make_options(bool has_init = true, bool small = true) {
     sm_options options;

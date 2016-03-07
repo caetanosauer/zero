@@ -17,18 +17,18 @@ LogFactory::LogFactory(bool sorted, unsigned max_page_id, unsigned th,
     prev_lsn(max_page_id, lsn_t::null), generatedCount(0), nextLSN(1,0),
     gen(1729), dDist(0.0,1.0)
 {
-    if (factory_version_major != log_storage::_version_major 
-        || 
-        factory_version_minor > log_storage::_version_minor) {
-        W_FATAL_MSG(fcINTERNAL,
-                << "Version of LogFactory does not match");
-    }
-    if (Stats::stats_version_major != factory_version_major
-        || 
-        Stats::stats_version_minor > factory_version_minor) {
-        W_FATAL_MSG(fcINTERNAL,
-                << "Version of LogFactory Stats does not match");
-    }
+    // if (factory_version_major != log_storage::_version_major
+    //     ||
+    //     factory_version_minor > log_storage::_version_minor) {
+    //     W_FATAL_MSG(fcINTERNAL,
+    //             << "Version of LogFactory does not match");
+    // }
+    // if (Stats::stats_version_major != factory_version_major
+    //     ||
+    //     Stats::stats_version_minor > factory_version_minor) {
+    //     W_FATAL_MSG(fcINTERNAL,
+    //             << "Version of LogFactory Stats does not match");
+    // }
 }
 
 LogFactory::~LogFactory() {
@@ -41,15 +41,14 @@ bool LogFactory::next(void* addr) {
     lr->header._len = stats.nextLength(lr->header._type);
     lr->header._cat = fake_logrec_t::t_status;
     if(sorted) {
-        lr->header._shpid = nextSorted();
+        lr->header._pid = nextSorted();
     }
     else {
-        lr->header._shpid = nextZipf();
+        lr->header._pid = nextZipf();
     }
-    lr->header._vid = 1;    // volume id
     lr->header._page_tag = 1;
-    lr->header._snum = 1;    // storage number
-    lr->header._page_prv = prev_lsn[lr->header._shpid];
+    lr->header._stid = 1;    // storage number
+    lr->header._page_prv = prev_lsn[lr->header._pid];
 
     lr->xidInfo._xid = 1;    // transaction id
     lr->xidInfo._xid_prv = lsn_t::null;
@@ -68,16 +67,16 @@ bool LogFactory::next(void* addr) {
     }
 
     lr->set_lsn_ck(nextLSN); // set lsn in the last 8 bytes
-    prev_lsn[lr->header._shpid] = lr->get_lsn_ck();
+    prev_lsn[lr->header._pid] = lr->get_lsn_ck();
     nextLSN += lr->header._len;
 
     generatedCount++;
 
     //DBGTHRD(<< "New log record created: ["
                 //<< ((logrec_t*)r)->type_str() << ", "
-        //<< r->_len << "," << r->_shpid << ","
+        //<< r->_len << "," << r->_pid << ","
                 //<< r->_prev_page << "," << *(r->_lsn_ck()) << "]");
-    return true;        
+    return true;
 }
 
 /**

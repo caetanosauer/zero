@@ -13,7 +13,7 @@ TEST (BtreeVerificationTest, ContextSimple) {
     EXPECT_EQ (context._bitmap_size, (1 << 12));
     EXPECT_EQ (context._pages_checked, 0);
     EXPECT_TRUE (context.is_bitmap_clean());
-    
+
     // correctly matching fact/expect
     context.add_expectation(100, 2, true, 5, "abcde");
     EXPECT_FALSE (context.is_bitmap_clean());
@@ -57,9 +57,9 @@ TEST (BtreeVerificationTest, ContextPage) {
 TEST (BtreeVerificationTest, ContextLoop) {
     verification_context context (15);
     EXPECT_TRUE (context.is_bitmap_clean());
-    
+
     // correctly matching fact/expect
-    for (shpid_t i = 1; i <= 100; ++i) {
+    for (PageID i = 1; i <= 100; ++i) {
         char key[5];
         for (int j = 0; j < 5; ++j) {
             key[j] = (char) (i ^ j);
@@ -68,7 +68,7 @@ TEST (BtreeVerificationTest, ContextLoop) {
         context.add_expectation(i, (int16_t) (i / 10), true, 4, key + 1);
     }
     EXPECT_FALSE (context.is_bitmap_clean());
-    for (shpid_t i = 1; i <= 100; ++i) {
+    for (PageID i = 1; i <= 100; ++i) {
         char key[5];
         for (int j = 0; j < 5; ++j) {
             key[j] = (char) (i ^ j);
@@ -77,9 +77,9 @@ TEST (BtreeVerificationTest, ContextLoop) {
         context.add_fact(i, (int16_t) (i / 10), true, 4, key + 1);
     }
     EXPECT_TRUE(context.is_bitmap_clean());
-    
+
     // only one in 100 is incorrect
-    for (shpid_t i = 1; i <= 100; ++i) {
+    for (PageID i = 1; i <= 100; ++i) {
         char key[5];
         for (int j = 0; j < 5; ++j) {
             key[j] = (char) (i ^ j);
@@ -88,7 +88,7 @@ TEST (BtreeVerificationTest, ContextLoop) {
         context.add_expectation(i, (int16_t) (i / 10), true, 4, key + 1);
     }
     EXPECT_FALSE (context.is_bitmap_clean());
-    for (shpid_t i = 1; i <= 100; ++i) {
+    for (PageID i = 1; i <= 100; ++i) {
         char key[5];
         for (int j = 0; j < 5; ++j) {
             key[j] = (char) (i ^ j);
@@ -104,7 +104,7 @@ TEST (BtreeVerificationTest, ContextLoop) {
     EXPECT_FALSE(context.is_bitmap_clean());
 }
 
-w_rc_t helper_create_assoc(ss_m* ssm, stid_t stid,
+w_rc_t helper_create_assoc(ss_m* ssm, StoreID stid,
     const char *key, size_t keylen,
     const char *data, size_t datalen) {
     w_keystr_t k;
@@ -113,7 +113,7 @@ w_rc_t helper_create_assoc(ss_m* ssm, stid_t stid,
     W_DO(ssm->create_assoc(stid, k, d));
     return RCOK;
 }
-w_rc_t helper_destroy_assoc(ss_m* ssm, stid_t stid,
+w_rc_t helper_destroy_assoc(ss_m* ssm, StoreID stid,
     const char *key, size_t keylen) {
     w_keystr_t k;
     k.construct_regularkey (key, keylen);
@@ -121,26 +121,26 @@ w_rc_t helper_destroy_assoc(ss_m* ssm, stid_t stid,
     return RCOK;
 }
 w_rc_t verify_simle(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(x_btree_verify(ssm, stid));
 
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
-    W_DO(helper_create_assoc(ssm, stid, "abcd4", 5, "datadata", 8));    
-    W_DO(helper_create_assoc(ssm, stid, "abcd2", 5, "datadata", 8));    
-    W_DO(helper_create_assoc(ssm, stid, "abcd3", 5, "datadata", 8));    
-    W_DO(helper_create_assoc(ssm, stid, "abcd5", 5, "datadata", 8));    
-    W_DO(helper_create_assoc(ssm, stid, "abcd1", 5, "datadata", 8));    
+    W_DO(helper_create_assoc(ssm, stid, "abcd4", 5, "datadata", 8));
+    W_DO(helper_create_assoc(ssm, stid, "abcd2", 5, "datadata", 8));
+    W_DO(helper_create_assoc(ssm, stid, "abcd3", 5, "datadata", 8));
+    W_DO(helper_create_assoc(ssm, stid, "abcd5", 5, "datadata", 8));
+    W_DO(helper_create_assoc(ssm, stid, "abcd1", 5, "datadata", 8));
     W_DO(ssm->commit_xct());
 
     W_DO(x_btree_verify(ssm, stid));
 
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
-    W_DO(helper_destroy_assoc(ssm, stid, "abcd4", 5));    
+    W_DO(helper_destroy_assoc(ssm, stid, "abcd4", 5));
     W_DO(helper_destroy_assoc(ssm, stid, "abcd5", 5));
     W_DO(ssm->commit_xct());
 
@@ -159,10 +159,10 @@ TEST (BtreeVerificationTest, VerifySimpleLock) {
 }
 
 w_rc_t verify_splits(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(x_btree_verify(ssm, stid));
 
     // so that one leaf page can have only 2 tuples:
@@ -179,11 +179,11 @@ w_rc_t verify_splits(ss_m* ssm, test_volume_t *test_volume) {
     for (int i=1; i<=5; i++) {
         // ensure prefix is minimal so we use maximum possible space:
         key[0] = '0' + i;
-        W_DO(helper_create_assoc(ssm, stid, key, key_size, data, data_size));    
+        W_DO(helper_create_assoc(ssm, stid, key, key_size, data, data_size));
     }
     W_DO(ssm->commit_xct());
     // now they are just b-linked.
-    
+
     W_DO(x_btree_verify(ssm, stid));
 
     return RCOK;
@@ -199,10 +199,10 @@ TEST (BtreeVerificationTest, VerifySplitsLock) {
 }
 
 w_rc_t insert_quite_many(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
     w_keystr_t key;
@@ -243,7 +243,7 @@ w_rc_t insert_quite_many(ss_m* ssm, test_volume_t *test_volume) {
     }
     W_DO(ssm->commit_xct());
     W_DO(x_btree_verify(ssm, stid));
-    
+
     cout << "Inserted." << endl;
     return RCOK;
 }
@@ -258,12 +258,12 @@ TEST (BtreeVerificationTest, InsertQuiteManyLock) {
 }
 
 w_rc_t volume_empty(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
     verify_volume_result result;
-    W_DO(ssm->verify_volume(test_volume->_vid, 19, result));
-    verification_context *context = result.get_context(stid.store);
+    W_DO(ssm->verify_volume(19, result));
+    verification_context *context = result.get_context(stid);
     EXPECT_TRUE (context != NULL);
     if (context != NULL) {
         EXPECT_TRUE (context->_pages_checked == 1); // only root page
@@ -279,8 +279,8 @@ TEST (BtreeVerificationTest, VolumeEmpty) {
 }
 
 w_rc_t volume_insert(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     const int recsize = SM_PAGESIZE / 10;
@@ -309,8 +309,8 @@ w_rc_t volume_insert(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_verify(ssm, stid));
 
     verify_volume_result result;
-    W_DO(ssm->verify_volume(test_volume->_vid, 19, result));
-    verification_context *context = result.get_context(stid.store);
+    W_DO(ssm->verify_volume(19, result));
+    verification_context *context = result.get_context(stid);
     EXPECT_TRUE (context != NULL);
     if (context != NULL) {
         cout << "checked " << context->_pages_checked << " pages" << endl;
@@ -338,13 +338,13 @@ w_rc_t volume_many(ss_m* ssm, test_volume_t *test_volume) {
     data.set(datastr, recsize);
 
     // create almost same two BTrees.
-    stid_t stids[2];
+    StoreID stids[2];
     for (int store = 0; store < 2; ++store) {
-        stid_t stid;
-        lpid_t root_pid;
+        StoreID stid;
+        PageID root_pid;
         W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
         stids[store] = stid;
-        
+
         W_DO(ssm->begin_xct());
         test_env->set_xct_query_lock();
         w_keystr_t key;
@@ -375,9 +375,9 @@ w_rc_t volume_many(ss_m* ssm, test_volume_t *test_volume) {
     // check it once
     {
         verify_volume_result result;
-        W_DO(ssm->verify_volume(test_volume->_vid, 19, result));
+        W_DO(ssm->verify_volume(19, result));
         for (int store = 0; store < 2; ++store) {
-            verification_context *context = result.get_context(stids[store].store);
+            verification_context *context = result.get_context(stids[store]);
             EXPECT_TRUE (context != NULL);
             if (context != NULL) {
                 cout << "store(" << store << "). checked " << context->_pages_checked << " pages" << endl;
@@ -389,8 +389,8 @@ w_rc_t volume_many(ss_m* ssm, test_volume_t *test_volume) {
 
     // add even more foster pages (this time no adopt)
     for (int store = 0; store < 2; ++store) {
-        stid_t stid = stids[store];
-        
+        StoreID stid = stids[store];
+
         W_DO(ssm->begin_xct());
         test_env->set_xct_query_lock();
         w_keystr_t key;
@@ -421,9 +421,9 @@ w_rc_t volume_many(ss_m* ssm, test_volume_t *test_volume) {
     // check it again
     {
         verify_volume_result result;
-        W_DO(ssm->verify_volume(test_volume->_vid, 19, result));
+        W_DO(ssm->verify_volume(19, result));
         for (int store = 0; store < 2; ++store) {
-            verification_context *context = result.get_context(stids[store].store);
+            verification_context *context = result.get_context(stids[store]);
             EXPECT_TRUE (context != NULL);
             if (context != NULL) {
                 cout << "store(" << store << "). checked " << context->_pages_checked << " pages" << endl;
@@ -445,8 +445,8 @@ TEST (BtreeVerificationTest, VolumeManyLock) {
 }
 
 w_rc_t inquery_verify(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     const int recsize = SM_PAGESIZE / 10;
@@ -485,14 +485,14 @@ w_rc_t inquery_verify(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_remove(ssm, stid, "key035"));
     W_DO(x_btree_remove(ssm, stid, "key078"));
     W_DO(x_btree_remove(ssm, stid, "key012"));
-    cout << x->inquery_verify_context().pages_checked << " pages checked so far" << endl;    
+    cout << x->inquery_verify_context().pages_checked << " pages checked so far" << endl;
     EXPECT_GT(x->inquery_verify_context().pages_checked, 0);
     EXPECT_EQ(x->inquery_verify_context().pids_inconsistent.size(), (uint) 0);
     W_DO(ssm->commit_xct());
 
     W_DO(x_btree_verify(ssm, stid));
 
-    
+
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
     x = xct();
@@ -501,7 +501,7 @@ w_rc_t inquery_verify(ss_m* ssm, test_volume_t *test_volume) {
     x->set_inquery_verify(true); // verification mode on
     x->set_inquery_verify_keyorder(true); // detailed check for sortedness/uniqueness
     x->set_inquery_verify_space(true); // detailed check for space overlap
-    
+
     // inserts more
     for (int i = 100; i < 200; ++i) {
         keystr[3] = ('0' + ((i / 100) % 10));
@@ -510,14 +510,14 @@ w_rc_t inquery_verify(ss_m* ssm, test_volume_t *test_volume) {
         key.construct_regularkey(keystr, 6);
         W_DO(ssm->create_assoc(stid, key, data));
     }
-    cout << x->inquery_verify_context().pages_checked << " pages checked so far" << endl;    
+    cout << x->inquery_verify_context().pages_checked << " pages checked so far" << endl;
     EXPECT_GT(x->inquery_verify_context().pages_checked, 0);
     EXPECT_EQ(x->inquery_verify_context().pids_inconsistent.size(), (uint) 0);
 
     // remove and insert a few more
     W_DO(x_btree_remove(ssm, stid, "key022"));
     W_DO(x_btree_insert(ssm, stid, "key035", "assdd"));
-    cout << x->inquery_verify_context().pages_checked << " pages checked so far" << endl;    
+    cout << x->inquery_verify_context().pages_checked << " pages checked so far" << endl;
     EXPECT_GT(x->inquery_verify_context().pages_checked, 0);
     EXPECT_EQ(x->inquery_verify_context().pids_inconsistent.size(), (uint) 0);
 
@@ -532,10 +532,10 @@ w_rc_t inquery_verify(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->find_assoc(stid, dummy_key, datastr, elen, found));
     EXPECT_FALSE(found);
 
-    cout << x->inquery_verify_context().pages_checked << " pages checked so far" << endl;    
+    cout << x->inquery_verify_context().pages_checked << " pages checked so far" << endl;
     EXPECT_GT(x->inquery_verify_context().pages_checked, 0);
     EXPECT_EQ(x->inquery_verify_context().pids_inconsistent.size(), (uint) 0);
-    
+
     W_DO(ssm->commit_xct());
 
     return RCOK;

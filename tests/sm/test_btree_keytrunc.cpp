@@ -14,10 +14,10 @@ btree_test_env *test_env;
 
 w_rc_t suffix_test(ss_m* ssm, test_volume_t *test_volume) {
     // insert long keys first
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     // so that one leaf page can have only a few tuples
     const int keysize = SM_PAGESIZE / 10;
     // these keys are not good for prefix truncation, but great for suffix truncation.
@@ -39,7 +39,7 @@ w_rc_t suffix_test(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(test_env->commit_xct());
 
     W_DO(x_btree_verify(ssm, stid));
-    
+
     // and let's check the root node's entries
     btree_page_h root_p;
     W_DO (root_p.fix_root (stid, LATCH_EX));
@@ -55,8 +55,8 @@ w_rc_t suffix_test(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_LE (minlen, 3);
     EXPECT_LE (maxlen, 3);
     cout << "key length before suffix truncation=" << keysize
-        << ", after: min=" << minlen << ", max=" << maxlen << endl;    
-    
+        << ", after: min=" << minlen << ", max=" << maxlen << endl;
+
     return RCOK;
 }
 
@@ -70,8 +70,8 @@ TEST (BtreeKeyTruncTest, SuffixLock) {
 }
 
 w_rc_t suffix_test_shortest(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(test_env->begin_xct());
@@ -109,7 +109,7 @@ w_rc_t suffix_test_shortest(ss_m* ssm, test_volume_t *test_volume) {
         prev_recs = root_p.nrecs();
     }
     W_DO(test_env->commit_xct());
-    
+
     return RCOK;
 }
 
@@ -123,8 +123,8 @@ TEST (BtreeKeyTruncTest, SuffixShortestLock) {
 }
 
 w_rc_t suffix_test_posskew(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(test_env->begin_xct());
@@ -154,14 +154,14 @@ w_rc_t suffix_test_posskew(ss_m* ssm, test_volume_t *test_volume) {
             cout << "pos-skew-test: split happend at " << i << "-th insertion!"
                 << " separator key was:" << fence
                 << "(" << (percent) << "% point)" << endl;
-            
+
             EXPECT_GT (percent, 80); // should be right-most skewed split
             break;
         }
         prev_recs = root_p.nrecs();
     }
     W_DO(test_env->commit_xct());
-    
+
     return RCOK;
 }
 
@@ -175,8 +175,8 @@ TEST (BtreeKeyTruncTest, SuffixPosSkewLock) {
 }
 
 w_rc_t suffix_test_negskew(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(test_env->begin_xct());
@@ -206,14 +206,14 @@ w_rc_t suffix_test_negskew(ss_m* ssm, test_volume_t *test_volume) {
             cout << "neg-skew-test: split happend at " << (99 - i) << "-th insertion!"
                 << " separator key was:" << fence
                 << "(" << (percent) << "% point)" << endl;
-            
+
             EXPECT_LT (percent, 20); // should be left-most skewed split
             break;
         }
         prev_recs = root_p.nrecs();
     }
     W_DO(test_env->commit_xct());
-    
+
     return RCOK;
 }
 
@@ -228,10 +228,10 @@ TEST (BtreeKeyTruncTest, SuffixNegSkewLock) {
 
 w_rc_t prefix_test(ss_m* ssm, test_volume_t *test_volume) {
     // insert long keys first
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     // so that one leaf page can have only 4 or 5 tuples
     const int keysize = SM_PAGESIZE / 6;
     //const int keysize = btree_m::max_entry_size() - 3; // for max size key test instead
@@ -274,10 +274,10 @@ w_rc_t prefix_test(ss_m* ssm, test_volume_t *test_volume) {
     leaf.copy_fence_high_key(fence_high);
     size_t prefix_len_correct = fence_low.common_leading_bytes(fence_high);
     EXPECT_EQ (prefix_len_correct, prefix_len);
-    cout << "key length (pid=" << leaf.pid().page << ") before prefix truncation=" << keysize
+    cout << "key length (pid=" << leaf.pid() << ") before prefix truncation=" << keysize
         << ", after=" << (keysize - prefix_len)
         << endl;
-    
+
     return RCOK;
 }
 

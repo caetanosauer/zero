@@ -6,7 +6,6 @@
 #include "log_core.h"
 #include "w_error.h"
 
-#include "bf_fixed.h"
 #include "bf_tree_cb.h"
 #include "bf_tree.h"
 #include "sm_base.h"
@@ -21,7 +20,7 @@ btree_test_env *test_env;
 
 // make big enough database for tests
 const int MAX_PAGES = 100;
-w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid) {
+w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, StoreID &stid, PageID &root_pid) {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     const int recsize = SM_PAGESIZE / 6;
@@ -48,13 +47,13 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t 
     }
     W_DO(ssm->commit_xct());
     W_DO(x_btree_verify(ssm, stid));
-    W_DO(ssm->force_buffers()); // clean them up
+    W_DO(smlevel_0::bf->get_cleaner()->force_volume()); // clean them up
     return RCOK;
 }
 
 w_rc_t test_all(ss_m* ssm, test_volume_t *test_volume) {
-    stid_t stid;
-    lpid_t root_pid;
+    StoreID stid;
+    PageID root_pid;
     W_DO (prepare_test(ssm, test_volume, stid, root_pid));
     btree_page_h root_p;
     W_DO(root_p.fix_root(stid, LATCH_SH));
@@ -82,7 +81,7 @@ w_rc_t test_all(ss_m* ssm, test_volume_t *test_volume) {
 TEST (EmlsnTest, All) {
     test_env->empty_logdata_dir();
     sm_options options;
-    EXPECT_EQ(0, test_env->runBtreeTest(test_all, false, default_quota_in_pages, options));
+    EXPECT_EQ(0, test_env->runBtreeTest(test_all, false, options));
 }
 
 int main(int argc, char **argv) {
