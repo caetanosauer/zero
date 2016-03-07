@@ -387,15 +387,16 @@ rc_t partition_t::scan_for_size(bool must_be_skip)
     }
 
     w_assert3(fsize >= XFERSIZE);
-    char buf[XFERSIZE];
+    char buf[2*XFERSIZE];
     size_t bpos = fsize - XFERSIZE;
-    W_DO(me()->pread(_fhdl_rd, buf, XFERSIZE, bpos));
-    size_t pos = XFERSIZE - sizeof(lsn_t) - 1;
+    int pos = 2*XFERSIZE - sizeof(lsn_t);
+    // start reading just the last of 2 blocks, because the file may be just one block
+    W_DO(me()->pread(_fhdl_rd, buf + XFERSIZE, XFERSIZE, bpos));
 
     lsn_t lsn;
     while (pos >= 0) {
         lsn = *((lsn_t*) (buf + pos));
-        if (lsn.hi() == _num && lsn.lo() < bpos + pos - sizeof(baseLogHeader)) {
+        if (lsn.hi() == _num && lsn.lo() < fsize) {
             // Hi LSN bytes match an lo bytes are below current file
             // position -- good chance we've found the last logrec. Read
             // record header to check validity
@@ -412,15 +413,13 @@ rc_t partition_t::scan_for_size(bool must_be_skip)
             }
         }
 
-        if (pos == 0) {
-            // We've scanned last block and didn't find it, but it may
-            // still be on the last sizeof(baseLogHeader) bytes of the
-            // previous block
-            pos = sizeof(baseLogHeader);
-            bpos -= pos;
+        if (pos == XFERSIZE) {
+            // We've scanned last block and didn't find it -- read second
+            // last block
+            bpos -= XFERSIZE;
             W_DO(me()->pread(_fhdl_rd, buf, XFERSIZE, bpos));
         }
-        else { pos--; }
+        pos--;
     }
 
     if (_size <= 0) {
