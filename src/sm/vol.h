@@ -192,6 +192,9 @@ private:
      *  (128 bytes are enough since it contains only vid) */
     char _logrec_buf[128];
 
+    /** Whether to open file with O_DIRECT */
+    bool _use_o_direct;
+
     rc_t dismount(bool abrupt = false);
 
     /** Open backup file descriptor for retore or taking new backup */

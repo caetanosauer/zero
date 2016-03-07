@@ -188,6 +188,8 @@ void Command::setupSMOptions()
     ("sm_vol_readonly", po::value<bool>(),
         "Volume will be opened in read-only mode and all writes from buffer pool \
          will be ignored (uses write elision and single-page recovery)")
+    ("sm_vol_o_direct", po::value<bool>(),
+        "Whether to open volume (i.e., db file) with O_DIRECT")
     ("sm_restart_instant", po::value<bool>(),
         "Enable instant restart")
     ("sm_restart_log_based_redo", po::value<bool>(),

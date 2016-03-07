@@ -45,6 +45,7 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
     _readonly = options.get_bool_option("sm_vol_readonly", false);
     _log_page_reads = options.get_bool_option("sm_vol_log_reads", false);
     _log_page_writes = options.get_bool_option("sm_vol_log_writes", true);
+    _use_o_direct = options.get_bool_option("sm_vol_o_direct", false);
 
     spinlock_write_critical_section cs(&_mutex);
 
@@ -120,8 +121,10 @@ rc_t vol_t::open_backup()
     // mutex held by caller -- no concurrent backup being added
     string backupFile = _backups.back();
     // Using direct I/O
-    int open_flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_SYNC
-        | smthread_t::OPEN_DIRECT;
+    int open_flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_SYNC;
+    if (_use_o_direct) {
+        open_flags |= smthread_t::OPEN_DIRECT;
+    }
     W_DO(me()->open(backupFile.c_str(), open_flags, 0666, _backup_fd));
     w_assert0(_backup_fd > 0);
     _current_backup_lsn = _backup_lsns.back();
