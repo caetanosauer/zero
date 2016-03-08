@@ -808,7 +808,7 @@ public:
      * page size to ensure that logrec headers are not truncated
      */
     const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
-    const static int DFT_WSPACE_SIZE= 10240 * 10240; // 100MB
+    const static int DFT_WSPACE_SIZE= 100; // 100MB
     const static bool DFT_EAGER = false;
     const static bool DFT_READ_WHOLE_BLOCKS = true;
     const static int DFT_GRACE_PERIOD = 1000000; // 1 sec
@@ -912,7 +912,7 @@ private:
     size_t truncCopied;
     size_t truncMissing;
     size_t toSkip;
-    size_t blockSize;
+    const size_t blockSize;
     char* truncBuf;
     bitset<logrec_t::t_max_logrec> ignore;
 };

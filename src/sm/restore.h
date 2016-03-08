@@ -326,7 +326,7 @@ public:
     virtual ~RestoreScheduler();
 
     void enqueue(const PageID& pid);
-    PageID next(bool peek = false);
+    bool next(PageID& next, bool peek = false);
     void setSinglePass(bool singlePass = true);
     bool hasWaitingRequest();
 

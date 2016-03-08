@@ -428,8 +428,12 @@ void KitsCommand::loadOptions(sm_options& options)
 
     if (!archdir.empty()) {
         options.set_string_option("sm_archdir", archdir);
+        options.set_bool_option("sm_archiving", true);
         options.set_bool_option("sm_archiver_eager", opt_eager);
         mkdirs(archdir);
+    }
+    else {
+        options.set_bool_option("sm_archiving", false);
     }
 
     // ticker always turned on

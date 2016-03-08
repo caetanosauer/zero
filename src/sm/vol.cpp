@@ -138,7 +138,7 @@ lsn_t vol_t::get_backup_lsn()
     return _current_backup_lsn;
 }
 
-rc_t vol_t::mark_failed(bool evict, bool redo)
+rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
 {
     spinlock_write_critical_section cs(&_mutex);
 
@@ -163,6 +163,11 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
     // open backup file -- may already be open due to new backup being taken
     if (useBackup && _backup_fd < 0) {
         W_DO(open_backup());
+    }
+
+    if (!ss_m::logArchiver) {
+        throw runtime_error("Cannot simulate restore with mark_failed \
+                without a running log archiver");
     }
 
     _restore_mgr = new RestoreMgr(ss_m::get_options(),
