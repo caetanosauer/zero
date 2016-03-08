@@ -95,7 +95,7 @@ struct RawLock;            // Lock information gathering
 class chkpt_thread_t : public smthread_t
 {
 public:
-    NORET                chkpt_thread_t(unsigned interval);
+    NORET                chkpt_thread_t(int interval);
     NORET                ~chkpt_thread_t();
 
     virtual void        run();
@@ -104,8 +104,9 @@ public:
     bool                is_retired() {return _retire;}
 
 private:
+    bool                _wakeup;
     bool                _retire;
-    unsigned            _interval;
+    int                 _interval;
     pthread_mutex_t     _awaken_lock;
     pthread_cond_t      _awaken_cond;
 
@@ -115,7 +116,7 @@ private:
 };
 
 chkpt_m::chkpt_m(const sm_options& options)
-    : _chkpt_thread(NULL), _chkpt_count(0)
+    : _chkpt_thread(NULL), _chkpt_count(0), _min_rec_lsn(0), _min_xct_lsn(0)
 {
     int interval = options.get_int_option("sm_chkpt_interval", -1);
     if (interval >= 0) {
@@ -126,10 +127,8 @@ chkpt_m::chkpt_m(const sm_options& options)
 
 chkpt_m::~chkpt_m()
 {
-    if (_chkpt_thread)
-    {
+    if (_chkpt_thread) {
         _chkpt_thread->retire();
-        _chkpt_thread->awaken();
         W_COERCE(_chkpt_thread->join());
         delete _chkpt_thread;
     }
@@ -137,9 +136,11 @@ chkpt_m::~chkpt_m()
 
 void chkpt_m::wakeup_thread()
 {
-    if (_chkpt_thread) {
-        _chkpt_thread->awaken();
+    if (!_chkpt_thread) {
+        _chkpt_thread = new chkpt_thread_t(-1);
+        W_COERCE(_chkpt_thread->fork());
     }
+    _chkpt_thread->awaken();
 }
 
 /*********************************************************************
@@ -336,7 +337,7 @@ void chkpt_t::mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn,
     e.store = store;
 }
 
-void chkpt_t::mark_page_clean(PageID pid, lsn_t lsn)
+void chkpt_t::mark_page_clean(PageID pid, lsn_t /*lsn*/)
 {
     // If pid is already on table, it must remain as dirty.
     // But resolved is set anyway, to stop rec and page lsn from being updated
@@ -692,10 +693,13 @@ void chkpt_m::take()
     curr_chkpt.scan_log();
     curr_chkpt.serialize();
 
+    _min_rec_lsn = curr_chkpt.get_min_rec_lsn();
+    _min_xct_lsn = curr_chkpt.get_min_xct_lsn();
+
     // Insert chkpt_end log record
-    LOG_INSERT(chkpt_end_log (curr_chkpt.get_begin_lsn(),
-                curr_chkpt.get_min_rec_lsn(),
-                curr_chkpt.get_min_xct_lsn()), 0);
+    // CS TODO -- are the "min" LSNs still required in the logrec?
+    LOG_INSERT(chkpt_end_log (curr_chkpt.get_begin_lsn(), _min_rec_lsn,
+                _min_xct_lsn), 0);
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_mutex.release_write();
@@ -705,17 +709,9 @@ void chkpt_m::take()
     delete logrec;
 }
 
-lsn_t chkpt_m::get_curr_rec_lsn()
-{
-    chkpt_mutex.acquire_read();
-    lsn_t ret = curr_chkpt.get_min_rec_lsn();
-    chkpt_mutex.release_read();
-    return ret;
-}
-
-chkpt_thread_t::chkpt_thread_t(unsigned interval)
+chkpt_thread_t::chkpt_thread_t(int interval)
     : smthread_t(t_time_critical, "chkpt", WAIT_NOT_USED),
-    _retire(false), _interval(interval)
+    _wakeup(false), _retire(false), _interval(interval)
 {
     DO_PTHREAD(pthread_mutex_init(&_awaken_lock, NULL));
     DO_PTHREAD(pthread_cond_init(&_awaken_cond, NULL));
@@ -728,47 +724,47 @@ chkpt_thread_t::~chkpt_thread_t()
 void
 chkpt_thread_t::run()
 {
-    // Thread waits for an awake signal or for the interval timeout;
-    // whichever comes first
-    while(! _retire)
+    while(!_retire)
     {
         w_assert1(ss_m::chkpt);
         DO_PTHREAD(pthread_mutex_lock(&_awaken_lock));
 
-        struct timespec timeout;
-        sthread_t::timeout_to_timespec(_interval * 1000, timeout); // in ms
-        int code = pthread_cond_timedwait(&_awaken_cond, &_awaken_lock, &timeout);
-        DO_PTHREAD_TIMED(code);
+        if (_interval >= 0) {
+            struct timespec timeout;
+            sthread_t::timeout_to_timespec(_interval * 1000, timeout); // in ms
+            int code = pthread_cond_timedwait(&_awaken_cond, &_awaken_lock, &timeout);
+            if (code == ETIMEDOUT) {
+                _wakeup = true;
+            }
+            DO_PTHREAD_TIMED(code);
+        }
+        else {
+            DO_PTHREAD(pthread_cond_wait(&_awaken_cond, &_awaken_lock));
+        }
 
-        lintel::atomic_thread_fence(lintel::memory_order_acquire);
-        if(_retire) break;
+        DO_PTHREAD(pthread_mutex_unlock(&_awaken_lock));
+
+        if (_retire) { break; }
+        if (!_wakeup) { continue; }
 
         ss_m::chkpt->take();
-
-        // CS: see comment on awaken()
-        DO_PTHREAD(pthread_mutex_unlock(&_awaken_lock));
     }
 }
 
 void
 chkpt_thread_t::retire()
 {
+    DO_PTHREAD(pthread_mutex_lock(&_awaken_lock));
     _retire = true;
-    lintel::atomic_thread_fence(lintel::memory_order_release);
+    DO_PTHREAD(pthread_cond_signal(&_awaken_cond));
+    DO_PTHREAD(pthread_mutex_unlock(&_awaken_lock));
 }
 
 void
 chkpt_thread_t::awaken()
 {
-    // Signal may well be lost, which means checkpoint is already running.
-    // If an unlucky sequence of events causes the signal to be missed while
-    // the checkpoint thread is not running, it should not be a problem since
-    // the caller who is waiting on a checkpoint (e.g.,
-    // log_storage::get_partition_for_flush) should keep retrying in a loop.
-    // Therefore, there's no need for acquiring the mutex here.
-    // Since the chkpt thread runs in an interval, there's also no need to
-    // use some kind of condition variable like _wakeup_received. We might want
-    // to revisit this later and support a chkpt thread that only runs when
-    // recieving a signal (e.g., if _interval < 0).
+    DO_PTHREAD(pthread_mutex_lock(&_awaken_lock));
+    _wakeup = true;
     DO_PTHREAD(pthread_cond_signal(&_awaken_cond));
+    DO_PTHREAD(pthread_mutex_unlock(&_awaken_lock));
 }

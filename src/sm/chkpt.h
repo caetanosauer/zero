@@ -168,7 +168,10 @@ public:
 public:
     void take();
     void wakeup_thread();
-    lsn_t get_curr_rec_lsn();
+
+    lsn_t get_min_rec_lsn() { return _min_rec_lsn; }
+    lsn_t get_min_xct_lsn() { return _min_xct_lsn; }
+    lsn_t get_min_active_lsn() { return std::min(_min_rec_lsn, _min_xct_lsn); }
 
 private:
     chkpt_thread_t*  _chkpt_thread;
@@ -178,6 +181,9 @@ private:
 
     void             _acquire_lock(logrec_t& r, chkpt_t& new_chkpt);
 
+    // Values cached form the last checkpoint
+    lsn_t _min_rec_lsn;
+    lsn_t _min_xct_lsn;
 };
 
 /*<std-footer incl-file-exclusion='CHKPT_H'>  -- do not edit anything below this line -- */
