@@ -104,6 +104,8 @@ public:
 
     rc_t prime_buffer(char* buffer, lsn_t lsn, size_t& prime_offset);
 
+    void destroy();
+
 private:
     partition_number_t    _num;
     log_storage*          _owner;

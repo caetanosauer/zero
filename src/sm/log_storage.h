@@ -74,6 +74,7 @@ typedef std::map<partition_number_t, shared_ptr<partition_t>> partition_map_t;
 namespace fs = boost::filesystem;
 
 class skip_log;
+class partition_recycler_t;
 
 class log_storage {
 
@@ -119,6 +120,8 @@ public:
     static fileoff_t          min_partition_size();
     static fileoff_t          max_partition_size();
 
+    void wakeup_recycler();
+
 private:
     shared_ptr<partition_t> create_partition(partition_number_t pnum);
 
@@ -131,12 +134,22 @@ private:
 
     skip_log*           _skip_log;
 
+    unsigned _max_partitions;
+
     // forbid copy
     log_storage(const log_storage&);
     log_storage& operator=(const log_storage&);
 
+    unsigned delete_old_partitions(partition_number_t older_than = 0);
+    void try_delete(partition_number_t);
+
     // Latch to protect access to partition map
     mutable mcs_rwlock _partition_map_latch;
+
+    // Used by partition recycler thread
+    std::condition_variable _recycler_condvar;
+    std::mutex _recycler_mutex;
+    unique_ptr<partition_recycler_t> _recycler_thread;
 
 public:
     enum { BLOCK_SIZE = partition_t::XFERSIZE };

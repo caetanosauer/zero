@@ -448,3 +448,14 @@ rc_t partition_t::scan_for_size(bool must_be_skip)
 
     return RCOK;
 }
+
+void partition_t::destroy()
+{
+    lock_guard<mutex> lck(_read_mutex);
+
+    W_COERCE(close_for_read());
+    W_COERCE(close_for_append());
+
+    fs::path f = _owner->make_log_name(_num);
+    fs::remove(f);
+}

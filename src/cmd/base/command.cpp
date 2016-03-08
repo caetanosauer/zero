@@ -155,6 +155,8 @@ void Command::setupSMOptions()
         "Path to the file on which to store database pages")
     ("sm_log_partition_size", po::value<int>()->default_value(1024),
         "Size of a log partition in MB")
+    ("sm_log_max_partitions", po::value<int>()->default_value(0),
+        "Maximum number of partitions maintained in log directory")
     ("sm_bufpoolsize", po::value<int>()->default_value(1024),
         "Size of buffer pool in MB")
     ("sm_fakeiodelay-enable", po::value<int>()->default_value(0),
