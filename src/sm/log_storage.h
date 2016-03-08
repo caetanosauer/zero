@@ -62,9 +62,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <partition.h>
 #include <map>
 #include <vector>
+#include <memory>
+#include <mutex>
+#include <condition_variable>
 
 typedef    smlevel_0::partition_number_t partition_number_t;
-typedef std::map<partition_number_t, partition_t*> partition_map_t;
+typedef std::map<partition_number_t, shared_ptr<partition_t>> partition_map_t;
 
 #define BOOST_FILESYSTEM_NO_DEPRECATED
 #include <boost/filesystem.hpp>
@@ -78,18 +81,17 @@ class log_storage {
 
     // use friend mechanism until better interface is implemented
     friend class partition_t;
+    friend class partition_recycler_t;
 
 public:
     log_storage(const sm_options&);
     virtual ~log_storage();
 
-    partition_t*    get_partition_for_flush(lsn_t start_lsn,
+    shared_ptr<partition_t>    get_partition_for_flush(lsn_t start_lsn,
                             long start1, long end1, long start2, long end2);
-    partition_t*    curr_partition() const;
-    void            acquire_partition_lock();
-    void            release_partition_lock();
+    shared_ptr<partition_t>    curr_partition() const;
 
-    partition_t *       get_partition(partition_number_t n) const;
+    shared_ptr<partition_t>       get_partition(partition_number_t n) const;
 
     static long         floor2(long offset, long block_size)
                             { return offset & -block_size; }
@@ -118,21 +120,23 @@ public:
     static fileoff_t          max_partition_size();
 
 private:
-    partition_t* create_partition(partition_number_t pnum);
+    shared_ptr<partition_t> create_partition(partition_number_t pnum);
 
     fs::path        _logpath;
     fileoff_t               _partition_size;
     fileoff_t               _partition_data_size;
 
     partition_map_t _partitions;
-    partition_t* _curr_partition;
+    shared_ptr<partition_t> _curr_partition;
 
     skip_log*           _skip_log;
-    mutable queue_based_block_lock_t _partition_lock;
 
     // forbid copy
     log_storage(const log_storage&);
     log_storage& operator=(const log_storage&);
+
+    // Latch to protect access to partition map
+    mutable mcs_rwlock _partition_map_latch;
 
 public:
     enum { BLOCK_SIZE = partition_t::XFERSIZE };

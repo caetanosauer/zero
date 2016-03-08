@@ -259,11 +259,6 @@ class smthread_t : public sthread_t {
          */
         queue_based_lock_t::ext_qnode _xlist_mutex_node;
 
-        /**\var static __thread queue_based_block_lock_t::ext_qnode _log_me_node;
-         * \brief Queue node for holding partition lock.
-         */
-        queue_based_block_lock_t::ext_qnode _log_me_node;
-
         // force this to be 8-byte aligned:
 
         void    create_TL_stats();
@@ -290,8 +285,6 @@ class smthread_t : public sthread_t {
             QUEUE_EXT_QNODE_INITIALIZE(_me3);
             QUEUE_EXT_QNODE_INITIALIZE(_1thread_xct_me);
             QUEUE_EXT_QNODE_INITIALIZE(_xlist_mutex_node);
-
-            QUEUE_BLOCK_EXT_QNODE_INITIALIZE(_log_me_node);
 
             create_TL_stats();
         }
@@ -583,8 +576,6 @@ public:
     queue_based_lock_t::ext_qnode& get_me3() { return tcb()._me3; }
     queue_based_lock_t::ext_qnode& get_me2() { return tcb()._me2; }
     queue_based_lock_t::ext_qnode& get_me1() { return tcb()._me1; }
-    queue_based_block_lock_t::ext_qnode& get_log_me_node() {
-                                               return tcb()._log_me_node;}
     queue_based_lock_t::ext_qnode& get_xlist_mutex_node() {
                                                return tcb()._xlist_mutex_node;}
     queue_based_lock_t::ext_qnode& get_1thread_xct_me() {

@@ -127,7 +127,7 @@ log_storage::log_storage(const sm_options& options)
             }
 
             long pnum = std::stoi(fname.substr(log_prefix.length()));
-            _partitions[pnum] = new partition_t(this, pnum);
+            _partitions[pnum] = make_shared<partition_t>(this, pnum);
 
             if (pnum >= last_partition) {
                 last_partition = pnum;
@@ -142,7 +142,7 @@ log_storage::log_storage(const sm_options& options)
 
 
 
-    partition_t* p = get_partition(last_partition);
+    auto p = get_partition(last_partition);
     if (!p) {
         create_partition(last_partition);
         p = get_partition(last_partition);
@@ -163,10 +163,11 @@ log_storage::log_storage(const sm_options& options)
 
 log_storage::~log_storage()
 {
-    partition_t* p;
+    spinlock_write_critical_section cs(&_partition_map_latch);
+
     partition_map_t::iterator it = _partitions.begin();
     while (it != _partitions.end()) {
-        p = it->second;
+        auto p = it->second;
         p->close_for_read();
         p->close_for_append();
         it++;
@@ -177,8 +178,7 @@ log_storage::~log_storage()
     delete _skip_log;
 }
 
-partition_t *
-log_storage::get_partition_for_flush(lsn_t start_lsn,
+shared_ptr<partition_t> log_storage::get_partition_for_flush(lsn_t start_lsn,
         long start1, long end1, long start2, long end2)
 {
     w_assert1(end1 >= start1);
@@ -188,20 +188,16 @@ log_storage::get_partition_for_flush(lsn_t start_lsn,
     // This will open a new file when the given start_lsn has a
     // different file() portion from the current partition()'s
     // partition number, so the start_lsn is the clue.
-    partition_t* p = curr_partition();
+    auto p = curr_partition();
     if(start_lsn.file() != p->num()) {
         partition_number_t n = p->num();
         w_assert3(start_lsn.file() == n+1);
         w_assert3(n != 0);
 
         {
-            // CS TODO: this may deadlock because recycling also needs _partition_lock
-            // grab the lock -- we're about to mess with partitions
-            CRITICAL_SECTION(cs, _partition_lock);
             W_COERCE(p->close_for_append());
             p = create_partition(n+1);
             W_COERCE(p->open_for_append());
-            _curr_partition = p;
         }
     }
 
@@ -221,10 +217,11 @@ fileoff_t log_storage::max_partition_size()
     return _floor(tmp - BLOCK_SIZE, log_core::SEGMENT_SIZE) + BLOCK_SIZE;
 }
 
-partition_t* log_storage::get_partition(partition_number_t n) const
+shared_ptr<partition_t> log_storage::get_partition(partition_number_t n) const
 {
+    spinlock_read_critical_section cs(&_partition_map_latch);
     partition_map_t::const_iterator it = _partitions.find(n);
-    if (it == _partitions.end()) { return NULL; }
+    if (it == _partitions.end()) { return nullptr; }
     return it->second;
 }
 
@@ -331,27 +328,36 @@ log_storage::_close_min(partition_number_t n)
     return victim;
 }
 #endif
-partition_t* log_storage::create_partition(partition_number_t pnum)
+shared_ptr<partition_t> log_storage::create_partition(partition_number_t pnum)
 {
 #if W_DEBUG_LEVEL > 2
     // No other partition may be open for append
-    partition_map_t::iterator it = _partitions.begin();
-    for (; it != _partitions.end(); it++) {
-        w_assert3(!it->second->is_open_for_append());
+    {
+        spinlock_read_critical_section cs(&_partition_map_latch);
+        partition_map_t::iterator it = _partitions.begin();
+        for (; it != _partitions.end(); it++) {
+            w_assert3(!it->second->is_open_for_append());
+        }
     }
 #endif
 
     // we should also free up if necessary, as done in close_min
-    partition_t* p = get_partition(pnum);
+    auto p = get_partition(pnum);
     if (p) {
         W_FATAL_MSG(eINTERNAL, << "Partition " << pnum << " already exists");
     }
 
-    p = new partition_t(this, pnum);
+    p = make_shared<partition_t>(this, pnum);
     p->set_size(0);
 
     w_assert3(_partitions.find(pnum) == _partitions.end());
-    _partitions[pnum] = p;
+
+    {
+        spinlock_write_critical_section cs(&_partition_map_latch);
+        w_assert1(!_curr_partition || _curr_partition->num() == pnum - 1);
+        _partitions[pnum] = p;
+        _curr_partition = p;
+    }
 
     return p;
 }
@@ -373,9 +379,9 @@ partition_t* log_storage::create_partition(partition_number_t pnum)
 
 //     return RCOK;
 // }
-
-partition_t * log_storage::curr_partition() const
+shared_ptr<partition_t> log_storage::curr_partition() const
 {
+    spinlock_read_critical_section cs(&_partition_map_latch);
     return _curr_partition;
 }
 
@@ -389,14 +395,4 @@ fs::path log_storage::make_log_path(partition_number_t pnum) const
     return _logpath / fs::path(log_prefix + to_string(pnum));
 }
 
-void
-log_storage::acquire_partition_lock()
-{
-    _partition_lock.acquire(&me()->get_log_me_node());
-}
-void
-log_storage::release_partition_lock()
-{
-    _partition_lock.release(me()->get_log_me_node());
-}
 

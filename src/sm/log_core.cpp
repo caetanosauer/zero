@@ -201,7 +201,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
 
             if (nxt) {
                 if (!forward && ll.lo() == 0) {
-                    partition_t* p = _storage->get_partition(ll.hi() - 1);
+                    auto p = _storage->get_partition(ll.hi() - 1);
                     *nxt = p ? lsn_t(p->num(), p->get_size()) : lsn_t::null;
                 }
                 else {
@@ -232,8 +232,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
         return RC(eEOF);
     }
 
-    // Find and open the partition
-    partition_t* p = _storage->get_partition(ll.hi());
+    auto p = _storage->get_partition(ll.hi());
     W_DO(p->open_for_read());
     w_assert1(p);
 
@@ -281,7 +280,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
                 *nxt = lsn_t::null;
             }
             else {
-                partition_t* p = _storage->get_partition(ll.hi() - 1);
+                auto p = _storage->get_partition(ll.hi() - 1);
                 *nxt = p ? lsn_t(p->num(), p->get_size()) : lsn_t::null;
             }
         }
@@ -395,7 +394,7 @@ log_core::log_core(const sm_options& options)
 
     _storage = new log_storage(options);
 
-    partition_t* p = _storage->curr_partition();
+    auto p = _storage->curr_partition();
     W_COERCE(p->open_for_read());
     _curr_lsn = _durable_lsn = _flush_lsn = lsn_t(p->num(), p->get_size(false));
 
@@ -1165,7 +1164,7 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
     // That, in turn, is determined by whether the _old_epoch.base_lsn.file()
     // matches the _cur_epoch.base_lsn.file()
     // CS: This code used to be on the method _flushX
-    partition_t* p = _storage->get_partition_for_flush(start_lsn, start1, end1,
+    auto p = _storage->get_partition_for_flush(start_lsn, start1, end1,
             start2, end2);
 
     // Flush the log buffer
