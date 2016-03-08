@@ -459,8 +459,6 @@ log_core::~log_core()
     delete [] _buf;
     _buf = NULL;
 
-    w_assert1(_durable_lsn == _curr_lsn);
-
     delete _carray;
 
     DO_PTHREAD(pthread_mutex_destroy(&_wait_flush_lock));

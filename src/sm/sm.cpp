@@ -464,8 +464,8 @@ ss_m::_destruct_once()
 
     ERROUT(<< "Terminating log manager");
     if(log) {
-        log->shutdown(); // log joins any subsidiary threads
-        // We do not delete the log now; shutdown takes care of that. delete log;
+        log->shutdown();
+        delete log;
     }
     log = 0;
 

@@ -130,9 +130,6 @@ private:
     // Latch to protect access to partition map
     mutable mcs_rwlock _partition_map_latch;
 
-    // Used by partition recycler thread
-    std::condition_variable _recycler_condvar;
-    std::mutex _recycler_mutex;
     unique_ptr<partition_recycler_t> _recycler_thread;
 
 public:

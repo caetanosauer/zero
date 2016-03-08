@@ -47,14 +47,23 @@ public:
     void run()
     {
         while (!retire) {
-            unique_lock<mutex> lck(storage->_recycler_mutex);
-            storage->_recycler_condvar.wait(lck);
+            unique_lock<mutex> lck(_recycler_mutex);
+            _recycler_condvar.wait(lck);
+            if (retire) { break; }
             storage->delete_old_partitions();
         }
     }
 
+    void wakeup()
+    {
+        unique_lock<mutex> lck(_recycler_mutex);
+        _recycler_condvar.notify_one();
+    }
+
     log_storage* storage;
     std::atomic<bool> retire;
+    std::condition_variable _recycler_condvar;
+    std::mutex _recycler_mutex;
 };
 
 /*
@@ -142,6 +151,13 @@ log_storage::log_storage(const sm_options& options)
 
 log_storage::~log_storage()
 {
+    if (_recycler_thread) {
+        _recycler_thread->retire = true;
+        _recycler_thread->wakeup();
+        _recycler_thread->join();
+        _recycler_thread = nullptr;
+    }
+
     spinlock_write_critical_section cs(&_partition_map_latch);
 
     partition_map_t::iterator it = _partitions.begin();
@@ -155,11 +171,6 @@ log_storage::~log_storage()
     _partitions.clear();
 
     delete _skip_log;
-
-    if (_recycler_thread) {
-        _recycler_thread->retire = true;
-        _recycler_thread->join();
-    }
 }
 
 shared_ptr<partition_t> log_storage::get_partition_for_flush(lsn_t start_lsn,
@@ -356,12 +367,12 @@ void log_storage::wakeup_recycler()
         _recycler_thread.reset(new partition_recycler_t(this));
         _recycler_thread->fork();
     }
-    _recycler_condvar.notify_one();
+    _recycler_thread->wakeup();
 }
 
 unsigned log_storage::delete_old_partitions(partition_number_t older_than)
 {
-    if (older_than == 0) {
+    if (older_than == 0 && smlevel_0::chkpt) {
         lsn_t min_lsn = smlevel_0::chkpt->get_min_active_lsn();
         older_than = min_lsn.hi();
     }
