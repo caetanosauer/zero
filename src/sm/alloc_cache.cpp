@@ -14,7 +14,7 @@
 const size_t alloc_cache_t::extent_size = alloc_page::bits_held;
 
 alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
-    : stcache(stcache), last_alloc_page(0)
+    : last_alloc_page(0), stcache(stcache)
 {
     vector<StoreID> stores;
     stcache.get_used_stores(stores);
@@ -193,7 +193,7 @@ rc_t alloc_cache_t::write_dirty_pages(lsn_t rec_lsn)
             spinlock_read_critical_section cs(&_latch);
             iter = page_lsns.find(alloc_pid);
             if (iter == page_lsns.end()) { continue; }
-            if (iter->second < rec_lsn) { continue; }
+            if (iter->second > rec_lsn) { continue; }
             page_lsn = iter->second;
         }
 
