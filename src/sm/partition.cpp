@@ -73,6 +73,11 @@ partition_t::partition_t(log_storage *owner, partition_number_t num)
     : _num(num), _owner(owner), _size(-1),
       _fhdl_rd(invalid_fhdl), _fhdl_app(invalid_fhdl)
 {
+#if SM_PAGESIZE < 8192
+    _readbuf = new char[log_storage::BLOCK_SIZE*4];
+#else
+    _readbuf = new char[SM_PAGESIZE*4];
+#endif
 }
 
 /*
@@ -206,10 +211,23 @@ rc_t partition_t::flush(
     return RCOK;
 }
 
-rc_t partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
-        lsn_t* prev_lsn)
+rc_t partition_t::prime_buffer(char* buffer, lsn_t lsn, size_t& prime_offset)
 {
-    INC_TSTAT(log_fetches);
+    if (get_size() > 0) {
+        logrec_t* lr;
+        W_DO(read(lr, lsn, NULL));
+        memcpy(buffer, _readbuf, XFERSIZE);
+        prime_offset = (char*) lr - _readbuf;
+        release_read();
+    }
+    else { prime_offset = 0; }
+
+    return RCOK;
+}
+
+rc_t partition_t::read(logrec_t *&rp, lsn_t &ll, lsn_t* prev_lsn)
+{
+    _read_mutex.lock();
 
     w_assert3(is_open_for_read());
 
@@ -231,19 +249,15 @@ rc_t partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
     int64_t b = 0;
     bool first_time = true;
 
-    rp = (logrec_t *)(readbuf + off);
+    rp = (logrec_t *)(_readbuf + off);
 
-    DBG5(<< "off= " << ((int)off)
-        << "readbuf@ " << W_ADDR(readbuf)
-        << " rp@ " << W_ADDR(rp)
-    );
     fileoff_t leftover = 0;
 
     while (first_time || leftover > 0) {
 
         DBG5(<<"leftover=" << int(leftover) << " b=" << b);
 
-        W_DO(me()->pread(_fhdl_rd, (void *)(readbuf + b), XFERSIZE, lower + b));
+        W_DO(me()->pread(_fhdl_rd, (void *)(_readbuf + b), XFERSIZE, lower + b));
 
         b += XFERSIZE;
 
@@ -257,7 +271,7 @@ rc_t partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
                 if (off >= (int64_t)sizeof(lsn_t)) {
                     // most common and easy case -- prev_lsn is on the
                     // same block
-                    *prev_lsn = *((lsn_t*) (readbuf + off - sizeof(lsn_t)));
+                    *prev_lsn = *((lsn_t*) (_readbuf + off - sizeof(lsn_t)));
                 }
                 else {
                     // we were unlucky -- extra IO required to fetch prev_lsn
@@ -282,9 +296,15 @@ rc_t partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
     return RCOK;
 }
 
+void partition_t::release_read()
+{
+    _read_mutex.unlock();
+}
 
 rc_t partition_t::open_for_read()
 {
+    lock_guard<mutex> lck(_read_mutex);
+
     if(_fhdl_rd == invalid_fhdl) {
         string fname = _owner->make_log_name(_num);
         int fd, flags = smthread_t::OPEN_RDONLY;

@@ -172,23 +172,9 @@ public:
  *********************************************************************/
 
 rc_t
-log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
+log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
 {
-    /*
-     * STEP 1: Open the partition
-     */
-    DBGTHRD(<<"fetching lsn " << ll
-        << " , _curr_lsn = " << curr_lsn()
-        << " , _durable_lsn = " << durable_lsn());
-
-#if W_DEBUG_LEVEL > 0
-    // CS TODO: sanity check is usually failing here due to
-    // curr_lsn < durable_lsn. I don't think this is a bug on the log buffer
-    // code, but rather that we cannot perform sanity checks without acquiring
-    // the proper mutexes. Therefore, we can't do it here.
-    // _sanity_check();
-#endif
-    _storage->acquire_partition_lock(); // caller must release it
+    INC_TSTAT(log_fetches);
 
     lintel::atomic_thread_fence(lintel::memory_order_acquire);
     if (ll < _fetch_buf_end && ll >= _fetch_buf_begin)
@@ -196,15 +182,14 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
         // log record can be found in fetch buffer -- no I/O
         size_t i = ll.hi() - _fetch_buf_first;
         if (_fetch_buffers[i]) {
-            rp = (logrec_t*) (_fetch_buffers[i] + ll.lo());
+            logrec_t* rp = (logrec_t*) (_fetch_buffers[i] + ll.lo());
             w_assert0(rp->lsn() == ll);
 
             if (rp->type() == logrec_t::t_skip)
             {
                 if (forward) {
                     ll = lsn_t(ll.hi() + 1, 0);
-                    _storage->release_partition_lock();
-                    return fetch(ll, rp, nxt, forward);
+                    return fetch(ll, buf, nxt, forward);
                 }
                 else { // backward scan
                     ll = *((lsn_t*) (_fetch_buffers[i] + ll.lo() - sizeof(lsn_t)));
@@ -230,6 +215,8 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
                 }
             }
 
+            memcpy(buf, rp, rp->length());
+
             return RCOK;
         }
     }
@@ -247,20 +234,19 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 
     // Find and open the partition
     partition_t* p = _storage->get_partition(ll.hi());
-    p->open_for_read();
+    W_DO(p->open_for_read());
     w_assert1(p);
 
-    /*
-     * STEP 2: Read log record from the partition
-     */
+    logrec_t* rp;
     lsn_t prev_lsn = lsn_t::null;
     DBGOUT3(<< "fetch @ lsn: " << ll);
-    W_COERCE(p->read(readbuf(), rp, ll, forward ? NULL : &prev_lsn));
+    W_COERCE(p->read(rp, ll, forward ? NULL : &prev_lsn));
     w_assert0(rp->get_lsn_ck() == ll);
 
     // handle skip log record
     if (rp->type() == logrec_t::t_skip)
     {
+        p->release_read();
         if (forward) {
             DBGTHRD(<<"seeked to skip" << ll );
             DBGTHRD(<<"getting next partition.");
@@ -273,7 +259,8 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 
             // re-read
             DBGOUT3(<< "fetch @ lsn: " << ll);
-            W_COERCE(p->read(readbuf(), rp, ll));
+            W_DO(p->open_for_read());
+            W_COERCE(p->read(rp, ll));
             w_assert0(rp->get_lsn_ck() == ll);
         }
         else { // backward scan
@@ -282,7 +269,7 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
             w_assert0(prev_lsn != lsn_t::null);
             ll = prev_lsn;
             DBGOUT3(<< "fetch @ lsn: " << ll);
-            W_COERCE(p->read(readbuf(), rp, ll, &prev_lsn));
+            W_COERCE(p->read(rp, ll, &prev_lsn));
             w_assert0(rp->get_lsn_ck() == ll);
         }
     }
@@ -309,10 +296,9 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
         }
     }
 
-    DBGTHRD(<<"fetch at lsn " << ll  << " returns " << *rp
-            << " with next " << nxt ? *nxt : lsn_t::null);
+    memcpy(buf, rp, rp->length());
+    p->release_read();
 
-    // caller must release the _partition_lock mutex
     return RCOK;
 }
 
@@ -352,7 +338,6 @@ void log_core::shutdown()
  *********************************************************************/
 log_core::log_core(const sm_options& options)
     :
-      _readbuf(NULL),
       _start(0),
       _end(0),
       _segsize(options.get_int_option("sm_logbufsize", 128 << 10)),
@@ -393,16 +378,6 @@ log_core::log_core(const sm_options& options)
     /* Create thread o flush the log */
     _flush_daemon = new flush_daemon_thread_t(this);
 
-    // NOTE: GROT must make this a function of page size, and of xfer size,
-    // since xfer size is fixed (8K).
-    // It has to big enough to read the maximum-sized log record, clearly
-    // more than a page.
-#if SM_PAGESIZE < 8192
-    _readbuf = new char[log_storage::BLOCK_SIZE*4];
-#else
-    _readbuf = new char[SM_PAGESIZE*4];
-#endif
-
     if (_segsize < 64 * 1024) {
         // not mt-safe, but this is not going to happen in
         // concurrency scenario
@@ -415,15 +390,17 @@ log_core::log_core(const sm_options& options)
         W_FATAL(eINTERNAL);
     }
 
-    w_assert1(is_aligned(_readbuf));
     _buf = new char[_segsize];
 
 
     _storage = new log_storage(options);
-    long prime_offset = _storage->prime(_buf, _durable_lsn, log_storage::BLOCK_SIZE);
 
     partition_t* p = _storage->curr_partition();
-    _curr_lsn = _durable_lsn = _flush_lsn = lsn_t(p->num(), p->get_size());
+    W_COERCE(p->open_for_read());
+    _curr_lsn = _durable_lsn = _flush_lsn = lsn_t(p->num(), p->get_size(false));
+
+    size_t prime_offset = 0;
+    W_COERCE(p->prime_buffer(_buf, _durable_lsn, prime_offset));
     cerr << "Initialized curr_lsn to " << _curr_lsn << endl;
 
     _oldest_lsn_tracker = new PoorMansOldestLsnTracker(1 << 20);
@@ -518,9 +495,6 @@ log_core::~log_core()
     _buf = NULL;
 
     w_assert1(_durable_lsn == _curr_lsn);
-
-    delete [] _readbuf;
-    _readbuf = NULL;
 
     delete _carray;
 
@@ -1338,8 +1312,6 @@ void log_core::discard_fetch_buffers()
         delete _fetch_buf_loader;
     }
 
-    _storage->acquire_partition_lock();
-
     for (size_t p = _fetch_buf_first; p > 0 && p <= _fetch_buf_last; p++) {
         size_t i = p - _fetch_buf_first;
         if (_fetch_buffers[i]) {
@@ -1352,8 +1324,6 @@ void log_core::discard_fetch_buffers()
     _fetch_buf_last = 0;
     _fetch_buf_begin = lsn_t::null;
     _fetch_buf_end = lsn_t::null;
-
-    _storage->release_partition_lock();
 }
 
 /*********************************************************************
@@ -1377,15 +1347,7 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t& r)
 
     if (! eof) {
         lsn = cursor;
-        logrec_t* b;
-        rc_t rc = log.fetch(lsn, b, &cursor, forward_scan);  // Either forward or backward scan
-
-        if (!rc.is_error())  {
-            memcpy(&r, b, b->length());
-        }
-        // release right away, since this is only
-        // used in recovery.
-        log.release();
+        rc_t rc = log.fetch(lsn, &r, &cursor, forward_scan);  // Either forward or backward scan
 
         if (rc.is_error())  {
             last_rc = RC_AUGMENT(rc);
@@ -1397,6 +1359,7 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t& r)
                 cerr << "Fatal error : " << last_rc << endl;
             }
         }
+        w_assert1(r.valid_header(lsn));
     }
 
     return ! eof;

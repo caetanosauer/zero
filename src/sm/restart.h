@@ -133,24 +133,25 @@ private:
     * @param[in] current_lsn the LSN the page is currently at.
     * @param[in] emlsn the LSN up to which we should recover the page.
     * @param[out] buffer into which the log records will be copied
-    * @param[out] buffer_size end position of the log records in the buffer
+    * @param[out] lr_pointers pointers to the individual log records within the
+    * buffer
     * @pre current_lsn < emlsn
     */
     static rc_t _collect_spr_logs(
         const PageID& pid, const lsn_t &current_lsn, const lsn_t &emlsn,
-        char*& log_copy_buffer, size_t& buffer_size);
+        char*& buffer, list<uint32_t>& lr_offsets);
 
     /**
     * \brief Apply the given logs to the given page.
     * \ingroup Single-Page-Recovery
     * Defined in log_spr.cpp.
     * @param[in, out] p the page to recover.
-    * @param[in] buffer buffer containing the log records to apply
-    * @param[in] bufsize total usable size of buffer (i.e., the end)
+    * @param[out] lr_pointers pointers to the individual log records to be
+    * replayed, in the correct order (forward list iteration)
     * @pre p is already fixed with exclusive latch
     */
     static rc_t _apply_spr_logs(fixable_page_h &p, char* buffer,
-            size_t bufsize);
+            list<uint32_t>& lr_offsets);
 
 
 public:

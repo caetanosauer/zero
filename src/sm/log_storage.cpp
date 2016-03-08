@@ -23,6 +23,7 @@
 
 #include "log_storage.h"
 #include "log_core.h"
+#include "srwlock.h"
 
 // needed for skip_log (TODO fix this)
 #include "logdef_gen.cpp"
@@ -54,7 +55,7 @@ log_storage::log_storage(const sm_options& options)
     bool reformat = options.get_bool_option("sm_format", false);
 
     if (!reformat && !fs::exists(_logpath)) {
-        cerr << "Error: could not open the log directory " << dir_name() <<endl;
+        cerr << "Error: could not open the log directory " << logdir <<endl;
         W_COERCE(RC(eOS));
     }
 
@@ -93,7 +94,7 @@ log_storage::log_storage(const sm_options& options)
 
 
     // partition must hold at least one buffer...
-    size_t segsize = options.get_int_option("sm_logbufsize", 128 << 10);
+    int segsize = options.get_int_option("sm_logbufsize", 128 << 10);
     if (psize < segsize) {
         W_FATAL(eOUTOFLOGSPACE);
     }
@@ -330,38 +331,6 @@ log_storage::_close_min(partition_number_t n)
     return victim;
 }
 #endif
-
-// Prime buf with the partial block ending at 'next'; return the size of that
-// partial block (possibly 0)
-//
-// We are about to write a record for a certain lsn(next).  If we haven't been
-// appending to this file (e.g., it's startup), we need to make sure the first
-// part of the buffer contains the last partial block in the file, so that when
-// we append that block to the file, we aren't clobbering the tail of the file
-// (partition).
-//
-// This reads from the given file descriptor, the necessary block to cover the
-// lsn.
-long
-log_storage::prime(char* buf, lsn_t next, size_t block_size)
-{
-    // get offset of block that contains "next"
-    sm_diskaddr_t b = sm_diskaddr_t(_floor(next.lo(), block_size));
-
-    // Offset of next within the block we're about to read
-    long prime_offset = next.lo() - b;
-    w_assert3(prime_offset >= 0);
-
-    if(prime_offset > 0) {
-        w_assert3(block_size > 0);
-        partition_t* p = curr_partition();
-        logrec_t* dummy;
-        W_COERCE(p->read(buf, dummy, next, NULL));
-        w_assert3((char*) dummy - buf == prime_offset);
-    }
-    return prime_offset;
-}
-
 partition_t* log_storage::create_partition(partition_number_t pnum)
 {
 #if W_DEBUG_LEVEL > 2

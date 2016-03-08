@@ -1968,7 +1968,6 @@ xct_t::rollback(const lsn_t &save_pt)
     }
 
     w_rc_t            rc;
-    logrec_t*         buf =0;
 
     if(_in_compensated_op > 0) {
         w_assert3(save_pt >= _anchor);
@@ -1990,32 +1989,18 @@ xct_t::rollback(const lsn_t &save_pt)
 
     DBGOUT3(<<"Initial rollback, from: " << nxt << " to: " << save_pt);
 
-    logrec_t* __copy__buf = new logrec_t; // auto-del
-    if(! __copy__buf)
-        { W_FATAL(eOUTOFMEMORY); }
-    logrec_t&         r = *__copy__buf;
+    logrec_t* lrbuf = new logrec_t;
 
     while (save_pt < nxt)
     {
-        rc =  log->fetch(nxt, buf, 0, true);
+        rc =  log->fetch(nxt, lrbuf, 0, true);
         if(rc.is_error() && rc.err_num()==eEOF)
         {
             DBGX(<< " fetch returns EOF" );
-            log->release();
             goto done;
         }
-        else
-        {
-             logrec_t& temp = *buf;
-             w_assert3(!temp.is_skip());
-
-             /* Only copy the valid portion of
-              * the log record, then release it
-              */
-             memcpy(__copy__buf, &temp, temp.length());
-
-             log->release();
-        }
+        w_assert3(!lrbuf->is_skip());
+        logrec_t& r = *lrbuf;
 
         DBGOUT1(<<"Rollback, current undo lsn: " << nxt);
 
@@ -2029,7 +2014,6 @@ xct_t::rollback(const lsn_t &save_pt)
              *  Undo action of r.
              */
 
-            PageID pid = r.pid();
             fixable_page_h page;
 
             // CS TODO: ALL undo should be logical
@@ -2080,7 +2064,7 @@ xct_t::rollback(const lsn_t &save_pt)
         }
     }
 
-    delete __copy__buf;
+    delete lrbuf;
 
     _undo_nxt = nxt;
     _read_watermark = lsn_t::null;

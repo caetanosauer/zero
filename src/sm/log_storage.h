@@ -85,9 +85,7 @@ public:
 
     partition_t*    get_partition_for_flush(lsn_t start_lsn,
                             long start1, long end1, long start2, long end2);
-    partition_t*    find_partition(lsn_t&, bool existing, bool recovery, bool forward);
     partition_t*    curr_partition() const;
-    long            prime(char* buf, lsn_t next, size_t block_size);
     void            acquire_partition_lock();
     void            release_partition_lock();
 
@@ -98,9 +96,6 @@ public:
     static long         ceil2(long offset, long block_size)
                            { return
                                floor2(offset + block_size - 1, block_size); }
-
-
-    const char *        dir_name() { return _logdir; }
 
     // used by partition_t
     skip_log*       get_skip_log()  { return _skip_log; }
@@ -126,7 +121,6 @@ private:
     partition_t* create_partition(partition_number_t pnum);
 
     fs::path        _logpath;
-    char*           _logdir;
     fileoff_t               _partition_size;
     fileoff_t               _partition_data_size;
 
@@ -141,7 +135,7 @@ private:
     log_storage& operator=(const log_storage&);
 
 public:
-    enum { BLOCK_SIZE=partition_t::XFERSIZE };
+    enum { BLOCK_SIZE = partition_t::XFERSIZE };
     static const string log_prefix;
     static const string log_regex;
 };

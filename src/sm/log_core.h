@@ -98,7 +98,7 @@ public:
     rc_t    flush_all(bool block=true) {
                           return flush(curr_lsn().advance(-1), block); }
     rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
-    rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
+    rc_t            fetch(lsn_t &lsn, void* buf, lsn_t* nxt, const bool forward);
     void            shutdown();
     rc_t            truncate();
 
@@ -148,11 +148,6 @@ public:
         return _storage->make_log_name(p);
     }
 
-    void release()
-    {
-        _storage->release_partition_lock();
-    }
-
     PoorMansOldestLsnTracker* get_oldest_lsn_tracker()
     {
         return _oldest_lsn_tracker;
@@ -174,9 +169,6 @@ protected:
     lsn_t _fetch_buf_begin;
     lsn_t _fetch_buf_end;
     fetch_buffer_loader_t* _fetch_buf_loader;
-
-    char*           _readbuf;
-    char *          readbuf() { return _readbuf; }
 
     ticker_thread_t* _ticker;
 

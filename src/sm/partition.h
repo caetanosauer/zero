@@ -60,8 +60,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "w_defines.h"
 
 #include "logrec.h"
+#include <mutex>
 
 class log_storage; // forward
+
 class partition_t {
 public:
     typedef smlevel_0::fileoff_t          fileoff_t;
@@ -69,24 +71,10 @@ public:
 
     enum { XFERSIZE = 8192 };
     enum { invalid_fhdl = -1 };
-    enum { nosize = -1 };
 
     partition_t(log_storage*, partition_number_t);
     virtual ~partition_t() { }
 
-
-private:
-    partition_number_t    _num;
-    log_storage*          _owner;
-    long                  _size;
-    int                   _fhdl_rd;
-    int                   _fhdl_app;
-    static int            _artificial_flush_delay;  // in microseconds
-
-    void             fsync_delayed(int fd);
-    rc_t scan_for_size(bool must_be_skip);
-
-public:
     partition_number_t num() const   { return _num; }
 
     rc_t open_for_append();
@@ -94,16 +82,11 @@ public:
     rc_t close_for_append();
     rc_t close_for_read();
 
-    w_rc_t             read(char* readbuf,
-                            logrec_t *&r, lsn_t &ll,
-                            lsn_t* prev_lsn = NULL);
-    rc_t               flush(
-                            lsn_t lsn,
-                            const char* const buf,
-                            long start1,
-                            long end1,
-                            long start2,
-                            long end2);
+    rc_t read(logrec_t *&r, lsn_t &ll, lsn_t* prev_lsn = NULL);
+    void release_read();
+
+    rc_t flush(lsn_t lsn, const char* const buf, long start1, long end1,
+            long start2, long end2);
 
     bool is_open_for_read() const
     {
@@ -119,6 +102,22 @@ public:
 
     void set_size(size_t size) { _size = size; }
 
+    rc_t prime_buffer(char* buffer, lsn_t lsn, size_t& prime_offset);
+
+private:
+    partition_number_t    _num;
+    log_storage*          _owner;
+    long                  _size;
+    int                   _fhdl_rd;
+    int                   _fhdl_app;
+    static int            _artificial_flush_delay;  // in microseconds
+    char*                 _readbuf;
+
+    void             fsync_delayed(int fd);
+    rc_t scan_for_size(bool must_be_skip);
+
+    // Serialize read calls, which use the same buffer
+    mutex _read_mutex;
 };
 
 #endif

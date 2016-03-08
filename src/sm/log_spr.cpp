@@ -82,11 +82,11 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn)
     w_assert0(p.lsn() <= emlsn);
 
     char* buffer = NULL;
-    size_t bufsize = 0;
-    W_DO(_collect_spr_logs(pid, p.lsn(), emlsn, buffer, bufsize));
-    w_assert0(buffer);
+    list<uint32_t> lr_offsets;
+    W_DO(_collect_spr_logs(pid, p.lsn(), emlsn, buffer, lr_offsets));
+    w_assert1(buffer);
 
-    W_DO(_apply_spr_logs(p, buffer, bufsize));
+    W_DO(_apply_spr_logs(p, buffer, lr_offsets));
     delete[] buffer;
 
     w_assert0(p.lsn() == emlsn);
@@ -98,51 +98,46 @@ rc_t restart_m::_collect_spr_logs(
     const PageID& pid,         // In: page ID of the page to work on
     const lsn_t& current_lsn,  // In: known last write to the page, where recovery starts
     const lsn_t& emlsn,        // In: starting point of the log chain
-    char*& buffer, size_t& buffer_size)
+    char*& buffer,
+    list<uint32_t>& lr_offsets)
 {
     w_assert0(!emlsn.is_null());
 
     // Allocate initial buffer -- expand later if needed
     // CS: regular allocation is fine since SPR isn't such a critical operation
-    size_t buffer_capacity = 1 << 16; // start with 64KB
+    size_t buffer_capacity = 1 << 18; // start with 256KB
     // must be freed by caller
     buffer = new char[buffer_capacity];
-    size_t pos = buffer_capacity;
+    size_t pos = 0;
 
     lsn_t nxt = emlsn;
     while (current_lsn < nxt && nxt != lsn_t::null) {
 
         // STEP 1: Fecth log record and copy it into buffer
-        logrec_t* lr = NULL;
         lsn_t lsn = nxt;
-        rc_t rc = smlevel_0::log->fetch(lsn, lr, NULL, true);
+        logrec_t* lr = (logrec_t*) (buffer + pos);
+        rc_t rc = smlevel_0::log->fetch(lsn, buffer + pos, NULL, true);
 
         if ((rc.is_error()) && (eEOF == rc.err_num())) {
             // EOF -- scan finished
             break;
         }
-        else {
-            W_DO(rc);
-        }
+        else { W_DO(rc); }
         w_assert0(lsn == nxt);
-        // ERROUT(<< "restart_m::_collect_spr_logs, pid = " << pid << ", log = " << *lr);
 
-        if (lr->length() > pos) {
-            // double capacity of buffer
+        if (sizeof(logrec_t) > buffer_capacity - pos) {
             DBGOUT1(<< "Doubling SPR buffer capacity");
             buffer_capacity *= 2;
             char* tmp = new char[buffer_capacity];
-            memcpy(tmp + buffer_capacity/2, buffer, buffer_capacity/2);
+            memcpy(tmp, buffer, buffer_capacity/2);
             delete[] buffer;
             buffer = tmp;
-            pos += buffer_capacity/2;
-            w_assert0(lr->length() <= pos);
+            lr = (logrec_t*) (buffer + pos);
+            w_assert1(lr->length() <= buffer_capacity - pos);
         }
 
-        pos -= lr->length();
-        memcpy(buffer + pos, lr, lr->length());
-        smlevel_0::log->release();
-        lr = (logrec_t*) (buffer + pos);
+        lr_offsets.push_front(pos);
+        pos += lr->length();
 
         // STEP 2: Obtain LSN of previous log record on the same page (nxt)
 
@@ -176,22 +171,20 @@ rc_t restart_m::_collect_spr_logs(
         }
     }
 
-    // shift log records into beginning of buffer
-    buffer_size = buffer_capacity - pos;
-    memmove(buffer, buffer + pos, buffer_size);
     return RCOK;
 }
 
-rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer, size_t bufsize)
+rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer,
+        list<uint32_t>& offsets)
 {
     lsn_t prev_lsn = lsn_t::null;
     PageID pid = p.pid();
-    size_t pos = 0;
-    while (pos < bufsize) {
-        logrec_t* lr = (logrec_t*) (buffer + pos);
+    list<uint32_t>::const_iterator iter;
+    for (iter = offsets.begin(); iter != offsets.end(); iter++) {
+        logrec_t* lr = (logrec_t*) (buffer + *iter);
 
         w_assert1(lr->valid_header(lsn_t::null));
-        w_assert1(pos == 0 || lr->is_multi_page() ||
+        w_assert1(iter == offsets.begin() || lr->is_multi_page() ||
                (prev_lsn == lr->page_prev_lsn() && p.pid() == lr->pid()));
 
         if (lr->is_redo() && p.lsn() < lr->lsn_ck()) {
@@ -211,7 +204,6 @@ rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer, size_t bufsize)
             p.update_clsn(lr->lsn_ck());
         }
 
-        pos += lr->length();
         prev_lsn = lr->lsn_ck();
     }
 
