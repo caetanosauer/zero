@@ -65,9 +65,6 @@ public:
  */
 log_storage::log_storage(const sm_options& options)
     :
-        _partition_size(0),
-        _partition_data_size(0),
-        _curr_partition(NULL),
         _skip_log(new skip_log)
 {
     std::string logdir = options.get_string_option("sm_logdir", "");
@@ -84,61 +81,15 @@ log_storage::log_storage(const sm_options& options)
         W_COERCE(RC(eOS));
     }
 
-    // option in MB
-    fileoff_t psize = 1024 * 1024 *
-        fileoff_t(options.get_int_option("sm_log_partition_size", 1024));
-    psize = _floor(psize - BLOCK_SIZE, log_core::SEGMENT_SIZE) + BLOCK_SIZE;
-
-    if (psize > log_storage::max_partition_size()) {
-        // we might not be able to do this:
-        fileoff_t tmp = log_storage::max_partition_size();
-        tmp /= 1024;
-
-        std::cerr << "Partition data size " << psize
-                << " exceeds limit (" << log_storage::max_partition_size() << ") "
-                << " imposed by the size of an lsn."
-                << std::endl;
-        std::cerr << " Choose a smaller sm_logsize." << std::endl;
-        std::cerr << " Maximum is :" << tmp << std::endl;
-        W_FATAL(eCRASH);
-    }
-
-    if (psize < log_storage::min_partition_size()) {
-        fileoff_t tmp = fileoff_t(log_storage::min_partition_size());
-        tmp *= smlevel_0::max_openlog;
-        tmp /= 1024;
-        std::cerr
-            << "Partition data size (" << psize
-            << ") is too small for " << endl
-            << " a segment ("
-            << log_storage::min_partition_size()   << ")" << endl
-            << "Partition data size is computed from sm_logsize;"
-            << " minimum sm_logsize is " << tmp << endl;
-        W_FATAL(eCRASH);
-    }
-
-
-    // partition must hold at least one buffer...
-    int segsize = options.get_int_option("sm_logbufsize", 128 << 10);
-    if (psize < segsize) {
-        W_FATAL(eOUTOFLOGSPACE);
-    }
+    fileoff_t psize = fileoff_t(options.get_int_option("sm_log_partition_size", 1024));
+    // option given in MB -> convert to B
+    psize = psize * 1024 * 1024;
+    // round to next multiple of the log buffer segment size
+    psize = (psize / log_core::SEGMENT_SIZE) * log_core::SEGMENT_SIZE;
+    _partition_size = psize;
 
     // maximum number of partitions on the filesystem
     _max_partitions = options.get_int_option("sm_log_max_partitions", 0);
-
-    // largest integral multiple of segsize() not greater than usable_psize:
-    _partition_data_size = _floor(psize, segsize);
-
-    if(_partition_data_size == 0)
-    {
-        cerr << "log size is too small: size "<<psize<<" psize "<<psize
-        <<", segsize() "<< segsize <<", blocksize "<<BLOCK_SIZE<< endl;
-        W_FATAL(eOUTOFLOGSPACE);
-    }
-    _partition_size = _partition_data_size + BLOCK_SIZE;
-    DBGTHRD(<< "log_storage::_set_size setting _partition_size (limit LIMIT) "
-            << _partition_size);
 
     partition_number_t  last_partition = 1;
 
@@ -235,19 +186,6 @@ shared_ptr<partition_t> log_storage::get_partition_for_flush(lsn_t start_lsn,
     }
 
     return p;
-}
-
-fileoff_t log_storage::min_partition_size()
-{
-     return _floor(log_core::SEGMENT_SIZE, log_core::SEGMENT_SIZE)
-         + BLOCK_SIZE;
-}
-
-fileoff_t log_storage::max_partition_size()
-{
-    fileoff_t tmp = sthread_t::max_os_file_size;
-    tmp = tmp > lsn_t::max.lo() ? lsn_t::max.lo() : tmp;
-    return _floor(tmp - BLOCK_SIZE, log_core::SEGMENT_SIZE) + BLOCK_SIZE;
 }
 
 shared_ptr<partition_t> log_storage::get_partition(partition_number_t n) const

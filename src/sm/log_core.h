@@ -121,26 +121,8 @@ public:
     rc_t load_fetch_buffers();
     void discard_fetch_buffers();
 
-    // DO NOT MAKE SEGMENT_SIZE smaller than 3 pages!  Since we need to
-    // fit at least a single max-sized log record in a segment.
-    // It would make no sense whatsoever to make it that small.
-    // TODO: we need a better way to parameterize this; if a page
-    // is large, we don't necessarily want to force writes to be
-    // large; but we do need to make the segment size some reasonable
-    // number of pages. If pages are 32K, then 128 blocks is only
-    // four pages, which will accommodate all log records .
-    //
-    // NOTE: we have to fit two checkpoints into a segment, and
-    // the checkpoint size is a function of the number of buffers in
-    // the buffer pool among other things; so a maximum-sized checkpoint
-    // is pretty big and the smaller the page size, the bigger it is.
-    // 128 pages is 32 32-K pages, which is room enough for
-    // 10+ max-sized log records.
-#if SM_PAGESIZE < 8192
-    enum { SEGMENT_SIZE= 256 * log_storage::BLOCK_SIZE };
-#else
-    enum { SEGMENT_SIZE= 128 * log_storage::BLOCK_SIZE };
-#endif
+    // log buffer segment size = 128 MB
+    enum { SEGMENT_SIZE = 16384 * log_storage::BLOCK_SIZE };
 
     // Functions delegated to log_storage (CS TODO)
     string make_log_name(uint32_t p)

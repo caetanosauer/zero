@@ -94,28 +94,13 @@ public:
 
     shared_ptr<partition_t>       get_partition(partition_number_t n) const;
 
-    static long         floor2(long offset, long block_size)
-                            { return offset & -block_size; }
-    static long         ceil2(long offset, long block_size)
-                           { return
-                               floor2(offset + block_size - 1, block_size); }
-
     // used by partition_t
     skip_log*       get_skip_log()  { return _skip_log; }
 
-    fileoff_t           partition_data_size() const {
-                            return _partition_data_size; }
-
-    /**\brief used by partition */
-    fileoff_t limit() const { return _partition_size; }
+    fileoff_t get_partition_size() const { return _partition_size; }
 
     string make_log_name(partition_number_t pnum) const;
     fs::path make_log_path(partition_number_t pnum) const;
-
-    static long         _floor(long offset, long block_size)
-                            { return (offset/block_size)*block_size; }
-    static long         _ceil(long offset, long block_size)
-                            { return _floor(offset + block_size - 1, block_size); }
 
     static fileoff_t          min_partition_size();
     static fileoff_t          max_partition_size();
@@ -127,7 +112,6 @@ private:
 
     fs::path        _logpath;
     fileoff_t               _partition_size;
-    fileoff_t               _partition_data_size;
 
     partition_map_t _partitions;
     shared_ptr<partition_t> _curr_partition;

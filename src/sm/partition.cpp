@@ -98,6 +98,11 @@ rc_t partition_t::open_for_append()
     return RCOK;
 }
 
+long floor2(long offset, long block_size)
+{ return offset & -block_size; }
+long ceil2(long offset, long block_size)
+{ return floor2(offset + block_size - 1, block_size); }
+
 // Block of zeroes : used in next function.
 // Initialize on first access:
 // block to be cleared upon first use.
@@ -147,7 +152,7 @@ rc_t partition_t::flush(
                 << " end2 " << end2 );
 
         // works because BLOCK_SIZE is always a power of 2
-        long file_offset = log_storage::floor2(lsn.lo(), log_storage::BLOCK_SIZE);
+        long file_offset = floor2(lsn.lo(), log_storage::BLOCK_SIZE);
         // offset is rounded down to a block_size
 
         long delta = lsn.lo() - file_offset;
@@ -179,7 +184,7 @@ rc_t partition_t::flush(
         long total = write_size + s->length();
 
         // works because BLOCK_SIZE is always a power of 2
-        long grand_total = log_storage::ceil2(total, log_storage::BLOCK_SIZE);
+        long grand_total = ceil2(total, log_storage::BLOCK_SIZE);
         // take it up to multiple of block size
         w_assert2(grand_total % log_storage::BLOCK_SIZE == 0);
 

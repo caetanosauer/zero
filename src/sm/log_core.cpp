@@ -339,32 +339,11 @@ log_core::log_core(const sm_options& options)
     :
       _start(0),
       _end(0),
-      _segsize(options.get_int_option("sm_logbufsize", 128 << 10)),
       _waiting_for_flush(false),
       _shutting_down(false),
       _flush_daemon_running(false)
 {
-    // adjust actual size of log buffer (round to segment size)
-    _segsize = log_storage::_ceil(_segsize, SEGMENT_SIZE);
-
-    // pretty big limit -- really, the limit is imposed by the OS's
-    // ability to read/write
-    if (uint64_t(_segsize) < (uint64_t) 4 * smlevel_0::page_sz) {
-        cerr << "Log buf size (sm_logbufsize = " << (int)_segsize
-        << " ) is too small for pages of size "
-        << unsigned(smlevel_0::page_sz) << " bytes."
-        << endl;
-        cerr << "Need to hold at least 4 pages ( " << 4 * smlevel_0::page_sz
-        << ")"
-        << endl;
-        W_FATAL(eCRASH);
-    }
-    if (uint64_t(_segsize) > uint64_t(max_int4)) {
-        cerr << "Log buf size (sm_logbufsize = " << (int)_segsize
-        << " ) is too big: individual log files can't be large files yet."
-        << endl;
-        W_FATAL(eCRASH);
-    }
+    _segsize = SEGMENT_SIZE;
 
     DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
     DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
@@ -377,20 +356,7 @@ log_core::log_core(const sm_options& options)
     /* Create thread o flush the log */
     _flush_daemon = new flush_daemon_thread_t(this);
 
-    if (_segsize < 64 * 1024) {
-        // not mt-safe, but this is not going to happen in
-        // concurrency scenario
-        cerr << "Log buf size (sm_logbufsize) too small: "
-        << _segsize << ", require at least " << 64 * 1024
-        << endl << endl;
-        fprintf(stderr,
-            "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
-            _segsize, 64*1024);
-        W_FATAL(eINTERNAL);
-    }
-
     _buf = new char[_segsize];
-
 
     _storage = new log_storage(options);
 
@@ -670,7 +636,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
         _buf_epoch.end = new_end;
     }
     // next_lsn is first byte after the tail of the log.
-    else if(next_lsn.lo() <= _storage->partition_data_size()) {
+    else if(next_lsn.lo() <= _storage->get_partition_size()) {
         // wrap within a partition
         _buf_epoch.base_lsn += _segsize;
         _buf_epoch.base += _segsize;
