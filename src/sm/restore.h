@@ -373,6 +373,10 @@ inline bool RestoreMgr::isRestored(const PageID& pid)
     }
 
     unsigned seg = getSegmentForPid(pid);
+    if (seg >= bitmap->getSize()) {
+        return true;
+    }
+
     return bitmap->get(seg);
 }
 
