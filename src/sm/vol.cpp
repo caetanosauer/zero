@@ -110,6 +110,8 @@ void vol_t::delete_dirty_page(PageID pid)
 {
     if (!_dirty_pages) { return; }
 
+    spinlock_write_critical_section cs(&_mutex);
+
     buf_tab_t::iterator it = _dirty_pages->find(pid);
     if (it != _dirty_pages->end()) {
         _dirty_pages->erase(it);
