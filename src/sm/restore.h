@@ -119,7 +119,7 @@ public:
 
     virtual void run();
 
-    void shutdown();
+    bool try_shutdown();
 
 protected:
     // Two bitmaps are required for asynchronous writing: one to tell which
@@ -231,7 +231,7 @@ protected:
     }
 
     void unpin() {
-        lintel::unsafe::atomic_fetch_sub(&pinCount, -1);
+        lintel::unsafe::atomic_fetch_sub(&pinCount, 1);
     }
 
     /** \brief Method that executes the actual restore operations in a loop

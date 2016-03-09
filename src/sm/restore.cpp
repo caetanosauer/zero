@@ -315,19 +315,24 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     replayedBitmap = new RestoreBitmap(lastUsedPid / segmentSize + 1);
 }
 
-void RestoreMgr::shutdown()
+bool RestoreMgr::try_shutdown()
 {
-    while (true) {
-        // Try to set pin from 0 to -1 until we succeed. Only then it is
-        // guaranteed that nobody will access the restore manager anymore.
-        usleep(1000); // 1ms
-        int32_t z = 0;
-        if (lintel::unsafe::atomic_compare_exchange_strong(&pinCount, &z, -1))
-        { break; }
+    if (pinCount < 0) {
+        // we've already shut down
+        return true;
     }
 
-    w_assert0(finished());
-    join();
+    // Try to atomically switch pin count from 0 to -1. If that fails, it means
+    // someone is still using us and we can't shutdown.
+    int32_t z = 0;
+    if (!lintel::unsafe::atomic_compare_exchange_strong(&pinCount, &z, -1)) {
+        return false;
+    }
+
+    if (!finished()) {
+        // restore not finished yet -- can't shutdown
+        return false;
+    }
 
     if (asyncWriter) {
         asyncWriter->shutdown();
@@ -335,6 +340,7 @@ void RestoreMgr::shutdown()
     }
 
     backup->finish();
+    return true;
 }
 
 RestoreMgr::~RestoreMgr()
@@ -756,6 +762,11 @@ void RestoreMgr::run()
     sys_xct_section_t ssx(true);
     log_restore_end();
     ssx.end_sys_xct(RCOK);
+
+    while (!try_shutdown()) {
+        ::usleep(1000000); // 1 sec
+    }
+    w_assert0(finished());
 }
 
 SegmentWriter::SegmentWriter(RestoreMgr* restore)

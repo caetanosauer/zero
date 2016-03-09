@@ -246,37 +246,25 @@ bool vol_t::check_restore_finished()
         }
 
         // close restore manager
-        _restore_mgr->shutdown();
+        if (_restore_mgr->try_shutdown()) {
+            // join should be immediate, since thread is not running
+            _restore_mgr->join();
+            delete _restore_mgr;
+            _restore_mgr = NULL;
 
-        delete _restore_mgr;
-        _restore_mgr = NULL;
+            // close backup file
+            if (_backup_fd > 0) {
+                W_COERCE(me()->close(_backup_fd));
+                _backup_fd = -1;
+                _current_backup_lsn = lsn_t::null;
+            }
 
-        // close backup file
-        if (_backup_fd > 0) {
-            W_COERCE(me()->close(_backup_fd));
-            _backup_fd = -1;
-            _current_backup_lsn = lsn_t::null;
+            set_failed(false);
+            return true;
         }
-
-        set_failed(false);
-        return true;
     }
-}
 
-inline void vol_t::check_metadata_restored() const
-{
-    /* During restore, we must wait for shpid 0 to be restored.  Even though it
-     * is not an actual pid restored in log replay, the log records of store
-     * operations have pid 0, and they must be restored first so that the
-     * stnode cache is restored.  See RestoreMgr::restoreMetadata()
-     *
-     * All operations that access metadata, i.e., allocations, store
-     * operations, and root page ids, must wait for metadata to be restored
-     */
-    if (is_failed()) {
-        w_assert1(_restore_mgr);
-        _restore_mgr->waitUntilRestored(PageID(0));
-    }
+    return false;
 }
 
 void vol_t::redo_segment_restore(unsigned segment)
@@ -561,7 +549,11 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
             return RC(eVOLFAILED);
         }
         else {
-            { // pin avoids restore mgr being destructed while we access it
+            {
+                // Pin avoids restore mgr being destructed while we access it.
+                // If it returns false, then restore manager was terminated,
+                // which implies that restore process is done and we can safely
+                // read the volume
                 spinlock_read_critical_section cs(&_mutex);
                 if (!_restore_mgr->pin()) { break; }
             }
@@ -586,6 +578,7 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
                         if (_log_page_reads) {
                             sysevent::log_page_read(first_page + i);
                         }
+                        _restore_mgr->unpin();
                         return RCOK;
                     }
                 }

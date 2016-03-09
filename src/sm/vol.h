@@ -209,9 +209,6 @@ private:
 
     lsn_t get_dirty_page_emlsn(PageID pid) const;
     void delete_dirty_page(PageID pid);
-
-    /** If media failure happened, wait for metadata to be restored */
-    void check_metadata_restored() const;
 };
 
 inline bool vol_t::is_valid_store(StoreID f) const
