@@ -1543,6 +1543,10 @@ void LogArchiver::replacement()
             return;
         }
 
+        if (!lr->is_redo()) {
+            continue;
+        }
+
         pushIntoHeap(lr, lr->is_multi_page());
     }
 }
