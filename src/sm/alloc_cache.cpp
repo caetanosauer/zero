@@ -36,14 +36,16 @@ rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, bool is_last_ext)
 {
     // Perform I/O without holding latch
     PageID alloc_pid = ext * extent_size;
-    fixable_page_h p;
-    W_DO(p.fix_direct(alloc_pid, LATCH_SH, false, false));
+    alloc_page* page;
+    int res= posix_memalign((void**) &page, sizeof(generic_page),
+            sizeof(generic_page));
+    w_assert0(res == 0);
+    W_DO(smlevel_0::vol->read_page_verify(alloc_pid, (generic_page*) page));
 
     spinlock_write_critical_section cs(&_latch);
 
     // protect against race on concurrent loads
     if (loaded_extents[ext]) {
-        p.unfix();
         return RCOK;
     }
 
@@ -51,8 +53,6 @@ rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, bool is_last_ext)
         // we know that at least all pids in lower extents were once allocated
         last_alloc_page = alloc_pid;
     }
-
-    alloc_page* page = (alloc_page*) p.get_generic_page();
 
     size_t last_alloc = 0;
     size_t j = alloc_page::bits_held;
@@ -72,9 +72,8 @@ rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, bool is_last_ext)
         j--;
     }
 
-    page_lsns[p.pid()] = p.lsn();
+    page_lsns[page->pid] = page->lsn;
     loaded_extents[ext] = true;
-    p.unfix();
 
     return RCOK;
 }

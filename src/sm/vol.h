@@ -58,7 +58,8 @@ public:
      * to the given EMLSN (expected minimum LSN). If that's the case, invoke
      * single-page recovery to restore page to its most recent state.
      */
-    rc_t read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn);
+    rc_t read_page_verify(PageID pnum, generic_page* const buf,
+            lsn_t emlsn = lsn_t::null);
 
     rc_t                read_many_pages(
         PageID             first_page,

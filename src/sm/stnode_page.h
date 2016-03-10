@@ -135,7 +135,7 @@ public:
     void dump(ostream& out);
 
     extent_id_t get_last_extent() {
-        return _stnode_page.get_last_extent();
+        return _stnode_page->get_last_extent();
     }
 
     lsn_t get_page_lsn();
@@ -148,7 +148,7 @@ private:
     // but simply as an in-memory data structure. As in alloc_cache_t,
     // decoupled propagation and checkpoints will take care of maintaining
     // the page on disk.
-    stnode_page _stnode_page;
+    stnode_page* _stnode_page;
 
     /// Required to maintain per-page log chain (see comments on alloc_cache.h)
     lsn_t prev_page_lsn;
