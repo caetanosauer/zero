@@ -454,7 +454,6 @@ chkpt_end_log::chkpt_end_log(const lsn_t& lsn, const lsn_t& min_rec_lsn,
 chkpt_bf_tab_t::chkpt_bf_tab_t(
     int                 cnt,        // I-  # elements in pids[] and rlsns[]
     const PageID*         pids,        // I-  id of of dirty pages
-    const StoreID*        stores,       // I-  store number of dirty pages
     const lsn_t*         rlsns,        // I-  rlsns[i] is recovery lsn of pids[i], the oldest
     const lsn_t*         plsns)        // I-  plsns[i] is page lsn lsn of pids[i], the latest
     : count(cnt)
@@ -463,7 +462,6 @@ chkpt_bf_tab_t::chkpt_bf_tab_t(
     w_assert1(count <= max);
     for (uint i = 0; i < count; i++) {
         brec[i].pid = pids[i];
-        brec[i].store = stores[i];
         brec[i].rec_lsn = rlsns[i];
         brec[i].page_lsn = plsns[i];
     }
@@ -473,11 +471,10 @@ chkpt_bf_tab_t::chkpt_bf_tab_t(
 chkpt_bf_tab_log::chkpt_bf_tab_log(
     int                 cnt,        // I-  # elements in pids[] and rlsns[]
     const PageID*         pid,        // I-  id of of dirty pages
-    const StoreID*        store,   // I- store number of dirty pages
     const lsn_t*         rec_lsn,// I-  rec_lsn[i] is recovery lsn (oldest) of pids[i]
     const lsn_t*         page_lsn)// I-  page_lsn[i] is page lsn (latest) of pids[i]
 {
-    fill((PageID) 0, (new (_data) chkpt_bf_tab_t(cnt, pid, store, rec_lsn, page_lsn))->size());
+    fill((PageID) 0, (new (_data) chkpt_bf_tab_t(cnt, pid, rec_lsn, page_lsn))->size());
 }
 
 

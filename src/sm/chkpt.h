@@ -76,11 +76,9 @@ struct buf_tab_entry_t {
     lsn_t rec_lsn;              // initial dirty lsn
     lsn_t page_lsn;             // last write lsn
     lsn_t clean_lsn;            // last time page was cleaned
-    StoreID store; // CS TODO: why is this needed?
 
     buf_tab_entry_t() :
-        rec_lsn(lsn_t::max), page_lsn(lsn_t::null), clean_lsn(lsn_t::null),
-        store(0)
+        rec_lsn(lsn_t::max), page_lsn(lsn_t::null), clean_lsn(lsn_t::null)
     {}
 
     bool is_dirty() const { return page_lsn >= clean_lsn; }
@@ -118,8 +116,7 @@ public: // required for restart for now
 public:
     void scan_log();
 
-    void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn,
-            StoreID store);
+    void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn);
     void mark_page_clean(PageID pid, lsn_t lsn);
 
     void mark_xct_active(tid_t tid, lsn_t first_lsn, lsn_t last_lsn);

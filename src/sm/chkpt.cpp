@@ -191,11 +191,11 @@ void chkpt_t::scan_log()
 
         if (r.is_page_update()) {
             w_assert0(r.is_redo());
-            mark_page_dirty(r.pid(), lsn, lsn, r.stid());
+            mark_page_dirty(r.pid(), lsn, lsn);
 
             if (r.is_multi_page()) {
                 w_assert0(r.pid2() != 0);
-                mark_page_dirty(r.pid2(), lsn, lsn, r.stid());
+                mark_page_dirty(r.pid2(), lsn, lsn);
             }
         }
 
@@ -214,7 +214,7 @@ void chkpt_t::scan_log()
                     const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
                     for (uint i = 0; i < dp->count; i++) {
                         mark_page_dirty(dp->brec[i].pid, dp->brec[i].page_lsn,
-                                dp->brec[i].rec_lsn, dp->brec[i].store);
+                                dp->brec[i].rec_lsn);
                     }
                 }
                 break;
@@ -332,13 +332,11 @@ void chkpt_t::init()
     bkp_path.clear();
 }
 
-void chkpt_t::mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn,
-        StoreID store)
+void chkpt_t::mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn)
 {
     buf_tab_entry_t& e = buf_tab[pid];
     if (page_lsn > e.page_lsn) { e.page_lsn = page_lsn; }
     if (rec_lsn >= e.clean_lsn && rec_lsn < e.rec_lsn) { e.rec_lsn = rec_lsn; }
-    e.store = store;
 }
 
 void chkpt_t::mark_page_clean(PageID pid, lsn_t lsn)
@@ -465,27 +463,22 @@ void chkpt_t::serialize()
     // Serialize buf_tab
     chunk = chkpt_bf_tab_t::max;
     vector<PageID> pid;
-    vector<StoreID> store;
     vector<lsn_t> rec_lsn;
     vector<lsn_t> page_lsn;
     for(buf_tab_t::const_iterator it = buf_tab.begin();
             it != buf_tab.end(); ++it)
     {
         DBGOUT1(<<"pid[]="<<it->first<< " , " <<
-                  "store[]="<<it->second.store<< " , " <<
                   "rec_lsn[]="<<it->second.rec_lsn<< " , " <<
                   "page_lsn[]="<<it->second.page_lsn);
         pid.push_back(it->first);
-        store.push_back(it->second.store);
         rec_lsn.push_back(it->second.rec_lsn);
         page_lsn.push_back(it->second.page_lsn);
          if(pid.size()==chunk || &*it==&*buf_tab.rbegin()) {
             LOG_INSERT(chkpt_bf_tab_log(pid.size(), (const PageID*)(&pid[0]),
-                                                    (const StoreID*)(&store[0]),
                                                     (const lsn_t*)(&rec_lsn[0]),
                                                     (const lsn_t*)(&page_lsn[0])), 0);
             pid.clear();
-            store.clear();
             rec_lsn.clear();
             page_lsn.clear();
          }

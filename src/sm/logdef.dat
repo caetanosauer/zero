@@ -103,7 +103,7 @@ comment            1011001 1.0 (const char* msg);
 compensate         1000001 0.0 (const lsn_t& rec_lsn);
 skip               0000000 0.0 ();
 chkpt_begin        0000000 0.0 (const lsn_t &lastMountLSN);
-chkpt_bf_tab       0000000 0.0 (int cnt, const PageID* pid, const StoreID* store,
+chkpt_bf_tab       0000000 0.0 (int cnt, const PageID* pid,
                             const lsn_t* rec_lsn, const lsn_t* page_lsn);
 chkpt_xct_tab      0000000 0.0 (const tid_t& youngest, 
                             int cnt, const tid_t* tid, 

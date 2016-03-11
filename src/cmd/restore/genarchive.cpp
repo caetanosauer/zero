@@ -5,9 +5,6 @@
 
 void GenArchive::setupOptions()
 {
-    // default value
-    long m = 274877906944L; // 256GB
-
     options.add_options()
         ("logdir,l", po::value<string>(&logdir)->required(),
             "Directory containing the log to be archived")
