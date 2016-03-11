@@ -185,9 +185,8 @@ private:
     int _backup_write_fd;
     string _backup_write_path;
 
-    /** Whether to generate page read/write log records */
+    /** Whether to generate page read log records */
     bool _log_page_reads;
-    bool _log_page_writes;
 
     /** Buffer to create restore_begin lorec manually
      *  (128 bytes are enough since it contains only vid) */

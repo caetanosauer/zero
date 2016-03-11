@@ -273,12 +273,19 @@ void chkpt_t::scan_log()
 
             case logrec_t::t_page_write:
                 {
-                    PageID pid = *((PageID*) r.data());
-                    uint32_t count = *((uint32_t*) (r.data() + sizeof(PageID)));
+                    char* pos = r.data();
+
+                    PageID pid = *((PageID*) pos);
+                    pos += sizeof(PageID);
+
+                    lsn_t clean_lsn = *((lsn_t*) pos);
+                    pos += sizeof(lsn_t);
+
+                    uint32_t count = *((uint32_t*) pos);
                     PageID end = pid + count;
 
                     while (pid < end) {
-                        mark_page_clean(pid, lsn);
+                        mark_page_clean(pid, clean_lsn);
                         pid++;
                     }
                 }
@@ -328,29 +335,17 @@ void chkpt_t::init()
 void chkpt_t::mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn,
         StoreID store)
 {
-    // operator[] adds an empty dirty entry if key is not found
     buf_tab_entry_t& e = buf_tab[pid];
-    if (e.resolved) { return; }
     if (page_lsn > e.page_lsn) { e.page_lsn = page_lsn; }
-    if (rec_lsn < e.rec_lsn) { e.rec_lsn = rec_lsn; }
-    // CS TODO: why do we need the store?
+    if (rec_lsn >= e.clean_lsn && rec_lsn < e.rec_lsn) { e.rec_lsn = rec_lsn; }
     e.store = store;
 }
 
-void chkpt_t::mark_page_clean(PageID pid, lsn_t /*lsn*/)
+void chkpt_t::mark_page_clean(PageID pid, lsn_t lsn)
 {
-    // If pid is already on table, it must remain as dirty.
-    // But resolved is set anyway, to stop rec and page lsn from being updated
-    // further in mark_page_dirty
-    buf_tab_t::iterator it = buf_tab.find(pid);
-    if (it != buf_tab.end()) {
-        it->second.resolved = true;
-    }
-    else {
-        buf_tab_entry_t e;
-        e.dirty = false;
-        e.resolved = true;
-        buf_tab[pid] = e;
+    buf_tab_entry_t& e = buf_tab[pid];
+    if (lsn > e.clean_lsn) {
+        e.clean_lsn = lsn;
     }
 }
 
@@ -400,7 +395,7 @@ void chkpt_t::cleanup()
     // Remove non-dirty pages
     for(buf_tab_t::iterator it  = buf_tab.begin();
                             it != buf_tab.end(); ) {
-        if(it->second.dirty == false) {
+        if(!it->second.is_dirty()) {
             it = buf_tab.erase(it);
         }
         else {
@@ -442,7 +437,7 @@ lsn_t chkpt_t::get_min_rec_lsn() const
     for(buf_tab_t::const_iterator it = buf_tab.begin();
             it != buf_tab.end(); ++it)
     {
-        if(it->second.dirty && min_rec_lsn > it->second.rec_lsn) {
+        if(it->second.is_dirty() && min_rec_lsn > it->second.rec_lsn) {
             min_rec_lsn = it->second.rec_lsn;
         }
     }

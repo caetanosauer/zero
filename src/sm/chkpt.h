@@ -73,16 +73,17 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <limits>
 
 struct buf_tab_entry_t {
-    StoreID store;
     lsn_t rec_lsn;              // initial dirty lsn
     lsn_t page_lsn;             // last write lsn
-    bool dirty;                 //this flag is only used to filter non-dirty pages
-    bool resolved;    // if set, page_lsn and rec_lsn are not updated anymore
+    lsn_t clean_lsn;            // last time page was cleaned
+    StoreID store; // CS TODO: why is this needed?
 
     buf_tab_entry_t() :
-        store(0), rec_lsn(lsn_t::max), page_lsn(lsn_t::null), dirty(true),
-        resolved(false)
+        rec_lsn(lsn_t::max), page_lsn(lsn_t::null), clean_lsn(lsn_t::null),
+        store(0)
     {}
+
+    bool is_dirty() const { return page_lsn >= clean_lsn; }
 };
 
 struct lock_info_t {

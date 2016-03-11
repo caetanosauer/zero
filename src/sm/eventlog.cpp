@@ -31,15 +31,25 @@ void sysevent::log_page_read(PageID shpid, uint32_t count)
     delete lr;
 }
 
-void sysevent::log_page_write(PageID shpid, uint32_t count)
+void sysevent::log_page_write(PageID shpid, lsn_t lsn, uint32_t count)
 {
     logrec_t* lr = new logrec_t();
     lr->header._type = logrec_t::t_page_write;
     lr->header._cat = 0 | logrec_t::t_status;
 
-    memcpy(lr->_data, &shpid, sizeof(PageID));
-    memcpy(lr->_data + sizeof(PageID), &count, sizeof(uint32_t));
-    lr->fill(0, sizeof(PageID) + sizeof(uint32_t));
+    char* pos = lr->_data;
+
+    memcpy(pos, &shpid, sizeof(PageID));
+    pos += sizeof(PageID);
+
+    memcpy(pos, &lsn, sizeof(lsn_t));
+    pos += sizeof(lsn_t);
+
+    memcpy(pos, &count, sizeof(uint32_t));
+    pos += sizeof(uint32_t);
+
+
+    lr->fill(0, pos - lr->_data);
     W_COERCE(smlevel_0::log->insert(*lr, NULL));
     delete lr;
 }

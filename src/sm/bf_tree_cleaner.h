@@ -103,6 +103,8 @@ private:
 
     /** whether any unexpected error happened in some cleaner. */
     bool                        _error_happened;
+
+    lsn_t clean_lsn;
 };
 
 #endif // BF_TREE_CLEANER_H

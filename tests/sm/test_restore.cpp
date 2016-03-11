@@ -90,7 +90,7 @@ rc_t lookupPages(size_t numPages)
     return lookupKeys(numRecords);
 }
 
-vol_t* failVolume(test_volume_t* test_volume, bool clear_buffer)
+vol_t* failVolume(test_volume_t*, bool clear_buffer)
 {
     vol_t* volume = smlevel_0::vol;
     W_COERCE(volume->mark_failed(clear_buffer));
