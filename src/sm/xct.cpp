@@ -1612,11 +1612,13 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
 
 void xct_t::_update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) {
     if (page != NULL) {
+        // CS TODO: BUG! latch must always be EX for per-page log chain consistency
         if (page->latch_mode() == LATCH_EX) {
-            const_cast<fixable_page_h*>(page)->update_initial_and_last_lsn(new_lsn);
+            const_cast<fixable_page_h*>(page)->update_page_lsn(new_lsn);
             // CS: already setting dirty below
             //const_cast<fixable_page_h*>(page)->set_dirty();
         } else {
+            // CS TODO: this does not work! Fix eviction and get rid of this!
             // In some log type (so far only log_page_evict), we might update LSN only with
             // SH latch. In that case, we might have a race to update the LSN.
             // We should leave a larger value of LSN in that case.
@@ -1631,9 +1633,8 @@ void xct_t::_update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) 
                     break;
                 }
             }
-            w_assert1(page->lsn() >= new_lsn);
+            w_assert1(page->get_page_lsn() >= new_lsn);
         }
-        const_cast<fixable_page_h*>(page)->set_dirty();
     }
 }
 
@@ -1642,14 +1643,14 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
 {
     // set page LSN chain
     if (page != NULL) {
-        l->set_page_prev_lsn(page->lsn());
+        l->set_page_prev_lsn(page->get_page_lsn());
         if (page2 != NULL) {
             // For multi-page log, also set LSN chain with a branch.
             w_assert1(l->is_multi_page());
             w_assert1(l->is_single_sys_xct());
             multi_page_log_t *multi = l->data_ssx_multi();
             w_assert1(multi->_page2_pid != 0);
-            multi->_page2_prv = page2->lsn();
+            multi->_page2_prv = page2->get_page_lsn();
         }
     }
     // If it's a log for piggy-backed SSX, we call log->insert without updating _last_log

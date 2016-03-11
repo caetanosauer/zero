@@ -118,7 +118,7 @@ w_rc_t bf_tree_cleaner::force_volume()
             // no latching is needed -- fuzzy check
             // CS TODO: ok, but we do need fences then!
             bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
-            if (cb._dirty) {
+            if (cb.is_dirty()) {
                 all_clean = false;
                 break;
             }
@@ -222,7 +222,6 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
     W_COERCE(smlevel_0::log->flush_all());
 
     DBG(<< "Cleaner activated with " << candidates.size() << " candidate frames");
-    unsigned cleaned_count = 0;
 
     if (_sort_buffer_size < candidates.size()) {
         size_t new_buffer_size = 2 * candidates.size();
@@ -266,7 +265,7 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
                 DBGOUT3(<< "Write buffer full. Flushing from " << write_buffer_from
                         << " to " << write_buffer_cur);
                 W_DO(_flush_write_buffer (write_buffer_from,
-                            write_buffer_cur - write_buffer_from, cleaned_count));
+                            write_buffer_cur - write_buffer_from));
 
                 PageID shpid = _write_buffer[write_buffer_cur].pid;
                 sysevent::log_page_write(shpid, clean_lsn,
@@ -285,7 +284,7 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
             }
             bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
             // Not checking in_doubt flag, because if in_doubt flag is on then cb._used flag must be on
-            if (!cb._dirty || !cb._used) {
+            if (!cb.is_dirty() || !cb._used) {
                 continue;
             }
             // just copy the page, and release the latch as soon as possible.
@@ -306,13 +305,17 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
                 tobedeleted = true;
             }
             else {
+                // Copy page and update its page_lsn from what's on the cb
                 w_assert1(!smlevel_0::clog || cb._uncommitted_cnt == 0);
-                ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (generic_page));
+                generic_page* pdest = _write_buffer + write_buffer_cur;
+                ::memcpy(pdest, page_buffer + idx, sizeof (generic_page));
+                pdest->lsn = cb.get_page_lsn();
+                // CS TODO: swizzling!
                 // if the page contains a swizzled pointer, we need to convert
                 // the data back to the original pointer.  we need to do this
                 // before releasing SH latch because the pointer might be
                 // unswizzled by other threads.
-                _bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);
+                _bufferpool->_convert_to_disk_page(pdest);
             }
             cb.latch().latch_release();
 
@@ -341,7 +344,7 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
                     DBGOUT3(<< "Next page not consecutive. Flushing from " <<
                             write_buffer_from << " to " << write_buffer_cur);
                     W_DO(_flush_write_buffer (write_buffer_from,
-                                write_buffer_cur - write_buffer_from, cleaned_count));
+                                write_buffer_cur - write_buffer_from));
 
                     sysevent::log_page_write(shpid, clean_lsn,
                             write_buffer_cur - write_buffer_from);
@@ -394,7 +397,7 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
         DBGOUT3(<< "Finished cleaning round. Flushing from " << write_buffer_from
                 << " to " << write_buffer_cur);
         W_DO(_flush_write_buffer (write_buffer_from,
-                    write_buffer_cur - write_buffer_from, cleaned_count));
+                    write_buffer_cur - write_buffer_from));
 
         PageID shpid = _write_buffer[write_buffer_cur].pid;
         sysevent::log_page_write(shpid, clean_lsn,
@@ -405,13 +408,11 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
         write_buffer_cur = 0;
     }
 
-    DBG(<< "Cleaner round done. Pages cleaned: " << cleaned_count);
-
     return RCOK;
 }
 
 
-w_rc_t bf_tree_cleaner::_flush_write_buffer(size_t from, size_t consecutive, unsigned& cleaned_count)
+w_rc_t bf_tree_cleaner::_flush_write_buffer(size_t from, size_t consecutive)
 {
     if (consecutive == 0) {
         return RCOK;
@@ -429,23 +430,11 @@ w_rc_t bf_tree_cleaner::_flush_write_buffer(size_t from, size_t consecutive, uns
             w_assert1(_write_buffer[i].pid == _write_buffer[i - 1].pid + 1);
         }
 
-        // CS bugfix: we have to latch and compare LSNs before marking clean
-        cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_FOREVER);
-        generic_page& buffered = *smlevel_0::bf->get_page(idx);
-        generic_page& copied = _write_buffer[i];
-
-        if (buffered.pid == copied.pid) {
-            if (buffered.lsn == copied.lsn) {
-                cb._dirty = false;
-                cleaned_count++;
-            }
-            --_bufferpool->_dirty_page_count_approximate;
-
-            // cb._rec_lsn = _write_buffer[i].lsn.data();
-            cb._rec_lsn = lsn_t::null.data();
+        cb.pin();
+        if (cb._pid_shpid == _write_buffer[i].pid) {
+            cb.set_clean_lsn(clean_lsn);
         }
-
-        cb.latch().latch_release();
+        cb.unpin();
     }
 
     return RCOK;
@@ -459,16 +448,11 @@ w_rc_t bf_tree_cleaner::_do_work()
     // we can write it out without log flush overheads.
     bf_idx block_cnt = _bufferpool->_block_cnt;
 
-    // do we have lots of dirty pages? (note, these are approximate statistics)
-    if (_bufferpool->_dirty_page_count_approximate < 0) {// so, even this can happen.
-        _bufferpool->_dirty_page_count_approximate = 0;
-    }
-
     // list up dirty pages
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
         bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
         // If page is not dirty or not in use, no need to flush
-        if (!cb._dirty || !cb._used) {
+        if (!cb.is_dirty() || !cb._used) {
             continue;
         }
 

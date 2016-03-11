@@ -164,7 +164,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     //_cleaner = new bf_tree_cleaner (this, cleaner_interval_millisec_min, cleaner_interval_millisec_max, cleaner_write_buffer_pages);
     //_dcleaner = new page_cleaner(this, smlevel_0::vol, smlevel_0::logArchiver->getDirectory());
 
-    _dirty_page_count_approximate = 0;
     _swizzled_page_count_approximate = 0;
 
     _eviction_current_frame = 0;
@@ -357,16 +356,13 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             cb.clear_except_latch();
             cb._pin_cnt = 0;
             cb._pid_shpid = shpid;
-            cb._rec_lsn = page->lsn.data();
             if (virgin_page) {
-                // Virgin page, we are not setting _rec_lsn (initial dirty)
-                // Page format would set the _rec_lsn
-                cb._dirty = true;
                 cb._uncommitted_cnt = 0;
-                ++_dirty_page_count_approximate;
             }
             cb._used = true;
             cb._refbit_approximate = BP_INITIAL_REFCOUNT;
+            cb._clean_lsn = page->lsn;
+            cb._page_lsn = page->lsn;
 
             // STEP 6) Fix successful -- pin page and downgrade latch
             // Just loaded a page, the page loading was due to:
@@ -762,12 +758,11 @@ void bf_tree_m::debug_dump(std::ostream &o) const
         bf_tree_cb_t &cb = get_cb(idx);
         if (cb._used) {
             o << "page-" << cb._pid_shpid;
-            if (cb._dirty) {
+            if (cb.is_dirty()) {
                 o << " (dirty)";
             }
             o << ", _swizzled=" << cb._swizzled;
             o << ", _pin_cnt=" << cb._pin_cnt;
-            o << ", _rec_lsn=" << cb._rec_lsn;
             o << ", _refbit_approximate=" << cb._refbit_approximate;
             o << ", ";
             cb.latch().print(o);
@@ -851,7 +846,6 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     int buckets = w_findprime(1024 + (_block_cnt / 4));
     _hashtable = new bf_hashtable<bf_idx_pair>(buckets);
     w_assert0(_hashtable != NULL);
-    _dirty_page_count_approximate = 0;
 
     // finally switch the property
     _enable_swizzling = enabled;
@@ -860,140 +854,6 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     return RCOK;
 }
 
-void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, PageID *pid, StoreID* stores,
-                             lsn_t *rec_lsn, lsn_t *page_lsn, lsn_t &min_rec_lsn,
-                             const lsn_t master, const lsn_t current_lsn,
-                             lsn_t /*last_mount_lsn*/)
-{
-    // Only used by checkpoint to gather dirty page information
-    // Caller is the checkpoint operation which is holding a 'write' mutex',
-    // everything in this function MUST BE W_COERCE (not W_DO).
-
-    w_assert1(start > 0 && count > 0);
-
-    bf_idx i = 0;
-    // _block_cnt is the number of blocks/pages in buffer pool, while 0 is never used
-    for (i = 0; i < count && start < _block_cnt; ++start)
-    {
-        bf_tree_cb_t &cb = get_cb(start);
-
-        // Acquire traditional read latch for each page, not Q latch
-        // because it cannot fail on latch release
-        w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, WAIT_FOREVER);
-        if (latch_rc.is_error())
-        {
-            // Unable to the read acquire latch, cannot continue, raise an internal error
-            DBGOUT2 (<< "Error when acquiring LATCH_SH for checkpoint buffer pool. cb._pid_shpid = "
-                     << cb._pid_shpid << ", rc = " << latch_rc);
-
-            W_FATAL_MSG(fcINTERNAL, << "unable to latch a buffer pool page");
-            return;
-        }
-
-        // The earliest LSN which made this page dirty
-        lsn_t lsn(cb._rec_lsn);
-        w_assert3(lsn == lsn_t::null || lsn.hi() > 0);
-
-        // If a page is in use and dirty, or is in_doubt (only marked by Log Analysis phase)
-        if ((cb._used && cb._dirty))
-        {
-                // Ignore this page if the pin count is -1
-                // Checkpoint records dirty pages in buffer pool, we never evict dirty pages so ignoring
-                // a page that is being evicted (pin_cnt == -1) is safe.
-                if (cb._pin_cnt == -1)
-                {
-                    if (cb.latch().held_by_me())
-                        cb.latch().latch_release();
-                    continue;
-                }
-
-                // Actual dirty page
-                // Record pid, minimum (earliest) and latest LSN values of the page
-                // cb._rec_lsn is the minimum LSN
-                // buffer[start].lsn.data() is the Page LSN, which is the last write LSN
-
-                if ((lsn_t::null == lsn) || (0 == lsn.data()))
-                {
-                    // If we have a dirty page but _rec_lsn (initial dirty) is 0
-                    // someone forgot to set it for the dirty page (most likely a
-                    // newly allocated page and it has not been formatted yet, therefore
-                    // the page does not exist on disk and does not contain any change yet).
-                    // In this case we won't be able to trace the history of the dirty
-                    // page during a crash recovery.
-
-                    // w_assert1(0 != last_mount_lsn.data());
-                    // Solution #1: use last mount lsn
-                    // lsn = last_mount_lsn;
-
-                    // Solution #2: ignore this page
-                    if (cb.latch().held_by_me())
-                        cb.latch().latch_release();
-                    continue;
-                }
-
-                // Now we have a page we want to record
-                pid[i] = _buffer[start].pid;
-                w_assert1(0 != pid[i]);   // Page number cannot be 0
-                stores[i] = _buffer[start].store;
-
-                w_assert1(lsn_t::null != lsn);   // Must have a vliad first lsn
-                rec_lsn[i] = lsn;
-#ifdef USE_ATOMIC_COMMIT // use clsn instead
-                // If page was not fetched from disk initially, but recently
-                // allocated, then its CLSN is null, until its first update
-                // (normally a page format) commits.
-                if(_buffer[start].clsn == lsn_t::null) {
-                    w_assert1(lsn_t::null != lsn);
-                    page_lsn[i] = lsn;
-                }
-                else {
-                    page_lsn[i] = _buffer[start].clsn.data();
-                }
-#else
-                w_assert1(lsn_t::null != _buffer[start].lsn.data());
-                page_lsn[i] = _buffer[start].lsn.data();
-#endif
-            }
-
-            // Update min_rec_lsn if necessary (if lsn != NULL)
-            if (min_rec_lsn.data() > lsn.data())
-            {
-                min_rec_lsn = lsn;
-                w_assert3(lsn.hi() > 0);
-            }
-
-            // Increment counter
-            ++i;
-
-        // Done with this cb, release the latch on it before moving to the next cb
-        if (cb.latch().held_by_me())
-            cb.latch().latch_release();
-    }
-    count = i;
-}
-
-// for debugging swizzling policy purposes -- todo: remove it when done
-#if 0
-int bf_tree_m::nframes(int priority, int level, int refbit, bool swizzled, bool print) {
-    int n=0;
-    for (bf_idx idx = 0; idx <= _block_cnt; idx++) {
-        bf_tree_cb_t &cb(get_cb(idx));
-        if (cb._replacement_priority == priority) {
-            if (_buffer[idx].btree_level >= level) {  // NO LONGER LEGAL ACCESS; REMOVE <<<>>>
-                if (cb._refbit_approximate >= refbit) {
-                    if (cb._swizzled == swizzled) {
-                        n++;
-                        if (print) {
-                            std::cout << idx << std::endl;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return n;
-}
-#endif
 
 w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_t child_slotid,
                                          lsn_t child_emlsn) {
@@ -1009,11 +869,9 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
 void bf_tree_m::_delete_block(bf_idx idx) {
     w_assert1(_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
-    w_assert1(cb._dirty);
     w_assert1(cb._pin_cnt == 0);
     w_assert1(!cb.latch().is_latched());
     cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
-    cb._dirty = false;
     cb._uncommitted_cnt = 0;
 
     DBGOUT1(<<"delete block: remove page shpid = " << cb._pid_shpid);
@@ -1198,108 +1056,36 @@ void bf_tree_m::unfix(const generic_page* p) {
     cb.latch().latch_release();
 }
 
-void bf_tree_m::set_dirty(const generic_page* p) {
-    uint32_t idx = p - _buffer;
-    // CS TODO: ignoring the used flag for now
-    // w_assert1 (_is_active_idx(idx));
-    w_assert1 (_is_valid_idx(idx));
-    bf_tree_cb_t &cb = get_cb(idx);
-    if (!cb._dirty) {
-        cb._dirty = true;
-        ++_dirty_page_count_approximate;
-    }
-    cb._used = true;
-#ifdef USE_ATOMIC_COMMIT
-    /*
-     * CS: We assume that all updates made by transactions go through
-     * this method (usually via the methods in logrec_t but also in
-     * B-tree maintenance code).
-     * Therefore, it is the only place where the count of
-     * uncommitted updates is incrementes.
-     */
-    cb._uncommitted_cnt++;
-    // assert that transaction attached is of type plog_xct_t*
-    w_assert1(smlevel_0::xct_impl == smlevel_0::XCT_PLOG);
-#endif
-}
 bool bf_tree_m::is_dirty(const generic_page* p) const {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
-    return get_cb(idx)._dirty;
+    return get_cb(idx).is_dirty();
 }
 
 bool bf_tree_m::is_dirty(const bf_idx idx) const {
     // Caller has latch on page
     // Used by REDO phase in Recovery
     w_assert1 (_is_active_idx(idx));
-    return get_cb(idx)._dirty;
+    return get_cb(idx).is_dirty();
 }
-
-void bf_tree_m::update_initial_dirty_lsn(const generic_page* p,
-                                                const lsn_t new_lsn)
-{
-    w_assert3(new_lsn.hi() > 0);
-    // Update the initial dirty lsn (if needed) for the page regardless page is dirty or not
-    uint32_t idx = p - _buffer;
-    w_assert1 (_is_active_idx(idx));
-    (void) new_lsn; // avoid compiler warning of unused var
-
-#ifndef USE_ATOMIC_COMMIT // otherwise rec_lsn is only set when fetching page
-    bf_tree_cb_t &cb = get_cb(idx);
-    if ((new_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
-        cb._rec_lsn = new_lsn.data();
-#endif
-}
-
-void bf_tree_m::set_initial_rec_lsn(PageID pid,
-                       const lsn_t new_lsn,       // In-coming LSN
-                       const lsn_t current_lsn)   // Current log LSN
-{
-    // Caller has latch on page
-    // Special function called from btree_page_h::format_steal() when the
-    // page format log record was generated, this can happen during a b-tree
-    // operation or from redo during recovery
-
-    // Reset the _rec_lsn in page cb (when the page was dirtied initially) if
-    // it is later than the new_lsn, we want the earliest lsn in _rec_lsn
-
-    bf_idx_pair p;
-    if (_hashtable->lookup(pid, p)) {
-        // Page exists in buffer pool hash table
-        bf_tree_cb_t &cb = smlevel_0::bf->get_cb(p.first);
-
-        lsn_t lsn = new_lsn;
-        if (0 == new_lsn.data())
-        {
-           lsn = current_lsn;
-           w_assert1(0 != lsn.data());
-           w_assert3(lsn.hi() > 0);
-        }
-
-        // Update the initial LSN which is when the page got dirty initially
-        // Update only if the existing initial LSN was later than the incoming LSN
-        // or the original LSN did not exist
-        if ((cb._rec_lsn > lsn.data()) || (0 == cb._rec_lsn))
-            cb._rec_lsn = new_lsn.data();
-        cb._used = true;
-        cb._dirty = true;
-        cb._uncommitted_cnt = 0;
-
-        // Either from regular b-tree operation or from redo during recovery
-        // do not change the in_doubt flag setting, caller handles it
-    }
-    else
-    {
-        // Page does not exist in buffer pool hash table
-        // This should not happen, no-op and we are not raising an error
-    }
-}
-
 
 bool bf_tree_m::is_used (bf_idx idx) const {
     return _is_active_idx(idx);
 }
 
+void bf_tree_m::set_page_lsn(generic_page* p, lsn_t lsn)
+{
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    get_cb(idx).set_page_lsn(lsn);
+}
+
+lsn_t bf_tree_m::get_page_lsn(generic_page* p)
+{
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    return get_cb(idx).get_page_lsn();
+}
 
 latch_mode_t bf_tree_m::latch_mode(const generic_page* p) {
     uint32_t idx = p - _buffer;

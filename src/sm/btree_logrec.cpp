@@ -444,7 +444,7 @@ void btree_norec_alloc_log::redo(fixable_page_h* p) {
 
     PageID target_pid = p->pid();
     DBGOUT3 (<< *this << ": new_lsn=" << new_lsn
-        << ", target_pid=" << target_pid << ", bp.lsn=" << bp.lsn());
+        << ", target_pid=" << target_pid << ", bp.lsn=" << bp.get_page_lsn());
     if (target_pid == dp->_page2_pid) {
         // we are recovering "page2", which is foster-child.
         w_assert0(target_pid == dp->_page2_pid);
@@ -536,7 +536,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
 
     bool recovering_dest = (target_pid == pid());   // true: recover foster parent
                                                       // false: recovery foster child
-    PageID another_pid = recovering_dest ? dp->_page2_pid : pid();
+    // PageID another_pid = recovering_dest ? dp->_page2_pid : pid();
     w_assert0(recovering_dest || target_pid == dp->_page2_pid);
 
     if (p->is_bufferpool_managed())
@@ -548,7 +548,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
         // W_COERCE(another.fix_direct(another_pid, LATCH_EX));
         if (recovering_dest) {
             // we are recovering "page", which is foster-parent (dest).
-            if (another.lsn() >= lsn_ck())
+            if (another.get_page_lsn() >= lsn_ck())
             {
                 // If we get here, caller was not from page driven REDO phase but "page2" (src) has
                 // been recovered already, this is breaking WOD rule and cannot continue
@@ -559,26 +559,20 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
             else
             {
                 // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
-                w_assert0(another.lsn() < lsn_ck());
+                w_assert0(another.get_page_lsn() < lsn_ck());
                 btree_impl::_ux_merge_foster_apply_parent(bp /*dest*/, another /*src*/);
-                another.set_dirty();
-                another.update_initial_and_last_lsn(lsn_ck());
-                another.update_clsn(lsn_ck());
                 W_COERCE(another.set_to_be_deleted(false));
             }
         } else {
             // we are recovering "page2", which is foster-child (src).
             // in this case, foster-parent(dest) may or may not be written yet.
-            if (another.lsn() >= lsn_ck()) {
+            if (another.get_page_lsn() >= lsn_ck()) {
                 // if page (destination) is already durable/recovered,
                 // we just delete the foster child and done.
                 W_COERCE(bp.set_to_be_deleted(false));
             } else {
                 // dest is also old, so we are recovering both.
                 btree_impl::_ux_merge_foster_apply_parent(another /*dest*/, bp /*src*/);
-                another.set_dirty();
-                another.update_initial_and_last_lsn(lsn_ck());
-                another.update_clsn(lsn_ck());
             }
         }
     }
@@ -629,7 +623,8 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
                 // For existing destination page (foster parent)
                 // no change to the last write lsn although we inserted/moved some records
                 // Update _rec_lsn only if necessary, also set the dirty flag
-                smlevel_0::bf->set_initial_rec_lsn(dest_p->pid(), dest_p->lsn(), smlevel_0::log->curr_lsn());
+                // CS: no more dirty flag or rec_lsn
+                // smlevel_0::bf->set_initial_rec_lsn(dest_p->pid(), dest_p->lsn(), smlevel_0::log->curr_lsn());
             }
 
         // Done with Single Page Recovery REDO
@@ -772,8 +767,8 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     const PageID page_id = pid();
     const PageID page2_id = dp->_page2_pid;
     const lsn_t  &redo_lsn = lsn_ck();
-    DBGOUT3 (<< *this << ": redo_lsn=" << redo_lsn << ", bp.lsn=" << bp.lsn());
-    w_assert1(bp.lsn() < redo_lsn);
+    DBGOUT3 (<< *this << ": redo_lsn=" << redo_lsn << ", bp.lsn=" << bp.get_page_lsn());
+    w_assert1(bp.get_page_lsn() < redo_lsn);
 
     bool recovering_dest = (target_pid == page_id);             // 'p' is the page we are trying to recover: target
     PageID another_pid = recovering_dest ? page2_id : page_id; // another_pid: data source
@@ -805,8 +800,8 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
         // W_COERCE(another.fix_direct(another_pid, LATCH_EX));
         if (recovering_dest) {
             // we are recovering "page", which is foster-child (dest).
-            DBGOUT1 (<< "Recovering 'page'. page2.lsn=" << another.lsn());
-            if (another.lsn() >= redo_lsn)
+            DBGOUT1 (<< "Recovering 'page'. page2.lsn=" << another.get_page_lsn());
+            if (another.get_page_lsn() >= redo_lsn)
             {
                 // If we get here, this is not a page driven REDO therefore minimal logging,
                 // but "page2" (src) has been fully recovered already, it is breaking WOD rule and cannot continue
@@ -820,17 +815,14 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                 // has not been recovered yet.
                 // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
 
-                w_assert0(another.lsn() < redo_lsn);
+                w_assert0(another.get_page_lsn() < redo_lsn);
                 W_COERCE(btree_impl::_ux_rebalance_foster_apply(another/*src*/, bp /*dest*/, dp->_move_count,
                                                 fence, dp->_new_pid0, dp->_new_pid0_emlsn));
-                another.set_dirty();
-                another.update_initial_and_last_lsn(redo_lsn);
-                another.update_clsn(lsn_ck());
             }
         } else {
             // we are recovering "page2", which is foster-parent (src).
-            DBGOUT1 (<< "Recovering 'page2'. page.lsn=" << another.lsn());
-            if (another.lsn() >= redo_lsn) {
+            DBGOUT1 (<< "Recovering 'page2'. page.lsn=" << another.get_page_lsn());
+            if (another.get_page_lsn() >= redo_lsn) {
                 // if page (destination) is already durable/recovered, we create a dummy scratch
                 // space which will be thrown away after recovering "page2".
                 w_keystr_t high, chain_high;
@@ -851,9 +843,6 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                 // dest is also old, so we are recovering both.
                 W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp /*src*/, another /*dest*/, dp->_move_count,
                                                 fence, dp->_new_pid0, dp->_new_pid0_emlsn));
-                another.set_dirty();
-                another.update_initial_and_last_lsn(redo_lsn);
-                another.update_clsn(lsn_ck());
             }
 
         }
@@ -915,7 +904,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                 // Set the fence keys of the page which should be empty at this point
                 // Calling format_steal to initialize the destination page (set fence keys), no stealing
                 btree_page_h * dest_p = (btree_page_h*)p;
-                W_COERCE(dest_p->format_steal(bp.lsn(), bp.pid(), bp.store(),
+                W_COERCE(dest_p->format_steal(bp.get_page_lsn(), bp.pid(), bp.store(),
                                 bp.btree_root(), bp.level(),
                                 (bp.is_leaf())? 0 : dp->_new_pid0,                 // leaf has no pid0
                                 (bp.is_leaf())? lsn_t::null : dp->_new_pid0_emlsn, // leaf has no emlsn
@@ -941,7 +930,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                 // For the new empty destination page (foster child)
                 // the  last write lsn was set in format_steal already
                 // Set the _rec_lsn using the page lsn (the last write LSN of the page), also set the dirty flag
-                smlevel_0::bf->set_initial_rec_lsn(dest_p->pid(), dest_p->lsn(), smlevel_0::log->curr_lsn());
+                // smlevel_0::bf->set_initial_rec_lsn(dest_p->pid(), dest_p->lsn(), smlevel_0::log->curr_lsn());
 
                 // Verify
                 w_assert1(dp->_move_count == dest_p->nrecs());
@@ -984,7 +973,6 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             // the original values after page rebalance redo operation
 
             w_assert1(bp.is_latched());
-            bp.set_dirty();
         }
 
         // Done with Single Page Recovery REDO

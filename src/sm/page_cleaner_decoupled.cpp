@@ -135,18 +135,8 @@ void page_cleaner_decoupled::run() {
         lsn_t last_lsn = smlevel_0::logArchiver->getDirectory()->getLastLSN();
         if(last_lsn <= completed_lsn) {
             DBGTHRD(<< "Nothing archived to clean.");
-
-            bf_idx block_cnt = bufferpool->_block_cnt;
-            bool in_real_hurry = (unsigned)bufferpool->_dirty_page_count_approximate > (block_cnt / 4 * 3);
-            if(in_real_hurry) {
-                DBGTHRD(<< "We are in a hurry. Flushing log and archive for cleaner.");
-                ss_m::log->flush_all();
-                ss_m::logArchiver->requestFlushSync(ss_m::log->durable_lsn());
-            }
-            else {
-                control->activated = false;
-                continue;
-            }
+            control->activated = false;
+            continue;
         }
 
         DBGTHRD(<< "Cleaner thread activated from " << completed_lsn);
@@ -210,8 +200,6 @@ void page_cleaner_decoupled::run() {
             fixable_page_h fixable;
             fixable.setup_for_restore(page);
             lr->redo(&fixable);
-            fixable.update_initial_and_last_lsn(lr->lsn_ck());
-            fixable.update_clsn(lr->lsn_ck());
 
             DBGOUT(<<"Replayed log record " << lr->lsn_ck() << " for page " << page->pid);
         }
@@ -258,7 +246,7 @@ w_rc_t page_cleaner_decoupled::force_volume() {
         for (bf_idx idx = 1; idx < block_cnt; ++idx) {
             // no latching is needed -- fuzzy check
             bf_tree_cb_t &cb = bufferpool->get_cb(idx);
-            if (cb._dirty) {
+            if (cb.is_dirty()) {
                 all_clean = false;
                 break;
             }
@@ -285,25 +273,12 @@ w_rc_t page_cleaner_decoupled::flush_workspace() {
         if(idx != 0) {
             //page is in the buffer
             bf_tree_cb_t& cb = bufferpool->get_cb(idx);
-            w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_IMMEDIATE);
-
-            if (latch_rc.is_error()) {
-                continue;
+            cb.pin();
+            if (cb._pid_shpid == flushed.pid && cb.get_clean_lsn() < completed_lsn)
+            {
+                cb.set_clean_lsn(completed_lsn);
             }
-
-            generic_page& buffered = *smlevel_0::bf->get_page(idx);
-
-            if (buffered.pid == flushed.pid) {
-                if (buffered.lsn <= flushed.lsn && cb._dirty) {
-                    cb._dirty = false;
-                    bufferpool->_dirty_page_count_approximate--;
-                    DBGOUT1(<<"Setting page " << flushed.pid << " clean.");
-                }
-
-                // cb._rec_lsn = _write_buffer[i].lsn.data();
-                cb._rec_lsn = lsn_t::null.data();
-            }
-            cb.latch().latch_release();
+            cb.unpin();
         }
     }
     return RCOK;

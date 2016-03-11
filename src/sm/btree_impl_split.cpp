@@ -59,19 +59,19 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, PageID &new_page_id) {
     }
 
 #if W_DEBUG_LEVEL >= 3
-    lsn_t old_lsn = page.lsn();
+    lsn_t old_lsn = page.get_page_lsn();
 #endif //W_DEBUG_LEVEL
 
     W_DO(log_btree_norec_alloc(page, new_page, new_page_id, fence, chain_high));
     DBGOUT3(<< "btree_impl::_ux_norec_alloc_core, fence=" << fence << ", old-LSN="
-        << old_lsn << ", new-LSN=" << page.lsn() << ", PID=" << new_page_id);
+        << old_lsn << ", new-LSN=" << page.get_page_lsn() << ", PID=" << new_page_id);
 
     // initialize as an empty child:
-    new_page.format_steal(page.lsn(), new_page_id, page.store(),
+    new_page.format_steal(page.get_page_lsn(), new_page_id, page.store(),
                           page.root(), page.level(), 0, lsn_t::null,
                           page.get_foster(), page.get_foster_emlsn(),
                           fence, fence, chain_high, false);
-    page.accept_empty_child(page.lsn(), new_page_id, false /*not from redo*/);
+    page.accept_empty_child(page.get_page_lsn(), new_page_id, false /*not from redo*/);
 
     // in this operation, the log contains everything we need to recover without any
     // write-order-dependency. So, no registration for WOD.
@@ -218,7 +218,7 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, PageID& new_page_id,
      */
     W_DO(log_btree_split(new_page, page, move_count, split_key, new_chain));
 
-    w_assert1(new_page.lsn() != lsn_t::null);
+    w_assert1(new_page.get_page_lsn() != lsn_t::null);
 
     // hint for subsequent accesses
     increase_forster_child(page.pid());

@@ -62,7 +62,7 @@ private:
     w_rc_t _do_work ();
     bool _exists_requested_work();
     w_rc_t _clean_volume(const std::vector<bf_idx> &candidates);
-    w_rc_t _flush_write_buffer(size_t from, size_t consecutive, unsigned& cleaned_count);
+    w_rc_t _flush_write_buffer(size_t from, size_t consecutive);
 
     /** the buffer pool this cleaner deals with. */
     bf_tree_m*                  _bufferpool;

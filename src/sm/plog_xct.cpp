@@ -118,7 +118,8 @@ void plog_xct_t::_update_page_lsns(const fixable_page_h *page)
 {
     if (page != NULL) {
         lsn_t new_lsn = log->curr_lsn();
-        page->update_initial_and_last_lsn(new_lsn.advance(1));
+        new_lsn = new_lsn.advance(1);
+        page->update_page_lsn(new_lsn);
         //lsn_t old_lsn = page->lsn();
         //if (old_lsn == lsn_t::null) {
             //old_lsn = lsn_t(1,0);
@@ -131,7 +132,6 @@ void plog_xct_t::_update_page_lsns(const fixable_page_h *page)
             //lintel::unsafe::atomic_fetch_add(addr, 1);
             //w_assert1(page->lsn() > old_lsn);
         //}
-        page->set_dirty();
     }
 }
 

@@ -75,8 +75,8 @@ struct bf_tree_cb_t {
 
     // control block is bulk-initialized by malloc and memset. It has to be aligned.
 
-    /// dirty flag; protected by our latch
-    bool _dirty;         // +1  -> 1
+    /// placeholder for old dirty flag
+    uint8_t _fill1;         // +1  -> 1
 
     /// true if this block is actually used; protected by our latch
     bool _used;          // +1  -> 2
@@ -112,12 +112,11 @@ struct bf_tree_cb_t {
      */
     uint16_t                    _counter_approximate;// +2  -> 16
 
-    /// recovery lsn; first lsn to make the page dirty; protected by ??
-    lsndata_t _rec_lsn;       // +8 -> 24
+    // CS TODO: placeholder for old rec_lsn
+    uint64_t _fill24;       // +8 -> 24
 
-    /// Pointer to the parent page.  zero for root pages; protected by ??
-    // TODO CS: NOT USED ANYMORE
-    bf_idx _parent;        // +4 -> 28
+    /// Placeholder for pointer to the parent page.
+    uint32_t _fill28;        // +4 -> 28
 
     /// Whether this page is swizzled from the parent; protected by ??
     bool                        _swizzled;      // +1 -> 29
@@ -130,8 +129,20 @@ struct bf_tree_cb_t {
 
     // CS TODO: replacing old in-doubt flag and dependency stuff
     uint8_t                        _filler32;      // +1 -> 32
-    uint64_t                     _filler40; // +8 -> 40
-    uint64_t                     _filler48; // +8 -> 48
+
+    // CS TODO: testing approach of maintaining page LSN in CB
+    lsn_t _page_lsn;
+    void set_page_lsn(lsn_t lsn) { _page_lsn = lsn; }
+    lsn_t get_page_lsn() { return _page_lsn; }
+
+    // CS: page_lsn value when it was last picked for cleaning
+    // Replaces the old dirty flag, because dirty is defined as
+    // page_lsn > clean_lsn
+    lsn_t _clean_lsn;
+    void set_clean_lsn(lsn_t lsn) { _clean_lsn = lsn; }
+    lsn_t get_clean_lsn() { return _clean_lsn; }
+
+    bool is_dirty() const { return _page_lsn > _clean_lsn; }
 
 
     /**

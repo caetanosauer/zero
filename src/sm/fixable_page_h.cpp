@@ -164,24 +164,13 @@ w_rc_t fixable_page_h::fix_root (StoreID store, latch_mode_t mode,
     return RCOK;
 }
 
-void fixable_page_h::fix_nonbufferpool_page(generic_page* s) {
+void fixable_page_h::fix_nonbufferpool_page(generic_page* s)
+{
     w_assert1(s != NULL);
-    // w_assert1(s->tag == t_btree_p);  // make sure page type is fixable
-
     unfix();
     _pp                 = s;
     _bufferpool_managed = false;
     _mode               = LATCH_EX;
-}
-
-
-void fixable_page_h::set_dirty() const {
-    w_assert1(_pp);
-    w_assert1(_mode != LATCH_Q);
-
-    if (_bufferpool_managed) {
-        smlevel_0::bf->set_dirty(_pp);
-    }
 }
 
 bool fixable_page_h::is_dirty() const {
@@ -194,38 +183,28 @@ bool fixable_page_h::is_dirty() const {
     }
 }
 
-// CS: a function that updates a field should NOT be declared const (TODO)
-void fixable_page_h::update_initial_and_last_lsn(const lsn_t & lsn) const
+lsn_t fixable_page_h::get_page_lsn() const
 {
-    // Update both initial dirty lsn (if needed) and last write lsn
-    // Caller should have latch on the page
-    w_assert1(_pp);
-    if (_pp)
-    {
-        ((generic_page_h*)this)->set_lsns(lsn);
-        update_initial_dirty_lsn(lsn);
-    }
-}
-
-void fixable_page_h::update_clsn(const lsn_t& lsn)
-{
-    if (_pp) {
-        _pp->clsn = lsn;
-    }
-}
-
-void fixable_page_h::update_initial_dirty_lsn(const lsn_t & lsn) const
-{
-    // Whenever updating a page lsn (last write through set_lsns())
-    // caller should update the initial dirty lsn on the page also
-
-    w_assert1(_pp);
-    w_assert1(_mode != LATCH_Q);
-
     if (_bufferpool_managed)
     {
-        smlevel_0::bf->update_initial_dirty_lsn(_pp, lsn);
+        w_assert1(_pp);
+        return smlevel_0::bf->get_page_lsn(_pp);
     }
+    return lsn_t::null;
+}
+
+void fixable_page_h::update_page_lsn(const lsn_t & lsn) const
+{
+    if (_bufferpool_managed)
+    {
+        w_assert1(_pp);
+        smlevel_0::bf->set_page_lsn(_pp, lsn);
+    }
+}
+
+void fixable_page_h::set_img_page_lsn(const lsn_t & lsn)
+{
+    if (_pp) { _pp->lsn = lsn; }
 }
 
 bool fixable_page_h::is_to_be_deleted() {
@@ -240,7 +219,6 @@ rc_t fixable_page_h::set_to_be_deleted (bool log_it) {
             W_DO(log_page_set_to_be_deleted (*this));
         }
         _pp->page_flags ^= t_to_be_deleted;
-        set_dirty();
     }
     return RCOK;
 }

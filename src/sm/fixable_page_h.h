@@ -155,13 +155,6 @@ public:
     // ======================================================================
 
     /**
-     * Mark this page in the bufferpool dirty.  If this page is not a bufferpool-managed
-     * page, does nothing.
-     *
-     * @pre We do not hold current page's latch in Q mode
-     */
-    void         set_dirty() const;
-    /**
      * Return true if this page in the bufferpool is marked dirty.  If this page is not a
      * bufferpool-managed page, returns false.
      *
@@ -169,13 +162,12 @@ public:
      */
     bool         is_dirty()  const;
 
-    // Update both initial dirty lsn (if needed) and last write lsn on page
-    void update_initial_and_last_lsn(const lsn_t & lsn) const;
+    /// Updates page_lsn field stored in CB of buffered page
+    void update_page_lsn(const lsn_t & lsn) const;
+    lsn_t get_page_lsn() const;
 
-    // Update initial dirty lsn (if needed) on page
-    void update_initial_dirty_lsn(const lsn_t & lsn) const;
-
-    void update_clsn(const lsn_t& lsn);
+    /// Updates lsn field inside generic_page (i.e., in the page image)
+    void set_img_page_lsn(const lsn_t& lsn);
 
     /// Return flag for if this page to be deleted when bufferpool evicts it.
     /// @pre We do not hold current page's latch in Q mode

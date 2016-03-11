@@ -515,8 +515,6 @@ void RestoreMgr::restoreSegment(char* workspace,
 
         // DBG3(<< "Replaying " << *lr);
         lr->redo(&fixable);
-        fixable.update_initial_and_last_lsn(lr->lsn_ck());
-        fixable.update_clsn(lr->lsn_ck());
 
         prevPage = lrpid;
         redone++;

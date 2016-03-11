@@ -315,10 +315,6 @@ public:
     void unfix(const generic_page* p);
 
     /**
-     * Mark the page as dirty.
-     */
-    void set_dirty(const generic_page* p);
-    /**
      * Returns if the page is already marked dirty.
      */
     bool is_dirty(const generic_page* p) const;
@@ -331,22 +327,16 @@ public:
     bf_idx lookup(PageID pid) const;
 
     /**
-     * Update the initial dirty lsn in the page if needed.
-     */
-    void update_initial_dirty_lsn(const generic_page* p,
-                                   const lsn_t new_lsn);
-
-    /**
-     * Set the _rec_lsn (the LSN which made the page dirty initially) in page cb
-     * if it is later than the new_lsn.
-     * This function is mainly used when a page format log record was generated
-     */
-    void set_initial_rec_lsn(PageID pid, const lsn_t new_lsn, const lsn_t current_lsn);
-
-    /**
      * Returns true if the page's _used flag is on
      */
     bool is_used (bf_idx idx) const;
+
+    /*
+     * Sets the page_lsn field on the control block. Used by every update
+     * operation on a page, including redo.
+     */
+    void set_page_lsn(generic_page*, lsn_t);
+    lsn_t get_page_lsn(generic_page*);
 
     /**
      * Whenever the parent of a page is changed (adoption or de-adoption),
@@ -423,19 +413,6 @@ public:
         int32_t idx = page - _buffer;
         return _is_valid_idx(idx);
     }
-
-    /**
-     * Get recovery lsn of "count" frames in the buffer pool starting at
-     *  index "start". The pids, rec_lsns and page_lsn are returned in "pid",
-     *  "rec_lsn" and "page_lsn" arrays, respectively. The values of "start" and "count"
-     *  are updated to reflect where the search ended and how many dirty
-     *  pages it found, respectively.
-     *  'master' and 'current_lsn' are used only for 'in_doubt' pages which are not loaded
-    */
-    void get_rec_lsn(bf_idx &start, uint32_t &count, PageID *pid, StoreID* store,
-                     lsn_t *rec_lsn, lsn_t *page_lsn, lsn_t &min_rec_lsn,
-                     const lsn_t master, const lsn_t current_lsn,
-                     lsn_t last_mount_lsn);
 
     /**
      * Returns true if the node has any swizzled pointers to its children.
@@ -553,7 +530,7 @@ private:
     /**
      * Deletes the given block from this buffer pool. This method must be called when
      *  1. there is no concurrent accesses on the page (thus no latch)
-     *  2. the page's _used and _dirty are true
+     *  2. the page's _used is true
      *  3. the page's _pin_cnt is 0 (so, it must not be swizzled, nor being evicted)
      * Used from the dirty page cleaner to delete a page with "tobedeleted" flag.
      */
@@ -619,13 +596,6 @@ private:
 
     /** the dirty page cleaner. */
     page_cleaner_base*   _cleaner;
-
-    /**
-     * Unreliable count of dirty pages in this bufferpool.
-     * The value is incremented and decremented without atomic operations.
-     * So, this should be only used as statistics.
-     */
-    int32_t              _dirty_page_count_approximate;
     /**
      * Unreliable count of swizzled pages in this bufferpool.
      * The value is incremented and decremented without atomic operations.

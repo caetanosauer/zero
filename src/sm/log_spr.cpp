@@ -199,9 +199,6 @@ rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer,
                         lr->page2_prev_lsn() == p.lsn()));
 
             lr->redo(&p);
-            p.set_lsns(lr->lsn_ck());
-            p.update_initial_and_last_lsn(lr->lsn_ck());
-            p.update_clsn(lr->lsn_ck());
         }
 
         prev_lsn = lr->lsn_ck();

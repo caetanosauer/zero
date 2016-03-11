@@ -145,14 +145,6 @@ rc_t btree_impl::_ux_rebalance_foster_core(
         return RCOK;
     }
 
-    // foster-parent should be written later because it's the data source
-    // first, mark both dirty.
-    page.set_dirty();
-    foster_p.set_dirty();
-    // CS TODO: removed support for careful write ordering
-    // bool registered = smlevel_0::bf->register_write_order_dependency(page._pp, foster_p._pp);
-    // w_assert0(registered);
-
     // TODO(Restart)... see the same fence key setting code in btree_impl::_ux_rebalance_foster_apply
     // the assumption is the fence keys in destination page has been set up already
     w_keystr_t high_key, chain_high_key;
@@ -243,7 +235,7 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
         // Otherwise, we also steal old page's pid0 with low-fence key as a regular record
         w_assert1(foster_p.nrecs() == 0 || foster_p.pid0() != 0);
         bool steal_scratch_pid0 = foster_p.pid0() != 0;
-        W_DO(foster_p.format_steal(scratch_p.lsn(),
+        W_DO(foster_p.format_steal(foster_p.get_page_lsn(),
             scratch_p.pid(),        // destination (foster child page) pid
             scratch_p.store(),
             scratch_p.btree_root(),
@@ -264,7 +256,7 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
                                               // child (scratch_p), which is src 1
         ));
     } else {  // Leaf page
-        W_DO(foster_p.format_steal(scratch_p.lsn(),
+        W_DO(foster_p.format_steal(foster_p.get_page_lsn(),
             scratch_p.pid(),          // destination (foster child page) pid
             scratch_p.store(),
             scratch_p.btree_root(),
@@ -290,7 +282,7 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
     ::memcpy (&scratch, page._pp, sizeof(scratch));  // scratch is copied from foster parent page (source)
     w_keystr_t low_key;
     scratch_p.copy_fence_low_key(low_key);                // No change
-    W_DO(page.format_steal(scratch_p.lsn(),
+    W_DO(page.format_steal(page.get_page_lsn(),
              scratch_p.pid(), scratch_p.store(),
              scratch_p.btree_root(), scratch_p.level(),   // source (foster parent) is the new page
              scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
@@ -426,11 +418,6 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page,      // In/Out: desti
         return RCOK; // don't do it
     }
 
-    // foster-child should be written later because it's the data source
-    // first, mark them dirty.
-    page.set_dirty();
-    foster_p.set_dirty();
-
     // TODO(Restart)... see the same fence key setting code in btree_impl::_ux_merge_foster_apply_parent
     w_keystr_t high_key, chain_high_key;
     if (foster_p.get_foster() != 0)
@@ -526,7 +513,7 @@ void btree_impl::_ux_merge_foster_apply_parent(
     ::memcpy (&scratch, page._pp, sizeof(scratch));  // scratch is copied from the destination (foster parent page)
     btree_page_h scratch_p;
     scratch_p.fix_nonbufferpool_page(&scratch);
-    W_COERCE(page.format_steal(scratch_p.lsn(), scratch_p.pid(),
+    W_COERCE(page.format_steal(page.get_page_lsn(), scratch_p.pid(),
                                scratch_p.store(),
                                scratch_p.btree_root(),    // destination (foster parent page) is the new page
                                scratch_p.level(),

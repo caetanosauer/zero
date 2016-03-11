@@ -367,8 +367,6 @@ void restart_m::_redo_log_with_pid(logrec_t& r, PageID pid,
 
         w_assert1(page.is_fixed());
         r.redo(&page);
-        page.update_initial_and_last_lsn(r.lsn());
-        page.update_clsn(r.lsn());
         redone = true;
         ++dirty_count;
     }

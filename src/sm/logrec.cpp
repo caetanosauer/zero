@@ -215,16 +215,8 @@ void logrec_t::redo(fixable_page_h* page)
 #include "redo_gen.cpp"
     }
 
-    /*
-     *  Page is dirty after redo.
-     *  (not all redone log records have a page)
-     *  NB: the page lsn in set by the caller (in restart.cpp)
-     *  This is ok in recovery because in this phase, there
-     *  is not a bf_cleaner thread running. (that thread asserts
-     *  that if the page is dirty, its lsn is non-null, and we
-     *  have a short-lived violation of that right here).
-     */
-    if(page) page->set_dirty();
+    page->update_page_lsn(lsn());
+    page->set_img_page_lsn(lsn());
 }
 
 static __thread logrec_t::kind_t undoing_context = logrec_t::t_max_logrec; // for accounting TODO REMOVE
@@ -818,7 +810,6 @@ void page_img_format_log::redo(fixable_page_h* page) {
     // REDO is simply applying the image
     page_img_format_t* dp = (page_img_format_t*) _data;
     dp->apply(page);
-    page->set_dirty();
 }
 
 
