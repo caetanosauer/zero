@@ -191,11 +191,6 @@ public:
      */
     w_rc_t set_swizzling_enabled(bool enabled);
 
-    /** does additional initialization that might return error codes (thus can't be done in constructor). */
-    w_rc_t init (const sm_options& options);
-    /** does additional clean-up that might return error codes (thus can't be done in destructor). */
-    w_rc_t destroy ();
-
     /** returns the control block corresponding to the given memory frame index */
     bf_tree_cb_t& get_cb(bf_idx idx) const;
 
@@ -480,7 +475,7 @@ public:
 
     size_t get_size() { return _block_cnt; }
 
-    page_cleaner_base* get_cleaner() { return _cleaner; }
+    page_cleaner_base* get_cleaner();
 
 private:
 
@@ -640,6 +635,8 @@ private:
 
     /** whether to swizzle non-root pages. */
     bool                 _enable_swizzling;
+
+    bool _cleaner_decoupled;
 };
 
 /**

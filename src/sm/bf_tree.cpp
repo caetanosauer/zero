@@ -17,6 +17,7 @@
 #include <stdlib.h>
 
 #include "sm_base.h"
+#include "sm.h"
 #include "vol.h"
 #include "alloc_cache.h"
 
@@ -168,9 +169,17 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     _eviction_current_frame = 0;
     DO_PTHREAD(pthread_mutex_init(&_eviction_lock, NULL));
+
+    _cleaner_decoupled = options.get_bool_option("sm_cleaner_decoupled", false);
 }
 
-bf_tree_m::~bf_tree_m() {
+bf_tree_m::~bf_tree_m()
+{
+    if (_cleaner != NULL) {
+        W_COERCE(_cleaner->shutdown());
+        delete _cleaner;
+    }
+
     if (_control_blocks != NULL) {
 #ifdef BP_ALTERNATE_CB_LATCH
         char* buf = reinterpret_cast<char*>(_control_blocks) - sizeof(bf_tree_cb_t);
@@ -196,35 +205,27 @@ bf_tree_m::~bf_tree_m() {
         _buffer = NULL;
     }
 
-    if (_cleaner != NULL) {
-        delete _cleaner;
-        _cleaner = NULL;
-    }
-
     DO_PTHREAD(pthread_mutex_destroy(&_eviction_lock));
 
 }
 
-w_rc_t bf_tree_m::init (const sm_options& options)
+page_cleaner_base* bf_tree_m::get_cleaner()
 {
-    w_assert0(smlevel_0::vol != NULL);
+    w_assert1(smlevel_0::vol);
 
-    bool cleaner_decoupled = options.get_bool_option("sm_cleaner_decoupled", false);
-    if(cleaner_decoupled) {
-        w_assert0(smlevel_0::logArchiver != NULL);
-        _cleaner = new page_cleaner_decoupled(this, options);
+    if (!_cleaner) {
+        if(_cleaner_decoupled) {
+            w_assert0(smlevel_0::logArchiver);
+            _cleaner = new page_cleaner_decoupled(this,
+                    ss_m::get_options());
+        }
+        else{
+            _cleaner = new bf_tree_cleaner (this, ss_m::get_options());
+        }
+        _cleaner->fork();
     }
-    else{
-        _cleaner = new bf_tree_cleaner (this, options);
-    }
-    _cleaner->fork();
-    return RCOK;
-}
 
-w_rc_t bf_tree_m::destroy ()
-{
-    W_DO(_cleaner->shutdown());
-    return RCOK;
+    return _cleaner;
 }
 
 ///////////////////////////////////   Initialization and Release END ///////////////////////////////////

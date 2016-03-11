@@ -309,9 +309,6 @@ ss_m::_construct_once()
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer cleaner and other services");
 
-    // start buffer pool cleaner when the log module is ready
-    W_COERCE(bf->init(_options));
-
     bt = new btree_m;
     if (! bt) {
         W_FATAL(eOUTOFMEMORY);
@@ -415,15 +412,15 @@ ss_m::_destruct_once()
     (void) nprepared; // Used only for debugging assert
 
     // log truncation requires clean shutdown
-    bool format = _options.get_bool_option("sm_format", false);
-    if (shutdown_clean || format) {
+    bool truncate = _options.get_bool_option("sm_truncate_log", false);
+    if (shutdown_clean || truncate) {
         ERROUT(<< "SM performing clean shutdown");
 
         W_COERCE(bf->get_cleaner()->force_volume());
         W_COERCE(log->flush_all());
         me()->check_actual_pin_count(0);
 
-        if (format) {
+        if (truncate) {
             W_COERCE(_truncate_log());
         }
 
@@ -443,7 +440,6 @@ ss_m::_destruct_once()
     // ongoing restore has a chance to finish cleanly. Should also come after
     // shutdown of buffer, since forcing the buffer requires the volume.
     // destroy() will stop cleaners
-    W_COERCE(bf->destroy());
     vol->shutdown(!shutdown_clean);
     delete vol; vol = 0; // io manager
 

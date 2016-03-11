@@ -79,6 +79,7 @@ w_rc_t bf_tree_cleaner::shutdown()
 {
     _stop_requested = true;
     lintel::atomic_thread_fence(lintel::memory_order_release);
+    W_DO(wakeup_cleaner());
     W_DO(join());
     return RCOK;
 }
