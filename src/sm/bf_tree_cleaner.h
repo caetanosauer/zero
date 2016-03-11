@@ -10,7 +10,7 @@
 #include "smthread.h"
 #include "lsn.h"
 #include "vol.h"
-#include <AtomicCounter.hpp>
+#include <atomic>
 #include <vector>
 #include "page_cleaner_base.h"
 
@@ -97,12 +97,9 @@ private:
         be OK for the accesses, instead of the default memory_order_seq_cst, but thats an
         exercise for another day, and a non-x86 architecture. */
     /** whether this thread has been requested to stop. */
-    lintel::Atomic<bool> _stop_requested;
+    std::atomic<bool> _stop_requested;
     /** whether this thread has been requested to wakeup. */
-    lintel::Atomic<bool> _wakeup_requested;
-
-    /** whether any unexpected error happened in some cleaner. */
-    bool                        _error_happened;
+    std::atomic<bool> _wakeup_requested;
 
     lsn_t clean_lsn;
 };

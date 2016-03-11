@@ -6,10 +6,6 @@
 #include "bf_tree_cb.h"
 #include "log_core.h"
 
-bool _dirty_shutdown_happening_now() {
-    return (ss_m::shutting_down && !ss_m::shutdown_clean);
-}
-
 CleanerControl::CleanerControl(bool* _shutdownFlag, uint _sleep_time)
     : shutdownFlag(_shutdownFlag), sleep_time(_sleep_time),
     activated(false), listening(false)
@@ -259,10 +255,6 @@ w_rc_t page_cleaner_decoupled::force_volume() {
 }
 
 w_rc_t page_cleaner_decoupled::flush_workspace() {
-    if (_dirty_shutdown_happening_now()) {
-        return RCOK;
-    }
-
     PageID first_pid = workspace[0].pid;
     DBGOUT1(<<"Flushing write buffer from page "<<first_pid << " to page " << first_pid + workspace_size-1);
     W_COERCE(smlevel_0::vol->write_many_pages(first_pid, workspace, workspace_size));

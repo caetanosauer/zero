@@ -21,10 +21,6 @@
 #include "sm.h"
 #include "xct.h"
 
-bool _dirty_shutdown_happening() {
-    return (ss_m::shutting_down && !ss_m::shutdown_clean);
-}
-
 const int INITIAL_SORT_BUFFER_SIZE = 64;
 
 bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& _options) :
@@ -35,7 +31,6 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& _optio
     _write_buffer_pages = (uint32_t) _options.get_int_option("sm_cleaner_write_buffer_pages", 64);
     _interval_millisec = _options.get_int_option("sm_cleaner_interval_millisec", 1000);
 
-   _error_happened = false;
    ::pthread_mutex_init(&_interval_mutex, NULL);
    ::pthread_cond_init(&_interval_cond, NULL);
 
@@ -79,7 +74,6 @@ w_rc_t bf_tree_cleaner::wakeup_cleaner()
 w_rc_t bf_tree_cleaner::shutdown()
 {
     _stop_requested = true;
-    lintel::atomic_thread_fence(lintel::memory_order_release);
     W_DO(wakeup_cleaner());
     W_DO(join());
     return RCOK;
@@ -94,17 +88,15 @@ w_rc_t bf_tree_cleaner::force_volume()
 
     while (true) {
         _requested_volume = true;
-        lintel::atomic_thread_fence(lintel::memory_order_release);
         W_DO(wakeup_cleaner());
         uint32_t interval = FORCE_SLEEP_MS_MIN;
-        while (_requested_volume && !_dirty_shutdown_happening() && !_error_happened) {
+        while (_requested_volume) {
             DBGOUT2(<< "waiting in force_volume...");
             usleep(interval * 1000);
             interval *= 2;
             if (interval >= FORCE_SLEEP_MS_MAX) {
                 interval = FORCE_SLEEP_MS_MAX;
             }
-            lintel::atomic_thread_fence(lintel::memory_order_consume);
         }
 
         // CS TODO: temporary fix to make sure all pages are cleaned.
@@ -156,7 +148,6 @@ bool bf_tree_cleaner::_cond_timedwait (uint64_t timeout_microsec) {
     ts.tv_nsec = ts.tv_nsec % 1000000000;
 
     bool timeouted = false;
-    lintel::atomic_thread_fence(lintel::memory_order_consume);
     while (!_wakeup_requested) {
         int rc_wait =
             ::pthread_cond_timedwait(&_interval_cond, &_interval_mutex, &ts);
@@ -166,34 +157,21 @@ bool bf_tree_cleaner::_cond_timedwait (uint64_t timeout_microsec) {
             timeouted = true;
             break;
         }
-        lintel::atomic_thread_fence(lintel::memory_order_consume);
     }
 
     int rc_mutex_unlock = ::pthread_mutex_unlock (&_interval_mutex);
     w_assert1(rc_mutex_unlock == 0);
     _wakeup_requested = false;
-    lintel::atomic_thread_fence(lintel::memory_order_release);
     return timeouted;
 }
 
 void bf_tree_cleaner::run()
 {
-    lintel::atomic_thread_fence(lintel::memory_order_consume);
-    while (!_stop_requested && !_error_happened) {
-        if (_dirty_shutdown_happening()) {
-            ERROUT (<<"the system is going to shutdown dirtily. this cleaner will shutdown without flushing!");
-            break;
-        }
-        w_rc_t rc = _do_work();
-        if (rc.is_error()) {
-            ERROUT (<<"cleaner thread error:" << rc);
-            _error_happened = true;
-            break;
-        }
-        lintel::atomic_thread_fence(lintel::memory_order_consume);
-        if (!_stop_requested && !_exists_requested_work() && !_error_happened) {
+    while (!_stop_requested) {
+        W_COERCE(_do_work());
+
+        if (!_stop_requested && !_exists_requested_work()) {
             _cond_timedwait((uint64_t) _interval_millisec * 1000); //sleep for a bit
-            lintel::atomic_thread_fence(lintel::memory_order_consume);
         }
     }
 }
@@ -201,7 +179,6 @@ void bf_tree_cleaner::run()
 bool bf_tree_cleaner::_exists_requested_work()
 {
     // the cleaner is requested to flush out all dirty pages for assigned volume. let's do it immediately
-    lintel::atomic_thread_fence(lintel::memory_order_consume);
     if (_requested_volume) {
         return true;
     }
@@ -212,8 +189,6 @@ bool bf_tree_cleaner::_exists_requested_work()
 
 w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
 {
-    if (_dirty_shutdown_happening()) return RCOK;
-
     // CS: flush log to guarantee WAL property. It's much simpler and more
     // efficient to do it once and with the current LSN as argument, instead
     // of checking the max LSN of each copied page. Taking the current LSN is
@@ -468,6 +443,5 @@ w_rc_t bf_tree_cleaner::_do_work()
     // CS TODO: invoke alloc_cache_t::write_dirty_pages to flush alloc pages
 
     _requested_volume = false;
-    lintel::atomic_thread_fence(lintel::memory_order_release);
     return RCOK;
 }
