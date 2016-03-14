@@ -355,12 +355,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
             cb.clear_except_latch();
             cb._pin_cnt = 0;
-            cb._pid_shpid = shpid;
-            if (virgin_page) {
-                cb._uncommitted_cnt = 0;
-            }
+            cb._pid = shpid;
             cb._used = true;
-            cb._refbit_approximate = BP_INITIAL_REFCOUNT;
+            cb._ref_count = BP_INITIAL_REFCOUNT;
             cb._clean_lsn = page->lsn;
             cb._page_lsn = page->lsn;
 
@@ -400,7 +397,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             W_DO(cb.latch().latch_acquire(mode, conditional ?
                     sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
 
-            if (cb._pin_cnt < 0 || cb._pid_shpid != shpid)
+            if (cb._pin_cnt < 0 || cb._pid != shpid)
             {
                 // Page was evicted between hash table probe and latching
                 DBG(<< "Page evicted right before latching. Retrying.");
@@ -408,8 +405,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 continue;
             }
 
-            if (cb._refbit_approximate < BP_MAX_REFCOUNT) {
-                ++cb._refbit_approximate;
+            if (cb._ref_count < BP_MAX_REFCOUNT) {
+                ++cb._ref_count;
             }
 
             page = &(_buffer[idx]);
@@ -521,8 +518,8 @@ void bf_tree_m::_convert_to_pageid (PageID* shpid) const {
         bf_idx idx = (*shpid) ^ SWIZZLED_PID_BIT;
         w_assert1(_is_active_idx(idx));
         bf_tree_cb_t &cb = get_cb(idx);
-        DBGOUT3 (<< "_convert_to_pageid(): converted a swizzled pointer bf_idx=" << idx << " to page-id=" << cb._pid_shpid);
-        *shpid = cb._pid_shpid;
+        DBGOUT3 (<< "_convert_to_pageid(): converted a swizzled pointer bf_idx=" << idx << " to page-id=" << cb._pid);
+        *shpid = cb._pid;
     }
 }
 
@@ -718,11 +715,11 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     w_assert1(child_cb._swizzled);
     // in some lazy testcases, _buffer[child_idx] aren't initialized. so these checks are disabled.
     // see the above comments on cache miss
-    // w_assert1(child_cb._pid_shpid == _buffer[child_idx].pid);
+    // w_assert1(child_cb._pid == _buffer[child_idx].pid);
     // w_assert1(_buffer[child_idx].btree_level == 1);
     w_assert1(child_cb._pin_cnt >= 1); // because it's swizzled
     bf_idx_pair p;
-    w_assert1(_hashtable->lookup(child_cb._pid_shpid, p));
+    w_assert1(_hashtable->lookup(child_cb._pid, p));
     w_assert1(child_idx == p.first);
     child_cb._swizzled = false;
 #ifdef BP_TRACK_SWIZZLED_PTR_CNT
@@ -734,7 +731,7 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     // _decrement_pin_cnt_assume_positive(child_idx);
     --_swizzled_page_count_approximate;
 
-    *shpid_addr = child_cb._pid_shpid;
+    *shpid_addr = child_cb._pid;
     w_assert1(((*shpid_addr) & SWIZZLED_PID_BIT) == 0);
 
     return true;
@@ -757,13 +754,13 @@ void bf_tree_m::debug_dump(std::ostream &o) const
         o << "  frame[" << idx << "]:";
         bf_tree_cb_t &cb = get_cb(idx);
         if (cb._used) {
-            o << "page-" << cb._pid_shpid;
+            o << "page-" << cb._pid;
             if (cb.is_dirty()) {
                 o << " (dirty)";
             }
             o << ", _swizzled=" << cb._swizzled;
             o << ", _pin_cnt=" << cb._pin_cnt;
-            o << ", _refbit_approximate=" << cb._refbit_approximate;
+            o << ", _ref_count=" << cb._ref_count;
             o << ", ";
             cb.latch().print(o);
         } else {
@@ -799,7 +796,7 @@ void bf_tree_m::debug_dump_pointer(ostream& o, PageID shpid) const
     if (shpid & SWIZZLED_PID_BIT) {
         bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
         o << "swizzled(bf_idx=" << idx;
-        o << ", page=" << get_cb(idx)._pid_shpid << ")";
+        o << ", page=" << get_cb(idx)._pid << ")";
     } else {
         o << "normal(page=" << shpid << ")";
     }
@@ -808,7 +805,7 @@ void bf_tree_m::debug_dump_pointer(ostream& o, PageID shpid) const
 PageID bf_tree_m::debug_get_original_pageid (PageID shpid) const {
     if (is_swizzled_pointer(shpid)) {
         bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
-        return get_cb(idx)._pid_shpid;
+        return get_cb(idx)._pid;
     } else {
         return shpid;
     }
@@ -872,10 +869,9 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     w_assert1(cb._pin_cnt == 0);
     w_assert1(!cb.latch().is_latched());
     cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
-    cb._uncommitted_cnt = 0;
 
-    DBGOUT1(<<"delete block: remove page shpid = " << cb._pid_shpid);
-    bool removed = _hashtable->remove(cb._pid_shpid);
+    DBGOUT1(<<"delete block: remove page shpid = " << cb._pid);
+    bool removed = _hashtable->remove(cb._pid);
     w_assert1(removed);
 
     // after all, give back this block to the freelist. other threads can see this block from now on
@@ -952,8 +948,7 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
     w_assert1(cb._pin_cnt > 0);
     cb.pin();
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
-    ++cb._counter_approximate;
-    ++cb._refbit_approximate;
+    ++cb._ref_count;
     page = &(_buffer[idx]);
     return RCOK;
 }

@@ -309,8 +309,6 @@ class smthread_t : public sthread_t {
     short              _fingerprint[FINGER_BITS]; // dreadlocks
     atomic_thread_map_t  _fingerprint_map; // map containing only fingerprint
 
-    char _replacement_priority; // identify workload priority (for use by the page replacement policy)
-
 public:
     const atomic_thread_map_t&  get_fingerprint_map() const
                             {   return _fingerprint_map; }
@@ -553,9 +551,6 @@ public:
                       const char * const caller = 0,
                       const void * id = 0);
     w_rc_t            smthread_unblock(w_error_codes e);
-
-    int get_workload_priority() { return _replacement_priority; }
-    void set_workload_priority(char priority) { _replacement_priority = priority; }
 
     int sampling;
 private:

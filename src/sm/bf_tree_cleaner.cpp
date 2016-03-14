@@ -216,7 +216,7 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
         bf_idx idx = candidates[i];
         bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
         w_assert1(_bufferpool->_buffer->lsn.valid());
-        _sort_buffer[sort_buf_used] = (((uint64_t) cb._pid_shpid) << 32) + ((uint64_t) idx);
+        _sort_buffer[sort_buf_used] = (((uint64_t) cb._pid) << 32) + ((uint64_t) idx);
         ++sort_buf_used;
     }
     std::sort(_sort_buffer, _sort_buffer + sort_buf_used);
@@ -281,7 +281,6 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
             }
             else {
                 // Copy page and update its page_lsn from what's on the cb
-                w_assert1(!smlevel_0::clog || cb._uncommitted_cnt == 0);
                 generic_page* pdest = _write_buffer + write_buffer_cur;
                 ::memcpy(pdest, page_buffer + idx, sizeof (generic_page));
                 pdest->lsn = cb.get_page_lsn();
@@ -406,7 +405,7 @@ w_rc_t bf_tree_cleaner::_flush_write_buffer(size_t from, size_t consecutive)
         }
 
         cb.pin();
-        if (cb._pid_shpid == _write_buffer[i].pid) {
+        if (cb._pid == _write_buffer[i].pid) {
             cb.set_clean_lsn(clean_lsn);
         }
         cb.unpin();
@@ -434,7 +433,7 @@ w_rc_t bf_tree_cleaner::_do_work()
         _candidates_buffer.push_back (idx);
         // DBGOUT3(<< "Picked page for cleaning: idx = " << idx
         //         << " vol = " << cb._pid_vol
-        //         << " shpid = " << cb._pid_shpid);
+        //         << " shpid = " << cb._pid);
     }
     if (!_candidates_buffer.empty()) {
         W_DO(_clean_volume(_candidates_buffer));

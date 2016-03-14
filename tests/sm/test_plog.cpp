@@ -94,7 +94,7 @@ struct test_sys_xct_single : public restart_test_base
         {
             sys_xct_section_t sx(false);
             _stid_list = new stid_t[1];
-            W_DO(smlevel_0::io->create_store(_volume._vid, 
+            W_DO(smlevel_0::io->create_store(_volume._vid,
                         smlevel_0::st_regular,
                         _stid_list[0]));
             lpid_t root_pid;
@@ -121,7 +121,7 @@ struct test_sys_xct_single : public restart_test_base
             // 2 allocations: root page and the one allocated manually
             EXPECT_EQ(count, 2);
         }
-        
+
         return RCOK;
     }
 
@@ -136,7 +136,7 @@ struct test_sys_xct_multi : public restart_test_base
         sys_xct_section_t sx(false);
 
         _stid_list = new stid_t[1];
-        W_DO(smlevel_0::io->create_store(_volume._vid, 
+        W_DO(smlevel_0::io->create_store(_volume._vid,
                     smlevel_0::st_regular,
                     _stid_list[0]));
         lpid_t root_pid;
@@ -180,7 +180,7 @@ struct test_sys_xct_nested_abort : public restart_test_base
             lpid_t root_pid;
             sys_xct_section_t ssx(false);
             _stid_list = new stid_t[1];
-            W_DO(smlevel_0::io->create_store(_volume._vid, 
+            W_DO(smlevel_0::io->create_store(_volume._vid,
                         smlevel_0::st_regular,
                         _stid_list[0]));
             W_DO(smlevel_2::bt->create(_stid_list[0], root_pid));
@@ -192,7 +192,7 @@ struct test_sys_xct_nested_abort : public restart_test_base
         W_DO(x_btree_insert(ssm, _stid_list[0], "key1", "value1"));
 
         ssm->abort_xct();
-        
+
         // STEP 3: look for index creation log records
         {
             log_i iter(*smlevel_0::clog, lsn_t(1,0), true /* forward */);
@@ -234,7 +234,7 @@ struct test_sys_xct_nested_abort_implicit : public restart_test_base
         W_DO(x_btree_insert(ssm, _stid_list[0], "key1", "value1"));
 
         ssm->abort_xct();
-        
+
         // STEP 3: look for index creation log records
         {
             log_i iter(*smlevel_0::clog, lsn_t(1,0), true /* forward */);
@@ -377,7 +377,6 @@ rc_t my_fix(const lpid_t& pid, latch_mode_t mode, bf_tree_cb_t*& cb,
         generic_page*& page)
 {
     uint64_t key = bf_key(pid.vol(), pid.page);
-    uint16_t* uncommitted_cnt;
     latch_t* latch;
 
     while (true) {
@@ -385,7 +384,6 @@ rc_t my_fix(const lpid_t& pid, latch_mode_t mode, bf_tree_cb_t*& cb,
         w_assert0(idx != 0);
 
         cb = &smlevel_0::bf->get_cb(idx);
-        uncommitted_cnt = &cb->_uncommitted_cnt;
         page = smlevel_0::bf->get_page(cb);
 
         // Latch the page to prevent it being evicted.
@@ -413,8 +411,9 @@ rc_t check_page_lsn(const lpid_t& pid, const lsn_t& lsn)
     EXPECT_TRUE(page != NULL);
     EXPECT_TRUE(cb != NULL);
 
+    // CS TODO -- clsn removed
     // check clsn value of fixed page
-    EXPECT_EQ(lsn, page->clsn);
+    // EXPECT_EQ(lsn, page->clsn);
 
     cb->latch().latch_release();
 

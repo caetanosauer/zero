@@ -266,7 +266,7 @@ w_rc_t page_cleaner_decoupled::flush_workspace() {
             //page is in the buffer
             bf_tree_cb_t& cb = bufferpool->get_cb(idx);
             cb.pin();
-            if (cb._pid_shpid == flushed.pid && cb.get_clean_lsn() < completed_lsn)
+            if (cb._pid == flushed.pid && cb.get_clean_lsn() < completed_lsn)
             {
                 cb.set_clean_lsn(completed_lsn);
             }

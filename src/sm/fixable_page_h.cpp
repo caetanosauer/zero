@@ -34,7 +34,7 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent,
 
     unfix();
     W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, shpid, mode, conditional, virgin_page));
-    w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
+    w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid == shpid);
     _bufferpool_managed = true;
     _mode               = mode;
 
@@ -50,7 +50,7 @@ w_rc_t fixable_page_h::fix_direct(PageID shpid, latch_mode_t mode,
 
     W_DO(smlevel_0::bf->fix_nonroot(_pp, NULL, shpid, mode, conditional, virgin_page));
 
-    w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
+    w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid == shpid);
 
     _bufferpool_managed = true;
     _mode               = mode;

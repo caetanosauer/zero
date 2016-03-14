@@ -190,7 +190,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         // Step 2: latch parent in SH mode
         generic_page *page = &_buffer[idx];
         PageID pid = page->pid;
-        w_assert1(cb._pin_cnt < 0 || pid == cb._pid_shpid);
+        w_assert1(cb._pin_cnt < 0 || pid == cb._pid);
 
         bf_idx_pair idx_pair;
         bool found = _hashtable->lookup(pid, idx_pair);

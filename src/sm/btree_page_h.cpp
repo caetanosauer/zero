@@ -272,7 +272,6 @@ rc_t btree_page_h::format_foster_child(btree_page_h& parent,
 
     // Initialize fields
     page()->lsn = lsn_t::null;
-    page()->clsn = lsn_t::null;
     page()->pid = new_page_id;
     page()->store = parent.store();
     page()->tag = t_btree_p;
@@ -2015,8 +2014,6 @@ void btree_page_h::_init(lsn_t lsn, PageID page_id, StoreID store,
 #endif //ZERO_INIT
 
     page()->lsn          = lsn;
-    // CS: clsn set to null here -- committing TA will update it properly
-    page()->clsn = lsn_t::null;
     page()->pid          = page_id;
     page()->store        = store;
     page()->tag          = t_btree_p;

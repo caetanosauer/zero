@@ -136,7 +136,6 @@ smthread_t::smthread_t(
 : sthread_t(priority, name, stack_size),
   _proc(f),
   _arg(arg),
-  _replacement_priority(0),
   _gen_log_warnings(true)
 {
     tcb_t *empty_tcb = new tcb_t(NULL);
@@ -163,7 +162,6 @@ smthread_t::smthread_t(
 : sthread_t(priority, name, stack_size),
   _proc(0),
   _arg(0),
-  _replacement_priority(0),
   _gen_log_warnings(true)
 {
     tcb_t *empty_tcb = new tcb_t(NULL);

@@ -75,24 +75,14 @@ struct bf_tree_cb_t {
 
     // control block is bulk-initialized by malloc and memset. It has to be aligned.
 
-    /// placeholder for old dirty flag
-    uint8_t _fill1;         // +1  -> 1
-
-    /// true if this block is actually used; protected by our latch
-    bool _used;          // +1  -> 2
-
-    // CS TODO: left placeholder for old vid_t to make sure code still works
-    /// volume ID of the page currently pinned on this block; protected by ??
-    uint16_t _fill4;       // +2  -> 4
-
     /**
      * short page ID of the page currently pinned on this block.  (we don't have stnum in
      * bufferpool) protected by ??
      */
-    PageID _pid_shpid;     // +4  -> 8
+    PageID _pid;     // +4  -> 4
 
     /// Count of pins on this block.  See class comments; protected by ??
-    int32_t _pin_cnt;       // +4 -> 12
+    int32_t _pin_cnt;       // +4 -> 8
 
     /**
      * Reference count (for clock algorithm).  Approximate, so not protected by latches.
@@ -102,43 +92,26 @@ struct bf_tree_cb_t {
      * between sockets).  The counter still has enough granularity to separate cold from
      * hot pages.  Clock decrements the counter when it visits the page.
      */
-    uint16_t                    _refbit_approximate;// +2  -> 14
+    uint16_t                    _ref_count;// +2  -> 10
 
-    /**
-     * Only used when the bufferpool maintains a child-to-parent pointer in each buffer
-     * frame.  Used to trigger LRU-update 'about' once in 100 or 1000, and so
-     * on.  Approximate, so not protected by latches.  We increment it whenever (re-)fixing
-     * the page in the bufferpool.
-     */
-    uint16_t                    _counter_approximate;// +2  -> 16
-
-    // CS TODO: placeholder for old rec_lsn
-    uint64_t _fill24;       // +8 -> 24
-
-    /// Placeholder for pointer to the parent page.
-    uint32_t _fill28;        // +4 -> 28
-
-    /// Whether this page is swizzled from the parent; protected by ??
-    bool                        _swizzled;      // +1 -> 29
-
-    /// Whether this page is concurrently being swizzled by another thread; protected by ??
-    bool                        _concurrent_swizzling;      // +1 -> 30
-
-    /// replacement priority; protected by ??
-    char                        _replacement_priority;      // +1 -> 31
-
-    // CS TODO: replacing old in-doubt flag and dependency stuff
-    uint8_t                        _filler32;      // +1 -> 32
+    /// true if this block is actually used
+    bool _used;          // +1  -> 11
+    /// Whether this page is swizzled from the parent
+    bool _swizzled;      // +1 -> 12
+    /// Whether this page is concurrently being swizzled by another thread
+    bool _concurrent_swizzling;      // +1 -> 13
+    /// Filler
+    uint8_t _fill16[3];        // +3 -> 16
 
     // CS TODO: testing approach of maintaining page LSN in CB
-    lsn_t _page_lsn;
+    lsn_t _page_lsn; // +8 -> 24
     void set_page_lsn(lsn_t lsn) { _page_lsn = lsn; }
     lsn_t get_page_lsn() { return _page_lsn; }
 
     // CS: page_lsn value when it was last picked for cleaning
     // Replaces the old dirty flag, because dirty is defined as
     // page_lsn > clean_lsn
-    lsn_t _clean_lsn;
+    lsn_t _clean_lsn; // +8 -> 32
     void set_clean_lsn(lsn_t lsn) { _clean_lsn = lsn; }
     lsn_t get_clean_lsn() { return _clean_lsn; }
 
@@ -148,43 +121,16 @@ struct bf_tree_cb_t {
     /**
      * number of swizzled pointers to children; protected by ??
      */
-    uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 50
+    uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 34
 
-    fill8                       _fill56;          // +1 -> 51
-
-    // CD TODO: replacing old recovery-access flag
-    uint8_t                       _fill52;       // +1 -> 52
-
-    // page store information, used for recovery purpose
-    //
-    StoreID                     _store_num;            // +4 -> 56
-
-    /*
-     * Counter of uncommitted updates in this page (Caetano).
-     * This gets incremented every time someone marks the page dirty.
-     * It gets decremented when a transaction goes through the atomic commit
-     * protocol, for each log record and thus for each update. The end effect
-     * is that a page is guaranteed to contain no committed updates if the
-     * counter value is zero. By writing back to disk only the pages that
-     * satisfy this condition, we essentially achieve a no-steal policy
-     * without page locks.
-     *
-     * During commit, the page is latched in shared mode, which means there
-     * may be multiple threads racing on the decrement operation. Therefore,
-     * it must be done atomically with lintel::unsafe::atomic_fetch_sub
-     */
-    uint16_t                    _uncommitted_cnt; // +2 -> 58
-    fill16                      _fill16_60;      // +2 -> 60
-
-    fill8                       _fill8_61;      // +1 -> 61
-    fill8                       _fill8_62;      // +1 -> 62
-    fill8                       _fill8_63;      // +1 -> 63
+    // Add padding to aline control block at cacheline boundary (64 bytes)
+    uint8_t _fill63[29];    // +29 -> 63
 
 #ifdef BP_ALTERNATE_CB_LATCH
     /** offset to the latch to protect this page. */
     int8_t                      _latch_offset;  // +1 -> 64
 #else
-    fill8                       _fill8_64;      // +1 -> 64
+    fill8                       _fill64;      // +1 -> 64
     latch_t                     _latch;         // +64 ->128
 #endif
 

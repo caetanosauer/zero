@@ -281,7 +281,6 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
         // Of course it would be much better if we could use a proper
         // fix method from fixable_page_h (TODO)
         PageID pid = lr->pid();
-        uint16_t* uncommitted_cnt;
         generic_page* page;
         latch_t* latch;
 
@@ -304,7 +303,6 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
                 continue;
             }
             bf_tree_cb_t& cb = smlevel_0::bf->get_cb(idx);
-            uncommitted_cnt = &cb._uncommitted_cnt;
             page = smlevel_0::bf->get_page(&cb);
 
             // Latch the page to prevent it being evicted.
@@ -315,7 +313,7 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
 
             // After latching, we have to re-check if the page was not replaced
             // while we performed the lookup and waited for the latch.
-            if (cb._pid_shpid == pid) {
+            if (cb._pid == pid) {
                 break;
             }
         }
@@ -337,21 +335,23 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
             // protocol. The old "lsn" field is still used by the standard
             // commit protocol. The former flushes log records to clog,
             // while the latter to the standard log.
-            lsndata_t old_value = page->clsn.data();
+            // CS TODO
+            lsndata_t old_value = page->lsn.data();
             // Some other transaction may have already incremented the LSN
             // to a larger value, which means we have nothing to do, as the
             // page is already in a newer state.
             if (new_value > old_value)
             {
-                if (!lintel::unsafe::atomic_compare_exchange_strong(
-                            reinterpret_cast<lsndata_t*>(&page->clsn),
-                            &old_value,
-                            new_value))
-                {
-                    continue; // CAS did not succeed -> try again
-                }
-                DBGOUT3(<< "Updated CLSN of " << pid
-                        << " to " << (lsn_t) new_value);
+                // CS TODO
+                // if (!lintel::unsafe::atomic_compare_exchange_strong(
+                //             reinterpret_cast<lsndata_t*>(&page->clsn),
+                //             &old_value,
+                //             new_value))
+                // {
+                //     continue; // CAS did not succeed -> try again
+                // }
+                // DBGOUT3(<< "Updated CLSN of " << pid
+                //         << " to " << (lsn_t) new_value);
             }
             else {
                 DBGOUT3(<< "CLSN of " << pid << " not updated! "
@@ -365,7 +365,8 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
 
         // Decrement counter of uncommitted updates. Must also
         // be done atomically since page is latched in shared mode
-        lintel::unsafe::atomic_fetch_sub(uncommitted_cnt, 1);
+        // CS TODO
+        // lintel::unsafe::atomic_fetch_sub(uncommitted_cnt, 1);
 
         latch->latch_release();
     }

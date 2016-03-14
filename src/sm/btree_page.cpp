@@ -332,9 +332,6 @@ bool btree_page_data::eq(const btree_page_data& b) const
     bool eqHeader =
         pid == b.pid &&
         lsn == b.lsn &&
-#ifdef USE_ATOMIC_COMMIT
-        clsn == b.clsn &&
-#endif
         tag == b.tag &&
         page_flags == b.page_flags &&
         btree_root == b.btree_root &&
@@ -355,7 +352,7 @@ bool btree_page_data::eq(const btree_page_data& b) const
 std::ostream& operator<<(std::ostream& os, btree_page_data& b)
 {
     os << "BTREE PAGE " << b.pid << '\n';
-    os << "  LSN: " << b.lsn << " CLSN: " << b.clsn << '\n';
+    os << "  LSN: " << b.lsn << '\n';
     os << "  TAG: " << b.tag << " FLAGS: " << b.page_flags << '\n';
     os << "  ROOT: " << b.btree_root << " LEVEL: " << b.btree_level << '\n';
     os << "  1st CHILD: " << b.btree_pid0 << " FOSTER CHILD: " <<
