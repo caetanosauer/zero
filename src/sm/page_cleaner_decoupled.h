@@ -1,60 +1,25 @@
 #ifndef PAGE_CLEANER_DECOUPLED_H
 #define PAGE_CLEANER_DECOUPLED_H
 
-#include "bf_tree.h"        // For page_cleaner_mgr::bufferpool
-#include "logarchiver.h"    // For page_cleaner_mgr::archive (nested class)
-#include "vol.h"            // For page_cleaner_mgr::cleaners and page_cleaner_slave::volume
-#include "generic_page.h"   // For page_cleaner_slave::workspace (?)
-#include "lsn.h"            // For page_cleaner_slave::completed_lsn
-#include "smthread.h"       // For smthread_t
-#include "page_cleaner_base.h"
-
-#include <vector>
-#include <pthread.h>
-
-struct CleanerControl {
-    bool* shutdownFlag;
-    int sleep_time;
-
-    pthread_mutex_t mutex;
-    pthread_cond_t activateCond;
-
-    bool activated;
-    bool listening;
-
-    CleanerControl(bool* _shutdown, uint _sleep_time);
-    ~CleanerControl();
-
-    bool activate(bool wait);
-    bool waitForActivation();
-    bool waitForReturn();
-};
+#include "bf_tree.h"
+#include "logarchiver.h"
+#include "vol.h"
+#include "generic_page.h"
+#include "lsn.h"
+#include "smthread.h"
+#include "page_cleaner.h"
 
 class page_cleaner_decoupled : public page_cleaner_base{
 public:
-    page_cleaner_decoupled( bf_tree_m*                     _bufferpool,
-                            const sm_options&              _options);
-    ~page_cleaner_decoupled();
+    page_cleaner_decoupled(bf_tree_m* _bufferpool, const sm_options& _options);
+    virtual ~page_cleaner_decoupled();
 
-    void run();
-    void shutdown();
-
-    void wakeup(bool wait = false);
-
-    bool isActive() { return control->activated; }
+protected:
+    virtual void do_work();
 
 private:
-    bf_tree_m* bufferpool;
-
-    generic_page* workspace;
-    uint workspace_size;
     bool workspace_empty;
-
-    bool shutdownFlag;
-    lsn_t completed_lsn;
-    CleanerControl* control;
-
-    void flush_workspace();
+    void fill_cb_indexes();
 };
 
 #endif // PAGE_CLEANER_H

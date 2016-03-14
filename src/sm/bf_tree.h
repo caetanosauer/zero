@@ -13,7 +13,7 @@
 #include "bf_hashtable.h"
 #include "bf_tree_cb.h"
 #include <iosfwd>
-#include "page_cleaner_base.h"
+#include "page_cleaner.h"
 
 class sm_options;
 class lsn_t;

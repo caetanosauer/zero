@@ -16,95 +16,20 @@
 #include "xct.h"
 
 #include <vector>
-#include <algorithm>
-#include <chrono>
-#include <mutex>
-#include <condition_variable>
 
 const int INITIAL_SORT_BUFFER_SIZE = 64;
 
-bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& _options) :
-    _bufferpool(bufferpool),
+bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& _options)
+    :
+    page_cleaner_base(bufferpool, _options),
     _sort_buffer (new uint64_t[INITIAL_SORT_BUFFER_SIZE]),
-    _sort_buffer_size(INITIAL_SORT_BUFFER_SIZE),
-    _stop_requested(false), _wakeup_requested(false),
-    _cleaner_running(false)
+    _sort_buffer_size(INITIAL_SORT_BUFFER_SIZE)
 {
-    _write_buffer_pages = (uint32_t) _options.get_int_option("sm_cleaner_write_buffer_pages", 64);
-    _interval_msec = _options.get_int_option("sm_cleaner_interval_millisec", 1000);
-
-   // use posix_memalign because the write buffer might be used for raw disk I/O
-   void *buf = NULL;
-   // +1 margin for switching to next batch
-   w_assert0(::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * (_write_buffer_pages + 1))==0);
-   w_assert0(buf != NULL);
-   _write_buffer = reinterpret_cast<generic_page*>(buf);
-   _write_buffer_indexes = new bf_idx[_write_buffer_pages + 1];
 }
 
 bf_tree_cleaner::~bf_tree_cleaner()
 {
     delete[] _sort_buffer;
-
-    void *buf = reinterpret_cast<void*>(_write_buffer);
-    // note we use free(), not delete[], which corresponds to posix_memalign
-    ::free (buf);
-
-    delete[] _write_buffer_indexes;
-}
-
-void bf_tree_cleaner::wakeup(bool wait)
-{
-    {
-        lock_guard<mutex> lck(_wakeup_mutex);
-        _wakeup_requested = true;
-        _wakeup_condvar.notify_one();
-    }
-
-    while (wait) {
-        // Wait for cleaner to capture signal and run.
-        // Only return once cleaner is not running (avoid spurious wakeup)
-        unique_lock<mutex> lck(_done_mutex);
-        _done_condvar.wait(lck);
-        if (!_cleaner_running) { break; }
-    }
-}
-
-void bf_tree_cleaner::shutdown()
-{
-    _stop_requested = true;
-    wakeup();
-    join();
-}
-
-void bf_tree_cleaner::run()
-{
-    auto predicate = [this] { return _wakeup_requested; };
-    auto timeout = chrono::milliseconds(_interval_msec);
-
-    while (true) {
-        {
-            unique_lock<mutex> lck(_wakeup_mutex);
-            if (_interval_msec < 0) {
-                // Only activate upon recieving a wakeup signal
-                _wakeup_condvar.wait(lck, predicate);
-            }
-            else if (_interval_msec > 0) {
-                // Activate on either signal or interval timeout; whatever
-                // comes first
-                _wakeup_condvar.wait_for(lck, timeout, predicate);
-            }
-
-            if (_stop_requested) { break; }
-        }
-
-        {
-            lock_guard<mutex> lck2(_done_mutex);
-            _cleaner_running = true;
-        }
-
-        _do_work();
-    }
 }
 
 void bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
@@ -150,18 +75,18 @@ void bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
     int rounds = 0;
     while (true) {
         bool skipped_something = false;
-        clean_lsn = smlevel_0::log->curr_lsn();
+        _clean_lsn = smlevel_0::log->curr_lsn();
         for (size_t i = 0; i < sort_buf_used; ++i) {
-            if (write_buffer_cur == _write_buffer_pages) {
+            if (write_buffer_cur == _workspace_size) {
                 // now the buffer is full. flush it out and also reset the buffer
                 DBGOUT3(<< "Write buffer full. Flushing from " << write_buffer_from
                         << " to " << write_buffer_cur);
-                _flush_write_buffer (write_buffer_from, write_buffer_cur - write_buffer_from);
+                flush_workspace (write_buffer_from, write_buffer_cur);
 
-                PageID shpid = _write_buffer[write_buffer_cur].pid;
-                sysevent::log_page_write(shpid, clean_lsn,
+                PageID shpid = _workspace[write_buffer_cur].pid;
+                sysevent::log_page_write(shpid, _clean_lsn,
                         write_buffer_cur - write_buffer_from);
-                clean_lsn = smlevel_0::log->curr_lsn();
+                _clean_lsn = smlevel_0::log->curr_lsn();
 
                 write_buffer_from = 0;
                 write_buffer_cur = 0;
@@ -197,7 +122,7 @@ void bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
             }
             else {
                 // Copy page and update its page_lsn from what's on the cb
-                generic_page* pdest = _write_buffer + write_buffer_cur;
+                generic_page* pdest = _workspace + write_buffer_cur;
                 ::memcpy(pdest, page_buffer + idx, sizeof (generic_page));
                 pdest->lsn = cb.get_page_lsn();
                 // CS TODO: swizzling!
@@ -210,8 +135,8 @@ void bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
             cb.latch().latch_release();
 
             // then, re-calculate the checksum:
-            _write_buffer[write_buffer_cur].checksum
-                = _write_buffer[write_buffer_cur].calculate_checksum();
+            _workspace[write_buffer_cur].checksum
+                = _workspace[write_buffer_cur].calculate_checksum();
 
             if (tobedeleted) {
                 // CS TODO: what's up with this stuff???
@@ -225,20 +150,19 @@ void bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
                 // drop the page from bufferpool too
                 _bufferpool->_delete_block(idx);
             } else {
-                PageID shpid = _write_buffer[write_buffer_cur].pid;
-                _write_buffer_indexes[write_buffer_cur] = idx;
+                PageID shpid = _workspace[write_buffer_cur].pid;
+                _workspace_cb_indexes[write_buffer_cur] = idx;
 
                 // if next page is not consecutive, flush it out
                 if (write_buffer_from < write_buffer_cur && shpid != prev_shpid + 1) {
                     // flush up to _previous_ entry (before incrementing write_buffer_cur)
                     DBGOUT3(<< "Next page not consecutive. Flushing from " <<
                             write_buffer_from << " to " << write_buffer_cur);
-                    _flush_write_buffer (write_buffer_from,
-                                write_buffer_cur - write_buffer_from);
+                    flush_workspace(write_buffer_from, write_buffer_cur);
 
-                    sysevent::log_page_write(shpid, clean_lsn,
+                    sysevent::log_page_write(shpid, _clean_lsn,
                             write_buffer_cur - write_buffer_from);
-                    clean_lsn = smlevel_0::log->curr_lsn();
+                    _clean_lsn = smlevel_0::log->curr_lsn();
 
                     write_buffer_from = write_buffer_cur;
                 }
@@ -286,46 +210,19 @@ void bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
     if (write_buffer_cur > write_buffer_from) {
         DBGOUT3(<< "Finished cleaning round. Flushing from " << write_buffer_from
                 << " to " << write_buffer_cur);
-        _flush_write_buffer (write_buffer_from,
-                    write_buffer_cur - write_buffer_from);
+        flush_workspace(write_buffer_from, write_buffer_cur);
 
-        PageID shpid = _write_buffer[write_buffer_cur].pid;
-        sysevent::log_page_write(shpid, clean_lsn,
+        PageID shpid = _workspace[write_buffer_cur].pid;
+        sysevent::log_page_write(shpid, _clean_lsn,
                 write_buffer_cur - write_buffer_from);
-        clean_lsn = smlevel_0::log->curr_lsn();
+        _clean_lsn = smlevel_0::log->curr_lsn();
 
         write_buffer_from = 0; // not required, but to make sure
         write_buffer_cur = 0;
     }
 }
 
-void bf_tree_cleaner::_flush_write_buffer(size_t from, size_t consecutive)
-{
-    if (consecutive == 0) {
-        return;
-    }
-
-    W_COERCE(smlevel_0::vol->write_many_pages(
-                _write_buffer[from].pid, _write_buffer + from,
-                consecutive));
-
-    for (size_t i = from; i < from + consecutive; ++i) {
-        bf_idx idx = _write_buffer_indexes[i];
-        bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
-
-        if (i > from) {
-            w_assert1(_write_buffer[i].pid == _write_buffer[i - 1].pid + 1);
-        }
-
-        cb.pin();
-        if (cb._pid == _write_buffer[i].pid) {
-            cb.set_clean_lsn(clean_lsn);
-        }
-        cb.unpin();
-    }
-}
-
-void bf_tree_cleaner::_do_work()
+void bf_tree_cleaner::do_work()
 {
     _candidates_buffer.clear();
 
@@ -349,9 +246,4 @@ void bf_tree_cleaner::_do_work()
     if (!_candidates_buffer.empty()) {
         _clean_volume(_candidates_buffer);
     }
-
-    // Notify waiting threads that we are done with this round
-    lock_guard<mutex> lck(_done_mutex);
-    _cleaner_running = false;
-    _done_condvar.notify_all();
 }
