@@ -5,20 +5,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -73,11 +73,11 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *
  * Increasing values indicate increasing degrees of privilege; that is lock mode l, l>k,
  * allows at least as many operations as mode k.  I.e., EX > SH > Q > NL.
- * 
+ *
  * If you alter this, also change the corresponding interface and definition of
  * latch_mode_str.
  */
-enum latch_mode_t { LATCH_NL = 0, LATCH_Q = 1, LATCH_SH = 2, LATCH_EX = 3 };
+enum latch_mode_t { LATCH_NL = 0, LATCH_SH = 2, LATCH_EX = 3 };
 
 /// type of a Q mode ticket; exact type and location of definition TBD
 typedef int64_t q_ticket_t;
@@ -89,17 +89,17 @@ extern ostream &operator<<(ostream &, const latch_t &);
 /** \brief Indicates a latch is held by this thread.
  *
  *\details Every time we want to grab a latch,
- * we have to create a latch_holder_t. 
- * We do that with the holder_search class, 
- * which searches a TLS list to make sure  we(this thread) 
+ * we have to create a latch_holder_t.
+ * We do that with the holder_search class,
+ * which searches a TLS list to make sure  we(this thread)
  * doesn't already hold the latch, and, if not,
  * it creates a new latch_holder_t for the new latch acquisition.
- * It then stuffs the latch_holder_t in the TLS list.  
- * If we do already have hold the latch in some capacity, 
+ * It then stuffs the latch_holder_t in the TLS list.
+ * If we do already have hold the latch in some capacity,
  * the holder_search returns that existing latch_holder_t.
  * \sa holder_search
  */
-class latch_holder_t 
+class latch_holder_t
 {
 public:
 
@@ -113,12 +113,12 @@ private:
     sthread_t*   _threadid; // REMOVE ME (for debuging)
 
     // disabled
-    latch_holder_t &operator=(latch_holder_t const &other); 
+    latch_holder_t &operator=(latch_holder_t const &other);
 public:
     // internal freelist use only!
     latch_holder_t* _prev;
     latch_holder_t* _next;
-    
+
     latch_holder_t()
     : _latch(NULL), _mode(LATCH_NL), _count(0), _threadid(NULL)
     {
@@ -127,8 +127,8 @@ public:
 
     bool operator==(latch_holder_t const &other) const {
         if(_threadid != other._threadid) return false;
-        return _latch == other._latch && 
-              _mode == other._mode && _count == other._count;    
+        return _latch == other._latch &&
+              _mode == other._mode && _count == other._count;
     }
 
     void print(ostream &o) const;
@@ -139,9 +139,9 @@ public:
 /**\brief A short-term hold (exclusive or shared) on a page.
  *
  * \details
- * A latch may be acquire()d multiple times by a single thread.  
- * The mode of subsequent acquire()s must be at or above the level 
- * of the currently held latch.  
+ * A latch may be acquire()d multiple times by a single thread.
+ * The mode of subsequent acquire()s must be at or above the level
+ * of the currently held latch.
  * Each of these individual locks must be released.
  * \sa latch_holder_t
  */
@@ -157,44 +157,44 @@ public:
     /// Remove thread's latch info from the list.
     static void             on_thread_destroy(sthread_t *);
     /**\endcond skip */
-    
+
     /// Create a latch
     latch_t();
     ~latch_t();
 
-    // Dump latch info to the ostream. Not thread-safe. 
+    // Dump latch info to the ostream. Not thread-safe.
     ostream&                print(ostream &) const;
 
     // Return a unique id for the latch.For debugging.
-    inline const void *     id() const { return &_lock; } 
-    
+    inline const void *     id() const { return &_lock; }
+
     /// Change the name of the latch.
     inline void             setname(const char *const desc);
 
     /// Acquire the latch in given mode. \sa  timeout_t.
     w_rc_t                  latch_acquire(
-                                latch_mode_t             m, 
-                                sthread_t::timeout_in_ms timeout = 
+                                latch_mode_t             m,
+                                sthread_t::timeout_in_ms timeout =
                                       sthread_base_t::WAIT_FOREVER);
     /**\brief Upgrade from SH to EX if it can be done w/o blocking.
      * \details Returns bool indicating if it would have blocked, in which
      * case the upgrade did not occur. If it didn't have to block, the
      * upgrade did occur.
-     * \note Does \b not increment the count. 
+     * \note Does \b not increment the count.
      */
     w_rc_t                  upgrade_if_not_block(bool& would_block);
 
-    /**\brief Convert atomically an EX latch into an SH latch. 
+    /**\brief Convert atomically an EX latch into an SH latch.
      * \details
      * Does not decrement the latch count.
      */
     void                    downgrade();
 
-    /**\brief release the latch.  
+    /**\brief release the latch.
      * \details
      * Decrements the latch count and releases only when
 	 * it hits 0.
-	 * Returns the resulting latch count. 
+	 * Returns the resulting latch count.
      */
     int                     latch_release();
     /**\brief Unreliable, but helpful for some debugging.
@@ -215,14 +215,14 @@ public:
     /// How many threads hold the R/W lock.
     int                     num_holders() const;
     ///  True iff held in EX mode.
-    bool                    is_mine() const; // only if ex 
+    bool                    is_mine() const; // only if ex
     ///  True iff held in EX or SH mode.  Actually, it returns the
 	//latch count (# times this thread holds the latch).
     int                     held_by_me() const; // sh or ex
     ///  EX,  SH, or NL (if not held at all).
     latch_mode_t            mode() const;
 
-    /// string names of modes. 
+    /// string names of modes.
     static const char* const    latch_mode_str[4];
 
 private:
@@ -233,11 +233,11 @@ private:
 	// return #times this thread holds the latch after this release
     int                   _release(latch_holder_t* me);
     void                  _downgrade(latch_holder_t* me);
-    
-/* 
+
+/*
  * Note: the problem with #threads and #cpus and os preemption is real.
  * And it causes things to hang; and it's hard to debug, in the sense that
- * using pthread facilities gives thread-analysis tools and debuggers 
+ * using pthread facilities gives thread-analysis tools and debuggers
  * understood-things with which to work.
  * Consequently, we use w_pthread_rwlock for our lock.
  */
@@ -259,7 +259,7 @@ latch_t::is_latched() const
      * a particular moment is to hold it yourself, which defeats the
      * purpose of asking in the first place...
      * ... except for assertions / debugging... since there are bugs
-     * in acquire/release of latches 
+     * in acquire/release of latches
      */
     return _lock.is_locked();
 }

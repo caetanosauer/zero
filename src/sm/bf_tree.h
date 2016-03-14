@@ -236,23 +236,6 @@ public:
                           lsn_t emlsn = lsn_t::null);
 
     /**
-     * Fixes a non-root page in the bufferpool given a swizzled pointer that may be stale.
-     * Because of the possibility of staleness, the actual page fixed may be different
-     * from the page ID given.
-     *
-     * @param[out] page         the fixed page.
-     * @param[in]  shpid        ID of the page to fix
-     * @param[in]  mode         latch mode.  has to be Q, SH, or EX.
-     * @param[in]  conditional  whether the fix is conditional (returns immediately even if failed).
-     * @param[out] ticket       the resulting Q ticket if mode is LATCH_Q
-     *
-     * @pre shpid is a swizzled pointer
-     *
-     * To use this method, you need to include bf_tree_inline.h.
-     */
-    w_rc_t fix_unsafely_nonroot(generic_page*& page, PageID shpid, latch_mode_t mode, bool conditional, q_ticket_t& ticket);
-
-    /**
      * Special function for the REDO phase in system Recovery process
      * The page has been loaded into buffer pool and in the hashtable with known idx
      * This function associates the page in buffer pool with fixable_page data structure.

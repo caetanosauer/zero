@@ -17,7 +17,7 @@ int fixable_page_h::force_Q_fixing = 0;  // <<<>>>
 
 void fixable_page_h::unfix() {
     if (_pp) {
-        if (_bufferpool_managed && _mode != LATCH_Q) {
+        if (_bufferpool_managed) {
             smlevel_0::bf->unfix(_pp);
         }
         _pp   = NULL;
@@ -32,31 +32,9 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent,
     w_assert1(parent.is_fixed());
     w_assert1(mode != LATCH_NL);
 
-    if (force_Q_fixing > 1 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
     unfix();
-    if (mode == LATCH_Q || parent.latch_mode() == LATCH_Q) {
-        if (virgin_page || !is_swizzled_pointer(shpid)) {
-            return RC(eNEEDREALLATCH);
-        }
-
-        W_DO(smlevel_0::bf->fix_unsafely_nonroot(_pp, shpid, mode, conditional, _Q_ticket));
-        if (mode == LATCH_Q) {
-            if (false) { // test ticket later for validity <<<>>>
-                _pp = NULL;
-                return RC(eLATCHQFAIL);
-            }
-        }
-        // Check crabbing from Q case:
-        if (parent.latch_mode() == LATCH_Q) {
-            if (parent.change_possible_after_fix()) {
-                unfix();
-                return RC(ePARENTLATCHQFAIL);
-            }
-        }
-    } else {
-        W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, shpid, mode, conditional, virgin_page));
-        w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
-    }
+    W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, shpid, mode, conditional, virgin_page));
+    w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     _bufferpool_managed = true;
     _mode               = mode;
 
@@ -142,9 +120,6 @@ w_rc_t fixable_page_h::refix_direct (bf_idx idx, latch_mode_t mode, bool conditi
     w_assert1(mode != LATCH_NL);
 
     unfix();
-    if (mode == LATCH_Q) {
-        return RC(eNEEDREALLATCH);
-    }
     W_DO(smlevel_0::bf->refix_direct(_pp, idx, mode, conditional));
     _bufferpool_managed = true;
     _mode               = mode;
@@ -174,7 +149,6 @@ void fixable_page_h::fix_nonbufferpool_page(generic_page* s)
 }
 
 bool fixable_page_h::is_dirty() const {
-    w_assert1(_mode != LATCH_Q);
 
     if (_bufferpool_managed) {
         return smlevel_0::bf->is_dirty(_pp);
@@ -208,7 +182,6 @@ void fixable_page_h::set_img_page_lsn(const lsn_t & lsn)
 }
 
 bool fixable_page_h::is_to_be_deleted() {
-    w_assert1(_mode != LATCH_Q);
     return (_pp->page_flags&t_to_be_deleted) != 0;
 }
 
@@ -260,8 +233,7 @@ bool fixable_page_h::upgrade_latch_conditional(latch_mode_t mode) {
         return success;
 
     } else {
-        w_assert1(_mode == LATCH_Q);
-        return false; // later need to call latch operation and appropriately set _mode <<<>>>
+        return false;
     }
 }
 
@@ -284,7 +256,6 @@ void fixable_page_h::setup_for_restore(generic_page* pp)
 #include "btree_page_h.h"
 
 bool fixable_page_h::has_children() const {
-    w_assert1(_mode != LATCH_Q);
     btree_page_h downcast;
     downcast.fix_nonbufferpool_page(get_generic_page());
 
@@ -292,7 +263,6 @@ bool fixable_page_h::has_children() const {
 }
 
 int fixable_page_h::max_child_slot() const {
-    w_assert1(_mode != LATCH_Q);
     btree_page_h downcast;
     downcast.fix_nonbufferpool_page(get_generic_page());
 
@@ -302,7 +272,6 @@ int fixable_page_h::max_child_slot() const {
 }
 
 PageID* fixable_page_h::child_slot_address(int child_slot) const {
-    w_assert1(_mode != LATCH_Q);
     btree_page_h downcast;
     downcast.fix_nonbufferpool_page(get_generic_page());
     return downcast.page_pointer_address(child_slot -1);

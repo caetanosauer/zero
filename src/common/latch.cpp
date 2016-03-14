@@ -361,7 +361,6 @@ w_rc_t
 latch_t::latch_acquire(latch_mode_t mode, sthread_t::timeout_in_ms timeout)
 {
     w_assert1(mode != LATCH_NL);
-    w_assert1(mode != LATCH_Q); // <<<>>>
     holder_search me(this);
     return _acquire(mode, timeout, me.value());
 }
