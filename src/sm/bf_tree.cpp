@@ -160,10 +160,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     _hashtable = new bf_hashtable<bf_idx_pair>(buckets);
     w_assert0(_hashtable != NULL);
 
-    // initialize page cleaner
-    //_cleaner = new bf_tree_cleaner (this, cleaner_interval_millisec_min, cleaner_interval_millisec_max, cleaner_write_buffer_pages);
-    //_dcleaner = new page_cleaner(this, smlevel_0::vol, smlevel_0::logArchiver->getDirectory());
-
     _swizzled_page_count_approximate = 0;
 
     _eviction_current_frame = 0;
@@ -175,7 +171,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 bf_tree_m::~bf_tree_m()
 {
     if (_cleaner != NULL) {
-        W_COERCE(_cleaner->shutdown());
+        _cleaner->shutdown();
         delete _cleaner;
     }
 
@@ -823,7 +819,7 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
 
     // first, flush out all dirty pages. we assume there is no concurrent transaction
     // which produces dirty pages from here on. if there is, booomb.
-    W_DO(_cleaner->force_volume());
+    _cleaner->wakeup(true);
 
     // clear all properties. could call uninstall_volume for each of them,
     // but nuking them all is faster.

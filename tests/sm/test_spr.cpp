@@ -25,12 +25,12 @@ btree_test_env *test_env;
  */
 
 w_rc_t flush_and_evict(ss_m* ssm) {
-    W_DO(ss_m::bf->get_cleaner()->force_volume());
+    smlevel_0::bf->get_cleaner()->wakeup(true);
     // also, evict all to update EMLSN
     uint32_t evicted_count, unswizzled_count;
     W_DO(ssm->bf->evict_blocks(evicted_count, unswizzled_count, EVICT_COMPLETE));
     // then flush it, this time just for root node
-    W_DO(ss_m::bf->get_cleaner()->force_volume());
+    smlevel_0::bf->get_cleaner()->wakeup(true);
     return RCOK;
 }
 
@@ -61,7 +61,7 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, StoreID &stid, PageID
     }
     W_DO(ssm->commit_xct());
     W_DO(x_btree_verify(ssm, stid));
-    W_DO(ss_m::bf->get_cleaner()->force_volume());
+    smlevel_0::bf->get_cleaner()->wakeup(true);
 
     {
         btree_page_h root_p;

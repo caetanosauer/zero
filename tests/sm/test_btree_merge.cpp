@@ -132,7 +132,7 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, StoreID &stid, PageID
         EXPECT_TRUE (holder.released_flag);
         EXPECT_EQ(0, holder.return_value());
     }
-    W_DO(smlevel_0::bf->get_cleaner()->force_volume()); // clean them up
+    smlevel_0::bf->get_cleaner()->wakeup(true);
     return RCOK;
 }
 

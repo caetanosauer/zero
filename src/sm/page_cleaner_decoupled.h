@@ -6,7 +6,6 @@
 #include "vol.h"            // For page_cleaner_mgr::cleaners and page_cleaner_slave::volume
 #include "generic_page.h"   // For page_cleaner_slave::workspace (?)
 #include "lsn.h"            // For page_cleaner_slave::completed_lsn
-#include "w_base.h"         // For w_rc_t
 #include "smthread.h"       // For smthread_t
 #include "page_cleaner_base.h"
 
@@ -38,10 +37,9 @@ public:
     ~page_cleaner_decoupled();
 
     void run();
-    w_rc_t shutdown();
+    void shutdown();
 
-    w_rc_t wakeup_cleaner();      // async clean
-    w_rc_t force_volume();        // sync clean
+    void wakeup(bool wait = false);
 
     bool isActive() { return control->activated; }
 
@@ -56,7 +54,7 @@ private:
     lsn_t completed_lsn;
     CleanerControl* control;
 
-    w_rc_t flush_workspace();
+    void flush_workspace();
 };
 
 #endif // PAGE_CLEANER_H

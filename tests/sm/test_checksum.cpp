@@ -68,7 +68,7 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->commit_xct());
 
     // write out the page to set checksum by bufferpool
-    W_DO(ss_m::bf->get_cleaner()->force_volume());
+    smlevel_0::bf->get_cleaner()->wakeup(true);
     // also discards the pages from bufferpool (this test requires to re-read from disk!)
 
     // check it again

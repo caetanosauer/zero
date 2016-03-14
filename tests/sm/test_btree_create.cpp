@@ -53,7 +53,7 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
     PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
-    W_DO(smlevel_0::bf->get_cleaner()->force_volume());
+    smlevel_0::bf->get_cleaner()->wakeup(true);
     generic_page buf;
 
     // CS: why reading 5 pages?? (magic number)

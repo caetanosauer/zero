@@ -47,31 +47,32 @@ public:
     /**
      * Wakes up the cleaner thread assigned to the given volume.
      */
-    w_rc_t wakeup_cleaner();
+    void wakeup(bool wait = false);
 
     /**
      * Gracefully request all cleaners to stop.
      */
-    w_rc_t shutdown ();
+    void shutdown ();
 
     /** Immediately writes out all dirty pages in the given volume.*/
-    w_rc_t force_volume();
+    void force_volume();
 
 private:
-    bool _cond_timedwait (uint64_t timeout_microsec);
-    w_rc_t _do_work ();
-    bool _exists_requested_work();
-    w_rc_t _clean_volume(const std::vector<bf_idx> &candidates);
-    w_rc_t _flush_write_buffer(size_t from, size_t consecutive);
+    void _do_work ();
+    void _clean_volume(const std::vector<bf_idx> &candidates);
+    void _flush_write_buffer(size_t from, size_t consecutive);
 
     /** the buffer pool this cleaner deals with. */
     bf_tree_m*                  _bufferpool;
 
     uint32_t _write_buffer_pages;
-    uint32_t _interval_millisec;
+    long _interval_msec;
 
-    pthread_mutex_t             _interval_mutex;
-    pthread_cond_t              _interval_cond;
+    std::mutex _wakeup_mutex;
+    std::condition_variable _wakeup_condvar;
+
+    std::mutex _done_mutex;
+    std::condition_variable _done_condvar;
 
     /** reused buffer of dirty page's indexes . */
     std::vector<bf_idx>         _candidates_buffer;
@@ -84,22 +85,12 @@ private:
     generic_page*               _write_buffer;
     bf_idx*                     _write_buffer_indexes;
 
-    /**
-     * _volume_requests[vol] indicates whether the volume is requested
-     * to be flushed by force_volume() or force_all().
-     * When the corresponding worker observes this flag and completes
-     * flushing all dirty pages in the volume, the worker turns off the flag.
-     */
-    bool               _requested_volume;
-
-    /** @todo at some point the flags below should probably become std::atomic_flag's (or lintel
-        should be updated to include that type). I also think memory_order_consume would
-        be OK for the accesses, instead of the default memory_order_seq_cst, but thats an
-        exercise for another day, and a non-x86 architecture. */
     /** whether this thread has been requested to stop. */
-    std::atomic<bool> _stop_requested;
+    bool _stop_requested;
     /** whether this thread has been requested to wakeup. */
-    std::atomic<bool> _wakeup_requested;
+    bool _wakeup_requested;
+    /** whether cleaner is currently running */
+    bool _cleaner_running;
 
     lsn_t clean_lsn;
 };

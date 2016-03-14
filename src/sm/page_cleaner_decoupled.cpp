@@ -213,48 +213,46 @@ void page_cleaner_decoupled::run() {
     }
 }
 
-w_rc_t page_cleaner_decoupled::shutdown() {
+void page_cleaner_decoupled::shutdown()
+{
     shutdownFlag = true;
     lintel::atomic_thread_fence(lintel::memory_order_release);
-    W_DO(join());
-    return RCOK;
+    join();
 }
 
-w_rc_t page_cleaner_decoupled::wakeup_cleaner() {
+void page_cleaner_decoupled::wakeup(bool) {
     control->activate(false);
-    return RCOK;
 }
 
-w_rc_t page_cleaner_decoupled::force_volume() {
-    while(true) {
-        /* We have to flush log and archive to guarantee that we are going to
-         * replay the most recent log records and clean the buffer */
-        W_DO(ss_m::log->flush_all());
-        ss_m::logArchiver->requestFlushSync(ss_m::log->durable_lsn());
+// void page_cleaner_decoupled::force_volume() {
+//     while(true) {
+//         /* We have to flush log and archive to guarantee that we are going to
+//          * replay the most recent log records and clean the buffer */
+//         W_COERCE(ss_m::log->flush_all());
+//         ss_m::logArchiver->requestFlushSync(ss_m::log->durable_lsn());
 
-        // We do this for reasons
-        // W_DO (smlevel_0::vol->force_fixed_buffers());
+//         // We do this for reasons
+//         // W_DO (smlevel_0::vol->force_fixed_buffers());
 
-        W_DO(wakeup_cleaner());
+//         wakeup();
 
-        bool all_clean = true;
-        bf_idx block_cnt = bufferpool->_block_cnt;
-        for (bf_idx idx = 1; idx < block_cnt; ++idx) {
-            // no latching is needed -- fuzzy check
-            bf_tree_cb_t &cb = bufferpool->get_cb(idx);
-            if (cb.is_dirty()) {
-                all_clean = false;
-                break;
-            }
-        }
-        if (all_clean) {
-            break;
-        }
-    }
-    return RCOK;
-}
+//         bool all_clean = true;
+//         bf_idx block_cnt = bufferpool->_block_cnt;
+//         for (bf_idx idx = 1; idx < block_cnt; ++idx) {
+//             // no latching is needed -- fuzzy check
+//             bf_tree_cb_t &cb = bufferpool->get_cb(idx);
+//             if (cb.is_dirty()) {
+//                 all_clean = false;
+//                 break;
+//             }
+//         }
+//         if (all_clean) {
+//             break;
+//         }
+//     }
+// }
 
-w_rc_t page_cleaner_decoupled::flush_workspace() {
+void page_cleaner_decoupled::flush_workspace() {
     PageID first_pid = workspace[0].pid;
     DBGOUT1(<<"Flushing write buffer from page "<<first_pid << " to page " << first_pid + workspace_size-1);
     W_COERCE(smlevel_0::vol->write_many_pages(first_pid, workspace, workspace_size));
@@ -273,5 +271,4 @@ w_rc_t page_cleaner_decoupled::flush_workspace() {
             cb.unpin();
         }
     }
-    return RCOK;
 }

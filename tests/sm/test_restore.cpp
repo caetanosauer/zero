@@ -179,7 +179,7 @@ rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
 rc_t takeBackupTest(ss_m* ssm, test_volume_t* test_volume)
 {
     W_DO(populatePages(ssm, test_volume, 3 * SEGMENT_SIZE));
-    W_DO(ss_m::bf->get_cleaner()->force_volume());
+    smlevel_0::bf->get_cleaner()->wakeup(true);
     archiveLog(ssm);
     vol_t* volume = smlevel_0::vol;
 

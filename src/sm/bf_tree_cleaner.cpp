@@ -3,50 +3,47 @@
  */
 
 #include "bf_tree_cleaner.h"
-#include <sys/time.h>
 #include "sm_base.h"
 #include "bf_tree_cb.h"
 #include "bf_tree.h"
 #include "generic_page.h"
-#include "fixable_page_h.h"  // just for get_cb in bf_tree_inline.h
+#include "fixable_page_h.h"
 #include "log_core.h"
 #include "vol.h"
-#include <string.h>
-#include <vector>
-#include <algorithm>
-#include <stdlib.h>
 #include "alloc_cache.h"
 #include "eventlog.h"
-
 #include "sm.h"
 #include "xct.h"
+
+#include <vector>
+#include <algorithm>
+#include <chrono>
+#include <mutex>
+#include <condition_variable>
 
 const int INITIAL_SORT_BUFFER_SIZE = 64;
 
 bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& _options) :
     _bufferpool(bufferpool),
-    _sort_buffer (new uint64_t[INITIAL_SORT_BUFFER_SIZE]), _sort_buffer_size(INITIAL_SORT_BUFFER_SIZE),
-    _stop_requested(false), _wakeup_requested(false)
+    _sort_buffer (new uint64_t[INITIAL_SORT_BUFFER_SIZE]),
+    _sort_buffer_size(INITIAL_SORT_BUFFER_SIZE),
+    _stop_requested(false), _wakeup_requested(false),
+    _cleaner_running(false)
 {
     _write_buffer_pages = (uint32_t) _options.get_int_option("sm_cleaner_write_buffer_pages", 64);
-    _interval_millisec = _options.get_int_option("sm_cleaner_interval_millisec", 1000);
-
-   ::pthread_mutex_init(&_interval_mutex, NULL);
-   ::pthread_cond_init(&_interval_cond, NULL);
+    _interval_msec = _options.get_int_option("sm_cleaner_interval_millisec", 1000);
 
    // use posix_memalign because the write buffer might be used for raw disk I/O
    void *buf = NULL;
-   w_assert0(::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * (_write_buffer_pages + 1))==0); // +1 margin for switching to next batch
+   // +1 margin for switching to next batch
+   w_assert0(::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * (_write_buffer_pages + 1))==0);
    w_assert0(buf != NULL);
    _write_buffer = reinterpret_cast<generic_page*>(buf);
-
    _write_buffer_indexes = new bf_idx[_write_buffer_pages + 1];
 }
 
 bf_tree_cleaner::~bf_tree_cleaner()
 {
-    ::pthread_mutex_destroy(&_interval_mutex);
-    ::pthread_cond_destroy(&_interval_cond);
     delete[] _sort_buffer;
 
     void *buf = reinterpret_cast<void*>(_write_buffer);
@@ -56,138 +53,61 @@ bf_tree_cleaner::~bf_tree_cleaner()
     delete[] _write_buffer_indexes;
 }
 
-w_rc_t bf_tree_cleaner::wakeup_cleaner()
+void bf_tree_cleaner::wakeup(bool wait)
 {
-    int rc_mutex_lock = ::pthread_mutex_lock (&_interval_mutex);
-    w_assert1(rc_mutex_lock == 0);
+    {
+        lock_guard<mutex> lck(_wakeup_mutex);
+        _wakeup_requested = true;
+        _wakeup_condvar.notify_one();
+    }
 
-    _wakeup_requested = true;
-
-    int rc_broadcast = ::pthread_cond_broadcast(&_interval_cond);
-    w_assert1(rc_broadcast == 0);
-
-    int rc_mutex_unlock = ::pthread_mutex_unlock (&_interval_mutex);
-    w_assert1(rc_mutex_unlock == 0);
-    return RCOK;
+    while (wait) {
+        // Wait for cleaner to capture signal and run.
+        // Only return once cleaner is not running (avoid spurious wakeup)
+        unique_lock<mutex> lck(_done_mutex);
+        _done_condvar.wait(lck);
+        if (!_cleaner_running) { break; }
+    }
 }
 
-w_rc_t bf_tree_cleaner::shutdown()
+void bf_tree_cleaner::shutdown()
 {
     _stop_requested = true;
-    W_DO(wakeup_cleaner());
-    W_DO(join());
-    return RCOK;
-}
-
-const uint32_t FORCE_SLEEP_MS_MIN = 10;
-const uint32_t FORCE_SLEEP_MS_MAX = 1000;
-
-w_rc_t bf_tree_cleaner::force_volume()
-{
-    // CS TODO: force pages of stnode and alloc caches
-
-    while (true) {
-        _requested_volume = true;
-        W_DO(wakeup_cleaner());
-        uint32_t interval = FORCE_SLEEP_MS_MIN;
-        while (_requested_volume) {
-            DBGOUT2(<< "waiting in force_volume...");
-            usleep(interval * 1000);
-            interval *= 2;
-            if (interval >= FORCE_SLEEP_MS_MAX) {
-                interval = FORCE_SLEEP_MS_MAX;
-            }
-        }
-
-        // CS TODO: temporary fix to make sure all pages are cleaned.
-        // This is required because pages can be written in an older version
-        // when an update happens after the cleaner copy is taken. We need
-        // a better implementation for force_all, but eventually the whole
-        // cleaner will be rewritten, so this suffices for now.
-        bool all_clean = true;
-        bf_idx block_cnt = _bufferpool->_block_cnt;
-        for (bf_idx idx = 1; idx < block_cnt; ++idx) {
-            // no latching is needed -- fuzzy check
-            // CS TODO: ok, but we do need fences then!
-            bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
-            if (cb.is_dirty()) {
-                all_clean = false;
-                break;
-            }
-        }
-        if (all_clean) {
-            break;
-        }
-    }
-
-    generic_page* buf;
-    int res = posix_memalign((void**) &buf, SM_PAGESIZE, SM_PAGESIZE);
-    w_assert0(res == 0);
-
-    lsn_t dur_lsn = smlevel_0::log->durable_lsn();
-    W_DO(smlevel_0::vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
-
-    // Flush stnode_cache_t (always PID 1)
-    lsn_t emlsn = smlevel_0::vol->get_stnode_cache()->get_page_lsn();
-    smlevel_0::vol->read_page_verify(stnode_page::stpid, buf, emlsn);
-    smlevel_0::vol->write_page(stnode_page::stpid, buf);
-
-    delete[] buf;
-
-    return RCOK;
-}
-
-bool bf_tree_cleaner::_cond_timedwait (uint64_t timeout_microsec) {
-    int rc_mutex_lock = ::pthread_mutex_lock (&_interval_mutex);
-    w_assert1(rc_mutex_lock == 0);
-
-    timespec   ts;
-    ::clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_nsec += timeout_microsec * 1000;
-    ts.tv_sec += ts.tv_nsec / 1000000000;
-    ts.tv_nsec = ts.tv_nsec % 1000000000;
-
-    bool timeouted = false;
-    while (!_wakeup_requested) {
-        int rc_wait =
-            ::pthread_cond_timedwait(&_interval_cond, &_interval_mutex, &ts);
-
-        if (rc_wait == ETIMEDOUT) {
-            DBGOUT2(<<"timeouted");
-            timeouted = true;
-            break;
-        }
-    }
-
-    int rc_mutex_unlock = ::pthread_mutex_unlock (&_interval_mutex);
-    w_assert1(rc_mutex_unlock == 0);
-    _wakeup_requested = false;
-    return timeouted;
+    wakeup();
+    join();
 }
 
 void bf_tree_cleaner::run()
 {
-    while (!_stop_requested) {
-        W_COERCE(_do_work());
+    auto predicate = [this] { return _wakeup_requested; };
+    auto timeout = chrono::milliseconds(_interval_msec);
 
-        if (!_stop_requested && !_exists_requested_work()) {
-            _cond_timedwait((uint64_t) _interval_millisec * 1000); //sleep for a bit
+    while (true) {
+        {
+            unique_lock<mutex> lck(_wakeup_mutex);
+            if (_interval_msec < 0) {
+                // Only activate upon recieving a wakeup signal
+                _wakeup_condvar.wait(lck, predicate);
+            }
+            else if (_interval_msec > 0) {
+                // Activate on either signal or interval timeout; whatever
+                // comes first
+                _wakeup_condvar.wait_for(lck, timeout, predicate);
+            }
+
+            if (_stop_requested) { break; }
         }
+
+        {
+            lock_guard<mutex> lck2(_done_mutex);
+            _cleaner_running = true;
+        }
+
+        _do_work();
     }
 }
 
-bool bf_tree_cleaner::_exists_requested_work()
-{
-    // the cleaner is requested to flush out all dirty pages for assigned volume. let's do it immediately
-    if (_requested_volume) {
-        return true;
-    }
-
-    // otherwise let's take a sleep
-    return false;
-}
-
-w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
+void bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
 {
     // CS: flush log to guarantee WAL property. It's much simpler and more
     // efficient to do it once and with the current LSN as argument, instead
@@ -201,9 +121,6 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
     if (_sort_buffer_size < candidates.size()) {
         size_t new_buffer_size = 2 * candidates.size();
         uint64_t* new_sort_buffer = new uint64_t[new_buffer_size];
-        if (new_sort_buffer == NULL) {
-            return RC(eOUTOFMEMORY);
-        }
         delete[] _sort_buffer;
         _sort_buffer = new_sort_buffer;
         _sort_buffer_size = new_buffer_size;
@@ -239,8 +156,7 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
                 // now the buffer is full. flush it out and also reset the buffer
                 DBGOUT3(<< "Write buffer full. Flushing from " << write_buffer_from
                         << " to " << write_buffer_cur);
-                W_DO(_flush_write_buffer (write_buffer_from,
-                            write_buffer_cur - write_buffer_from));
+                _flush_write_buffer (write_buffer_from, write_buffer_cur - write_buffer_from);
 
                 PageID shpid = _write_buffer[write_buffer_cur].pid;
                 sysevent::log_page_write(shpid, clean_lsn,
@@ -303,9 +219,9 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
                 DBGOUT2(<< "physically delete a page by buffer pool:" << page_buffer[idx].pid);
                 // this operation requires a xct for logging. we create a ssx for this reason.
                 sys_xct_section_t sxs(true); // ssx to call free_page
-                W_DO (sxs.check_error_on_start());
-                W_DO (smlevel_0::vol->deallocate_page(page_buffer[idx].pid));
-                W_DO (sxs.end_sys_xct (RCOK));
+                W_COERCE (sxs.check_error_on_start());
+                W_COERCE (smlevel_0::vol->deallocate_page(page_buffer[idx].pid));
+                W_COERCE (sxs.end_sys_xct (RCOK));
                 // drop the page from bufferpool too
                 _bufferpool->_delete_block(idx);
             } else {
@@ -317,8 +233,8 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
                     // flush up to _previous_ entry (before incrementing write_buffer_cur)
                     DBGOUT3(<< "Next page not consecutive. Flushing from " <<
                             write_buffer_from << " to " << write_buffer_cur);
-                    W_DO(_flush_write_buffer (write_buffer_from,
-                                write_buffer_cur - write_buffer_from));
+                    _flush_write_buffer (write_buffer_from,
+                                write_buffer_cur - write_buffer_from);
 
                     sysevent::log_page_write(shpid, clean_lsn,
                             write_buffer_cur - write_buffer_from);
@@ -357,8 +273,8 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
             if (rounds > 2) {
                 DBGOUT1(<<"some dirty page seems to have a persistent EX latch. waiting... rounds=" << rounds);
                 if (rounds > 50) {
-                    ERROUT(<<"FATAL! some dirty page keeps EX latch for long time! failed to flush out the bufferpool");
-                    return RC(eINTERNAL);
+                    throw runtime_error("Some dirty page keeps EX latch for \
+                            long time! failed to flush out the bufferpool");
                 }
                 usleep(rounds > 5 ? 100000 : 20000);
             }
@@ -370,8 +286,8 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
     if (write_buffer_cur > write_buffer_from) {
         DBGOUT3(<< "Finished cleaning round. Flushing from " << write_buffer_from
                 << " to " << write_buffer_cur);
-        W_DO(_flush_write_buffer (write_buffer_from,
-                    write_buffer_cur - write_buffer_from));
+        _flush_write_buffer (write_buffer_from,
+                    write_buffer_cur - write_buffer_from);
 
         PageID shpid = _write_buffer[write_buffer_cur].pid;
         sysevent::log_page_write(shpid, clean_lsn,
@@ -381,15 +297,12 @@ w_rc_t bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
         write_buffer_from = 0; // not required, but to make sure
         write_buffer_cur = 0;
     }
-
-    return RCOK;
 }
 
-
-w_rc_t bf_tree_cleaner::_flush_write_buffer(size_t from, size_t consecutive)
+void bf_tree_cleaner::_flush_write_buffer(size_t from, size_t consecutive)
 {
     if (consecutive == 0) {
-        return RCOK;
+        return;
     }
 
     W_COERCE(smlevel_0::vol->write_many_pages(
@@ -410,11 +323,9 @@ w_rc_t bf_tree_cleaner::_flush_write_buffer(size_t from, size_t consecutive)
         }
         cb.unpin();
     }
-
-    return RCOK;
 }
 
-w_rc_t bf_tree_cleaner::_do_work()
+void bf_tree_cleaner::_do_work()
 {
     _candidates_buffer.clear();
 
@@ -436,11 +347,11 @@ w_rc_t bf_tree_cleaner::_do_work()
         //         << " shpid = " << cb._pid);
     }
     if (!_candidates_buffer.empty()) {
-        W_DO(_clean_volume(_candidates_buffer));
+        _clean_volume(_candidates_buffer);
     }
 
-    // CS TODO: invoke alloc_cache_t::write_dirty_pages to flush alloc pages
-
-    _requested_volume = false;
-    return RCOK;
+    // Notify waiting threads that we are done with this round
+    lock_guard<mutex> lck(_done_mutex);
+    _cleaner_running = false;
+    _done_condvar.notify_all();
 }

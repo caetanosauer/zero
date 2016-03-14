@@ -75,6 +75,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "log_lsn_tracker.h"
 #include "bf_tree.h"
 #include "stopwatch.h"
+#include "alloc_cache.h"
 
 #include "allocator.h"
 #include "plog_xct.h"
@@ -416,9 +417,26 @@ ss_m::_destruct_once()
     if (shutdown_clean || truncate) {
         ERROUT(<< "SM performing clean shutdown");
 
-        W_COERCE(bf->get_cleaner()->force_volume());
         W_COERCE(log->flush_all());
+        bf->get_cleaner()->wakeup(true);
         me()->check_actual_pin_count(0);
+
+        // Force alloc and stnode pages
+        {
+            generic_page* buf;
+            int res = posix_memalign((void**) &buf, SM_PAGESIZE, SM_PAGESIZE);
+            w_assert0(res == 0);
+
+            lsn_t dur_lsn = smlevel_0::log->durable_lsn();
+            W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
+
+            // Flush stnode_cache_t (always PID 1)
+            lsn_t emlsn = vol->get_stnode_cache()->get_page_lsn();
+            W_COERCE(vol->read_page_verify(stnode_page::stpid, buf, emlsn));
+            W_COERCE(vol->write_page(stnode_page::stpid, buf));
+
+            delete[] buf;
+        }
 
         if (truncate) {
             W_COERCE(_truncate_log());
