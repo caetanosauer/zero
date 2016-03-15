@@ -14,19 +14,12 @@ page_cleaner_base::page_cleaner_base(bf_tree_m* bufferpool, const sm_options& _o
     _interval_msec = _options.get_int_option("sm_cleaner_interval_millisec", 1000);
     _workspace_size = (uint32_t) _options.get_int_option("sm_cleaner_write_buffer_pages", 64);
 
-    void* buf = NULL;
-    posix_memalign(&buf, sizeof(generic_page), _workspace_size * sizeof(generic_page));
-    memset(buf, '\0', _workspace_size * sizeof(generic_page));
-    _workspace = reinterpret_cast<generic_page*>(buf);
-
+    _workspace.resize(_workspace_size);
     _workspace_cb_indexes.resize(_workspace_size, 0);
 }
 
 page_cleaner_base::~page_cleaner_base()
 {
-    void *buf = reinterpret_cast<void*>(_workspace);
-    // note we use free(), not delete[], which corresponds to posix_memalign
-    ::free (buf);
 }
 
 void page_cleaner_base::wakeup(bool wait)
@@ -99,7 +92,7 @@ void page_cleaner_base::flush_workspace(size_t from, size_t to)
     }
 
     W_COERCE(smlevel_0::vol->write_many_pages(
-                _workspace[from].pid, _workspace + from, from - to));
+                _workspace[from].pid, &(_workspace[from]), from - to));
 
     for (size_t i = from; i < to; ++i) {
         bf_idx idx = _workspace_cb_indexes[i];

@@ -122,15 +122,15 @@ void bf_tree_cleaner::_clean_volume(const std::vector<bf_idx> &candidates)
             }
             else {
                 // Copy page and update its page_lsn from what's on the cb
-                generic_page* pdest = _workspace + write_buffer_cur;
-                ::memcpy(pdest, page_buffer + idx, sizeof (generic_page));
-                pdest->lsn = cb.get_page_lsn();
+                generic_page& pdest = _workspace[write_buffer_cur];
+                ::memcpy(&pdest, page_buffer + idx, sizeof (generic_page));
+                pdest.lsn = cb.get_page_lsn();
                 // CS TODO: swizzling!
                 // if the page contains a swizzled pointer, we need to convert
                 // the data back to the original pointer.  we need to do this
                 // before releasing SH latch because the pointer might be
                 // unswizzled by other threads.
-                _bufferpool->_convert_to_disk_page(pdest);
+                _bufferpool->_convert_to_disk_page(&pdest);
             }
             cb.latch().latch_release();
 

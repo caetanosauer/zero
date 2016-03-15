@@ -5,6 +5,8 @@
 #include "sm_options.h"
 #include "lsn.h"
 #include "bf_hashtable.h"
+#include "allocator.h"
+#include "generic_page.h"
 
 #include <algorithm>
 #include <chrono>
@@ -42,9 +44,7 @@ protected:
     bf_tree_m*                  _bufferpool;
 
     /** in-transit buffer for written pages */
-    // CS TODO: implement memalign allocator
-    // vector<generic_page, memalign_allocator<generic_page>> _workspace;
-    generic_page* _workspace;
+    vector<generic_page, memalign_allocator<generic_page>> _workspace;
     size_t _workspace_size;
 
    vector<bf_idx> _workspace_cb_indexes;

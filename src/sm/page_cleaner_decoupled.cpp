@@ -54,13 +54,14 @@ void page_cleaner_decoupled::do_work()
             fill_cb_indexes();
             flush_workspace(0, _workspace_size);
 
-            memset(_workspace, '\0', _workspace_size * sizeof(generic_page));
+            memset(&_workspace[0], '\0', _workspace_size * sizeof(generic_page));
             workspace_empty = true;
         }
 
         if(workspace_empty) {
             /* true for ignoreRestore */
-            w_rc_t err = smlevel_0::vol->read_many_pages(lrpid, _workspace, _workspace_size, true);
+            w_rc_t err = smlevel_0::vol->read_many_pages(lrpid, &(_workspace[0]),
+                    _workspace_size, true);
             if(err.err_num() == eVOLFAILED) {
                 DBGOUT(<<"Trying to clean pages, but device is failed. Cleaner deactivating.");
                 break;
@@ -96,7 +97,7 @@ void page_cleaner_decoupled::do_work()
         fill_cb_indexes();
         flush_workspace(0, _workspace_size);
 
-        memset(_workspace, '\0', _workspace_size * sizeof(generic_page));
+        memset(&_workspace[0], '\0', _workspace_size * sizeof(generic_page));
         workspace_empty = true;
     }
     _clean_lsn = last_lsn;
