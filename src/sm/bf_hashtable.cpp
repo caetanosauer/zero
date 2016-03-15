@@ -7,7 +7,6 @@
 #include "w_defines.h"
 #include "w_base.h"
 #include "basics.h"
-#include "sm_s.h"
 #include "w_hashing.h"
 #include "bf_hashtable.h"
 #include "latch.h"
@@ -18,7 +17,8 @@ const uint32_t BF_HASH_SEED = 0x35D0B891;
 const uint32_t HASHBUCKET_INITIAL_EXPANSION = 16;
 const uint32_t HASHBUCKET_SUBSEQUENT_EXPANSION = 4;
 
-inline uint32_t bf_hash(uint64_t x) {
+inline uint32_t bf_hash(PageID x) {
+    // CS TODO: use stdlib hashing
     return w_hashing::uhash::hash32(BF_HASH_SEED, x);
 }
 
@@ -28,14 +28,14 @@ struct bf_hashbucket_chunk_linked {
     bf_hashbucket_chunk_linked (uint32_t size_)
         : size (size_),
             values (new T[size]),
-            keys (new uint64_t[size]),
+            keys (new PageID[size]),
             next_chunk (NULL) {
         ::memset (values, 0, sizeof(T) * size);
-        ::memset (keys, 0, sizeof(uint64_t) * size);
+        ::memset (keys, 0, sizeof(PageID) * size);
     }
     uint32_t  size;
     T*   values;
-    uint64_t* keys;
+    PageID* keys;
     bf_hashbucket_chunk_linked* next_chunk;
 
     void delete_chain() {
@@ -56,7 +56,7 @@ struct bf_hashbucket_chunk_linked {
 template<class T>
 struct bf_hashbucket_chunk {
     T   values[HASHBUCKET_INITIAL_CHUNK_SIZE];
-    uint64_t keys[HASHBUCKET_INITIAL_CHUNK_SIZE];
+    PageID keys[HASHBUCKET_INITIAL_CHUNK_SIZE];
     /** chains to next chunk if (as a rare occasion) this chunk is not enough. */
     bf_hashbucket_chunk_linked<T>* next_chunk;
 
@@ -79,16 +79,16 @@ public:
     bf_hashbucket_chunk<T>         _chunk;
     uint32_t _used_count;
 
-    bool find (uint64_t key, T& value);
-    bool append_if_not_exists (uint64_t key, T value);
-    bool update (uint64_t key, T value);
-    bool remove (uint64_t key);
+    bool find (PageID key, T& value);
+    bool append_if_not_exists (PageID key, T value);
+    bool update (PageID key, T value);
+    bool remove (PageID key);
 private:
     bf_hashbucket(); // prohibited (not implemented). this class should be bulk-initialized by memset
 };
 
 template<class T>
-bool bf_hashbucket<T>::find(uint64_t key, T& value) {
+bool bf_hashbucket<T>::find(PageID key, T& value) {
     spinlock_read_critical_section cs(&_lock);
 
     //first, take a look at initial chunk
@@ -119,7 +119,7 @@ bool bf_hashbucket<T>::find(uint64_t key, T& value) {
 }
 
 template<class T>
-bool bf_hashbucket<T>::update (uint64_t key, T value) {
+bool bf_hashbucket<T>::update (PageID key, T value) {
     spinlock_write_critical_section cs(&_lock);
 
     for (uint32_t i = 0; i < _used_count && i < HASHBUCKET_INITIAL_CHUNK_SIZE; ++i) {
@@ -144,7 +144,7 @@ bool bf_hashbucket<T>::update (uint64_t key, T value) {
 }
 
 template<class T>
-bool bf_hashbucket<T>::append_if_not_exists (uint64_t key, T value) {
+bool bf_hashbucket<T>::append_if_not_exists (PageID key, T value) {
     spinlock_write_critical_section cs(&_lock);
 
     for (uint32_t i = 0; i < _used_count && i < HASHBUCKET_INITIAL_CHUNK_SIZE; ++i) {
@@ -191,7 +191,7 @@ bool bf_hashbucket<T>::append_if_not_exists (uint64_t key, T value) {
 }
 
 template<class T>
-bool bf_hashbucket<T>::remove (uint64_t key) {
+bool bf_hashbucket<T>::remove (PageID key) {
     spinlock_write_critical_section cs(&_lock);
     bool found = false;
     //first, take a look at initial chunk
@@ -256,25 +256,25 @@ bf_hashtable<T>::~bf_hashtable() {
 }
 
 template<class T>
-bool bf_hashtable<T>::update(uint64_t key, T value) {
+bool bf_hashtable<T>::update(PageID key, T value) {
     uint32_t hash = bf_hash(key);
     return _table[hash % _size].update(key, value);
 }
 
 template<class T>
-bool bf_hashtable<T>::insert_if_not_exists(uint64_t key, T value) {
+bool bf_hashtable<T>::insert_if_not_exists(PageID key, T value) {
     uint32_t hash = bf_hash(key);
     return _table[hash % _size].append_if_not_exists(key, value);
 }
 
 template<class T>
-bool bf_hashtable<T>::lookup(uint64_t key, T& value) const {
+bool bf_hashtable<T>::lookup(PageID key, T& value) const {
     uint32_t hash = bf_hash(key);
     return _table[hash % _size].find(key, value);
 }
 
 template<class T>
-bool bf_hashtable<T>::remove(uint64_t key) {
+bool bf_hashtable<T>::remove(PageID key) {
     uint32_t hash = bf_hash(key);
     return _table[hash % _size].remove(key);
 }

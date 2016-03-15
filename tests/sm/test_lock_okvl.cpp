@@ -36,12 +36,12 @@ int next_thid = 10;
 int locktable_size = 1 << 12;
 const int LONGTIME_USEC = 20000; // like forever in the tests.
 
-rc_t _prep(ss_m* ssm, test_volume_t *test_volume, stid_t &stid) {
+rc_t _prep(ss_m* ssm, test_volume_t *test_volume, StoreID &stid) {
     OKVL_EXPERIMENT = true;
     OKVL_INIT_STR_PREFIX_LEN = 1 + 1; // "a" or "b". +1 for sign byte
     OKVL_INIT_STR_UNIQUEFIER_LEN = 4; // "unqX"
     EXPECT_TRUE(test_env->_use_locks);
-    lpid_t root_pid;
+    PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
     W_DO(test_env->begin_xct());
     W_DO(test_env->btree_insert(stid, "aunq1", "data"));
@@ -56,7 +56,7 @@ rc_t _prep(ss_m* ssm, test_volume_t *test_volume, stid_t &stid) {
 
 class access_thread_t : public smthread_t {
 public:
-        access_thread_t(stid_t stid, const char* key, bool write) 
+        access_thread_t(StoreID stid, const char* key, bool write)
                 : smthread_t(t_regular, "access_thread_t"),
                 _stid(stid), _key(key), _write(write), _done(false), _exitted(false) {
             _thid = next_thid++;
@@ -110,10 +110,10 @@ public:
             timersub(&now, &_start, &result);
             cout << (result.tv_sec * 1000000 + result.tv_usec);
         }
-        
+
         int  return_value() const { return 0; }
 
-    stid_t _stid;
+    StoreID _stid;
     const char* _key;
     bool _write;
     rc_t _rc;
@@ -125,19 +125,19 @@ public:
 
 class write_thread_t : public access_thread_t {
 public:
-    write_thread_t(stid_t stid, const char* key) : access_thread_t(stid, key, true) {}
+    write_thread_t(StoreID stid, const char* key) : access_thread_t(stid, key, true) {}
 };
 class read_thread_t : public access_thread_t {
 public:
-    read_thread_t(stid_t stid, const char* key) : access_thread_t(stid, key, false) {}
+    read_thread_t(StoreID stid, const char* key) : access_thread_t(stid, key, false) {}
 };
 class multiaccess_thread_t : public access_thread_t {
 public:
-    multiaccess_thread_t(stid_t stid, const std::vector<const char*> &keys, const std::vector<bool> &writes)
+    multiaccess_thread_t(StoreID stid, const std::vector<const char*> &keys, const std::vector<bool> &writes)
         : access_thread_t(stid, NULL, false) {
         _init (keys, writes);
     }
-    multiaccess_thread_t(stid_t stid, const char *key1, bool write1, const char *key2, bool write2)
+    multiaccess_thread_t(StoreID stid, const char *key1, bool write1, const char *key2, bool write2)
         : access_thread_t(stid, NULL, false) {
         std::vector<const char*> keys;
         keys.push_back(key1);
@@ -147,7 +147,7 @@ public:
         writes.push_back(write2);
         _init (keys, writes);
     }
-    multiaccess_thread_t(stid_t stid, const char *key1, bool write1, const char *key2, bool write2, const char *key3, bool write3)
+    multiaccess_thread_t(StoreID stid, const char *key1, bool write1, const char *key2, bool write2, const char *key3, bool write3)
         : access_thread_t(stid, NULL, false) {
         std::vector<const char*> keys;
         keys.push_back(key1);
@@ -159,7 +159,7 @@ public:
         writes.push_back(write3);
         _init (keys, writes);
     }
-    multiaccess_thread_t(stid_t stid, const char *key1, bool write1, const char *key2, bool write2, const char *key3, bool write3, const char *key4, bool write4)
+    multiaccess_thread_t(StoreID stid, const char *key1, bool write1, const char *key2, bool write2, const char *key3, bool write3, const char *key4, bool write4)
         : access_thread_t(stid, NULL, false) {
         std::vector<const char*> keys;
         keys.push_back(key1);
@@ -173,7 +173,7 @@ public:
         writes.push_back(write4);
         _init (keys, writes);
     }
-    multiaccess_thread_t(stid_t stid, const char *key1, bool write1, const char *key2, bool write2, const char *key3, bool write3, const char *key4, bool write4, const char *key5, bool write5)
+    multiaccess_thread_t(StoreID stid, const char *key1, bool write1, const char *key2, bool write2, const char *key3, bool write3, const char *key4, bool write4, const char *key5, bool write5)
         : access_thread_t(stid, NULL, false) {
         std::vector<const char*> keys;
         keys.push_back(key1);
@@ -238,14 +238,14 @@ public:
 
 w_rc_t read_write_livelock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(test_env->_use_locks);
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
 
     std::string data;
 
     // read a2
     W_DO(test_env->begin_xct());
-    W_DO(test_env->btree_lookup(stid, "aunq2", data));    
+    W_DO(test_env->btree_lookup(stid, "aunq2", data));
 
     // write a2
     write_thread_t t2 (stid, "aunq2");
@@ -253,12 +253,12 @@ w_rc_t read_write_livelock(ss_m* ssm, test_volume_t *test_volume) {
     ::usleep (LONGTIME_USEC);
     EXPECT_FALSE(t2._done);
     EXPECT_FALSE(t2._exitted);
-    
+
     W_DO(test_env->commit_xct());
     W_DO(t2.join());
     EXPECT_TRUE(t2._done);
     EXPECT_TRUE(t2._exitted);
-    
+
     return RCOK;
 }
 
@@ -269,12 +269,12 @@ TEST (LockOkvlTest, ReadWriteLivelock) {
 
 w_rc_t write_read_livelock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(test_env->_use_locks);
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
 
     // write a2
     W_DO(test_env->begin_xct());
-    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));    
+    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));
 
     // read a2
     read_thread_t t2 (stid, "aunq2");
@@ -282,12 +282,12 @@ w_rc_t write_read_livelock(ss_m* ssm, test_volume_t *test_volume) {
     ::usleep (LONGTIME_USEC);
     EXPECT_FALSE(t2._done);
     EXPECT_FALSE(t2._exitted);
-    
+
     W_DO(test_env->commit_xct());
     W_DO(t2.join());
     EXPECT_TRUE(t2._done);
     EXPECT_TRUE(t2._exitted);
-    
+
     return RCOK;
 }
 
@@ -299,12 +299,12 @@ TEST (LockOkvlTest, WriteReadLivelock) {
 
 w_rc_t write_read_write_livelock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(test_env->_use_locks);
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
 
     // write a2
     W_DO(test_env->begin_xct());
-    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));    
+    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));
 
     // read a3 and then read a2
     multiaccess_thread_t t2 (stid, "aunq3", false, "aunq2", false);
@@ -313,7 +313,7 @@ w_rc_t write_read_write_livelock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t2._done_multi[0]);
     EXPECT_FALSE(t2._done_multi[1]);
     EXPECT_FALSE(t2._exitted);
-    
+
     // write a3
     write_thread_t t3 (stid, "aunq3");
     W_DO(t3.fork());
@@ -332,7 +332,7 @@ w_rc_t write_read_write_livelock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t2._exitted);
     EXPECT_TRUE(t3._done);
     EXPECT_TRUE(t3._exitted);
-    
+
     return RCOK;
 }
 
@@ -346,12 +346,12 @@ TEST (LockOkvlTest, WriteReadWriteLivelock) {
 
 w_rc_t write_read_write_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(test_env->_use_locks);
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
 
     // write a2 (just to pause t2/t3)
     W_DO(test_env->begin_xct());
-    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));    
+    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));
 
     // read a3, (pause), write a4
     multiaccess_thread_t t2 (stid, "aunq3", false, "aunq2", false, "aunq4", true);
@@ -360,7 +360,7 @@ w_rc_t write_read_write_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t2._done_multi[0]);
     EXPECT_FALSE(t2._done_multi[1]);
     EXPECT_FALSE(t2._exitted);
-    
+
     // write a4, (pause), write a3
     multiaccess_thread_t t3 (stid, "aunq4", true, "aunq2", false, "aunq3", true);
     W_DO(t3.fork());
@@ -372,7 +372,7 @@ w_rc_t write_read_write_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(test_env->commit_xct());
     W_DO(t2.join());
     W_DO(t3.join());
-    
+
     // now that we use RAW-style lock manager, we can't choose deadlock victim by any policy.
     // So, though t3 is younger, t2 might be the victim. both cases are possible.
     EXPECT_TRUE(t2._exitted);
@@ -407,12 +407,12 @@ TEST (LockOkvlTest, WriteReadWriteDeadlock) {
 
 w_rc_t conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(test_env->_use_locks);
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
 
     // write a2 (just to pause t2/t3)
     W_DO(test_env->begin_xct());
-    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));    
+    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));
 
     // read a3, (pause), write a3
     multiaccess_thread_t t2 (stid, "aunq3", false, "aunq2", false, "aunq3", true);
@@ -421,7 +421,7 @@ w_rc_t conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t2._done_multi[0]);
     EXPECT_FALSE(t2._done_multi[1]);
     EXPECT_FALSE(t2._exitted);
-    
+
     // read a3, (pause), write a3
     multiaccess_thread_t t3 (stid, "aunq3", false, "aunq2", false, "aunq3", true);
     W_DO(t3.fork());
@@ -473,12 +473,12 @@ TEST (LockOkvlTest, ConversionDeadlock) {
 // see jira ticket:103 "[Experiment] ELR" (originally trac ticket:105)
 w_rc_t indirect_conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(test_env->_use_locks);
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
 
     // write a2 (just to pause t2/t3/t4)
     W_DO(test_env->begin_xct());
-    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));    
+    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));
 
     // read a3, read a4, (pause), write b1
     multiaccess_thread_t t2 (stid, "aunq3", false, "aunq4", false, "aunq2", false, "bunq1", true);
@@ -488,7 +488,7 @@ w_rc_t indirect_conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t2._done_multi[1]);
     EXPECT_FALSE(t2._done_multi[2]);
     EXPECT_FALSE(t2._exitted);
-    
+
     // read a3, write a3 (no pause. because this has to come BEFORE t4 to reproduce the bug)
     multiaccess_thread_t t3 (stid, "aunq3", false, "aunq3", true);
     W_DO(t3.fork());
@@ -503,8 +503,8 @@ w_rc_t indirect_conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     ::usleep (LONGTIME_USEC);
     EXPECT_TRUE(t3._done_multi[0]);
     EXPECT_FALSE(t3._done_multi[1]);
-    EXPECT_FALSE(t3._exitted);   
-    
+    EXPECT_FALSE(t3._exitted);
+
     W_DO(test_env->commit_xct()); // go!
     ::usleep (LONGTIME_USEC * 20);
     EXPECT_TRUE(t2._exitted);
@@ -526,11 +526,11 @@ w_rc_t indirect_conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
         }
         ::usleep (LONGTIME_USEC);
     }
-    
+
     W_DO(t2.join());
     W_DO(t3.join());
     W_DO(t4.join());
-    
+
     // this is triangular and complex. so I'm not sure which one should be victim.
     // but some of them has to be killed
     EXPECT_TRUE(t2._rc.is_error() || t3._rc.is_error() || t4._rc.is_error());
@@ -546,7 +546,7 @@ w_rc_t indirect_conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
         cout << "victim was t4!" << endl;
         EXPECT_EQ(t4._rc.err_num(), eDEADLOCK);
     }
-    
+
     return RCOK;
 }
 
@@ -560,11 +560,11 @@ TEST (LockOkvlTest, IndirectConversionDeadlock) {
 
 w_rc_t complex1_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(test_env->_use_locks);
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
 
     W_DO(test_env->begin_xct());
-    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));    
+    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));
 
     // read a3, (pause), write a4
     multiaccess_thread_t t2 (stid, "aunq3", false, "aunq2", false, "aunq4", true);
@@ -573,7 +573,7 @@ w_rc_t complex1_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t2._done_multi[0]);
     EXPECT_FALSE(t2._done_multi[1]);
     EXPECT_FALSE(t2._exitted);
-    
+
     // read a4, (pause), write a3
     multiaccess_thread_t t3 (stid, "aunq4", false, "aunq2", false, "aunq3", true);
     W_DO(t3.fork());
@@ -601,7 +601,7 @@ w_rc_t complex1_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_FALSE(t6._exitted);
     EXPECT_FALSE(t7._exitted);
     EXPECT_FALSE(t8._exitted);
-    
+
     W_DO(test_env->commit_xct());
     cout << "t2 join" << endl;
     W_DO(t2.join());
@@ -618,7 +618,7 @@ w_rc_t complex1_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     cout << "t8 join" << endl;
     W_DO(t8.join());
     cout << "joined all!" << endl;
-    
+
     // now that we use RAW-style lock manager, we can't choose deadlock victim by any policy.
     // So, though t3 is younger, t2 might be the victim. both cases are possible.
     EXPECT_TRUE(t2._exitted);
@@ -664,11 +664,11 @@ TEST (LockOkvlTest, Complex1Deadlock) {
 
 w_rc_t complex2_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(test_env->_use_locks);
-    stid_t stid;
+    StoreID stid;
     W_DO(_prep (ssm, test_volume, stid));
 
     W_DO(test_env->begin_xct());
-    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));    
+    W_DO(test_env->btree_overwrite(stid, "aunq2", "datb", 0));
 
     // read a3, read a4, (pause), write a3
     multiaccess_thread_t t2 (stid, "aunq3", false, "aunq4", false, "aunq2", false, "aunq3", true);
@@ -678,7 +678,7 @@ w_rc_t complex2_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t2._done_multi[1]);
     EXPECT_FALSE(t2._done_multi[2]);
     EXPECT_FALSE(t2._exitted);
-    
+
     // read a3, read a4, (pause), write a4
     multiaccess_thread_t t3 (stid, "aunq3", false, "aunq4", false, "aunq2", false, "aunq4", true);
     W_DO(t3.fork());
@@ -707,7 +707,7 @@ w_rc_t complex2_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_FALSE(t6._exitted);
     EXPECT_FALSE(t7._exitted);
     EXPECT_FALSE(t8._exitted);
-    
+
     W_DO(test_env->commit_xct());
     cout << "t2 join" << endl;
     W_DO(t2.join());
@@ -724,7 +724,7 @@ w_rc_t complex2_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     cout << "t8 join" << endl;
     W_DO(t8.join());
     cout << "joined all!" << endl;
-    
+
     // now that we use RAW-style lock manager, we can't choose deadlock victim by any policy.
     // So, though t3 is younger, t2 might be the victim. both cases are possible.
     EXPECT_TRUE(t2._exitted);

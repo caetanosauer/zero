@@ -70,7 +70,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <latch.h>
 #if defined(SM_SOURCE)
 /* Do not force this on VASs */
-#include <sm_s.h>
 #endif /* SM_SOURCE */
 #include <smthread.h>
 #include <tid_t.h>
@@ -88,7 +87,7 @@ class sm_stats_info_t;
 class xct_t;
 class xct_i;
 
-class vol_m;
+class vol_t;
 class BackupManager;
 class bf_tree_m;
 class comm_m;
@@ -96,7 +95,6 @@ class log_m;
 class log_core;
 class lock_m;
 class LogArchiver;
-class ticker_thread_t;
 
 class tid_t;
 class option_t;
@@ -234,95 +232,7 @@ public:
 
     /**\endcond skip */
 
-    /*
-     * rather than automatically aborting the transaction, when the
-     * _log_warn_percent is exceeded, this callback is made, with a
-     * pointer to the xct that did the writing, and with the
-     * expectation that the result will be one of:
-     * - return value == RCOK --> proceed
-     * - return value == eUSERABORT --> victim to abort is given in the argument
-     *
-     * The server has the responsibility for choosing a victim and
-     * for aborting the victim transaction.
-     *
-     */
-
-    /**\brief Log space warning callback function type.
-     *
-     * For more details of how this is used, see the constructor ss_m::ss_m().
-     *
-     * Storage manager methods check the available log space.
-     * If the log is in danger of filling to the point that it will be
-     * impossible to abort a transaction, a
-     * callback is made to the server.  The callback function is of this type.
-     * The danger point is a threshold determined by the option sm_log_warn.
-     *
-     * The callback
-     * function is meant to choose a victim xct and
-     * tell if the xct should be
-     * aborted by returning RC(eUSERABORT).
-     *
-     * Any other RC value is returned to the server through the call stack.
-     *
-     * The arguments:
-     * @param[in] iter    Pointer to an iterator over all xcts.
-     * @param[out] victim    Victim will be returned here. This is an in/out
-     * paramter and is initially populated with the transaction that is
-     * attached to the running thread.
-     * @param[in] curr    Bytes of log consumed by active transactions.
-     * @param[in] thresh   Threshhold just exceeded.
-     * @param[in] logfile   Character string name of oldest file to archive.
-     *
-     *  This function must be careful not to return the same victim more
-     *  than once, even though the callback may be called many
-     *  times before the victim is completely aborted.
-     *
-     *  When this function has archived the given log file, it needs
-     *  to notify the storage manager of that fact by calling
-     *  ss_m::log_file_was_archived(logfile)
-     */
-    typedef w_rc_t (*LOG_WARN_CALLBACK_FUNC) (
-            xct_i*      iter,
-            xct_t *&    victim,
-            fileoff_t   curr,
-            fileoff_t   thresh,
-            const char *logfile
-        );
-    /**\brief Callback function type for restoring an archived log file.
-     *
-     * @param[in] fname   Original file name (with path).
-     * @param[in] needed   Partition number of the file needed.
-     *
-     *  An alternative to aborting a transaction (when the log fills)
-     *  is to archive log files.
-     *  The server can use the log directory name to locate these files,
-     *  and may use the iterator and the static methods of xct_t to
-     *  determine which log file(s) to archive.
-     *
-     *  Archiving and removing the older log files will work only if
-     *  the server also provides a LOG_ARCHIVED_CALLBACK_FUNCTION
-     *  to restore the
-     *  archived log files when the storage manager needs them for
-     *  rollback.
-     *  This is the function type used for that purpose.
-     *
-     *  The function must locate the archived log file containing for the
-     *  partition number \a num, which was a suffix of the original log file's
-     *  name.
-     *  The log file must be restored with its original name.
-     */
     typedef    uint32_t partition_number_t;
-    typedef w_rc_t (*LOG_ARCHIVED_CALLBACK_FUNC) (
-            const char *fname,
-            partition_number_t num
-        );
-
-    typedef w_rc_t (*RELOCATE_RECORD_CALLBACK_FUNC) (
-	   vector<rid_t>&    old_rids,
-           vector<rid_t>&    new_rids
-       );
-
-
 /**\cond skip */
     enum switch_t {
         ON = 1,
@@ -384,204 +294,18 @@ public:
 
 /**\cond skip */
 
-    /*
-     * smlevel_0::operating_mode is always set to
-     * ONE of these, but the function in_recovery() tests for
-     * any of them, so we'll give them bit-mask values
-     */
-    enum operating_mode_t {
-        t_not_started = 0,
-        t_in_analysis = 0x1,
-        t_in_redo = 0x2,
-        t_in_undo = 0x4,
-        t_forward_processing = 0x8   // System is opened for transaction
-    };
-
-    // smlevel_0::concurrent_restart_mode_t is used for concurrent restart when
-    // the system is opened for user access after Log Analysis phase but the restart
-    // continue running concurrently.  It is to expose the active restart phase.
-    // It is not valid for pure on-demand restart operation (Instant Restart milestone 3).
-    //
-    enum concurrent_restart_mode_t {
-        t_concurrent_before,  // before REDO and UNDO
-        t_concurrent_redo,    // working on REDO
-        t_concurrent_undo,    // working on UNDO
-        t_concurrent_done     // after REDO and UNDO
-    };
-
-    // smlevel_0::restart_internal_mode_t is an internal setting, not exposed
-    // to external callers.  It is used to control the internal logic in recovery
-    // in order to test different implementations.
-    // Multiple features could be turned on/off, so they are in bit-mast values.
-    //
-    // Only the Recovery related operations should check these values.
-    // The only place to get/set the value is in 'sm.cpp' (restart_internal_mode),
-    // the setting is determined during system startup and cannot be changed
-    // dynamiclly, because we cannot change restart behavior in the middle
-    // of recovery process
-    // The actual recovery mode is determined by startup option 'sm_restart',
-    // no recompile required.
-    // If the startup option is not set, the default setting is to use the initialization
-    // value set in sm.cpp
-
-    enum restart_internal_mode_t {
-        t_restart_disable = 0,
-        t_restart_serial = 0x1,            // M1 implementation:
-                                           //    System is not opened until Recovery completed
-        t_restart_redo_log = 0x2,          // M1 traditional implementation:
-                                           //    REDO is forward log scan driven
-        t_restart_undo_reverse = 0x4,      // M1 traditional implementation:
-                                           //    UNDO is using reverse order with heap
-
-        t_restart_concurrent_log = 0x8,    // M2 implementation:
-                                           //    System is opened after Log Analysis.
-                                           //    Using commit_lsn for new transactions
-        t_restart_redo_page = 0x10,        // M2 implementation:
-                                           //    REDO is page driven using Single-Page-Recovery with minimal logging
-        t_restart_redo_full_logging = 0x20,// M2 implementation:
-                                           //    REDO is page driven using Single-Page-Recovery with full logging
-        t_restart_undo_txn = 0x40,         // M2 implementation:
-                                           //    UNDO is transaction driven
-        t_restart_redo_delay = 0x80,       // M2 Testing hook:
-                                           //    Internal delay before REDO phase
-                                           //    only if we have actual REDO work
-        t_restart_undo_delay = 0x100,      // M2 Testing hook:
-                                           //    Internal delay before UNDO phase
-                                           //    only if we have actual UNDO work
-
-        t_restart_concurrent_lock = 0x200, // M3, M4 and M5 implementation:
-                                           //    System is opened after Log Analysis.
-                                           //    Using lock acquisition for new transactions
-        t_restart_redo_demand = 0x400,     // M3 implementation:
-                                           //    REDO is on-demand using Single-Page-Recovery with minimal logging
-        t_restart_undo_demand = 0x800,     // M3 implementation:
-                                           //    UNDO is on-demand using user transaction driven
-
-        t_restart_redo_mix = 0x1000,       // M4 and M5 implementation:
-                                           //    REDO is using both page driven and
-                                           //    on-demand using Single-Page-Recovery with minimal logging
-        t_restart_undo_mix = 0x2000,       // M4 and M5 implementation:
-                                           //    UNDO is using both transaction driven and
-                                           //    on-demand using user transaction driven
-
-        t_restart_aries_open = 0x4000,     // M5 implementation:
-                                           // ARIES implementation, using lock conflict
-                                           // open the system after REDO but before UNDO
-        t_restart_alt_rebalance = 0x8000,  // Alternative implementation for page driven REDO with
-                                           // page rebalance operation using Singe Page Recovery (M2 - M5)
-                                           // The alternative implementation uses self-contained
-                                           // log record instead of recursive calls
-
-    };
-    static restart_internal_mode_t restart_internal_mode;
-
-    // Set of functions to check individual Restart implementations
-    // No setting because the bit values are set staticlly, not dynamiclly
-    static bool use_serial_restart()
-    {
-        // Restart M1
-        return ((restart_internal_mode & t_restart_serial ) !=0);
-    }
-    static bool use_redo_log_restart()
-    {
-        // Restart M1
-        return ((restart_internal_mode & t_restart_redo_log ) !=0);
-    }
-    static bool use_undo_reverse_restart()
-    {
-        // Restart M1
-        return ((restart_internal_mode & t_restart_undo_reverse ) !=0);
-    }
-
-    static bool use_concurrent_commit_restart()
-    {
-        // Restart M2
-        return ((restart_internal_mode & t_restart_concurrent_log ) !=0);
-    }
-    static bool use_redo_page_restart()
-    {
-        // Restart M2
-        return ((restart_internal_mode & t_restart_redo_page ) !=0);
-    }
-    static bool use_redo_full_logging_restart()
-    {
-        // Restart M2
-        return ((restart_internal_mode & t_restart_redo_full_logging ) !=0);
-    }
-    static bool use_undo_txn_restart()
-    {
-        // Restart M2
-        return ((restart_internal_mode & t_restart_undo_txn ) !=0);
-    }
-    static bool use_redo_delay_restart()
-    {
-        // Restart M2, testing purpose
-        return ((restart_internal_mode & t_restart_redo_delay ) !=0);
-    }
-    static bool use_undo_delay_restart()
-    {
-        // Restart M2, testing purpose
-        return ((restart_internal_mode & t_restart_undo_delay ) !=0);
-    }
-
-    static bool use_concurrent_lock_restart()
-    {
-        // Restart M3, M4 and M5
-        return ((restart_internal_mode & t_restart_concurrent_lock ) !=0);
-    }
-    static bool use_redo_demand_restart()
-    {
-        // Restart M3
-        return ((restart_internal_mode & t_restart_redo_demand ) !=0);
-    }
-    static bool use_undo_demand_restart()
-    {
-        // Restart M3
-        return ((restart_internal_mode & t_restart_undo_demand ) !=0);
-    }
-
-    static bool use_redo_mix_restart()
-    {
-        // Restart M4 and M5
-        return ((restart_internal_mode & t_restart_redo_mix ) !=0);
-    }
-    static bool use_undo_mix_restart()
-    {
-        // Restart M4 and M5
-        return ((restart_internal_mode & t_restart_undo_mix ) !=0);
-    }
-
-    static bool use_aries_restart()
-    {
-        // Restart M5
-        return ((restart_internal_mode & t_restart_aries_open ) !=0);
-    }
-
-    static bool use_alt_rebalance()
-    {
-        // Restart M2 - M5
-        return ((restart_internal_mode & t_restart_alt_rebalance ) !=0);
-    }
-
 
     static void  add_to_global_stats(const sm_stats_info_t &from);
     static void  add_from_global_stats(sm_stats_info_t &to);
 
     static BackupManager* bk;
-    static vol_m* vol;
+    static vol_t* vol;
     static bf_tree_m* bf;
     static lock_m* lm;
 
     static log_m* log;
     static log_core* clog;
     static LogArchiver* logArchiver;
-
-    static ticker_thread_t* _ticker;
-
-    static LOG_WARN_CALLBACK_FUNC log_warn_callback;
-    static LOG_ARCHIVED_CALLBACK_FUNC log_archived_callback;
-    static fileoff_t              log_warn_trigger;
-    static int                    log_warn_exceed_percent;
 
     static int    dcommit_timeout; // to convey option to coordinator,
                                    // if it is created by VAS
@@ -603,42 +327,6 @@ public:
     static bool         lock_caching_default;
     static bool         do_prefetch;
     static bool         statistics_enabled;
-
-    static lsn_t        commit_lsn;      // commit_lsn is for use_concurrent_commit_restart() only
-                                         // this is the validation lsn for all concurrent user txns
-
-    // The following variables are used by concurrent recovery process only
-    // they should be stored in class 'restart_m'
-    // Currently resides here for prototype converient access only
-    static lsn_t        redo_lsn;        // redo_lsn is used by child thread as the start scanning point for redo
-    static lsn_t        last_lsn;        // last_lsn is used by page driven REDO operation Single-Page-Recovery emlsn if encounter
-                                         // a virgin or corrupted page
-    static uint32_t     in_doubt_count;  // in_doubt_count is used to child thread during the REDO phase
-
-
-    static operating_mode_t operating_mode;
-    static bool in_recovery() {
-        return ((operating_mode &
-                (t_in_redo | t_in_undo | t_in_analysis)) !=0); }
-    static bool in_recovery_analysis() {
-        return ((operating_mode & t_in_analysis) !=0); }
-    static bool in_recovery_undo() {
-        // Valid for use_serial_restart() only
-        // If concurrent recovery, system is opened after Log Analysis
-        // and the operating mode changed to t_forward_processing after Log Analysis
-        return ((operating_mode & t_in_undo ) !=0); }
-    static bool in_recovery_redo() {
-        // Valid for use_serial_restart() only
-        // If concurrent recovery, system is opened after Log Analysis
-        // and the operating mode changed to t_forward_processing after Log Analysis
-        return ((operating_mode & t_in_redo ) !=0); }
-
-    static bool before_recovery() {
-        if (t_not_started == operating_mode)
-            return true;
-        else
-            return false;
-        }
 
     // This variable controls checkpoint frequency.
     // Checkpoints are taken every chkpt_displacement bytes

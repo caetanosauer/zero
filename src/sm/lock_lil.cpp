@@ -86,7 +86,7 @@ void lil_global_table_base::release_locks(bool *lock_taken, bool read_lock_only,
 }
 
 const clockid_t CLOCK_FOR_LIL = CLOCK_REALTIME; // CLOCK_MONOTONIC;
-    
+
 bool lil_global_table_base::_cond_timedwait (uint32_t base_version, uint32_t timeout_microsec) {
     int rc_mutex_lock = ::pthread_mutex_lock (&_waiter_mutex);
     w_assert1(rc_mutex_lock == 0);
@@ -95,15 +95,15 @@ bool lil_global_table_base::_cond_timedwait (uint32_t base_version, uint32_t tim
     ::clock_gettime(CLOCK_FOR_LIL, &ts);
     ts.tv_nsec += (uint64_t) timeout_microsec * 1000;
     ts.tv_sec += ts.tv_nsec / 1000000000;
-    ts.tv_nsec = ts.tv_nsec % 1000000000;    
+    ts.tv_nsec = ts.tv_nsec % 1000000000;
 
 #if W_DEBUG_LEVEL>=2
     timespec   ts_init;
     ::clock_gettime(CLOCK_FOR_LIL, &ts_init);
     cout << "LIL: waiting for " << timeout_microsec << " us.." << endl;
 #endif // W_DEBUG_LEVEL>=2
-    
-    
+
+
     bool timeouted = false;
     while (true) {
         uint32_t version;
@@ -114,7 +114,7 @@ bool lil_global_table_base::_cond_timedwait (uint32_t base_version, uint32_t tim
         if (version != base_version) {
             break;
         }
-        
+
         int rc_wait =
             //::pthread_cond_wait(&_waiter_cond, &_waiter_mutex);
             ::pthread_cond_timedwait(&_waiter_cond, &_waiter_mutex, &ts);
@@ -144,7 +144,7 @@ bool lil_global_table_base::_cond_timedwait (uint32_t base_version, uint32_t tim
 
     int rc_mutex_unlock = ::pthread_mutex_unlock (&_waiter_mutex);
     w_assert1(rc_mutex_unlock == 0);
-    
+
     return timeouted;
 }
 
@@ -261,7 +261,7 @@ w_rc_t lil_global_table_base::_request_lock_X(lsn_t &observed_tag)
             }
             version = _release_version;
         }
-        
+
         bool timeouted = _cond_timedwait (version, ABSOLUTE_LOCK_TIMEOUT_MICROSEC);
         if (timeouted) {
             break;
@@ -297,23 +297,22 @@ inline bool has_any_lock(const bool *lock_taken, bool read_lock_only = false) {
     }
 }
 
-w_rc_t lil_private_vol_table::acquire_store_lock(lil_global_table *global_table, const stid_t &stid,
+w_rc_t lil_private_vol_table::acquire_store_lock(lil_global_table *global_table, const StoreID &stid,
         lil_lock_modes_t mode) {
     w_assert1(global_table);
-    snum_t store = stid.store;
-    lil_private_store_table* table = _find_store_table(store);
+    lil_private_store_table* table = _find_store_table(stid);
     if (table == NULL) {
         return RC(eLIL_TOOMANYST_XCT);
     }
-    
+
     if (does_already_own(mode, table->_lock_taken)) {
         return RCOK;
     }
-    
+
     // then, we need to request a lock to global table
-    w_assert1(stid.vol < MAX_VOL_GLOBAL);
     // if it's timeout, it's deadlock
-    rc_t rc = global_table->_vol_tables[stid.vol]._store_tables[store].request_lock(mode);
+    // CS TODO remove vid from lock manager
+    rc_t rc = global_table->_vol_tables[1]._store_tables[stid].request_lock(mode);
     if (rc.is_error()) {
         // this might be a bit too conservative, but doesn't matter for intent locks
         if (rc.err_num() == eLOCKTIMEOUT) {
@@ -345,7 +344,7 @@ void lil_private_vol_table::release_vol_locks(lil_global_table *global_table, bo
     }
     // release store locks under this
     for (uint16_t i = 0; i < _stores; ++i) {
-        snum_t store = _store_tables[i]._store;
+        StoreID store = _store_tables[i]._store;
         w_assert1(store);
         if (has_any_lock(_store_tables[i]._lock_taken, read_lock_only)) {
             global_table->_vol_tables[_vid]._store_tables[store].release_locks(_store_tables[i]._lock_taken, read_lock_only, commit_lsn);
@@ -377,17 +376,18 @@ w_rc_t lil_private_table::acquire_vol_table(lil_global_table *global_table,
     uint16_t vid, lil_lock_modes_t mode, lil_private_vol_table* &table)
 {
     w_assert1(global_table);
-    table = find_vol_table(vid);
+    // CS TODO remove vid from lock manager
+    table = find_vol_table(1);
     if (table == NULL) {
         return RC(eLIL_TOOMANYVOL_XCT);
     }
-    
+
     if (does_already_own(mode, table->_lock_taken)) {
         return RCOK;
     }
-    
+
     // then, we need to request a lock to global table
-    w_assert1(vid < MAX_VOL_GLOBAL);
+    w_assert1(vid <= MAX_VOL_GLOBAL);
     // if it's timeout, it's deadlock
     rc_t rc = global_table->_vol_tables[vid].request_lock(mode);
     if (rc.is_error()) {
@@ -401,11 +401,12 @@ w_rc_t lil_private_table::acquire_vol_table(lil_global_table *global_table,
     table->_lock_taken[mode] = true;
     return RCOK;
 }
-w_rc_t lil_private_table::acquire_vol_store_lock(lil_global_table *global_table, const stid_t &stid,
+w_rc_t lil_private_table::acquire_vol_store_lock(lil_global_table *global_table, const StoreID &stid,
         lil_lock_modes_t mode)
 {
     lil_private_vol_table* vol_table;
-    W_DO (acquire_vol_table(global_table, stid.vol, mode, vol_table));
+    // CS TODO remove vid from lock manager
+    W_DO (acquire_vol_table(global_table, 1, mode, vol_table));
     W_DO (vol_table->acquire_store_lock(global_table, stid, mode));
     return RCOK;
 }

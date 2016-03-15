@@ -22,11 +22,11 @@
 #include "w_rc.h"
 #include "srwlock.h"
 #include "sthread.h"
-#include "stnode_page.h" // only for stnode_page_h::max
+#include "stnode_page.h" // only for stnode_page::max
 #include "vol.h"
 
 /** max number of volumes overall. */
-const uint16_t MAX_VOL_GLOBAL = vol_m::MAX_VOLS;
+const uint16_t MAX_VOL_GLOBAL = 1;
 
 /** max number of volumes one transaction can access at a time. */
 const uint16_t MAX_VOL_PER_XCT = 4;
@@ -113,13 +113,13 @@ public:
  */
 class lil_global_vol_table : public lil_global_table_base {
 public:
-    lil_global_store_table _store_tables[stnode_page_h::max]; // for all possible stores
+    lil_global_store_table _store_tables[stnode_page::max]; // for all possible stores
 
     lil_global_vol_table() {
         ::memset (this, 0, sizeof(*this));
         ::pthread_mutex_init(&_waiter_mutex, NULL);
         ::pthread_cond_init(&_waiter_cond, NULL);
-        for (size_t i = 0; i < stnode_page_h::max; ++i) {
+        for (size_t i = 0; i < stnode_page::max; ++i) {
             ::pthread_mutex_init(&(_store_tables[i]._waiter_mutex), NULL);
             ::pthread_cond_init(&(_store_tables[i]._waiter_cond), NULL);
         }
@@ -127,7 +127,7 @@ public:
     ~lil_global_vol_table(){
         ::pthread_mutex_destroy(&_waiter_mutex);
         ::pthread_cond_destroy(&_waiter_cond);
-        for (size_t i = 0; i < stnode_page_h::max; ++i) {
+        for (size_t i = 0; i < stnode_page::max; ++i) {
             ::pthread_mutex_destroy(&(_store_tables[i]._waiter_mutex));
             ::pthread_cond_destroy(&(_store_tables[i]._waiter_cond));
         }
@@ -140,7 +140,7 @@ public:
  */
 class lil_global_table {
 public:
-    lil_global_vol_table _vol_tables[MAX_VOL_GLOBAL];
+    lil_global_vol_table _vol_tables[MAX_VOL_GLOBAL+1];
 
     lil_global_table() {
         clear();
@@ -195,7 +195,7 @@ public:
      * @param[in] stid ID of the store to access
      * @param[in] mode lock mode
      */
-    w_rc_t acquire_store_lock(lil_global_table *global_table, const stid_t &stid,
+    w_rc_t acquire_store_lock(lil_global_table *global_table, const StoreID &stid,
             lil_lock_modes_t mode);
 
     /**
@@ -247,7 +247,7 @@ public:
     /**
      * Shortcut method to acquire store and its volume lock in the same mode.
      */
-    w_rc_t acquire_vol_store_lock(lil_global_table *global_table, const stid_t &stid,
+    w_rc_t acquire_vol_store_lock(lil_global_table *global_table, const StoreID &stid,
             lil_lock_modes_t mode);
 
     /**

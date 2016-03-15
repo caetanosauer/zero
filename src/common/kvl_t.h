@@ -38,12 +38,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * (which is defined include "basics.h") before you include this.
  */
 
-#ifndef STID_T_H
-#include "stid_t.h"
-#endif
-#ifndef VEC_T_H
 #include "vec_t.h"
-#endif
 
 /**\brief Key-Value Lock identifier.
  *
@@ -51,7 +46,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * Used by the lock manager.
  */
 struct kvl_t {
-    stid_t            stid;
+    StoreID            stid;
     uint32_t        h;
     uint32_t        g;
 
@@ -61,21 +56,21 @@ struct kvl_t {
     // Empty key-value
     NORET            kvl_t();
     // Empty key-value lock id for a store ID.
-    NORET            kvl_t(stid_t id, const cvec_t& v);
+    NORET            kvl_t(StoreID id, const cvec_t& v);
     // Empty key-value lock id for a store ID.
     NORET            kvl_t(
-        stid_t                _stid,
-        const cvec_t&         v1, 
+        StoreID                _stid,
+        const cvec_t&         v1,
         const cvec_t&         v2);
 
     NORET            ~kvl_t();
-    
+
     NORET            kvl_t(const kvl_t& k);
 
     kvl_t&             operator=(const kvl_t& k);
 
-    kvl_t&             set(stid_t s, const cvec_t& v);
-    kvl_t&             set(stid_t s,
+    kvl_t&             set(StoreID s, const cvec_t& v);
+    kvl_t&             set(StoreID s,
         const cvec_t&         v1,
         const cvec_t&         v2);
     bool operator==(const kvl_t& k) const;
@@ -86,20 +81,20 @@ struct kvl_t {
 
 inline NORET
 kvl_t::kvl_t()
-    : stid(stid_t::null), h(0), g(0)
+    : stid(0), h(0), g(0)
 {
 }
 
 inline NORET
-kvl_t::kvl_t(stid_t id, const cvec_t& v)
+kvl_t::kvl_t(StoreID id, const cvec_t& v)
     : stid(id)
 {
     v.calc_kvl(h), g = 0;
 }
 
 inline NORET
-kvl_t::kvl_t(stid_t id, const cvec_t& v1, const cvec_t& v2)
-    : stid(id)  
+kvl_t::kvl_t(StoreID id, const cvec_t& v1, const cvec_t& v2)
+    : stid(id)
 {
     v1.calc_kvl(h); v2.calc_kvl(g);
 }
@@ -115,24 +110,24 @@ kvl_t::kvl_t(const kvl_t& k)
 {
 }
 
-inline kvl_t& 
+inline kvl_t&
 kvl_t::operator=(const kvl_t& k)
 {
     stid = k.stid;
     h = k.h, g = k.g;
     return *this;
 }
-    
+
 
 inline kvl_t&
-kvl_t::set(stid_t s, const cvec_t& v)
+kvl_t::set(StoreID s, const cvec_t& v)
 {
     stid = s, v.calc_kvl(h), g = 0;
     return *this;
 }
 
-inline kvl_t& 
-kvl_t::set(stid_t s, const cvec_t& v1, const cvec_t& v2)
+inline kvl_t&
+kvl_t::set(StoreID s, const cvec_t& v1, const cvec_t& v2)
 {
     stid = s, v1.calc_kvl(h), v2.calc_kvl(g);
     return *this;

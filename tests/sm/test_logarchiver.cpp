@@ -97,16 +97,16 @@ rc_t generateFakeArchive(LogArchiver::ArchiveDirectory* dir,
 rc_t emptyHeapAndCheck(LogArchiver::ArchiverHeap& heap)
 {
     logrec_t* lr;
-    shpid_t prevPage = (shpid_t) 0;
+    lpid_t prevPage = lpid_t(0,0);
     lsn_t prevLSN = lsn_t::null;
     while (heap.size() > 0) {
         lr = heap.top();
         EXPECT_TRUE(lr->lsn_ck() != prevLSN);
-        EXPECT_TRUE(lr->construct_pid().page >= prevPage);
-        if (lr->construct_pid().page == prevPage) {
+        EXPECT_TRUE(lr->construct_pid() >= prevPage);
+        if (lr->construct_pid() == prevPage) {
             EXPECT_TRUE(lr->lsn_ck() > prevLSN);
         }
-        prevPage = lr->construct_pid().page;
+        prevPage = lr->construct_pid();
         prevLSN = lr->lsn_ck();
         heap.pop();
     }

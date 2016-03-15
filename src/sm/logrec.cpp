@@ -124,26 +124,23 @@ logrec_t::get_type_str(kind_t type)
  *
  *********************************************************************/
 void
-logrec_t::fill(const lpid_t* p, snum_t store, uint16_t tag, smsize_t l)
+logrec_t::fill(PageID p, StoreID store, uint16_t tag, smsize_t l)
 {
     w_assert9(w_base_t::is_aligned(_data));
 
     /* adjust _cat */
     xct_t *x = xct();
-    if(smlevel_0::in_recovery_undo() ||
-        (x && ( x->rolling_back() ||
-			   x->state() == smlevel_0::xct_aborting))
-	)
+    if(x && (x->rolling_back() || x->state() == smlevel_0::xct_aborting))
     {
         header._cat |= t_rollback;
     }
-    set_pid(lpid_t::null);
+    set_pid(0);
     if (!is_single_sys_xct()) { // prv does not exist in single-log system transaction
         set_xid_prev(lsn_t::null);
     }
     header._page_tag = tag;
-    if (p) set_pid(*p);
-    header._snum = store;
+    header._pid = p;
+    header._stid = store;
     char *dat = is_single_sys_xct() ? data_ssx() : data();
     if (l != align(l)) {
         // zero out extra space to keep purify happy
@@ -222,17 +219,10 @@ void logrec_t::redo(fixable_page_h* page)
     // this is for page access validation purpose to allow recovery
     // operation to by-pass the page concurrent access check
 
-    if(page)
-        page->set_recovery_access();
 
     switch (header._type)  {
 #include "redo_gen.cpp"
     }
-
-    // If we have a page, clear the recovery flag on the page after
-    // we are done with undo operation
-    if(page)
-        page->clear_recovery_access();
 
     /*
      *  Page is dirty after redo.
@@ -280,19 +270,12 @@ logrec_t::undo(fixable_page_h* page)
     // operations for system and user transactions, note that operations
     // for system transaction have REDO but no UNDO
     // The actual UNDO implementation in Btree_impl.cpp
-    if(page)
-        page->set_recovery_access();
 
     switch (header._type) {
 #include "undo_gen.cpp"
     }
 
     xct()->compensate_undo(xid_prev());
-
-    // If we have a page, clear the recovery flag on the page after
-    // we are done with undo operation
-    if(page)
-        page->clear_recovery_access();
 
     undoing_context = logrec_t::t_max_logrec;
 }
@@ -325,7 +308,7 @@ logrec_t::corrupt()
  *********************************************************************/
 xct_freeing_space_log::xct_freeing_space_log()
 {
-    fill(0, 0);
+    fill((PageID) 0, 0);
 }
 
 
@@ -350,7 +333,7 @@ xct_list_t::xct_list_t(
 
 xct_end_group_log::xct_end_group_log(const xct_t *list[], int listlen)
 {
-    fill(0, (new (_data) xct_list_t(list, listlen))->size());
+    fill((PageID) 0, (new (_data) xct_list_t(list, listlen))->size());
 }
 /*********************************************************************
  *
@@ -362,13 +345,13 @@ xct_end_group_log::xct_end_group_log(const xct_t *list[], int listlen)
  *********************************************************************/
 xct_end_log::xct_end_log()
 {
-    fill(0, 0);
+    fill((PageID) 0, 0);
 }
 
 // We use a different log record type here only for debugging purposes
 xct_abort_log::xct_abort_log()
 {
-    fill(0, 0);
+    fill((PageID) 0, 0);
 }
 
 /*********************************************************************
@@ -383,7 +366,7 @@ comment_log::comment_log(const char *msg)
     w_assert1(strlen(msg) < sizeof(_data));
     memcpy(_data, msg, strlen(msg)+1);
     DBG(<<"comment_log: L: " << (const char *)_data);
-    fill(0, strlen(msg)+1);
+    fill((PageID) 0, strlen(msg)+1);
 }
 
 void
@@ -412,7 +395,7 @@ comment_log::undo(fixable_page_h *page)
  *********************************************************************/
 compensate_log::compensate_log(const lsn_t& rec_lsn)
 {
-    fill(0, 0);
+    fill((PageID) 0, 0);
     set_clr(rec_lsn);
 }
 
@@ -426,7 +409,7 @@ compensate_log::compensate_log(const lsn_t& rec_lsn)
  *********************************************************************/
 skip_log::skip_log()
 {
-    fill(0, 0);
+    fill((PageID) 0, 0);
 }
 
 /*********************************************************************
@@ -439,7 +422,7 @@ skip_log::skip_log()
 chkpt_begin_log::chkpt_begin_log(const lsn_t &lastMountLSN)
 {
     new (_data) lsn_t(lastMountLSN);
-    fill(0, sizeof(lsn_t));
+    fill((PageID) 0, sizeof(lsn_t));
 }
 
 
@@ -464,7 +447,7 @@ chkpt_end_log::chkpt_end_log(const lsn_t& lsn, const lsn_t& min_rec_lsn,
     l++; //grot
     *l = min_txn_lsn;
 
-    fill(0, (3 * sizeof(lsn_t)) + (3 * sizeof(int)));
+    fill((PageID) 0, (3 * sizeof(lsn_t)) + (3 * sizeof(int)));
 }
 
 
@@ -480,8 +463,8 @@ chkpt_end_log::chkpt_end_log(const lsn_t& lsn, const lsn_t& min_rec_lsn,
 
 chkpt_bf_tab_t::chkpt_bf_tab_t(
     int                 cnt,        // I-  # elements in pids[] and rlsns[]
-    const lpid_t*         pids,        // I-  id of of dirty pages
-    const snum_t*        stores,       // I-  store number of dirty pages
+    const PageID*         pids,        // I-  id of of dirty pages
+    const StoreID*        stores,       // I-  store number of dirty pages
     const lsn_t*         rlsns,        // I-  rlsns[i] is recovery lsn of pids[i], the oldest
     const lsn_t*         plsns)        // I-  plsns[i] is page lsn lsn of pids[i], the latest
     : count(cnt)
@@ -499,12 +482,12 @@ chkpt_bf_tab_t::chkpt_bf_tab_t(
 
 chkpt_bf_tab_log::chkpt_bf_tab_log(
     int                 cnt,        // I-  # elements in pids[] and rlsns[]
-    const lpid_t*         pid,        // I-  id of of dirty pages
-    const snum_t*        store,   // I- store number of dirty pages
+    const PageID*         pid,        // I-  id of of dirty pages
+    const StoreID*        store,   // I- store number of dirty pages
     const lsn_t*         rec_lsn,// I-  rec_lsn[i] is recovery lsn (oldest) of pids[i]
     const lsn_t*         page_lsn)// I-  page_lsn[i] is page lsn (latest) of pids[i]
 {
-    fill(0, (new (_data) chkpt_bf_tab_t(cnt, pid, store, rec_lsn, page_lsn))->size());
+    fill((PageID) 0, (new (_data) chkpt_bf_tab_t(cnt, pid, store, rec_lsn, page_lsn))->size());
 }
 
 
@@ -516,7 +499,6 @@ chkpt_bf_tab_log::chkpt_bf_tab_log(
  *
  *  Data log to save transaction table at checkpoint.
  *  Contains, for each active xct, its id, state, last_lsn
- *  and undo_nxt lsn.
  *
  *********************************************************************/
 chkpt_xct_tab_t::chkpt_xct_tab_t(
@@ -525,7 +507,6 @@ chkpt_xct_tab_t::chkpt_xct_tab_t(
     const tid_t*                         tid,
     const smlevel_0::xct_state_t*         state,
     const lsn_t*                         last_lsn,
-    const lsn_t*                         undo_nxt,
     const lsn_t*                         first_lsn)
     : youngest(_youngest), count(cnt)
 {
@@ -534,7 +515,6 @@ chkpt_xct_tab_t::chkpt_xct_tab_t(
         xrec[i].tid = tid[i];
         xrec[i].state = state[i];
         xrec[i].last_lsn = last_lsn[i];
-        xrec[i].undo_nxt = undo_nxt[i];
         xrec[i].first_lsn = first_lsn[i];
     }
 }
@@ -545,11 +525,10 @@ chkpt_xct_tab_log::chkpt_xct_tab_log(
     const tid_t*                         tid,
     const smlevel_0::xct_state_t*         state,
     const lsn_t*                         last_lsn,
-    const lsn_t*                         undo_nxt,
     const lsn_t*                         first_lsn)
 {
-    fill(0, (new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
-                                         last_lsn, undo_nxt, first_lsn))->size());
+    fill((PageID) 0, (new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
+                                         last_lsn, first_lsn))->size());
 }
 
 
@@ -581,78 +560,17 @@ chkpt_xct_lock_log::chkpt_xct_lock_log(
     const okvl_mode*                    lock_mode,
     const uint32_t*                     lock_hash)
 {
-    fill(0, (new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
+    fill((PageID) 0, (new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
                                          lock_hash))->size());
 }
 
-
-
-/*********************************************************************
- *
- *  chkpt_dev_tab_log
- *
- *  Data log to save devices mounted at checkpoint.
- *  Contains, for each device mounted, its devname and vid.
- *
- *********************************************************************/
-chkpt_dev_tab_t::chkpt_dev_tab_t(vid_t next_vid,
-        const std::vector<string>& devnames)
-    : count(devnames.size()), next_vid(next_vid)
-{
-    std::stringstream ss;
-    for (uint i = 0; i < count; i++) {
-        ss << devnames[i];
-    }
-    data_size = ss.tellp();
-    w_assert0(data_size <= logrec_t::max_data_sz);
-    ss.read(data, data_size);
-}
-
-void chkpt_dev_tab_t::read_devnames(std::vector<string>& devnames)
-{
-    std::string s;
-    std::stringstream ss;
-    ss.write(data, data_size);
-
-    for (uint i = 0; i < count; i++) {
-        ss >> s;
-        devnames.push_back(s);
-    }
-}
-
-chkpt_dev_tab_log::chkpt_dev_tab_log(vid_t next_vid,
-        const std::vector<string>& devnames)
-{
-    fill(0, (new (_data) chkpt_dev_tab_t(next_vid, devnames))->size());
-}
-
-/**
- * Instead of processing chkpt_dev_tab by parsing all devices and mounting
- * them individually, simply make it a redoable log record and perform all
- * mounts in the redo method.
- */
-void chkpt_dev_tab_log::redo(fixable_page_h*)
-{
-    chkpt_dev_tab_t* tab = (chkpt_dev_tab_t*) _data;
-    std::vector<string> dnames;
-    tab->read_devnames(dnames);
-    w_assert0(tab->count == dnames.size());
-
-    for (int i = 0; i < tab->count; i++) {
-        W_COERCE(smlevel_0::vol->sx_mount(dnames[i].c_str(), false /* log */));
-    }
-    smlevel_0::vol->set_next_vid(tab->next_vid);
-}
-
 chkpt_backup_tab_t::chkpt_backup_tab_t(
-        const std::vector<vid_t>& vids,
-        const std::vector<string>& paths)
-    : count(vids.size())
+        int cnt,
+        const string* paths)
+    : count(cnt)
 {
-    w_assert0(vids.size() == paths.size());
     std::stringstream ss;
     for (uint i = 0; i < count; i++) {
-        ss << vids[i] << endl;
         ss << paths[i] << endl;
     }
     data_size = ss.tellp();
@@ -661,58 +579,50 @@ chkpt_backup_tab_t::chkpt_backup_tab_t(
 }
 
 void chkpt_backup_tab_t::read(
-        std::vector<vid_t>& vids,
         std::vector<string>& paths)
 {
-    vid_t vid;
     std::string s;
     std::stringstream ss;
     ss.write(data, data_size);
 
     for (uint i = 0; i < count; i++) {
-        ss >> vid;
-        vids.push_back(vid);
         ss >> s;
         paths.push_back(s);
     }
 }
 
-chkpt_backup_tab_log::chkpt_backup_tab_log(
-        const std::vector<vid_t>& vids,
-        const std::vector<string>& paths)
+chkpt_backup_tab_log::chkpt_backup_tab_log(int cnt,
+                                           const string* paths)
 {
-    fill(0, (new (_data) chkpt_backup_tab_t(vids, paths))->size());
+    fill(0, (new (_data) chkpt_backup_tab_t(cnt, paths))->size());
 }
 
 void chkpt_backup_tab_log::redo(fixable_page_h*)
 {
     chkpt_backup_tab_t* tab = (chkpt_backup_tab_t*) _data;
-    std::vector<vid_t> vids;
     std::vector<string> paths;
-    tab->read(vids, paths);
-    w_assert0(tab->count == vids.size());
+    tab->read(paths);
     w_assert0(tab->count == paths.size());
 
     for (size_t i = 0; i < tab->count; i++) {
-        W_COERCE(smlevel_0::vol->sx_add_backup(vids[i], paths[i], false /* log */));
+        W_COERCE(smlevel_0::vol->sx_add_backup(paths[i], false /* log */));
     }
 }
 
-chkpt_restore_tab_log::chkpt_restore_tab_log(vid_t vid)
+chkpt_restore_tab_log::chkpt_restore_tab_log()
 {
-    vol_t* vol = smlevel_0::vol->get(vid);
     chkpt_restore_tab_t* tab =
-        new (_data) chkpt_restore_tab_t(vid);
+        new (_data) chkpt_restore_tab_t();
 
-    vol->chkpt_restore_progress(tab);
-    fill(0, tab->length());
+    smlevel_0::vol->chkpt_restore_progress(tab);
+    fill((PageID) 0, tab->length());
 }
 
 void chkpt_restore_tab_log::redo(fixable_page_h*)
 {
     chkpt_restore_tab_t* tab = (chkpt_restore_tab_t*) _data;
 
-    vol_t* vol = smlevel_0::vol->get(tab->vid);
+    vol_t* vol = smlevel_0::vol;
 
     w_assert0(vol);
     if (!vol->is_failed()) {
@@ -725,7 +635,8 @@ void chkpt_restore_tab_log::redo(fixable_page_h*)
         vol->redo_segment_restore(i);
     }
 
-    RestoreBitmap bitmap(vol->num_pages());
+    // CS TODO
+    RestoreBitmap bitmap(vol->num_used_pages());
     bitmap.deserialize(tab->bitmap, tab->firstNotRestored,
             tab->firstNotRestored + tab->bitmapSize);
     // Bitmap of RestoreMgr might have been initialized already
@@ -736,90 +647,54 @@ void chkpt_restore_tab_log::redo(fixable_page_h*)
     }
 }
 
-format_vol_log::format_vol_log(const char* path, shpid_t num_pages, vid_t vid)
-{
-    memcpy(data_ssx(), &vid, sizeof(vid_t));
-    memcpy(data_ssx() + sizeof(vid_t), &num_pages, sizeof(shpid_t));
-
-    size_t length = strlen(path);
-    w_assert0(length < smlevel_0::max_devname);
-    memcpy(data_ssx() + sizeof(vid_t) + sizeof(shpid_t), path, length);
-    fill(0, length + sizeof(vid_t) + sizeof(shpid_t));
-}
-
-void format_vol_log::redo(fixable_page_h*)
-{
-    vid_t expected_vid = *((vid_t*) data_ssx());
-    shpid_t num_pages = *((shpid_t*) data_ssx() + sizeof(vid_t));
-    const char* dev_name = (const char*) data_ssx() + sizeof(vid_t)
-        + sizeof(shpid_t);
-
-    vid_t created_vid;
-    W_COERCE(smlevel_0::vol->sx_format(dev_name, num_pages, created_vid,
-                false));
-    w_assert0(expected_vid == created_vid);
-}
-
-mount_vol_log::mount_vol_log(const char* dev_name)
+add_backup_log::add_backup_log(const char* dev_name)
 {
     size_t length = strlen(dev_name);
     w_assert0(length < smlevel_0::max_devname);
     memcpy(data_ssx(), dev_name, length);
-    fill(0, length);
-}
-
-void mount_vol_log::redo(fixable_page_h*)
-{
-    const char* dev_name = (const char*) data_ssx();
-    W_COERCE(smlevel_0::vol->sx_mount(dev_name, false));
-}
-
-dismount_vol_log::dismount_vol_log(const char* dev_name)
-{
-    size_t length = strlen(dev_name);
-    w_assert0(length < smlevel_0::max_devname);
-    memcpy(data_ssx(), dev_name, length);
-    fill(0, length);
-}
-
-void dismount_vol_log::redo(fixable_page_h*)
-{
-    const char* dev_name = (const char*) data_ssx();
-    W_COERCE(smlevel_0::vol->sx_dismount(dev_name, false));
-}
-
-add_backup_log::add_backup_log(vid_t vid, const char* dev_name)
-{
-    memcpy(data_ssx(), &vid, sizeof(vid_t));
-    size_t length = strlen(dev_name);
-    w_assert0(length < smlevel_0::max_devname);
-    memcpy(data_ssx() + sizeof(vid_t), dev_name, length);
-    fill(0, sizeof(vid_t) + length);
+    fill((PageID) 0, length);
 }
 
 void add_backup_log::redo(fixable_page_h*)
 {
-    vid_t vid = *((vid_t*) data_ssx());
-    const char* dev_name = (const char*) data_ssx() + sizeof(vid_t);
-    W_COERCE(smlevel_0::vol->sx_add_backup(vid, dev_name, false));
+    const char* dev_name = (const char*) data_ssx();
+    W_COERCE(smlevel_0::vol->sx_add_backup(dev_name, false));
 }
 
-restore_begin_log::restore_begin_log(vid_t vid)
+undo_done_log::undo_done_log()
 {
-    memcpy(_data, &vid, sizeof(vid_t));
+    fill((PageID) 0, 0);
+}
+
+redo_done_log::redo_done_log()
+{
+    fill((PageID) 0, 0);
+}
+
+loganalysis_end_log::loganalysis_end_log()
+{
+    fill((PageID) 0, 0);
+}
+
+loganalysis_begin_log::loganalysis_begin_log()
+{
+    fill((PageID) 0, 0);
+}
+
+restore_begin_log::restore_begin_log()
+{
 #ifdef TIMED_LOG_RECORDS
     unsigned long tstamp = sysevent_timer::timestamp();
-    memcpy(_data + sizeof(vid_t), &tstamp, sizeof(unsigned long));
-    fill(0, sizeof(vid_t) + sizeof(unsigned long));
+    memcpy(_data, &tstamp, sizeof(unsigned long));
+    fill((PageID) 0, sizeof(unsigned long));
 #else
-    fill(0, sizeof(vid_t));
+    fill((PageID) 0, 0);
 #endif
 }
 
 void restore_begin_log::redo(fixable_page_h*)
 {
-    vid_t vid = *((vid_t*) _data);
-    vol_t* volume = smlevel_0::vol->get(vid);
+    vol_t* volume = smlevel_0::vol;
     // volume must be mounted
     w_assert0(volume);
 
@@ -828,22 +703,20 @@ void restore_begin_log::redo(fixable_page_h*)
     W_COERCE(volume->mark_failed(false /* evict */, true /* redo */));
 }
 
-restore_end_log::restore_end_log(vid_t vid)
+restore_end_log::restore_end_log()
 {
-    memcpy(_data, &vid, sizeof(vid_t));
 #ifdef TIMED_LOG_RECORDS
     unsigned long tstamp = sysevent_timer::timestamp();
-    memcpy(_data + sizeof(vid_t), &tstamp, sizeof(unsigned long));
-    fill(0, sizeof(vid_t) + sizeof(unsigned long));
+    memcpy(_data, &tstamp, sizeof(unsigned long));
+    fill((PageID) 0, sizeof(unsigned long));
 #else
-    fill(0, sizeof(vid_t));
+    fill((PageID) 0, 0);
 #endif
 }
 
 void restore_end_log::redo(fixable_page_h*)
 {
-    vid_t vid = *((vid_t*) _data);
-    vol_t* volume = smlevel_0::vol->get(vid);
+    vol_t* volume = smlevel_0::vol;
     // volume must be mounted and failed
     w_assert0(volume && volume->is_failed());
 
@@ -852,11 +725,9 @@ void restore_end_log::redo(fixable_page_h*)
     // w_assert0(finished);
 }
 
-restore_segment_log::restore_segment_log(vid_t vid, uint32_t segment)
+restore_segment_log::restore_segment_log(uint32_t segment)
 {
     char* pos = _data;
-    memcpy(pos, &vid, sizeof(vid_t));
-    pos += sizeof(vid_t);
 
     memcpy(pos, &segment, sizeof(uint32_t));
     pos += sizeof(uint32_t);
@@ -867,53 +738,50 @@ restore_segment_log::restore_segment_log(vid_t vid, uint32_t segment)
     pos += sizeof(unsigned long);
 #endif
 
-    fill(0, pos - _data);
+    fill((PageID) 0, pos - _data);
 }
 
 void restore_segment_log::redo(fixable_page_h*)
 {
-    vid_t vid = *((vid_t*) _data);
-    vol_t* volume = smlevel_0::vol->get(vid);
+    vol_t* volume = smlevel_0::vol;
     // volume must be mounted and failed
     w_assert0(volume && volume->is_failed());
 
-    uint32_t segment = *((uint32_t*) _data + sizeof(vid_t));
+    uint32_t segment = *((uint32_t*) _data);
 
     volume->redo_segment_restore(segment);
 }
 
-alloc_a_page_log::alloc_a_page_log(vid_t vid, shpid_t pid)
+alloc_page_log::alloc_page_log(PageID pid)
 {
-    memcpy(data_ssx(), &vid, sizeof(vid_t));
-    memcpy(data_ssx() + sizeof(vid_t), &pid, sizeof(shpid_t));
-    fill(lpid_t(vid, 0), sizeof(vid_t) + sizeof(shpid_t));
+    memcpy(data_ssx(), &pid, sizeof(PageID));
+    PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
+    fill(alloc_pid, sizeof(PageID));
 }
 
-void alloc_a_page_log::redo(fixable_page_h*)
+void alloc_page_log::redo(fixable_page_h* p)
 {
-    vid_t vid = *((vid_t*) data_ssx());
-    shpid_t shpid = *((shpid_t*) data_ssx() + sizeof(vid_t));
+    PageID pid = *((PageID*) data_ssx());
 
-    vol_t* volume = smlevel_0::vol->get(vid);
-    w_assert0(volume);
-    volume->alloc_a_page(shpid, true);
+    alloc_page* apage = (alloc_page*) p->get_generic_page();
+    uint32_t index = pid % alloc_page::bits_held;
+    apage->set_bit(index);
 }
 
-dealloc_a_page_log::dealloc_a_page_log(vid_t vid, shpid_t pid)
+dealloc_page_log::dealloc_page_log(PageID pid)
 {
-    memcpy(data_ssx(), &vid, sizeof(vid_t));
-    memcpy(data_ssx() + sizeof(vid_t), &pid, sizeof(shpid_t));
-    fill(lpid_t(vid, 0), sizeof(vid_t) + sizeof(shpid_t));
+    memcpy(data_ssx(), &pid, sizeof(PageID));
+    PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
+    fill(alloc_pid, sizeof(PageID));
 }
 
-void dealloc_a_page_log::redo(fixable_page_h*)
+void dealloc_page_log::redo(fixable_page_h* p)
 {
-    vid_t vid = *((vid_t*) data_ssx());
-    shpid_t shpid = *((shpid_t*) data_ssx() + sizeof(vid_t));
+    PageID pid = *((PageID*) data_ssx());
 
-    vol_t* volume = smlevel_0::vol->get(vid);
-    w_assert0(volume);
-    volume->alloc_a_page(shpid, true);
+    alloc_page* apage = (alloc_page*) p->get_generic_page();
+    uint32_t index = pid % alloc_page::bits_held;
+    apage->unset_bit(index);
 }
 
 page_img_format_t::page_img_format_t (const btree_page_h& page)
@@ -936,7 +804,7 @@ void page_img_format_t::apply(fixable_page_h* page)
     w_assert1(beginning_bytes >= btree_page::hdr_sz);
     w_assert1(beginning_bytes + ending_bytes <= sizeof(btree_page));
     char *pp_bin = (char *) page->get_generic_page();
-    ::memcpy (pp_bin, data, beginning_bytes); // <<<>>>
+    ::memcpy (pp_bin, data, beginning_bytes);
     ::memcpy (pp_bin + sizeof(btree_page) - ending_bytes,
             data + beginning_bytes, ending_bytes);
 }
@@ -976,15 +844,17 @@ operator<<(ostream& o, const logrec_t& l)
     o << "LSN=" << l.lsn_ck() << " ";
     const char *rb = l.is_rollback()? "U" : "F"; // rollback/undo or forward
 
+    o << "len=" << l.length() << " ";
+
     if (!l.is_single_sys_xct()) {
         o << "TID=" << l.tid() << ' ';
     } else {
         o << "TID=SSX" << ' ';
     }
-    W_FORM(o)("%20s%5s:%1s", l.type_str(), l.cat_str(), rb );
-    o << "  " << l.construct_pid();
+    o << l.type_str() << ":" << l.cat_str() << ":" << rb;
+    o << "  p(" << l.pid() << ")";
     if (l.is_multi_page()) {
-        o << " src-" << l.construct_pid2();
+        o << " src-" << l.pid2();
     }
 
     switch(l.type()) {
@@ -998,32 +868,33 @@ operator<<(ostream& o, const logrec_t& l)
             {
                 chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) l.data();
                 o << " dirty_page_count: " << dp->count;
+                break;
             }
         case t_comment :
-                {
-                    o << (const char *)l._data;
-                }
+            {
+                o << (const char *)l._data;
                 break;
-
-        case t_store_operation:
-                {
-                    store_operation_param& param = *(store_operation_param*)l._data;
-                    o << ' ' << param;
-                }
-                break;
+            }
         case t_page_evict:
-                {
-                    page_evict_t* pev = (page_evict_t*) l._data;
-                    o << " slot: " << pev->_child_slot << " emlsn: "
-                        << pev->_child_lsn;
-                    break;
-                }
-        case t_alloc_a_page:
-        case t_dealloc_a_page:
-                {
-                    o << " page: " << *((vid_t*) l.data_ssx()) << "."
-                        << *((shpid_t*) (l.data_ssx() + sizeof(vid_t)));
-                }
+            {
+                page_evict_t* pev = (page_evict_t*) l._data;
+                o << " slot: " << pev->_child_slot << " emlsn: "
+                    << pev->_child_lsn;
+                break;
+            }
+        case t_alloc_page:
+        case t_dealloc_page:
+            {
+                o << " page: " << *((PageID*) (l.data_ssx()));
+                break;
+            }
+        case t_create_store:
+            {
+                o << " stid: " <<  *((StoreID*) l.data_ssx());
+                o << " root_pid: " << *((PageID*) (l.data_ssx() + sizeof(StoreID)));
+                break;
+            }
+
 
         default: /* nothing */
                 break;
@@ -1070,71 +941,38 @@ void page_set_to_be_deleted_log::undo(fixable_page_h* page)
     page->unset_to_be_deleted();
 }
 
-store_operation_log::store_operation_log(vid_t vid,
-        const store_operation_param& param)
+create_store_log::create_store_log(PageID root_pid, StoreID snum)
 {
-    new (_data) store_operation_param(param);
-    lpid_t dummy(vid, 0);
-    fill(&dummy, param.snum(), 0, param.size());
+    memcpy(data_ssx(), &snum, sizeof(StoreID));
+    memcpy(data_ssx() + sizeof(StoreID), &root_pid, sizeof(PageID));
+    PageID stpage_pid(stnode_page::stpid);
+    fill(stpage_pid, snum, 0, sizeof(StoreID) + sizeof(PageID));
 }
 
-void store_operation_log::redo(fixable_page_h* /*page*/)
+void create_store_log::redo(fixable_page_h* page)
 {
-    store_operation_param& param = *(store_operation_param*)_data;
-    DBG( << "store_operation_log::redo(page=" << pid()
-        << ", param=" << param << ")" );
-    W_COERCE( smlevel_0::vol->get(vid())->store_operation(param, true) );
-}
+    StoreID snum = *((StoreID*) data_ssx());
+    PageID root_pid = *((PageID*) (data_ssx() + sizeof(StoreID)));
 
-void store_operation_log::undo(fixable_page_h* /*page*/)
-{
-    store_operation_param& param = *(store_operation_param*)_data;
-    DBG( << "store_operation_log::undo(page=" << shpid() << ", param=" << param << ")" );
-
-    switch (param.op())  {
-        case smlevel_0::t_delete_store:
-            /* do nothing, not undoable */
-            break;
-        case smlevel_0::t_create_store:
-            // TODO implement destroy_store
-            /*
-            {
-                stid_t stid(vid(), param.snum());
-                W_COERCE( smlevel_0::io->destroy_store(stid) );
-            }
-            */
-            break;
-        case smlevel_0::t_set_deleting:
-            switch (param.new_deleting_value())  {
-                case smlevel_0::t_not_deleting_store:
-                case smlevel_0::t_deleting_store:
-                    {
-                        store_operation_param new_param(param.snum(),
-                                smlevel_0::t_set_deleting,
-                                param.old_deleting_value(),
-                                param.new_deleting_value());
-                        W_COERCE( smlevel_0::vol->get(vid())->store_operation(
-                                new_param) );
-                    }
-                    break;
-                case smlevel_0::t_unknown_deleting:
-                    W_FATAL(eINTERNAL);
-                    break;
-            }
-            break;
-        case smlevel_0::t_set_store_flags:
-            {
-                store_operation_param new_param(param.snum(),
-                        smlevel_0::t_set_store_flags,
-                        param.old_store_flags(), param.new_store_flags());
-                W_COERCE( smlevel_0::vol->get(vid())->store_operation(
-                        new_param) );
-            }
-            break;
-        case smlevel_0::t_set_root:
-            /* do nothing, not undoable */
-            break;
+    stnode_page* stpage = (stnode_page*) page->get_generic_page();
+    if (stpage->pid != stnode_page::stpid) {
+        stpage->pid = stnode_page::stpid;
     }
+    stpage->set_root(snum, root_pid);
+}
+
+append_extent_log::append_extent_log(extent_id_t ext)
+{
+    memcpy(data_ssx(), &ext, sizeof(extent_id_t));
+    PageID stpage_pid(stnode_page::stpid);
+    fill(stpage_pid, 0, 0, sizeof(extent_id_t));
+}
+
+void append_extent_log::redo(fixable_page_h* page)
+{
+    extent_id_t ext = *((extent_id_t*) data_ssx());
+    stnode_page* stpage = (stnode_page*) page->get_generic_page();
+    stpage->set_last_extent(ext);
 }
 
 #if LOGREC_ACCOUNTING

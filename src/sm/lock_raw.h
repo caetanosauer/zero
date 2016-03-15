@@ -261,7 +261,8 @@ struct RawLockQueue {
      * @pre out != NULL
      */
     w_error_codes   acquire(RawXct *xct, uint32_t hash, const okvl_mode& mode,
-                int32_t timeout_in_ms, bool conditional, bool check_only, RawLock** out);
+                int32_t timeout_in_ms, bool check, bool wait, bool acquire,
+                RawLock** out);
 
     /**
      * Waits for the already-inserted lock entry. Used after a failed conditional locking.
@@ -269,9 +270,11 @@ struct RawLockQueue {
      * \NOTE "lock" is a RawLock**, not RawLock*. It might be cleared after another failure,
      * or become a new lock when it's automatically retried.
      */
-    w_error_codes   retry_acquire(RawLock** lock, bool check_only, int32_t timeout_in_ms);
+    w_error_codes   retry_acquire(RawLock** lock, bool wait, bool acquire,
+            int32_t timeout_in_ms);
     /** Subroutine of acquire(), retry_acquire(). */
-    w_error_codes   complete_acquire(RawLock** lock, bool check_only, int32_t timeout_in_ms);
+    w_error_codes   complete_acquire(RawLock** lock, bool wait, bool acquire,
+            int32_t timeout_in_ms);
 
     /**
      * \brief Releases the given lock from this queue, waking up others if necessary.

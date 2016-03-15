@@ -3,9 +3,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.cpp
     #${CMAKE_CURRENT_SOURCE_DIR}/allocator.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/backup.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backup_reader.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree_cleaner.cpp
@@ -47,10 +45,10 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/log_storage.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/log_resv.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logrec.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logstub.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/page_cleaner_decoupled.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/partition.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/plog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/plog_xct.cpp
@@ -59,8 +57,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/restore.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/sm_s.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/smfile.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/smindex.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/smstats.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/smthread.cpp
@@ -72,7 +68,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/vtable_xct.cpp)
 
 add_library(sm STATIC ${sm_STAT_SRCS})
-target_link_libraries(sm fc sthread common numa)
+target_link_libraries(sm common numa)
 
 # CS: target that uses plog_xct, i.e., atomic commit protocol
 add_library(sm_plog STATIC ${sm_STAT_SRCS})

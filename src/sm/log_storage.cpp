@@ -374,7 +374,19 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             DBGOUT5(<<" destroy_file " << n << "false");
             destroy_file(n, false);
         }
-        for (n = _min_chkpt_rec_lsn.hi(); n <= last_partition; n++)  {
+
+        // CS TODO: hack to deal with absence of min_chkpt_rec_lsn
+        n = _min_chkpt_rec_lsn.hi();
+        if (n == 0) {
+            if (last_partition <= 8) {
+                n = 1;
+            }
+            else {
+                n = last_partition - 8;
+            }
+        }
+
+        for (; n <= last_partition; n++)  {
             // Find out if there's a hint about the length of the
             // partition (from the checkpoint).  This lsn serves as a
             // starting point from which to search for the skip_log record
@@ -813,9 +825,9 @@ log_storage::get_partition_for_flush(lsn_t start_lsn,
             DO_PTHREAD(pthread_mutex_lock(&_scavenge_lock));
         retry:
             // need predicates, lest we be in shutdown()
-            if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
+            //if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
             DBGOUT3(<< "chkpt 1");
-            if(smlevel_0::chkpt != NULL) smlevel_0::chkpt->wakeup_and_take();
+            smlevel_0::chkpt->wakeup_thread();
             u_int oldest = global_min_lsn().hi();
             if(oldest + PARTITION_COUNT == start_lsn.file()) {
                 fprintf(stderr,
@@ -897,7 +909,7 @@ partition_t        *
 log_storage::_close_min(partition_number_t n)
 {
     // kick the cleaner thread(s)
-    if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
+    //if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
 
     FUNC(log_storage::close_min);
 
@@ -948,7 +960,7 @@ log_storage::_close_min(partition_number_t n)
         }
 
         if(tries++ > 8) W_FATAL(eOUTOFLOGSPACE);
-        if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
+        //if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
         me()->sleep(1000);
         goto again;
     }
@@ -1218,21 +1230,6 @@ log_storage::_open_partition(partition_number_t  __num,
     if(existing && !forappend) {
         DBG(<<"about to open for read");
         w_rc_t err = p->open_for_read(__num);
-        if(err.is_error()) {
-            // Try callback to recover this file
-            if(smlevel_0::log_archived_callback) {
-                static char buf[smlevel_0::max_devname];
-                make_log_name(__num, buf, smlevel_0::max_devname);
-                err = (*smlevel_0::log_archived_callback)(
-                        buf,
-                        __num
-                        );
-                if(!err.is_error()) {
-                    // Try again, just once.
-                    err = p->open_for_read(__num);
-                }
-            }
-        }
         if(err.is_error()) {
             fprintf(stderr,
                     "Could not open partition %d for reading.\n",

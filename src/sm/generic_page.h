@@ -7,7 +7,7 @@
 
 #include <boost/static_assert.hpp>
 
-#include "sm_s.h"
+#include "basics.h"
 #include "lsn.h"
 #include "w_defines.h"
 
@@ -50,10 +50,12 @@ public:
     mutable uint32_t checksum;     // +4 -> 4
 
     /// ID of this page
-    lpid_t           pid;          // +4+4 (= +8) -> 12
+    PageID           pid;          // +4 -> 8
+    // CS TODO: temporary placeholder for removed vid
+    uint32_t _fill12;              // +4 -> 12
 
     /// ID of the store to which this page belongs (0 if none)
-    snum_t           store;        // +4 -> 16
+    StoreID           store;        // +4 -> 16
 
     /// LSN (Log Sequence Number) of the last write to this page
     lsn_t            lsn;          // +8 -> 24
@@ -153,10 +155,8 @@ public:
     generic_page* get_generic_page() const { return _pp; }
 
 
-    const lpid_t& pid() const { return _pp->pid; }
-    vid_t       vol()   const { return _pp->pid.vol(); }
-    snum_t      store() const { return _pp->store; }
-    stid_t      stid()  const { return stid_t(vol(), store()); }
+    PageID pid() const { return _pp->pid; }
+    StoreID      store() const { return _pp->store; }
 
     page_tag_t    tag()   const { return (page_tag_t) _pp->tag; }
 
@@ -165,8 +165,8 @@ public:
     void          set_lsns(const lsn_t& lsn) { _pp->lsn = lsn; }
 
 protected:
-    generic_page_h(generic_page* s, const lpid_t& pid, page_tag_t tag,
-            snum_t store)
+    generic_page_h(generic_page* s, const PageID& pid, page_tag_t tag,
+            StoreID store)
         : _pp(s)
     {
         ::memset(_pp, 0, sizeof(*_pp));

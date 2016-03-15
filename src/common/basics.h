@@ -38,24 +38,20 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <w_base.h>
 #endif
 
-typedef uint16_t               uint2_t; 
-typedef uint32_t               uint4_t; 
-
-
 /* sizes-in-bytes for all persistent data in the SM. */
 typedef uint32_t               smsize_t;
 
 /* For types of store, volumes, see stid_t.h and vid_t.h */
 
-/// Short page ID (missing volume information)
-typedef uint32_t    shpid_t; 
+typedef uint32_t    PageID;
+typedef uint32_t    StoreID;
 
 #ifndef SM_SOURCE
 #endif
 
 
 /* Type of a record# on a page  in SM (sans page,store,volume info) */
-typedef int16_t slotid_t;  
+typedef int16_t slotid_t;
 
 /**
 * \brief An integer to point to any record in B-tree pages.

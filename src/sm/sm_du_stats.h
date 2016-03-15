@@ -70,7 +70,7 @@ struct btree_lf_stats_t {
     NORET              btree_lf_stats_t() {clear();}
     void               add(const btree_lf_stats_t& stats);
     void               clear();
-    w_rc_t             audit() const; 
+    w_rc_t             audit() const;
     base_stat_t        total_bytes() const;
     void               print(ostream&, const char *) const;/* pretty print */
     friend ostream&    operator<<(ostream&, const btree_lf_stats_t& s);
@@ -84,7 +84,7 @@ struct btree_int_stats_t {
     NORET              btree_int_stats_t() {clear();}
     void               add(const btree_int_stats_t& stats);
     void               clear();
-    w_rc_t             audit() const; 
+    w_rc_t             audit() const;
     base_stat_t        total_bytes() const;
     void               print(ostream&, const char *) const;/* pretty print */
     friend ostream&    operator<<(ostream&, const btree_int_stats_t& s);
@@ -117,7 +117,7 @@ struct btree_stats_t {
     NORET           btree_stats_t() {clear();}
     void            add(const btree_stats_t& stats);
     void            clear();
-    w_rc_t          audit() const; 
+    w_rc_t          audit() const;
     base_stat_t     total_bytes() const;
     base_stat_t     alloc_pg_cnt() const;
     void            print(ostream&, const char *) const;/* pretty print */
@@ -126,7 +126,7 @@ struct btree_stats_t {
 
 struct volume_hdr_stats_t {
     base_stat_t        hdr_ext_cnt;        /* header & extent maps */
-    base_stat_t        alloc_ext_cnt;        /* allocated extents 
+    base_stat_t        alloc_ext_cnt;        /* allocated extents
                          * excludes hdr_ext_cnt */
     base_stat_t        unalloc_ext_cnt;    /* # of unallocated extents */
     base_stat_t        extent_size;         /* # of pages in an extent */
@@ -134,7 +134,7 @@ struct volume_hdr_stats_t {
     NORET        volume_hdr_stats_t() {clear();}
     void        add(const volume_hdr_stats_t& stats);
     void        clear();
-    w_rc_t        audit() const; 
+    w_rc_t        audit() const;
     base_stat_t        total_bytes() const;
     void         print(ostream&, const char *) const;/* pretty print */
     friend ostream&    operator<<(ostream&, const volume_hdr_stats_t& s);
@@ -147,7 +147,7 @@ struct volume_map_stats_t {
     NORET          volume_map_stats_t() {clear();}
     void           add(const volume_map_stats_t& stats);
     void           clear();
-    w_rc_t         audit() const; 
+    w_rc_t         audit() const;
     base_stat_t    total_bytes() const;
     base_stat_t    alloc_pg_cnt() const;
     base_stat_t    unalloc_pg_cnt() const;
@@ -167,7 +167,7 @@ struct sm_du_stats_t {
     NORET             sm_du_stats_t() {clear();}
     void              add(const sm_du_stats_t& stats);
     void              clear();
-    w_rc_t            audit() const; 
+    w_rc_t            audit() const;
     base_stat_t       total_bytes() const;
     void              print(ostream&, const char *) const;/* pretty print */
     friend ostream&   operator<<(ostream&, const sm_du_stats_t& s);
@@ -216,8 +216,8 @@ class SmFileMetaStats
     void            Clear();
     SmFileMetaStats&    operator+=(const SmFileMetaStats& fileStats);
 
-    snum_t            smallSnum;
-    snum_t            largeSnum;
+    StoreID            smallSnum;
+    StoreID            largeSnum;
     SmStoreMetaStats    small;
     SmStoreMetaStats    large;
 };
@@ -230,7 +230,7 @@ inline void SmVolumeMetaStats::Clear()
     numAllocPages = 0;
     numStores = 0;
     numAllocStores = 0;
-}   
+}
 
 inline SmVolumeMetaStats::SmVolumeMetaStats()
 {

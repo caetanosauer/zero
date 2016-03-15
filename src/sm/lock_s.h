@@ -37,6 +37,8 @@ extern uint32_t OKVL_INIT_STR_UNIQUEFIER_LEN;
  * are separated from the main lock table.
  * So, this object is drastically simplified from original Shore-MT.
  */
+// CS TODO: we could probably make lockid_t with size 64bits instead of 128,
+// since
 class lockid_t {
 private:
     /**
@@ -46,8 +48,8 @@ private:
      * w[2,3]== l[1] == key (its hash)
      */
     union {
-        uint64_t l[2]; 
-        uint32_t w[4]; 
+        uint64_t l[2];
+        uint32_t w[4];
     };
 
 public:
@@ -64,24 +66,11 @@ public:
     /// clear out the lockid - initialize to mean nothing
     void              zero();
 
-    //
-    // vid - volume
-    //
-public:
-    /// extract volume id lockid whose lspace() == t_vol or has parent with lspace() == t_vol
-    vid_t             vid() const;
-private:
-    void              set_vid(const vid_t & v);
-
-    //
-    // store - stid
-    //
-public:
     /// extract store number lockid whose lspace() == t_store or has parent with lspace() == t_store
-    snum_t            store() const;
+    StoreID            store() const;
+
 private:
-    void              set_snum(snum_t s);
-    void              set_store(const stid_t & s);
+    void              set_store(StoreID s);
 
 
 public:
@@ -90,54 +79,30 @@ public:
     lockid_t() ;
 
     /// construct from key string in an index
-    lockid_t(const stid_t& stid, const unsigned char *keystr, int16_t keylen);
+    lockid_t(StoreID stid, const unsigned char *keystr, int16_t keylen);
     /// construct from key string in an index
-    lockid_t(const stid_t& stid, const w_keystr_t &key);
+    lockid_t(StoreID stid, const w_keystr_t &key);
     /// copy constructor
     lockid_t(const lockid_t& i);
 
-    /// extract a full store id from a store or key lock
-    void              extract_stid(stid_t &s) const;
 
     /// copy operator
     lockid_t&         operator=(const lockid_t& i);
 private:
-    void _init_for_str(const stid_t &stid, const unsigned char *keystr, int16_t keylen);
+    void _init_for_str(StoreID stid, const unsigned char *keystr, int16_t keylen);
 };
 
 
-inline vid_t lockid_t::vid() const 
+inline StoreID lockid_t::store() const
 {
-    return (vid_t) w[0];
-}
-
-inline void lockid_t::set_vid(const vid_t & v) 
-{
-    w[0] = v;
-}
-
-inline snum_t lockid_t::store() const 
-{
-    w_assert9(sizeof(snum_t) == sizeof(w[1]));
+    w_assert9(sizeof(StoreID) == sizeof(w[1]));
     return w[1];
 }
 
-inline void lockid_t::set_snum(snum_t _s) 
+inline void lockid_t::set_store(StoreID _s)
 {
-    w_assert9(sizeof(snum_t) == sizeof(w[1]));
+    w_assert9(sizeof(StoreID) == sizeof(w[1]));
     w[1] = (uint32_t) _s;
-}
-
-inline void lockid_t::set_store(const stid_t & _s) 
-{
-    set_snum(_s.store);
-    set_vid(_s.vol);
-}
-
-inline void lockid_t::extract_stid(stid_t &_s) const 
-{
-    _s.vol = vid();
-    _s.store = store();
 }
 
 inline void lockid_t::zero()
@@ -147,7 +112,7 @@ inline void lockid_t::zero()
 
 inline NORET lockid_t::lockid_t()
 {
-    zero(); 
+    zero();
 }
 
 // use fixed seed for repeatability and easier debugging
@@ -155,7 +120,7 @@ const uint32_t LOCKID_T_HASH_SEED = 0xEE5C61DD;
 
 
 inline void
-lockid_t::_init_for_str(const stid_t &stid, const unsigned char *keystr, int16_t keylen)
+lockid_t::_init_for_str(StoreID stid, const unsigned char *keystr, int16_t keylen)
 {
     zero();
     set_store (stid);
@@ -170,12 +135,12 @@ lockid_t::_init_for_str(const stid_t &stid, const unsigned char *keystr, int16_t
 }
 
 inline
-lockid_t::lockid_t(const stid_t &stid, const unsigned char *keystr, int16_t keylen)
+lockid_t::lockid_t(StoreID stid, const unsigned char *keystr, int16_t keylen)
 {
     _init_for_str (stid, keystr, keylen);
 }
 inline
-lockid_t::lockid_t(const stid_t &stid, const w_keystr_t &key)
+lockid_t::lockid_t(StoreID stid, const w_keystr_t &key)
 {
     _init_for_str (stid, (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
 }

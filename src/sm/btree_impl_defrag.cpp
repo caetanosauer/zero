@@ -21,7 +21,7 @@
 #include "xct.h"
 
 rc_t btree_impl::_sx_defrag_tree(
-    stid_t store,
+    StoreID store,
     uint16_t inpage_defrag_ghost_threshold,
     uint16_t inpage_defrag_usage_threshold,
     bool does_adopt,
@@ -40,7 +40,7 @@ rc_t btree_impl::_sx_defrag_tree(
 }
 
 rc_t btree_impl::_ux_defrag_tree_core(
-    stid_t store,
+    StoreID store,
     uint16_t /*inpage_defrag_ghost_threshold*/,
     uint16_t /*inpage_defrag_usage_threshold*/,
     bool /*does_adopt*/,
@@ -50,7 +50,7 @@ rc_t btree_impl::_ux_defrag_tree_core(
     // this should use the improved tree-walk-through jira ticket:60 "Tree walk-through without more than 2 pages latched" (originally trac ticket:62)
     btree_page_h page;
     W_DO (page.fix_root(store, LATCH_SH));
-    
+
     return RCOK;
 }
 

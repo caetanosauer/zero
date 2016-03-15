@@ -671,7 +671,6 @@ again:
         }
         DBG5( <<"reading pos=" << pos <<" eop=" << this->_eop);
 
-        // CS: TODO not sure if _peekbuf will work!
         rc = read(_peekbuf, l, pos, NULL, fd);
         DBG5(<<"POS " << pos << ": tx." << *l);
 
@@ -680,6 +679,12 @@ again:
             DBG5(<<"EOF--Skipping!");
             _skip(pos, fd);
             break;
+        }
+        if (rc.err_num() == stSHORTIO) {
+            // Crash interrupted a log page write (of XFERSIZE) and
+            // we are now reading the last incomplete block. Simply keep
+            // parsing like nothing happened -- the end of log will be
+            // detected at the first inconsistent log record.
         }
 
         w_assert1(l != NULL);
@@ -949,7 +954,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
      * read & inspect header size and see
      * and see if there's more to read
      */
-    int b = 0;
+    int64_t b = 0;
     bool first_time = true;
 
     rp = (logrec_t *)(readbuf + off);
@@ -964,27 +969,8 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
 
         DBG5(<<"leftover=" << int(leftover) << " b=" << b);
 
-        w_rc_t e = me()->pread(fd, (void *)(readbuf + b), XFERSIZE, lower + b);
-        DBG5(<<"after me()->read() size= " << int(XFERSIZE));
+        W_DO(me()->pread(fd, (void *)(readbuf + b), XFERSIZE, lower + b));
 
-
-        if (e.is_error()) {
-                /* accept the short I/O error for now */
-                smlevel_0::errlog->clog << fatal_prio
-                        << "read(" << int(XFERSIZE) << ")" << flushl;
-                /*
-                 * CS: short IO when reading the log is not necessarily an
-                 * error. In fact, after a system crash, it is quite likely
-                 * that the last write to the log was interrupted, and thus
-                 * a short IO is actually expected.
-                 * The error condition can be verified by checking if the
-                 * lsn_ck() field of logrec_t matches the offset from which
-                 * the log record was read. However, this logic belongs in the
-                 * log scanner code.
-                 */
-                W_COERCE(e);
-        }
-        // TODO CS: If there was a short IO above, the increment should not be XFERSIZE
         b += XFERSIZE;
 
         //
@@ -995,7 +981,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
         if (first_time) {
             if( rp->length() > sizeof(logrec_t) ||
             rp->length() < rp->header_size() ) {
-                w_assert1(ll.hi() == 0); // in peek()
+                w_assert0(ll.hi() == 0); // in peek()
                 return RC(eEOF);
             }
             first_time = false;
@@ -1011,7 +997,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
                 }
                 else {
                     // we were unlucky -- extra IO required to fetch prev_lsn
-                    int prev_offset = lower + b - XFERSIZE - sizeof(lsn_t);
+                    int64_t prev_offset = lower + b - XFERSIZE - sizeof(lsn_t);
                     if (prev_offset < 0) {
                         *prev_lsn = lsn_t::null;
                     }

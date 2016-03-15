@@ -25,12 +25,11 @@ void fixable_page_h::unfix() {
     }
 }
 
-w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, vid_t vol,
-                                   shpid_t shpid, latch_mode_t mode,
-                                   bool conditional, bool virgin_page,
-                                   const bool from_recovery) {
+w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent,
+                                   PageID shpid, latch_mode_t mode,
+                                   bool conditional, bool virgin_page)
+{
     w_assert1(parent.is_fixed());
-    w_assert1(shpid != 0);
     w_assert1(mode != LATCH_NL);
 
     if (force_Q_fixing > 1 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
@@ -55,8 +54,7 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, vid_t vol,
             }
         }
     } else {
-        W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, vol, shpid, mode, conditional, virgin_page, from_recovery));
-        w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol == vol);
+        W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, shpid, mode, conditional, virgin_page));
         w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     }
     _bufferpool_managed = true;
@@ -65,22 +63,24 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, vid_t vol,
     return RCOK;
 }
 
-w_rc_t fixable_page_h::fix_direct(vid_t vol, shpid_t shpid,
-                                  latch_mode_t mode, bool conditional,
-                                  bool virgin_page) {
-    w_assert1(shpid != 0);
-    w_assert1(mode >= LATCH_SH);
+w_rc_t fixable_page_h::fix_direct(PageID shpid, latch_mode_t mode,
+                                   bool conditional, bool virgin_page)
+{
+    w_assert1(mode != LATCH_NL);
 
     unfix();
-    W_DO(smlevel_0::bf->fix_direct(_pp, vol, shpid, mode, conditional, virgin_page));
+
+    W_DO(smlevel_0::bf->fix_nonroot(_pp, NULL, shpid, mode, conditional, virgin_page));
+
+    w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
+
     _bufferpool_managed = true;
     _mode               = mode;
-    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol   == vol);
-    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
+
     return RCOK;
 }
 
-w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated,
+w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, PageID page_updated,
                                             const bool managed) {
 
     // Special function for Recovery REDO phase
@@ -104,13 +104,6 @@ w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated,
     w_assert1(!smlevel_0::bf->is_swizzling_enabled());
 
     smlevel_0::bf->associate_page(_pp, idx, page_updated);
-
-    if (false == managed)
-    {
-        // Set the page to be not managed if using minimal logging
-        // Page is managed if using full logging
-        w_assert1(false == restart_m::use_redo_full_logging_restart());
-    }
     _bufferpool_managed = managed;
     _mode = LATCH_EX;
 
@@ -134,7 +127,6 @@ w_rc_t fixable_page_h::fix_recovery_redo_managed()
     // before the page recovery, and set to managed again (this function)
     // after the recovery operation
 
-    w_assert1(false == restart_m::use_redo_full_logging_restart());
     _bufferpool_managed = true;
     return RCOK;
 }
@@ -159,33 +151,14 @@ w_rc_t fixable_page_h::refix_direct (bf_idx idx, latch_mode_t mode, bool conditi
     return RCOK;
 }
 
-w_rc_t fixable_page_h::fix_virgin_root (stid_t store, shpid_t shpid) {
-    w_assert1(shpid != 0);
-
-    unfix();
-    W_DO(smlevel_0::bf->fix_virgin_root(_pp, store, shpid));
-    _bufferpool_managed = true;
-    _mode               = LATCH_EX;
-    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol   == vid_t(store.vol));
-    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
-    return RCOK;
-}
-
-w_rc_t fixable_page_h::fix_root (stid_t store, latch_mode_t mode,
-                                 bool conditional, const bool from_undo) {
+w_rc_t fixable_page_h::fix_root (StoreID store, latch_mode_t mode,
+        bool conditional, bool virgin)
+{
     w_assert1(mode != LATCH_NL);
 
-    if (force_Q_fixing > 0 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
     unfix();
-    if (mode == LATCH_Q) {
-        W_DO(smlevel_0::bf->fix_with_Q_root(_pp, store, _Q_ticket));
-        if (false) { // test ticket later for validity <<<>>>
-            _pp = NULL;
-            return RC(eLATCHQFAIL);
-        }
-    } else {
-        W_DO(smlevel_0::bf->fix_root(_pp, store, mode, conditional, from_undo));
-    }
+    W_DO(smlevel_0::bf->fix_root(_pp, store, mode, conditional, virgin));
+
     _bufferpool_managed = true;
     _mode               = mode;
     return RCOK;
@@ -221,55 +194,12 @@ bool fixable_page_h::is_dirty() const {
     }
 }
 
-void fixable_page_h::set_recovery_access() const
-{
-    // Set a flag in cb to indicate this page is being
-    // accessed for recovery purpose
-
-    w_assert1(_pp);
-    w_assert1(_mode != LATCH_Q);
-
-    if (_bufferpool_managed)
-    {
-        smlevel_0::bf->set_recovery_access(_pp);
-    }
-}
-
-bool fixable_page_h::is_recovery_access() const
-{
-    // Is this page being accessed recovery purpose?
-
-    w_assert1(_mode != LATCH_Q);
-
-    if (_bufferpool_managed)
-    {
-        return smlevel_0::bf->is_recovery_access(_pp);
-    }
-    else
-    {
-        return false;
-    }
-}
-
-void fixable_page_h::clear_recovery_access() const
-{
-    // Set a flag in cb to indicate this page is being
-    // accessed for recovery purpose
-
-    w_assert1(_pp);
-    w_assert1(_mode != LATCH_Q);
-
-    if (_bufferpool_managed)
-    {
-        smlevel_0::bf->clear_recovery_access(_pp);
-    }
-}
-
 // CS: a function that updates a field should NOT be declared const (TODO)
 void fixable_page_h::update_initial_and_last_lsn(const lsn_t & lsn) const
 {
     // Update both initial dirty lsn (if needed) and last write lsn
     // Caller should have latch on the page
+    w_assert1(_pp);
     if (_pp)
     {
         ((generic_page_h*)this)->set_lsns(lsn);
@@ -393,7 +323,7 @@ int fixable_page_h::max_child_slot() const {
     return downcast.nrecs();
 }
 
-shpid_t* fixable_page_h::child_slot_address(int child_slot) const {
+PageID* fixable_page_h::child_slot_address(int child_slot) const {
     w_assert1(_mode != LATCH_Q);
     btree_page_h downcast;
     downcast.fix_nonbufferpool_page(get_generic_page());

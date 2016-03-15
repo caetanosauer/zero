@@ -7,7 +7,7 @@
 
 // classes and structs used in BTree verification
 #include <map>
-#include "stid_t.h"
+#include "basics.h"
 #include "w_key.h"
 
 /**
@@ -22,7 +22,7 @@ public:
 
     /** bitmap to be flipped for each fact we collect. */
     char *_bitmap;
-    /** byte length of _bitmap. should be multiply of 8 to make checking efficient. */ 
+    /** byte length of _bitmap. should be multiply of 8 to make checking efficient. */
     int _bitmap_size;
     /** the number of bits we use for hashing. */
     const int _hash_bits;
@@ -32,23 +32,23 @@ public:
     int _pages_inconsistent;
 
     /** flips a bit corresponding to the specified fact. */
-    void add_fact (shpid_t pid, int16_t level, bool high, size_t key_len, const char* key) {
+    void add_fact (PageID pid, int16_t level, bool high, size_t key_len, const char* key) {
         add_fact (pid, level, high, key_len, key, 0, NULL);
     }
     /** for the case the string consists of two parts (prefix and suffix). */
-    void add_fact (shpid_t pid, int16_t level, bool high, size_t prefix_len, const char* prefix, size_t suffix_len, const char* suffix);
+    void add_fact (PageID pid, int16_t level, bool high, size_t prefix_len, const char* prefix, size_t suffix_len, const char* suffix);
     /** overload for w_keystr_t. */
-    void add_fact (shpid_t pid, int16_t level, bool high, const w_keystr_t &key) {
+    void add_fact (PageID pid, int16_t level, bool high, const w_keystr_t &key) {
         add_fact (pid, level, high, key.get_length_as_keystr(), (const char*) key.buffer_as_keystr());
     }
     /** same as add_fact(), but has different function name to make the code more readable. */
-    void add_expectation (shpid_t pid, int16_t level, bool high, size_t key_len, const char* key) {
+    void add_expectation (PageID pid, int16_t level, bool high, size_t key_len, const char* key) {
         add_expectation (pid, level, high, key_len, key, 0, NULL);
     }
     /** for the case the string consists of two parts (prefix and suffix). */
-    void add_expectation (shpid_t pid, int16_t level, bool high, size_t prefix_len, const char* prefix, size_t suffix_len, const char* suffix);
+    void add_expectation (PageID pid, int16_t level, bool high, size_t prefix_len, const char* prefix, size_t suffix_len, const char* suffix);
     /** overload for w_keystr_t. */
-    void add_expectation (shpid_t pid, int16_t level, bool high, const w_keystr_t &key) {
+    void add_expectation (PageID pid, int16_t level, bool high, const w_keystr_t &key) {
         add_expectation (pid, level, high, key.get_length_as_keystr(), (const char*) key.buffer_as_keystr());
     }
     /** Returns if all bitmap entries are zero, implying that the BTree is consistent. */
@@ -69,10 +69,10 @@ class verify_volume_result {
 public:
     verify_volume_result ();
     ~verify_volume_result();
-    verification_context* get_or_create_context (snum_t store_id, int hash_bits);
-    verification_context* get_context (snum_t store_id);
+    verification_context* get_or_create_context (StoreID store_id, int hash_bits);
+    verification_context* get_context (StoreID store_id);
 
-    std::map<snum_t, verification_context*> _results;
+    std::map<StoreID, verification_context*> _results;
 };
 
 #endif // BTREE_VERIFY_H

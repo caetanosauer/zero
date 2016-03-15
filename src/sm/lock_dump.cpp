@@ -59,8 +59,6 @@ void lock_core_m::dump(ostream &o) {
 ostream&
 operator<<(ostream& o, const lockid_t& i)
 {
-    stid_t s;
-    i.extract_stid(s);
-    o << "L(" << s << ": key-hash=" << i.l[1];
+    o << "L(" << i.store() << ": key-hash=" << i.l[1];
     return o << ')';
 }

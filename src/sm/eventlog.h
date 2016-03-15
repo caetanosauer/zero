@@ -41,8 +41,12 @@ public:
 class sysevent {
 public:
     static void log(logrec_t::kind_t kind);
-    static void log_page_read(shpid_t shpid);
-    static void log_page_write(shpid_t shpid, uint32_t cnt);
+    static void log_page_read(PageID shpid, uint32_t cnt = 1);
+    static void log_page_write(PageID shpid, uint32_t cnt = 1);
+    static void log_alloc_page(PageID pid, lsn_t& prev_page_lsn);
+    static void log_dealloc_page(PageID pid, lsn_t& prev_page_lsn);
+    static void log_create_store(PageID root, StoreID stid, lsn_t& prev_page_lsn);
+    static void log_append_extent(extent_id_t ext, lsn_t& prev_page_lsn);
 };
 
 #endif
