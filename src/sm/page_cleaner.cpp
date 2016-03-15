@@ -1,5 +1,6 @@
 #include "page_cleaner.h"
 
+#include "log_core.h"
 #include "bf_tree.h"
 #include "generic_page.h"
 
@@ -91,8 +92,11 @@ void page_cleaner_base::flush_workspace(size_t from, size_t to)
         return;
     }
 
+    // Flush log to guarantee WAL property
+    W_COERCE(smlevel_0::log->flush_all());
+
     W_COERCE(smlevel_0::vol->write_many_pages(
-                _workspace[from].pid, &(_workspace[from]), from - to));
+                _workspace[from].pid, &(_workspace[from]), to - from));
 
     for (size_t i = from; i < to; ++i) {
         bf_idx idx = _workspace_cb_indexes[i];

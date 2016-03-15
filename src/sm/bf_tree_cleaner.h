@@ -5,23 +5,10 @@
 #ifndef BF_TREE_CLEANER_H
 #define BF_TREE_CLEANER_H
 
-#include "w_defines.h"
-#include "sm_base.h"
-#include "smthread.h"
-#include "lsn.h"
-#include "vol.h"
 #include "page_cleaner.h"
 
 class bf_tree_m;
-class generic_page;
 
-/**
- * \brief The diry page cleaner for the new bufferpool manager.
- * \ingroup SSMBUFPOOL
- * \details
- * This class manages all worker threads which do the
- * actual page cleaning.
- */
 class bf_tree_cleaner : public page_cleaner_base {
 public:
     /**
@@ -42,15 +29,13 @@ public:
 
 private:
     virtual void do_work ();
-    void _clean_volume(const std::vector<bf_idx> &candidates);
-    void _flush_workspace(size_t from, size_t consecutive);
+    void collect_candidates();
+    void clean_candidates();
+    void log_and_flush(size_t wpos);
+    bool latch_and_copy(PageID, bf_idx, size_t wpos);
 
-    /** reused buffer of dirty page's indexes . */
-    std::vector<bf_idx>         _candidates_buffer;
-    /** reused buffer for sorting dirty page's indexes. */
-    uint64_t*                   _sort_buffer;
-    /** size of _sort_buffer. */
-    size_t                      _sort_buffer_size;
+    /** List of candidate dirty frames to be considered for cleaning */
+    std::vector<pair<PageID, bf_idx>>         candidates;
 };
 
 #endif // BF_TREE_CLEANER_H

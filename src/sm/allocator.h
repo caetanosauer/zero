@@ -95,7 +95,7 @@ struct memalign_allocator
     inline bool operator==(const memalign_allocator&) { return true; }
     inline bool operator!=(const memalign_allocator& rhs) { return !operator==(rhs); }
 
-    pointer allocate(size_type count, const_pointer hint = 0)
+    pointer allocate(size_type count, const_pointer = 0)
     {
         pointer p = nullptr;
         int res = posix_memalign((void**) &p, Alignment, sizeof(value_type) * count);
