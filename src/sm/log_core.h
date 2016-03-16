@@ -130,6 +130,8 @@ public:
         return _storage->make_log_name(p);
     }
 
+    log_storage* get_storage() { return _storage; }
+
     PoorMansOldestLsnTracker* get_oldest_lsn_tracker()
     {
         return _oldest_lsn_tracker;

@@ -18,6 +18,7 @@
 #include "verifylog.h"
 #include "truncatelog.h"
 #include "logstats.h"
+#include "propstats.h"
 #include "logpagestats.h"
 #include "dbinspect.h"
 #include "loganalysis.h"
@@ -45,9 +46,6 @@ void Command::init()
      * COMMANDS MUST BE REGISTERED HERE AND ONLY HERE
      */
     REGISTER_COMMAND("logcat", LogCat);
-    //REGISTER_COMMAND("skew", skew);
-    //REGISTER_COMMAND("trace", trace);
-    //REGISTER_COMMAND("dirtypagestats", dirtypagestats);
     //REGISTER_COMMAND("logreplay", LogReplay);
     REGISTER_COMMAND("genarchive", GenArchive);
     REGISTER_COMMAND("mergeruns", MergeRuns);
@@ -61,6 +59,7 @@ void Command::init()
     REGISTER_COMMAND("loganalysis", LogAnalysis);
     REGISTER_COMMAND("kits", KitsCommand);
     REGISTER_COMMAND("restore", RestoreCmd);
+    REGISTER_COMMAND("propstats", PropStats);
 }
 
 void Command::setupCommonOptions()
