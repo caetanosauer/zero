@@ -230,6 +230,10 @@ void Command::setupSMOptions()
         "Cleaner sleep interval in ms")
     ("sm_cleaner_write_buffer_pages", po::value<int>(),
         "Number of buffer pages to write")
+    ("sm_cleaner_num_candidates", po::value<int>(),
+        "Number of candidate frames considered by each cleaner round")
+    ("sm_cleaner_policy", po::value<string>(),
+        "Policy used by cleaner to select candidates")
     ("sm_archiver_workspace_size", po::value<int>(),
         "Workspace size archiver")
     ("sm_archiver_block_size", po::value<int>()->default_value(1024*1024),

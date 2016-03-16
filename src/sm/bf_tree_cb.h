@@ -106,14 +106,14 @@ struct bf_tree_cb_t {
     // CS TODO: testing approach of maintaining page LSN in CB
     lsn_t _page_lsn; // +8 -> 24
     void set_page_lsn(lsn_t lsn) { _page_lsn = lsn; }
-    lsn_t get_page_lsn() { return _page_lsn; }
+    lsn_t get_page_lsn() const { return _page_lsn; }
 
     // CS: page_lsn value when it was last picked for cleaning
     // Replaces the old dirty flag, because dirty is defined as
     // page_lsn > clean_lsn
     lsn_t _clean_lsn; // +8 -> 32
     void set_clean_lsn(lsn_t lsn) { _clean_lsn = lsn; }
-    lsn_t get_clean_lsn() { return _clean_lsn; }
+    lsn_t get_clean_lsn() const { return _clean_lsn; }
 
     bool is_dirty() const { return _page_lsn > _clean_lsn; }
 
@@ -123,7 +123,7 @@ struct bf_tree_cb_t {
      */
     uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 34
 
-    // Add padding to aline control block at cacheline boundary (64 bytes)
+    // Add padding to align control block at cacheline boundary (64 bytes)
     uint8_t _fill63[29];    // +29 -> 63
 
 #ifdef BP_ALTERNATE_CB_LATCH

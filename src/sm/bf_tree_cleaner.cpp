@@ -4,24 +4,26 @@
 
 #include "bf_tree_cleaner.h"
 #include "sm_base.h"
-#include "bf_tree_cb.h"
 #include "bf_tree.h"
 #include "generic_page.h"
 #include "fixable_page_h.h"
 #include "log_core.h"
 #include "vol.h"
-#include "alloc_cache.h"
 #include "eventlog.h"
 #include "sm.h"
 #include "xct.h"
-
 #include <vector>
 
-const int INITIAL_SORT_BUFFER_SIZE = 64;
-
-bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& _options)
-    : page_cleaner_base(bufferpool, _options)
+bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& options)
+    : page_cleaner_base(bufferpool, options)
 {
+    num_candidates = options.get_int_option("sm_cleaner_num_candidates", 0);
+    string pstr = options.get_string_option("sm_cleaner_policy", "");
+    policy = make_cleaner_policy(pstr);
+
+    if (num_candidates > 0) {
+        candidates.reserve(num_candidates);
+    }
 }
 
 bf_tree_cleaner::~bf_tree_cleaner()
@@ -47,8 +49,8 @@ void bf_tree_cleaner::clean_candidates()
     for (auto iter = candidates.begin(); iter != candidates.end(); iter++) {
         // Latch page and copy image if it's adjacent to previous and workspace
         // still has room
-        PageID pid = iter->first;
-        bf_idx idx = iter->second;
+        PageID pid = iter->pid;
+        bf_idx idx = iter->idx;
         if (wpos >= _workspace_size || (wpos != 0 && pid != prev_pid + 1)) {
             // It's time to flush a portion of the workspace
             log_and_flush(wpos);
@@ -126,9 +128,27 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     return true;
 }
 
+policy_predicate_t bf_tree_cleaner::get_policy_predicate()
+{
+    return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
+    {
+        switch (policy) {
+            case cleaner_policy::highest_refcount:
+                return a.ref_count > b.ref_count;
+            case cleaner_policy::lowest_refcount:
+                return a.ref_count < b.ref_count;
+            case cleaner_policy::oldest_lsn: default:
+                return a.clean_lsn < b.clean_lsn;
+        }
+    };
+}
+
 void bf_tree_cleaner::collect_candidates()
 {
     candidates.clear();
+
+    // Comparator to be used by the heap
+    auto heap_cmp = get_policy_predicate();
 
     bf_idx block_cnt = _bufferpool->_block_cnt;
 
@@ -142,13 +162,19 @@ void bf_tree_cleaner::collect_candidates()
             continue;
         }
 
-        candidates.emplace_back(cb._pid, idx);
+        candidates.emplace_back(idx, cb);
+        if (num_candidates > 0) {
+            std::push_heap(candidates.begin(), candidates.end(), heap_cmp);
+        }
         cb.unpin();
     }
 
     // CS TODO: one policy could sort each sequence of adjacent pids by cluster size
     // Sort by PageID to exploit large sequential writes
-    typedef pair<PageID, bf_idx> pair_t;
-    auto lt = [] (const pair_t& a, const pair_t& b) { return a.first < b.first; };
+    auto lt = [] (const cleaner_cb_info& a, const cleaner_cb_info& b)
+    {
+        return a.pid < b.pid;
+    };
+
     std::sort(candidates.begin(), candidates.end(), lt);
 }

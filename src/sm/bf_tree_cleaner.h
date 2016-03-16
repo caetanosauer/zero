@@ -6,8 +6,44 @@
 #define BF_TREE_CLEANER_H
 
 #include "page_cleaner.h"
+#include "bf_tree_cb.h"
+#include <functional>
 
 class bf_tree_m;
+
+/**
+ * These classes encapsulate a single comparator function to be used
+ * as a cleaner policy.
+ */
+enum class cleaner_policy {
+    highest_refcount,
+    lowest_refcount,
+    oldest_lsn
+};
+
+/**
+ * Information about each candidate control block considered by whatever
+ * cleaner policy is currently active
+ */
+struct cleaner_cb_info {
+    lsn_t clean_lsn;
+    lsn_t page_lsn;
+    bf_idx idx;
+    PageID pid;
+    uint16_t ref_count;
+
+    cleaner_cb_info(bf_idx idx, const bf_tree_cb_t& cb) :
+        clean_lsn(cb.get_clean_lsn()),
+        page_lsn(cb.get_page_lsn()),
+        idx(idx),
+        pid(cb._pid),
+        ref_count(cb._ref_count)
+    {}
+};
+
+/** Type of predicate functions used by cleaner policies */
+using policy_predicate_t =
+    std::function<bool(const cleaner_cb_info&, const cleaner_cb_info&)>;
 
 class bf_tree_cleaner : public page_cleaner_base {
 public:
@@ -27,15 +63,32 @@ public:
      */
     ~bf_tree_cleaner();
 
-private:
+protected:
     virtual void do_work ();
+
+    /** Return predicate function object that implements given policy */
+    policy_predicate_t get_policy_predicate();
+
+private:
     void collect_candidates();
     void clean_candidates();
     void log_and_flush(size_t wpos);
     bool latch_and_copy(PageID, bf_idx, size_t wpos);
 
     /** List of candidate dirty frames to be considered for cleaning */
-    std::vector<pair<PageID, bf_idx>>         candidates;
+    std::vector<cleaner_cb_info> candidates;
+
+    /// Cleaner policy options
+    size_t num_candidates;
+    cleaner_policy policy;
 };
+
+inline cleaner_policy make_cleaner_policy(string s)
+{
+    if (s == "highest_refcount") { return cleaner_policy::highest_refcount; }
+    if (s == "lowest_refcount") { return cleaner_policy::lowest_refcount; }
+    if (s == "oldest_lsn") { return cleaner_policy::oldest_lsn; }
+    return cleaner_policy::oldest_lsn;
+}
 
 #endif // BF_TREE_CLEANER_H
