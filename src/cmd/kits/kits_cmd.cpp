@@ -45,17 +45,6 @@ void KitsCommand::setupOptions()
     kits.add_options()
         ("benchmark,b", po::value<string>(&opt_benchmark)->required(),
             "Benchmark to execute. Possible values: tpcb, tpcc")
-        ("dbfile,d", po::value<string>(&opt_dbfile)->default_value("db"),
-            "Path to database file (required only for loading)")
-        ("backup", po::value<string>(&opt_backup)->default_value(""),
-            "Path on which to store backup file")
-        ("sharpBackup", po::value<bool>(&opt_sharpBackup)
-            ->default_value(false)->implicit_value(true),
-            "Whether to flush log archive prior to taking a backup")
-        ("logdir,l", po::value<string>(&logdir)->default_value("log"),
-            "Directory containing log to be scanned")
-        ("archdir,a", po::value<string>(&archdir)->default_value("archive"),
-            "Directory in which to store the log archive")
         ("load", po::value<bool>(&opt_load)->default_value(false)
             ->implicit_value(true),
             "If set, log and archive folders are emptied, database files \
@@ -77,9 +66,6 @@ void KitsCommand::setupOptions()
         ("eager", po::value<bool>(&opt_eager)->default_value(true)
             ->implicit_value(true),
             "Run log archiving in eager mode")
-        ("truncateLog", po::value<bool>(&opt_truncateLog)->default_value(false)
-            ->implicit_value(true),
-            "Truncate log until last checkpoint after loading")
         ("skew", po::value<bool>(&opt_skew)->default_value(false)
             ->implicit_value(true),
             "Activate skew on transaction inputs (currently only 80:20 skew \
@@ -133,10 +119,6 @@ void KitsCommand::run()
 {
     init();
 
-    if (!opt_backup.empty()) {
-        ensureParentPathExists(opt_backup);
-    }
-
     if (opt_load) {
         shoreEnv->load();
         cout << "Loading finished!" << endl;
@@ -150,23 +132,6 @@ void KitsCommand::run()
 
     if (opt_num_trxs > 0 || opt_duration > 0) {
         runBenchmark();
-    }
-
-    if (!opt_backup.empty()) {
-        // Make sure all workers are done
-        shoreEnv->stop();
-
-        vol_t* vol = smlevel_0::vol;
-        w_assert1(vol);
-
-        if (!opt_eager) {
-            archiveLog();
-        }
-
-        cout << "Taking backup ... ";
-        W_COERCE(vol->take_backup(opt_backup, opt_sharpBackup));
-        // add call to sx_add_backup
-        cout << "done!" << endl;
     }
 
     finish();
@@ -344,23 +309,7 @@ void KitsCommand::initShoreEnv()
     shoreEnv->set_loaders(opt_num_threads);
 
     shoreEnv->init();
-
     shoreEnv->set_clobber(opt_load);
-    if (opt_load) {
-        if (opt_dbfile.empty()) {
-            throw runtime_error("Option dbfile cannot be empty!");
-        }
-
-        // delete existing logs and db files
-        ensureEmptyPath(logdir);
-        if (!archdir.empty()) {
-            ensureEmptyPath(archdir);
-        }
-        ensureParentPathExists(opt_dbfile);
-
-        shoreEnv->set_device(opt_dbfile);
-    }
-
     shoreEnv->start();
 }
 
@@ -379,7 +328,7 @@ void KitsCommand::mkdirs(string path)
 }
 
 /**
- * Given path should be a file name (e.g., DB file or backup).
+ * Given path should be a file name (e.g., DB file).
  * Ensures that the directory containing the file exists, to avoid
  * OS failures in the SM when creating the file.
  */
@@ -421,36 +370,10 @@ void KitsCommand::ensureEmptyPath(string path)
 
 void KitsCommand::loadOptions(sm_options& options)
 {
-    options.set_string_option("sm_dbfile", opt_dbfile);
     options.set_bool_option("sm_format", opt_load);
-    options.set_string_option("sm_logdir", logdir);
-    mkdirs(logdir);
-
-    if (!archdir.empty()) {
-        options.set_string_option("sm_archdir", archdir);
-        options.set_bool_option("sm_archiving", true);
-        options.set_bool_option("sm_archiver_eager", opt_eager);
-        mkdirs(archdir);
-    }
-    else {
-        options.set_bool_option("sm_archiving", false);
-    }
 
     // ticker always turned on
     options.set_bool_option("sm_ticker_enable", true);
-
-    options.set_bool_option("sm_truncate_log", opt_truncateLog);
-}
-
-void KitsCommand::archiveLog()
-{
-    // archive whole log
-    smlevel_0::logArchiver->activate(smlevel_0::log->curr_lsn(), true);
-    while (smlevel_0::logArchiver->getNextConsumedLSN() < smlevel_0::log->curr_lsn()) {
-        usleep(1000);
-    }
-    smlevel_0::logArchiver->shutdown();
-    smlevel_0::logArchiver->join();
 }
 
 void KitsCommand::finish()

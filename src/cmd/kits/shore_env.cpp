@@ -846,8 +846,6 @@ int ShoreEnv::start_sm()
     assert (_pssm);
 
     if (_clobber) {
-        assert (!_device.empty());
-
         // if didn't clobber then the db is already loaded
         CRITICAL_SECTION(cs, _load_mutex);
 
@@ -874,7 +872,6 @@ int ShoreEnv::start_sm()
         vol_t* vol = ss_m::vol;
         w_assert0(vol);
         w_assert0(vol->is_alloc_store(1));
-        // w_assert0(strcmp(vol->devname(), _device.c_str()) == 0);
 
         // "speculate" that the database is loaded
         _loaded = true;

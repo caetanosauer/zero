@@ -85,9 +85,13 @@ log_storage::log_storage(const sm_options& options)
 
     bool reformat = options.get_bool_option("sm_format", false);
 
-    if (!reformat && !fs::exists(_logpath)) {
-        cerr << "Error: could not open the log directory " << logdir <<endl;
-        W_COERCE(RC(eOS));
+    if (!fs::exists(_logpath)) {
+        if (reformat) {
+            fs::create_directories(_logpath);
+        } else {
+            cerr << "Error: could not open the log directory " << logdir <<endl;
+            W_COERCE(RC(eOS));
+        }
     }
 
     fileoff_t psize = fileoff_t(options.get_int_option("sm_log_partition_size", 1024));
@@ -127,8 +131,6 @@ log_storage::log_storage(const sm_options& options)
         }
 
     }
-
-
 
     auto p = get_partition(last_partition);
     if (!p) {

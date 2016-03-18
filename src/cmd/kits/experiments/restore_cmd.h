@@ -10,6 +10,7 @@ public:
     virtual void run();
 
 protected:
+    string opt_backup;
     unsigned opt_segmentSize;
     bool opt_singlePass;
     bool opt_instant;

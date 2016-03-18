@@ -482,6 +482,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
     : archdir(archdir),
     appendFd(-1), mergeFd(-1), appendPos(0), blockSize(blockSize)
 {
+    // CS TODO: use boost, just like log_storage
     // open archdir and extract last archived LSN
     {
         lsn_t highestLSN = lsn_t::null;

@@ -150,8 +150,13 @@ void Command::setupSMOptions()
     ("sys-activecpucount", po::value<uint>()->default_value(0),
         "Active CPU Count of a system")
     /**SM Options**/
+    ("sm_logdir", po::value<string>()->default_value("log"),
+        "Path to log directory")
     ("sm_dbfile", po::value<string>()->default_value("db"),
         "Path to the file on which to store database pages")
+    ("sm_truncate_log", po::value<bool>()->default_value(false)
+        ->implicit_value(true),
+        "Whether to truncate log partitions at SM shutdown")
     ("sm_log_partition_size", po::value<int>()->default_value(1024),
         "Size of a log partition in MB")
     ("sm_log_max_partitions", po::value<int>()->default_value(0),

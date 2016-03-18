@@ -39,6 +39,11 @@ void RestoreCmd::setupOptions()
 {
     KitsCommand::setupOptions();
     options.add_options()
+        ("backup", po::value<string>(&opt_backup)->default_value(""),
+            "Path on which to store backup file")
+        ("sharpBackup", po::value<bool>(&opt_sharpBackup)
+            ->default_value(false)->implicit_value(true),
+            "Whether to flush log archive prior to taking a backup")
         ("segmentSize", po::value<unsigned>(&opt_segmentSize)
             ->default_value(1024),
             "Size of restore segment in number of pages")
@@ -86,9 +91,9 @@ void RestoreCmd::loadOptions(sm_options& options)
 
 void RestoreCmd::run()
 {
-    if (archdir.empty()) {
+    if (!smlevel_0::logArchiver) {
         throw runtime_error("Log Archive is required to perform restore. \
-                Specify path to archive directory with -a");
+                Specify path to archive directory with --sm_archdir");
     }
 
     // STEP 1 - load database and take backup

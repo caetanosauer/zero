@@ -19,11 +19,6 @@ public:
 protected:
     ShoreEnv* shoreEnv;
 
-    string logdir;
-    string archdir;
-    string opt_dbfile;
-    string opt_backup;
-
     bool opt_sharpBackup;
     bool opt_load;
     string opt_benchmark;
@@ -34,7 +29,6 @@ protected:
     int opt_select_trx;
     int opt_queried_sf;
     bool opt_eager;
-    bool opt_truncateLog;
     bool opt_skew;
     bool opt_spread;
     unsigned opt_warmup;
@@ -61,8 +55,6 @@ protected:
     void mkdirs(string);
     void ensureEmptyPath(string);
     void ensureParentPathExists(string);
-
-    void archiveLog();
 
 private:
     std::vector<base_client_t*> clients;
