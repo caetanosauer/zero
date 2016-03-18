@@ -174,13 +174,16 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     }
 }
 
-bf_tree_m::~bf_tree_m()
+void bf_tree_m::shutdown()
 {
-    if (_cleaner != NULL) {
+    if (_cleaner) {
         _cleaner->shutdown();
         delete _cleaner;
     }
+}
 
+bf_tree_m::~bf_tree_m()
+{
     if (_control_blocks != NULL) {
 #ifdef BP_ALTERNATE_CB_LATCH
         char* buf = reinterpret_cast<char*>(_control_blocks) - sizeof(bf_tree_cb_t);

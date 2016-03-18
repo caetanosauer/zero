@@ -185,6 +185,8 @@ public:
     /** destructs the buffer pool.  */
     ~bf_tree_m ();
 
+    void shutdown();
+
     /** returns the total number of blocks in this bufferpool. */
     inline bf_idx get_block_cnt() const {return _block_cnt;}
 

@@ -433,10 +433,7 @@ ss_m::_destruct_once()
             W_COERCE(_truncate_log());
         }
 
-        // Take a synch checkpoint (blocking) after buffer pool flush but before shutting down
         chkpt->take();
-        bf->get_cleaner()->shutdown();
-
         ERROUT(<< "All pages cleaned successfully");
     }
     else {
@@ -444,14 +441,6 @@ ss_m::_destruct_once()
 
     }
     delete chkpt; chkpt = 0;
-
-    ERROUT(<< "Terminating volume");
-    // this should come before xct and log shutdown so that any
-    // ongoing restore has a chance to finish cleanly. Should also come after
-    // shutdown of buffer, since forcing the buffer requires the volume.
-    // destroy() will stop cleaners
-    vol->shutdown(!shutdown_clean);
-    delete vol; vol = 0; // io manager
 
     nprepared = xct_t::cleanup(true /* now dispose of prepared xcts */);
     w_assert1(nprepared == 0);
@@ -468,13 +457,6 @@ ss_m::_destruct_once()
         logArchiver->shutdown();
     }
 
-    ERROUT(<< "Terminating log manager");
-    if(log) {
-        log->shutdown();
-        delete log;
-    }
-    log = 0;
-
 #ifndef USE_ATOMIC_COMMIT // otherwise clog and log point to the same object
     if(clog) {
         clog->shutdown(); // log joins any subsidiary threads
@@ -484,12 +466,28 @@ ss_m::_destruct_once()
 
 
     ERROUT(<< "Terminating buffer manager");
+    bf->shutdown();
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
 
     if(logArchiver) {
         delete logArchiver; // LL: decoupled cleaner in bf still needs archiver
         logArchiver = 0;    //     so we delete it only after bf is gone
     }
+
+    ERROUT(<< "Terminating volume");
+    // this should come before xct and log shutdown so that any
+    // ongoing restore has a chance to finish cleanly. Should also come after
+    // shutdown of buffer, since forcing the buffer requires the volume.
+    // destroy() will stop cleaners
+    vol->shutdown(!shutdown_clean);
+    delete vol; vol = 0; // io manager
+
+    ERROUT(<< "Terminating log manager");
+    if(log) {
+        log->shutdown();
+        delete log;
+    }
+    log = 0;
 
      w_rc_t        e;
      char        *unused;
@@ -619,7 +617,7 @@ ss_m::abort_xct(sm_stats_info_t*&             _stats)
 
     // Temp removed for debugging purposes only
     // want to see what happens if the abort proceeds (scripts/alloc.10)
-    bool was_sys_xct = xct() && xct()->is_sys_xct();
+    // bool was_sys_xct = xct() && xct()->is_sys_xct();
     W_DO(_abort_xct(_stats));
 
     return RCOK;
