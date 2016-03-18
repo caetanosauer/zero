@@ -140,6 +140,8 @@ public:
 
     lsn_t get_page_lsn();
 
+    rc_t write_page(lsn_t rec_lsn);
+
 private:
     /// all operations in this object except get_root_pid are protected by this latch
     mutable queue_based_lock_t _latch;

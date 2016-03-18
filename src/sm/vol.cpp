@@ -19,7 +19,6 @@
 #include "sm_options.h"
 
 #include "alloc_cache.h"
-#include "bf_tree.h"
 #include "restore.h"
 #include "logarchiver.h"
 #include "eventlog.h"

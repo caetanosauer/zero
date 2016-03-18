@@ -205,6 +205,7 @@ rc_t alloc_cache_t::write_dirty_pages(lsn_t rec_lsn)
         // it back
         W_DO(smlevel_0::vol->read_page_verify(alloc_pid, buf, page_lsn));
         W_DO(smlevel_0::vol->write_page(alloc_pid, buf));
+        sysevent::log_page_write(alloc_pid, rec_lsn, 1);
     }
 
     if (buf) { delete[] buf; }

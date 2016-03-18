@@ -422,21 +422,9 @@ ss_m::_destruct_once()
         me()->check_actual_pin_count(0);
 
         // Force alloc and stnode pages
-        {
-            generic_page* buf;
-            int res = posix_memalign((void**) &buf, SM_PAGESIZE, SM_PAGESIZE);
-            w_assert0(res == 0);
-
-            lsn_t dur_lsn = smlevel_0::log->durable_lsn();
-            W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
-
-            // Flush stnode_cache_t (always PID 1)
-            lsn_t emlsn = vol->get_stnode_cache()->get_page_lsn();
-            W_COERCE(vol->read_page_verify(stnode_page::stpid, buf, emlsn));
-            W_COERCE(vol->write_page(stnode_page::stpid, buf));
-
-            delete[] buf;
-        }
+        lsn_t dur_lsn = smlevel_0::log->durable_lsn();
+        W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
+        W_COERCE(vol->get_stnode_cache()->write_page(dur_lsn));
 
         if (truncate) {
             W_COERCE(_truncate_log());

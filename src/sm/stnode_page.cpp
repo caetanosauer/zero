@@ -128,3 +128,18 @@ lsn_t stnode_cache_t::get_page_lsn() {
     CRITICAL_SECTION (cs, _latch);
     return prev_page_lsn;
 }
+
+rc_t stnode_cache_t::write_page(lsn_t rec_lsn)
+{
+    generic_page* buf;
+    int res = posix_memalign((void**) &buf, SM_PAGESIZE, SM_PAGESIZE);
+    w_assert0(res == 0);
+
+    lsn_t emlsn = get_page_lsn();
+    W_DO(smlevel_0::vol->read_page_verify(stnode_page::stpid, buf, emlsn));
+    W_DO(smlevel_0::vol->write_page(stnode_page::stpid, buf));
+    sysevent::log_page_write(stnode_page::stpid, rec_lsn, 1);
+
+    delete[] buf;
+    return RCOK;
+}
