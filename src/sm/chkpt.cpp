@@ -116,7 +116,8 @@ private:
 };
 
 chkpt_m::chkpt_m(const sm_options& options)
-    : _chkpt_thread(NULL), _chkpt_count(0), _min_rec_lsn(0), _min_xct_lsn(0)
+    : _chkpt_thread(NULL), _chkpt_count(0), _min_rec_lsn(0), _min_xct_lsn(0),
+    _last_end_lsn(0)
 {
     int interval = options.get_int_option("sm_chkpt_interval", -1);
     if (interval >= 0) {
@@ -162,10 +163,11 @@ void chkpt_t::scan_log()
     logrec_t r;
     lsn_t lsn;   // LSN of the retrieved log record
 
-    bool insideChkpt = false;
-    bool scan_done = false;
+    // Set when scan finds begin of previous checkpoint
+    lsn_t scan_stop = 0;
 
-    while (scan.xct_next(lsn, r) && !scan_done)
+    bool insideChkpt = false;
+    while (lsn > scan_stop && scan.xct_next(lsn, r))
     {
         if (r.is_skip() || r.type() == logrec_t::t_comment) {
             continue;
@@ -204,8 +206,7 @@ void chkpt_t::scan_log()
             case logrec_t::t_chkpt_begin:
                 if (insideChkpt) {
                     // Signal to stop backward log scan loop now
-                    begin_lsn = lsn;
-                    scan_done = true;
+                    scan_stop = lsn;
                 }
                 break;
 
@@ -317,15 +318,13 @@ void chkpt_t::scan_log()
         } //switch
     } //while
 
-    w_assert0(lsn == lsn_t(1,0) || scan_done);
-    w_assert0(lsn == lsn_t(1,0) || !begin_lsn.is_null());
+    w_assert0(lsn == scan_stop);
 
     cleanup();
 }
 
 void chkpt_t::init()
 {
-    begin_lsn = lsn_t::null;
     highest_tid = tid_t::null;
     buf_tab.clear();
     xct_tab.clear();
@@ -674,8 +673,7 @@ void chkpt_m::take()
 
     // Insert chkpt_begin log record.
     logrec_t* logrec = new logrec_t;
-    lsn_t begin_lsn = lsn_t::null;
-    LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
+    LOG_INSERT(chkpt_begin_log(lsn_t::null), NULL);
     W_COERCE(ss_m::log->flush_all());
 
     curr_chkpt.scan_log();
@@ -686,8 +684,8 @@ void chkpt_m::take()
 
     // Insert chkpt_end log record
     // CS TODO -- are the "min" LSNs still required in the logrec?
-    LOG_INSERT(chkpt_end_log (curr_chkpt.get_begin_lsn(), _min_rec_lsn,
-                _min_xct_lsn), 0);
+    LOG_INSERT(chkpt_end_log (_last_end_lsn, _min_rec_lsn, _min_xct_lsn),
+            &_last_end_lsn);
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_mutex.release_write();

@@ -105,7 +105,6 @@ typedef map<tid_t, xct_tab_entry_t>        xct_tab_t;
 class chkpt_t {
     friend class chkpt_m;
 private:
-    lsn_t begin_lsn;
     tid_t highest_tid;
 
 public: // required for restart for now
@@ -127,7 +126,6 @@ public:
 
     void add_backup(const char* path);
 
-    lsn_t get_begin_lsn() const { return  begin_lsn; }
     lsn_t get_min_rec_lsn() const;
     lsn_t get_min_xct_lsn() const;
 
@@ -169,7 +167,24 @@ public:
 
     lsn_t get_min_rec_lsn() { return _min_rec_lsn; }
     lsn_t get_min_xct_lsn() { return _min_xct_lsn; }
-    lsn_t get_min_active_lsn() { return std::min(_min_rec_lsn, _min_xct_lsn); }
+
+    /*
+     * min_active_lsn is the LSN up to which log records can be thrown away,
+     * because they will never be needed for undoing an active transaction or
+     * redoing a dirty page. If both min_rec_lsn and min_xct_lsn are null, it
+     * indicates that the system is "clean", i.e., no active transactions or
+     * dirty pages. For this case, we return the LSN of the last checkpoint.
+     */
+    lsn_t get_min_active_lsn() {
+        lsn_t min = _last_end_lsn;
+        if (!_min_rec_lsn.is_null() && _min_rec_lsn < min) {
+            min = _min_rec_lsn;
+        }
+        if (!_min_xct_lsn.is_null() && _min_xct_lsn < min) {
+            min = _min_xct_lsn;
+        }
+        return min;
+    }
 
 private:
     chkpt_thread_t*  _chkpt_thread;
@@ -179,9 +194,10 @@ private:
 
     void             _acquire_lock(logrec_t& r, chkpt_t& new_chkpt);
 
-    // Values cached form the last checkpoint
+    // Values cached from the last checkpoint
     lsn_t _min_rec_lsn;
     lsn_t _min_xct_lsn;
+    lsn_t _last_end_lsn;
 };
 
 /*<std-footer incl-file-exclusion='CHKPT_H'>  -- do not edit anything below this line -- */
