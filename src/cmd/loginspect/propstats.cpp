@@ -11,8 +11,15 @@ public:
 
     size_t psize;
 
+    // Histogram that counts how many consecutive pages were written
+    // in each page write operation
+    vector<size_t> consecutive_writes;
+
+    // Counter of page writes per second
+    size_t page_writes;
+
     PropStatsHandler(size_t psize)
-        : psize(psize)
+        : psize(psize), page_writes(0)
     {}
 
     virtual void invoke(logrec_t& r)
@@ -49,6 +56,12 @@ public:
                 chkpt.mark_page_clean(pid, clean_lsn);
                 pid++;
             }
+
+            if (consecutive_writes.size() <= count) {
+                consecutive_writes.resize(count + 1);
+            }
+            consecutive_writes[count]++;
+            page_writes += count;
         }
     }
 
@@ -73,11 +86,19 @@ public:
 
         cout << "dirty_pages " << dirty_page_count
             << " redo_length " << redo_length / 1048576
+            << " page_writes " << page_writes
             << endl;
+
+        page_writes = 0;
     }
 
     virtual void finalize()
     {
+        cout << "consecutive_writes ";
+        for (unsigned i = 0; i < consecutive_writes.size(); i++) {
+            cout << consecutive_writes[i] << " ";
+        }
+        cout << endl;
     };
 };
 
