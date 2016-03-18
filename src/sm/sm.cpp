@@ -365,10 +365,6 @@ ss_m::_construct_once()
     ERROUT(<< "[" << timer.time_ms() << "] Finished SM initialization");
 }
 
-void ss_m::_finish_recovery()
-{
-}
-
 ss_m::~ss_m()
 {
     // This looks like a candidate for pthread_once(), but then smsh
@@ -429,11 +425,12 @@ ss_m::_destruct_once()
         W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
         W_COERCE(vol->get_stnode_cache()->write_page(dur_lsn));
 
+        chkpt->take();
+
         if (truncate) {
             W_COERCE(_truncate_log());
         }
 
-        chkpt->take();
         ERROUT(<< "All pages cleaned successfully");
     }
     else {
@@ -499,12 +496,17 @@ ss_m::_destruct_once()
      ERROUT(<< "SM shutdown complete!");
 }
 
-rc_t ss_m::_truncate_log(bool ignore_chkpt)
+rc_t ss_m::_truncate_log()
 {
     DBGTHRD(<< "Truncating log on LSN " << log->durable_lsn());
 
+    W_DO(log->flush_all());
     W_DO(log->truncate());
     W_DO(log->flush_all());
+
+    // this should be an "empty" checkpoint
+    chkpt->take();
+    log->get_storage()->delete_old_partitions();
 
     return RCOK;
 }

@@ -102,10 +102,8 @@ public:
     string make_log_name(partition_number_t pnum) const;
     fs::path make_log_path(partition_number_t pnum) const;
 
-    static fileoff_t          min_partition_size();
-    static fileoff_t          max_partition_size();
-
     void wakeup_recycler();
+    unsigned delete_old_partitions(partition_number_t older_than = 0);
 
 private:
     shared_ptr<partition_t> create_partition(partition_number_t pnum);
@@ -124,7 +122,6 @@ private:
     log_storage(const log_storage&);
     log_storage& operator=(const log_storage&);
 
-    unsigned delete_old_partitions(partition_number_t older_than = 0);
     void try_delete(partition_number_t);
 
     // Latch to protect access to partition map
