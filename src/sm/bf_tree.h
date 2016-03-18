@@ -121,8 +121,17 @@ const uint16_t EVICT_MAX_ROUNDS = 20;
  * We cap the refcount to avoid contention on the cacheline of the frame's control
  * block (due to ping-pongs between sockets) when multiple sockets read-access the same frame.
  * The refcount max value should have enough granularity to separate cold from hot pages.
+ *
+ * CS TODO: but doesnt the latch itself already incur such cacheline bouncing?
+ * If so, then we could simply move the refcount inside latch_t (which must
+ * have the same size as a cacheline) and be done with it. No additional
+ * overhead on cache coherence other than the latching itself is expected. We
+ * could reuse the field _total_count in latch_t, or even split it into to
+ * 16-bit integers: one for shared and one for exclusive latches. This field is
+ * currently only used for tests, but it doesn't make sense to count CB
+ * references and latch acquisitions in separate variables.
  */
-const uint16_t BP_MAX_REFCOUNT = 16;
+const uint16_t BP_MAX_REFCOUNT = 1024;
 
 /**
  * Initial value of the per-frame refcount (reference counter).

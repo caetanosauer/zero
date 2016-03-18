@@ -37,7 +37,7 @@ struct cleaner_cb_info {
         page_lsn(cb.get_page_lsn()),
         idx(idx),
         pid(cb._pid),
-        ref_count(cb._ref_count)
+        ref_count(cb._ref_count_ex)
     {}
 };
 

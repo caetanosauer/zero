@@ -363,6 +363,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             cb._pid = shpid;
             cb._used = true;
             cb._ref_count = BP_INITIAL_REFCOUNT;
+            cb._ref_count_ex = BP_INITIAL_REFCOUNT;
             cb._clean_lsn = page->lsn;
             cb._page_lsn = page->lsn;
 
@@ -412,6 +413,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
             if (cb._ref_count < BP_MAX_REFCOUNT) {
                 ++cb._ref_count;
+            }
+            if (mode == LATCH_EX && cb._ref_count_ex) {
+                ++cb._ref_count_ex;
             }
 
             page = &(_buffer[idx]);
@@ -766,6 +770,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
             o << ", _swizzled=" << cb._swizzled;
             o << ", _pin_cnt=" << cb._pin_cnt;
             o << ", _ref_count=" << cb._ref_count;
+            o << ", _ref_count_ex=" << cb._ref_count_ex;
             o << ", ";
             cb.latch().print(o);
         } else {
@@ -954,6 +959,7 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
     cb.pin();
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
     ++cb._ref_count;
+    if (mode == LATCH_EX) { ++cb._ref_count_ex; }
     page = &(_buffer[idx]);
     return RCOK;
 }

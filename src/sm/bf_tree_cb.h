@@ -92,16 +92,19 @@ struct bf_tree_cb_t {
      * between sockets).  The counter still has enough granularity to separate cold from
      * hot pages.  Clock decrements the counter when it visits the page.
      */
-    uint16_t                    _ref_count;// +2  -> 10
+    uint16_t _ref_count;// +2  -> 10
+
+    /// Reference count incremented only by X-latching
+    uint16_t _ref_count_ex; // +2 -> 12
 
     /// true if this block is actually used
-    bool _used;          // +1  -> 11
+    bool _used;          // +1  -> 13
     /// Whether this page is swizzled from the parent
-    bool _swizzled;      // +1 -> 12
+    bool _swizzled;      // +1 -> 14
     /// Whether this page is concurrently being swizzled by another thread
-    bool _concurrent_swizzling;      // +1 -> 13
+    bool _concurrent_swizzling;      // +1 -> 15
     /// Filler
-    uint8_t _fill16[3];        // +3 -> 16
+    uint8_t _fill16;        // +1 -> 16
 
     // CS TODO: testing approach of maintaining page LSN in CB
     lsn_t _page_lsn; // +8 -> 24
