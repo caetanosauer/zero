@@ -166,6 +166,12 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     DO_PTHREAD(pthread_mutex_init(&_eviction_lock, NULL));
 
     _cleaner_decoupled = options.get_bool_option("sm_cleaner_decoupled", false);
+
+    int cleaner_int = options.get_int_option("sm_cleaner_interval", 0);
+    if (cleaner_int >= 0) {
+        // Getter will initialize cleaner on demand
+        get_cleaner();
+    }
 }
 
 bf_tree_m::~bf_tree_m()
@@ -206,7 +212,10 @@ bf_tree_m::~bf_tree_m()
 
 page_cleaner_base* bf_tree_m::get_cleaner()
 {
-    w_assert1(smlevel_0::vol);
+    if (!ss_m::vol) {
+        // No volume manager initialized -- no point in starting cleaner
+        return nullptr;
+    }
 
     if (!_cleaner) {
         if(_cleaner_decoupled) {

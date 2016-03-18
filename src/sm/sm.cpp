@@ -244,13 +244,6 @@ ss_m::_construct_once()
         shutdown_clean = true;
     }
 
-    ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer manager");
-
-    bf = new bf_tree_m(_options);
-    if (! bf) {
-        W_FATAL(eOUTOFMEMORY);
-    }
-
     ERROUT(<< "[" << timer.time_ms() << "] Initializing lock manager");
 
     lm = new lock_m(_options);
@@ -302,6 +295,16 @@ ss_m::_construct_once()
     // recovery based on SPR so that it is done explicitly by restart_m below.
     vol = new vol_t(_options,
             instantRestart ? chkpt_info : NULL);
+
+    ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer manager");
+
+    bf = new bf_tree_m(_options);
+    if (! bf) {
+        W_FATAL(eOUTOFMEMORY);
+    }
+
+    ERROUT(<< "[" << timer.time_ms() << "] Building volume manager caches");
+
     if (instantRestart) {
         vol->build_caches(format);
     }
@@ -432,6 +435,7 @@ ss_m::_destruct_once()
 
         // Take a synch checkpoint (blocking) after buffer pool flush but before shutting down
         chkpt->take();
+        bf->get_cleaner()->shutdown();
 
         ERROUT(<< "All pages cleaned successfully");
     }
