@@ -1,27 +1,48 @@
-#include "btree_test_env.h"
-
 #include <sstream>
-
 #include "stopwatch.h"
 #include "sm_options.h"
 #include "log_core.h"
 #include "vol.h"
 
-/*
- * CONFIGURE TEST BEGIN
- */
-int NUM_THREADS = 24;
-const int RUN_SECONDS = 10;
-const int MIN_LOGREC_SIZE = 48;
-const int MAX_LOGREC_SIZE = 8192;
-const int DISTR_MEAN = 192;
-const int DISTR_STDDEV = 64;
-/*
- * CONFIGURE TEST END
- */
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
 
-sm_options options;
+po::options_description options_desc;
+po::variables_map options;
+
+sm_options sm_opt;
 log_core* logcore;
+
+size_t num_threads;
+size_t duration;
+size_t min_logrec_size;
+size_t max_logrec_size;
+size_t distr_mean;
+size_t distr_stddev;
+size_t commit_freq;
+string logdir;
+
+void setup_options()
+{
+    options_desc.add_options()
+    ("threads,t", po::value<size_t>(&num_threads)->default_value(4),
+        "Number of threads to run")
+    ("duration,d", po::value<size_t>(&duration)->default_value(10),
+        "Duration for which to run experiment (in seconds)")
+    ("min", po::value<size_t>(&min_logrec_size)->default_value(48),
+        "Minimum log record size to be generated")
+    ("max", po::value<size_t>(&max_logrec_size)->default_value(8192),
+        "Maximum log record size to be generated")
+    ("mean", po::value<size_t>(&distr_mean)->default_value(192),
+        "Mean log record size to be generated")
+    ("stddev", po::value<size_t>(&distr_stddev)->default_value(64),
+        "Standard deviation of generated log record size")
+    ("commit", po::value<size_t>(&commit_freq)->default_value(0),
+        "Simulate commit by flushing log every N log records")
+    ("logdir,l", po::value<string>(&logdir)->default_value("/dev/shm/log"),
+        "Log directory")
+    ;
+}
 
 class log_inserter_thread : public smthread_t
 {
@@ -39,28 +60,34 @@ public:
     virtual void run ()
     {
         logrec_t logrec;
+        lsn_t lsn;
         std::default_random_engine generator;
-        std::normal_distribution<float> distr(DISTR_MEAN, DISTR_STDDEV);
+        std::normal_distribution<float> distr(distr_mean, distr_stddev);
 
-        long total_time = RUN_SECONDS * 1000000; // microseconds
+        long total_time = duration * 1000000; // microseconds
         stopwatch_t watch;
         long long begin_ts = watch.now();
 
         while (true) {
             unsigned int size = distr(generator);
-            if (size < MIN_LOGREC_SIZE) {
-                size = MIN_LOGREC_SIZE;
+            if (size < min_logrec_size) {
+                size = min_logrec_size;
             }
-            else if (size > MAX_LOGREC_SIZE) {
-                size = MAX_LOGREC_SIZE;
+            else if (size > max_logrec_size) {
+                size = max_logrec_size;
             }
 
             logrec.fill(0, size);
-            W_COERCE(logcore->insert(logrec));
+            W_COERCE(logcore->insert(logrec, &lsn));
             counter++;
             volume += size;
 
-            if (watch.now() - begin_ts > total_time) {
+            if (commit_freq > 0 && counter % commit_freq == 0) {
+                W_COERCE(logcore->flush(lsn));
+            }
+
+            // Only check for expiration every 10k iterations
+            if (counter % 10000 == 0 && watch.now() - begin_ts > total_time) {
                 break;
             }
         }
@@ -78,33 +105,33 @@ public:
 
     virtual void run ()
     {
-        options.set_string_option("sm_logdir", "/dev/shm/log");
-        options.set_bool_option("sm_format", true);
-        logcore = new log_core(options);
+        sm_opt.set_string_option("sm_logdir", logdir);
+        sm_opt.set_bool_option("sm_format", true);
+        logcore = new log_core(sm_opt);
         smlevel_0::log = logcore;
         W_COERCE(logcore->init());
 
-        log_inserter_thread* threads[NUM_THREADS];
-        for (int i = 0; i < NUM_THREADS; i++) {
+        log_inserter_thread* threads[num_threads];
+        for (size_t i = 0; i < num_threads; i++) {
             threads[i] = new log_inserter_thread();
             threads[i]->fork();
         }
 
         long total_count = 0, total_volume = 0;
-        for (int i = 0; i < NUM_THREADS; i++) {
+        for (size_t i = 0; i < num_threads; i++) {
             threads[i]->join();
             total_volume += threads[i]->volume;
             total_count += threads[i]->counter;
             delete threads[i];
         }
 
-        cout << "Thread_count: " << NUM_THREADS << endl;
+        size_t bwidth = (total_volume / duration) / 1048576;
+        cout << "Thread_count: " << num_threads << endl;
         cout << "Total_log_volume: " << (float) total_volume / (1024*1024*1024) << " GB" << endl;
         cout << "Log_record_count: " << total_count << endl;
         cout << "Avg_logrec_size: " << total_volume / total_count << endl;
-        cout << "Total_bandwidth: " << (total_volume / 1048576) << " MB/s" << endl;
-        cout << "Bandwidth_per_thread: " << (total_volume / 1048576) / NUM_THREADS
-            << " MB/s" << endl;
+        cout << "Total_bandwidth: " << bwidth << " MB/s" << endl;
+        cout << "Bandwidth_per_thread: " << bwidth / num_threads << " MB/s" << endl;
 
         logcore->shutdown();
         delete logcore;
@@ -114,15 +141,15 @@ public:
 
 int main(int argc, char** argv)
 {
+    setup_options();
+    po::store(po::parse_command_line(argc, argv, options_desc), options);
+    po::notify(options);
+
     sthread_t::initialize_sthreads_package();
     smthread_t::init_fingerprint_map();
 
-    if (argc > 1) {
-        NUM_THREADS = atoi(argv[1]);
-    }
-
-    cout << "Forking " << NUM_THREADS << " threads for "
-        << RUN_SECONDS << " seconds " << endl;
+    cout << "Forking " << num_threads << " threads for "
+        << duration << " seconds " << endl;
 
     main_thread_t t;
     t.fork();
