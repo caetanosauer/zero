@@ -10,6 +10,7 @@ page_cleaner_base::page_cleaner_base(bf_tree_m* bufferpool, const sm_options& _o
     _clean_lsn(lsn_t(1,0)),
     _stop_requested(false),
     _wakeup_requested(false),
+    _cleaner_busy(false),
     _rounds_completed(0)
 {
     _interval_msec = _options.get_int_option("sm_cleaner_interval_millisec", 1000);
@@ -25,24 +26,29 @@ page_cleaner_base::~page_cleaner_base()
 
 void page_cleaner_base::wakeup(bool wait)
 {
-    unsigned long prev = 0;
-    if (wait) {
-        // Capture current round number before wakeup
-        unique_lock<mutex> lck(_done_mutex);
-        prev = _rounds_completed;
-    }
-
-    // Send wake-up signal
+    unsigned long wait_for_round = 0;
     {
-        lock_guard<mutex> lck(_wakeup_mutex);
+        unique_lock<mutex> lck(_cond_mutex);
+
+        if (wait) {
+            // Capture current round number before wakeup
+            wait_for_round = _rounds_completed + 1;
+            if (_cleaner_busy) { wait_for_round++; }
+        }
+
+        // Send wake-up signal
         _wakeup_requested = true;
         _wakeup_condvar.notify_one();
     }
 
     if (wait) {
         // Wait for cleaner to finish one round
-        unique_lock<mutex> lck(_done_mutex);
-        auto predicate = [this,prev] { return _rounds_completed > prev; };
+        unique_lock<mutex> lck(_cond_mutex);
+        auto predicate = [this, wait_for_round]
+        {
+            return _rounds_completed >= wait_for_round;
+        };
+
         _done_condvar.wait(lck, predicate);
     }
 }
@@ -61,7 +67,7 @@ void page_cleaner_base::run()
 
     while (true) {
         {
-            unique_lock<mutex> lck(_wakeup_mutex);
+            unique_lock<mutex> lck(_cond_mutex);
             if (_interval_msec < 0) {
                 // Only activate upon recieving a wakeup signal
                 _wakeup_condvar.wait(lck, predicate);
@@ -73,14 +79,17 @@ void page_cleaner_base::run()
             }
 
             if (_stop_requested) { break; }
+            _wakeup_requested = false;
+            _cleaner_busy = true;
         }
 
         do_work();
 
         {
             // Notify waiting threads that we are done with this round
-            lock_guard<mutex> lck(_done_mutex);
+            lock_guard<mutex> lck(_cond_mutex);
             _rounds_completed++;
+            _cleaner_busy = false;
             _done_condvar.notify_all();
         }
     }

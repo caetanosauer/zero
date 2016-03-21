@@ -55,6 +55,8 @@ void bf_tree_cleaner::clean_candidates()
             // It's time to flush a portion of the workspace
             log_and_flush(wpos);
             wpos = 0;
+
+            if (should_exit()) { return; }
         }
 
         if (latch_and_copy(pid, idx, wpos)) {

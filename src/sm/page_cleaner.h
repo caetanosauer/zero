@@ -12,6 +12,7 @@
 #include <chrono>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 
 class bf_tree_m;
 class generic_page;
@@ -24,7 +25,11 @@ public:
     void run();
 
     /**
-     * Wakes up the cleaner thread assigned to the given volume.
+     * Wakes up the cleaner thread.
+     * If wait = true, the call will block until the cleaner has performed
+     * at least a full cleaning round. This means that if the cleaner is
+     * currently busy, we will wait for the current round to finish, start
+     * a new round, and wait for that one too.
      */
     void wakeup(bool wait = false);
 
@@ -53,18 +58,20 @@ protected:
 
     lsn_t _clean_lsn;
 
+    bool should_exit() { return _stop_requested; }
+
 private:
 
-    std::mutex _wakeup_mutex;
+    std::mutex _cond_mutex;
     std::condition_variable _wakeup_condvar;
-
-    std::mutex _done_mutex;
     std::condition_variable _done_condvar;
 
     /** whether this thread has been requested to stop. */
-    bool _stop_requested;
+    std::atomic<bool> _stop_requested;
     /** whether this thread has been requested to wakeup. */
     bool _wakeup_requested;
+    /** whether this thread is currently busy (and not waiting for wakeup */
+    bool _cleaner_busy;
     /** number of do_work() rounds already completed by the claner */
     unsigned long _rounds_completed;
 };
