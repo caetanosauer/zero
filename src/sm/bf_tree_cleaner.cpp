@@ -136,11 +136,11 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate()
     {
         switch (policy) {
             case cleaner_policy::highest_refcount:
-                return a.ref_count > b.ref_count;
-            case cleaner_policy::lowest_refcount:
                 return a.ref_count < b.ref_count;
+            case cleaner_policy::lowest_refcount:
+                return a.ref_count > b.ref_count;
             case cleaner_policy::oldest_lsn: default:
-                return a.clean_lsn < b.clean_lsn;
+                return a.clean_lsn > b.clean_lsn;
         }
     };
 }
@@ -167,6 +167,10 @@ void bf_tree_cleaner::collect_candidates()
         candidates.emplace_back(idx, cb);
         if (num_candidates > 0) {
             std::push_heap(candidates.begin(), candidates.end(), heap_cmp);
+            while (candidates.size() > num_candidates) {
+                std::pop_heap(candidates.begin(), candidates.end(), heap_cmp);
+                candidates.pop_back();
+            }
         }
         cb.unpin();
     }
