@@ -109,7 +109,12 @@ CArraySlot* ConsolidationArray::join_slot(int32_t size, carray_status_t &old_cou
                 &info->count, &old_count_cas_tmp, new_count))
             {
                 // CAS succeeded. All done.
-                w_assert1(old_count != 0 || _active_slots[idx] == info);
+                // The assertion below doesn't necessarily hold because of the
+                // ABA problem -- someone else might have grabbed the same slot
+                // and gone through a whole join-release cycle, so that info is
+                // now on a different array position. In general, this second
+                // while loop must not use idx at all.
+                // w_assert1(old_count != 0 || _active_slots[idx] == info);
                 return info;
             }
             else {
