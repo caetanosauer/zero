@@ -94,6 +94,9 @@ private:
 
     // Ignore min write size every N rounds (0 for never)
     size_t min_write_ignore_freq;
+
+    /// Do not clean alloc/stnode pages, which are not managed in the buffer pool
+    bool ignore_metadata;
 };
 
 inline cleaner_policy make_cleaner_policy(string s)

@@ -8,6 +8,8 @@
 #include "generic_page.h"
 #include "fixable_page_h.h"
 #include "log_core.h"
+#include "alloc_cache.h"
+#include "stnode_page.h"
 #include "vol.h"
 #include "eventlog.h"
 #include "sm.h"
@@ -21,6 +23,7 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& option
     num_candidates = options.get_int_option("sm_cleaner_num_candidates", 0);
     min_write_size = options.get_int_option("sm_cleaner_min_write_size", 1);
     min_write_ignore_freq = options.get_int_option("sm_cleaner_min_write_ignore_freq", 0);
+    ignore_metadata = options.get_bool_option("sm_cleaner_ignore_metadata", false);
 
     string pstr = options.get_string_option("sm_cleaner_policy", "");
     policy = make_cleaner_policy(pstr);
@@ -38,6 +41,12 @@ void bf_tree_cleaner::do_work()
 {
     collect_candidates();
     clean_candidates();
+
+    if (!ignore_metadata) {
+        lsn_t dur_lsn = smlevel_0::log->durable_lsn();
+        W_COERCE(smlevel_0::vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
+        W_COERCE(smlevel_0::vol->get_stnode_cache()->write_page(dur_lsn));
+    }
 }
 
 void bf_tree_cleaner::clean_candidates()

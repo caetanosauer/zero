@@ -244,6 +244,8 @@ void Command::setupSMOptions()
         "Page cleaner only writes clusters of pages with this minimum size")
     ("sm_cleaner_min_write_ignore_freq", po::value<int>(),
         "Ignore min_write_size every N rounds of cleaning")
+    ("sm_cleaner_ignore_metadata", po::value<bool>(),
+        "Do not write metadata pages (stnode and alloc caches) in cleaner")
     ("sm_archiver_workspace_size", po::value<int>(),
         "Workspace size archiver")
     ("sm_archiver_block_size", po::value<int>()->default_value(1024*1024),
