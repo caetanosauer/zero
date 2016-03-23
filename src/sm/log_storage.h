@@ -108,15 +108,16 @@ public:
 private:
     shared_ptr<partition_t> create_partition(partition_number_t pnum);
 
-    fs::path        _logpath;
-    fileoff_t               _partition_size;
+    fs::path _logpath;
+    fileoff_t _partition_size;
 
     partition_map_t _partitions;
     shared_ptr<partition_t> _curr_partition;
 
-    skip_log*           _skip_log;
+    skip_log* _skip_log;
 
     unsigned _max_partitions;
+    bool _delete_old_partitions;
 
     // forbid copy
     log_storage(const log_storage&);

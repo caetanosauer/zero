@@ -104,6 +104,8 @@ log_storage::log_storage(const sm_options& options)
     // maximum number of partitions on the filesystem
     _max_partitions = options.get_int_option("sm_log_max_partitions", 0);
 
+    _delete_old_partitions = options.get_bool_option("sm_log_delete_old_partitions", true);
+
     partition_number_t  last_partition = 1;
 
     fs::directory_iterator it(_logpath), eod;
@@ -365,6 +367,8 @@ shared_ptr<partition_t> log_storage::create_partition(partition_number_t pnum)
 
 void log_storage::wakeup_recycler()
 {
+    if (!_delete_old_partitions) { return; }
+
     if (!_recycler_thread) {
         _recycler_thread.reset(new partition_recycler_t(this));
         _recycler_thread->fork();
@@ -374,6 +378,8 @@ void log_storage::wakeup_recycler()
 
 unsigned log_storage::delete_old_partitions(partition_number_t older_than)
 {
+    if (!_delete_old_partitions) { return 0; }
+
     if (older_than == 0 && smlevel_0::chkpt) {
         lsn_t min_lsn = smlevel_0::chkpt->get_min_active_lsn();
         older_than = min_lsn.hi();

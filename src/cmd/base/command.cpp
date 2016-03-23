@@ -161,6 +161,8 @@ void Command::setupSMOptions()
         "Size of a log partition in MB")
     ("sm_log_max_partitions", po::value<int>()->default_value(0),
         "Maximum number of partitions maintained in log directory")
+    ("sm_log_delete_old_partitions", po::value<bool>()->default_value(true),
+        "Whether to delete old log partitions as cleaner and chkpt make progress")
     ("sm_bufpoolsize", po::value<int>()->default_value(1024),
         "Size of buffer pool in MB")
     ("sm_fakeiodelay-enable", po::value<int>()->default_value(0),
