@@ -11,13 +11,32 @@
 
 class Handler {
 public:
-    //invoke performs handler activity
+    Handler() : hout(std::cout)
+    {}
+
+    virtual ~Handler() {};
+
+    virtual void initialize() {};
     virtual void invoke(logrec_t &r) = 0;
-    virtual void finalize() = 0;
+    virtual void finalize() {};
 
     virtual void newFile(const char* /* fname */) {};
 
-    virtual ~Handler() {};
+    Handler(const Handler&) = delete;
+    Handler& operator=(const Handler&) = delete;
+
+    void setFileOutput(string fpath)
+    {
+        fileOutput.reset(new ofstream(fpath));
+        hout = *fileOutput;
+    }
+
+protected:
+    ostream& out() { return hout.get(); }
+
+private:
+    reference_wrapper<ostream> hout;
+    unique_ptr<ofstream> fileOutput;
 };
 
 class PageHandler {

@@ -36,7 +36,7 @@ void LogStats::run()
     LogStatsHandler* h = new LogStatsHandler(isArchive);
     BaseScanner* s = getScanner();
 
-    s->any_handlers.push_back(h);
+    s->add_handler(h);
     s->fork();
     s->join();
 

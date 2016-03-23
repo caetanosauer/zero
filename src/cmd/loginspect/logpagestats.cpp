@@ -51,15 +51,13 @@ void LogPageStats::setupOptions()
 
 void LogPageStats::run()
 {
-    LogPageStatsHandler* h = new LogPageStatsHandler();
+    LogPageStatsHandler h;
     BaseScanner* s = getScanner();
 
-    s->type_handlers.resize(logrec_t::t_max_logrec);
-    s->any_handlers.push_back(h);
+    s->add_handler(&h);
     s->fork();
     s->join();
 
     delete s;
-    delete h;
 }
 

@@ -11,36 +11,22 @@
 
 void BaseScanner::handle(logrec_t* lr)
 {
-    logrec_t& r = *lr;
-    size_t i;
-    for (i=0; i < any_handlers.size(); i++)
-        any_handlers.at(i)->invoke(r);
-    for (i=0; i < pid_handlers.size(); i++)
-        pid_handlers.at(i)->invoke(r);
-    if (r.is_single_sys_xct() || r.tid() != tid_t::null){
-        for (i=0; i < transaction_handlers.size(); i++)
-            transaction_handlers.at(i)->invoke(r);
+    for (auto h : handlers) {
+        h->invoke(*lr);
     }
-    for (i=0; type_handlers.size() > 0 && i < type_handlers.at(r.type()).size(); i++)
-        type_handlers.at(r.type()).at(i)->invoke(r);
 }
 
 void BaseScanner::finalize()
 {
-    size_t i;
-    for (i=0; i < any_handlers.size(); i++)
-        any_handlers.at(i)->finalize();
-    for (i=0; i < pid_handlers.size(); i++)
-        pid_handlers.at(i)->finalize();
-    for (i=0; i < transaction_handlers.size(); i++)
-        transaction_handlers.at(i)->finalize();
-    for (i=0; type_handlers.size() > 0 && i < logrec_t::t_max_logrec; i++)
-    {
-        for (size_t j=0; type_handlers.at(i).size() > 0 &&
-                j < type_handlers.at(i).size(); j++)
-        {
-            type_handlers.at(i).at(j)->finalize();
-        }
+    for (auto h : handlers) {
+        h->finalize();
+    }
+}
+
+void BaseScanner::initialize()
+{
+    for (auto h : handlers) {
+        h->initialize();
     }
 }
 
@@ -110,6 +96,8 @@ string BlockScanner::getNextFile()
 
 void BlockScanner::run()
 {
+    BaseScanner::initialize();
+
     size_t bpos = 0;
     streampos fpos = 0, fend = 0;
     //long count = 0;
@@ -207,6 +195,8 @@ bool runCompare (string a, string b)
 
 void LogArchiveScanner::run()
 {
+    BaseScanner::initialize();
+
     size_t blockSize = options["sm_archiver_block_size"].as<int>();
     LogArchiver::ArchiveDirectory* directory = new
         LogArchiver::ArchiveDirectory(archdir, blockSize);
@@ -280,6 +270,8 @@ MergeScanner::MergeScanner(const po::variables_map& options)
 
 void MergeScanner::run()
 {
+    BaseScanner::initialize();
+
     // CS TODO blockSize not used anymore
     size_t blockSize = options["sm_archiver_block_size"].as<int>();
     size_t bucketSize = options["sm_archiver_bucket_size"].as<int>();

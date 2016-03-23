@@ -52,7 +52,7 @@ void LogAnalysis::run()
         cout << "Performing log full scan ... ";
         BaseScanner* s = getScanner();
         LogAnalysisHandler h;
-        s->any_handlers.push_back(&h);
+        s->add_handler(&h);
         s->fork();
         s->join();
         cout << "done!" << endl;

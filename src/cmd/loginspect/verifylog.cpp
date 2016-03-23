@@ -11,16 +11,15 @@ void VerifyLog::setupOptions()
 void VerifyLog::run()
 {
     BaseScanner* s = getScanner();
-    VerifyHandler* h = new VerifyHandler(merge);
+    VerifyHandler h(merge);
     if (!merge) {
-        s->openFileCallback = std::bind(&VerifyHandler::newFile, h,
+        s->openFileCallback = std::bind(&VerifyHandler::newFile, &h,
             std::placeholders::_1);
     }
-    s->any_handlers.push_back(h);
+    s->add_handler(&h);
     s->fork();
     s->join();
 
-    delete h;
     delete s;
 }
 

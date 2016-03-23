@@ -60,7 +60,6 @@ protected:
     string filename;
 
 private:
-    BaseScanner* scanner;
     size_t limit;
 };
 

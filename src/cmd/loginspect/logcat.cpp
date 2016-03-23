@@ -19,15 +19,13 @@ void LogCat::setupOptions()
 
 void LogCat::run()
 {
-    PrintHandler* h = new PrintHandler();
+    PrintHandler h;
     BaseScanner* s = getScanner();
 
-    s->type_handlers.resize(logrec_t::t_max_logrec);
-    s->any_handlers.push_back(h);
+    s->add_handler(&h);
     s->fork();
     s->join();
 
     delete s;
-    delete h;
 }
 

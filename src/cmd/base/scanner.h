@@ -22,22 +22,25 @@ public:
     {}
 
     virtual ~BaseScanner()
-    {} // TODO do we need to delete the handlers here?
+    {}
 
     void setRestrictFile(string fname) { restrictFile = fname; }
+
+    std::function<void(const char*)> openFileCallback;
+
+    void add_handler(Handler* h)
+    {
+        handlers.push_back(h);
+    }
+
 protected:
     virtual void handle(logrec_t* lr);
     virtual void finalize();
+    virtual void initialize();
     po::variables_map options;
 
-public: // TODO make protected and add register methods
-    std::vector<Handler*> any_handlers;
-    std::vector<Handler*> pid_handlers;
-    std::vector<Handler*> transaction_handlers;
-    std::vector<std::vector<Handler*>> type_handlers;
-    std::function<void(const char*)> openFileCallback;
+    vector<Handler*> handlers;
 
-protected:
     string restrictFile;
 };
 

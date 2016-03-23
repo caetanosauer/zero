@@ -61,7 +61,7 @@ void AggLog::run()
     if (end != logrec_t::t_max_logrec) { filter.set(end); }
 
     BaseScanner* s = getScanner(&filter);
-    s->any_handlers.push_back(&h);
+    s->add_handler(&h);
     s->fork();
     s->join();
     delete s;

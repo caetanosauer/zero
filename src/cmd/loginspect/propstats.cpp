@@ -11,16 +11,21 @@ public:
 
     size_t psize;
 
-    // Histogram that counts how many consecutive pages were written
-    // in each page write operation
-    vector<size_t> consecutive_writes;
-
     // Counter of page writes per second
     size_t page_writes;
 
+    // Counter of transaction commits
+    size_t commits;
+
     PropStatsHandler(size_t psize)
-        : psize(psize), page_writes(0)
-    {}
+        : psize(psize), page_writes(0), commits(0)
+    {
+    }
+
+    virtual void initialize()
+    {
+        out() << "# dirty_pages redo_length page_writes xct_end" << endl;
+    }
 
     virtual void invoke(logrec_t& r)
     {
@@ -57,11 +62,10 @@ public:
                 pid++;
             }
 
-            if (consecutive_writes.size() <= count) {
-                consecutive_writes.resize(count + 1);
-            }
-            consecutive_writes[count]++;
             page_writes += count;
+        }
+        else if (r.type() == logrec_t::t_xct_end) {
+            commits++;
         }
     }
 
@@ -84,21 +88,48 @@ public:
             if (e.second.is_dirty()) { dirty_page_count++; }
         }
 
-        cout << "dirty_pages " << dirty_page_count
-            << " redo_length " << redo_length / 1048576
-            << " page_writes " << page_writes
+        out() << "" << dirty_page_count
+            << " " << redo_length / 1048576
+            << " " << page_writes
+            << " " << commits
             << endl;
 
         page_writes = 0;
+        commits = 0;
+    }
+};
+
+class PropHistogramHandler : public Handler {
+public:
+    // Histogram that counts how many consecutive pages were written
+    // in each page write operation
+    vector<size_t> consecutive_writes;
+
+    virtual void initialize()
+    {
+        out() << "# write_size frequency" << endl;
+    }
+
+    virtual void invoke(logrec_t& r)
+    {
+        if (r.type() == logrec_t::t_page_write) {
+            char* pos = r.data();
+            pos += sizeof(PageID);
+            pos += sizeof(lsn_t);
+            uint32_t count = *((uint32_t*) pos);
+
+            if (consecutive_writes.size() <= count) {
+                consecutive_writes.resize(count + 1);
+            }
+            consecutive_writes[count]++;
+        }
     }
 
     virtual void finalize()
     {
-        cout << "consecutive_writes ";
         for (unsigned i = 0; i < consecutive_writes.size(); i++) {
-            cout << consecutive_writes[i] << " ";
+            out() << i << " " << consecutive_writes[i] << endl;
         }
-        cout << endl;
     };
 };
 
@@ -115,15 +146,19 @@ void PropStats::setupOptions()
 
 void PropStats::run()
 {
-    PropStatsHandler* h = new PropStatsHandler(psize);
     BaseScanner* s = getScanner();
 
-    s->type_handlers.resize(logrec_t::t_max_logrec);
-    s->any_handlers.push_back(h);
+    PropStatsHandler h1{psize};
+    h1.setFileOutput("propstats.txt");
+    s->add_handler(&h1);
+
+    PropHistogramHandler h2;
+    h2.setFileOutput("writesizes.txt");
+    s->add_handler(&h2);
+
     s->fork();
     s->join();
 
     delete s;
-    delete h;
 }
 
