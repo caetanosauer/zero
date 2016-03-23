@@ -55,9 +55,12 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long bf_more_page_write     Over-eight-page writes to volume
 
     // bf cleaner 
-    u_long bf_cleaner_sweeps    Number of sweeps of the bf_cleaner thread
-    u_long bf_cleaner_signalled Number of sweeps initiated by a kick
-    u_long bf_evicted_while_cleaning Page evicted from bp while being cleaned
+    u_long cleaner_sweeps    Number of sweeps of the bf_cleaner thread
+    u_long cleaner_signalled Number of sweeps initiated by a kick
+    u_long evicted_while_cleaning Page evicted from bp while being cleaned
+    u_long cleaner_time_cpu  Time spent manipulating cleaner candidate lists
+    u_long cleaner_time_io   Time spent flushing the cleaner workspace
+    u_long cleaner_time_copy Time spent latching and copy page images into workspace
 	                      
 
     // bf cleaner percieves hot page

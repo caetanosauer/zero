@@ -232,12 +232,16 @@ void Command::setupSMOptions()
         "Enable/Disable decoupled cleaner")
     ("sm_cleaner_interval_millisec", po::value<int>(),
         "Cleaner sleep interval in ms")
-    ("sm_cleaner_write_buffer_pages", po::value<int>(),
-        "Number of buffer pages to write")
+    ("sm_cleaner_workspace_size", po::value<int>(),
+        "Size of cleaner write buffer")
     ("sm_cleaner_num_candidates", po::value<int>(),
         "Number of candidate frames considered by each cleaner round")
     ("sm_cleaner_policy", po::value<string>(),
         "Policy used by cleaner to select candidates")
+    ("sm_cleaner_min_write_size", po::value<int>(),
+        "Page cleaner only writes clusters of pages with this minimum size")
+    ("sm_cleaner_min_write_ignore_freq", po::value<int>(),
+        "Ignore min_write_size every N rounds of cleaning")
     ("sm_archiver_workspace_size", po::value<int>(),
         "Workspace size archiver")
     ("sm_archiver_block_size", po::value<int>()->default_value(1024*1024),

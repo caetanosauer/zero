@@ -58,7 +58,8 @@ protected:
 
     lsn_t _clean_lsn;
 
-    bool should_exit() { return _stop_requested; }
+    bool should_exit() const { return _stop_requested; }
+    unsigned long get_rounds_completed() const { return _rounds_completed; };
 
 private:
 

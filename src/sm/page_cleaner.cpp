@@ -14,7 +14,7 @@ page_cleaner_base::page_cleaner_base(bf_tree_m* bufferpool, const sm_options& _o
     _rounds_completed(0)
 {
     _interval_msec = _options.get_int_option("sm_cleaner_interval_millisec", 1000);
-    _workspace_size = (uint32_t) _options.get_int_option("sm_cleaner_write_buffer_pages", 64);
+    _workspace_size = (uint32_t) _options.get_int_option("sm_cleaner_workspace_size", 128);
 
     _workspace.resize(_workspace_size);
     _workspace_cb_indexes.resize(_workspace_size, 0);

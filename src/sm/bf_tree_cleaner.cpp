@@ -11,6 +11,7 @@
 #include "vol.h"
 #include "eventlog.h"
 #include "sm.h"
+#include "stopwatch.h"
 #include "xct.h"
 #include <vector>
 
@@ -18,6 +19,9 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& option
     : page_cleaner_base(bufferpool, options)
 {
     num_candidates = options.get_int_option("sm_cleaner_num_candidates", 0);
+    min_write_size = options.get_int_option("sm_cleaner_min_write_size", 1);
+    min_write_ignore_freq = options.get_int_option("sm_cleaner_min_write_ignore_freq", 0);
+
     string pstr = options.get_string_option("sm_cleaner_policy", "");
     policy = make_cleaner_policy(pstr);
 
@@ -41,35 +45,58 @@ void bf_tree_cleaner::clean_candidates()
     if (candidates.empty()) {
         return;
     }
+    stopwatch_t timer;
 
     _clean_lsn = smlevel_0::log->curr_lsn();
 
-    PageID prev_pid = 0;
-    size_t wpos = 0;
-    for (auto iter = candidates.begin(); iter != candidates.end(); iter++) {
-        // Latch page and copy image if it's adjacent to previous and workspace
-        // still has room
-        PageID pid = iter->pid;
-        bf_idx idx = iter->idx;
-        if (wpos >= _workspace_size || (wpos != 0 && pid != prev_pid + 1)) {
-            // It's time to flush a portion of the workspace
-            log_and_flush(wpos);
-            wpos = 0;
+    size_t i = 0;
+    bool ignore_min_write = ignore_min_write_now();
+    while (i < candidates.size()) {
+        if (should_exit()) { break; }
 
-            if (should_exit()) { return; }
+        // Get size of current cluster
+        size_t cluster_size = 1;
+        for (size_t j = i + 1; j < candidates.size(); j++) {
+            if (candidates[j].pid != candidates[i].pid + (j - i)) {
+                break;
+            }
+            cluster_size++;
         }
 
-        if (latch_and_copy(pid, idx, wpos)) {
-            wpos++;
-            prev_pid = pid;
+        // Skip if current cluster is too small
+        if (!ignore_min_write && cluster_size < min_write_size) {
+            i++;
+            continue;
         }
+
+        ADD_TSTAT(cleaner_time_cpu, timer.time_us());
+
+        // Copy pages in the cluster to the workspace
+        if (cluster_size > _workspace_size) { cluster_size = _workspace_size; }
+        for (size_t k = 0; k < cluster_size; k++) {
+            PageID pid = candidates[i+k].pid;
+            bf_idx idx = candidates[i+k].idx;
+
+            if (!latch_and_copy(pid, idx, k)) {
+                // If latch failed, cut down the current cluster
+                cluster_size = k;
+                break;
+            }
+        }
+
+        ADD_TSTAT(cleaner_time_copy, timer.time_us());
+
+        log_and_flush(cluster_size);
+        i += cluster_size;
+
+        ADD_TSTAT(cleaner_time_io, timer.time_us());
     }
-
-    if (wpos > 0) { log_and_flush(wpos); }
 }
 
 void bf_tree_cleaner::log_and_flush(size_t wpos)
 {
+    if (wpos == 0) { return; }
+
     flush_workspace(0, wpos);
 
     PageID pid = _workspace[0].pid;
@@ -147,6 +174,7 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate()
 
 void bf_tree_cleaner::collect_candidates()
 {
+    stopwatch_t timer;
     candidates.clear();
 
     // Comparator to be used by the heap
@@ -183,4 +211,6 @@ void bf_tree_cleaner::collect_candidates()
     };
 
     std::sort(candidates.begin(), candidates.end(), lt);
+
+    ADD_TSTAT(cleaner_time_cpu, timer.time_us());
 }

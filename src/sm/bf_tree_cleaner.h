@@ -69,6 +69,13 @@ protected:
     /** Return predicate function object that implements given policy */
     policy_predicate_t get_policy_predicate();
 
+    bool ignore_min_write_now() const
+    {
+        if (min_write_size <= 1) { return true; }
+        return min_write_ignore_freq > 0 &&
+            (get_rounds_completed() % min_write_ignore_freq == 0);
+    }
+
 private:
     void collect_candidates();
     void clean_candidates();
@@ -81,6 +88,12 @@ private:
     /// Cleaner policy options
     size_t num_candidates;
     cleaner_policy policy;
+
+    /// Only write out clusters of pages with this minimum size
+    size_t min_write_size;
+
+    // Ignore min write size every N rounds (0 for never)
+    size_t min_write_ignore_freq;
 };
 
 inline cleaner_policy make_cleaner_policy(string s)
