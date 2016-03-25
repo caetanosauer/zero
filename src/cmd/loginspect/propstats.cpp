@@ -71,13 +71,24 @@ public:
 
     void dumpStats(lsn_t lsn)
     {
-        lsn_t rec_lsn = chkpt.get_min_rec_lsn();
+        // A checkpoint taken with a forward scan does not update rec_lsn
+        // correctly, so it will always be the first update on each page. We
+        // take min_clean_lsn here since it should be a good approximation
+        lsn_t rec_lsn = lsn_t::max;
+        for(buf_tab_t::const_iterator it = chkpt.buf_tab.begin();
+                it != chkpt.buf_tab.end(); ++it)
+        {
+            if (it->second.clean_lsn != lsn_t::null && it->second.clean_lsn < rec_lsn) {
+                rec_lsn = it->second.clean_lsn;
+            }
+        }
+        if (rec_lsn == lsn_t::max) { rec_lsn = lsn_t::null; }
 
         size_t redo_length = 0;
         if (rec_lsn.hi() == lsn.hi()) {
             redo_length = lsn.lo() - rec_lsn.lo();
         }
-        else {
+        else if (rec_lsn != lsn_t::null) {
             w_assert0(lsn > rec_lsn);
             size_t rest = lsn.lo() + psize - rec_lsn.lo();
             redo_length = psize * (lsn.hi() - rec_lsn.hi()) + rest;
