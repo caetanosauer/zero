@@ -161,10 +161,10 @@ void chkpt_t::scan_log()
 
     log_i scan(*smlevel_0::log, scan_start, false); // false == backward scan
     logrec_t r;
-    lsn_t lsn;   // LSN of the retrieved log record
+    lsn_t lsn = lsn_t::max;   // LSN of the retrieved log record
 
     // Set when scan finds begin of previous checkpoint
-    lsn_t scan_stop = 0;
+    lsn_t scan_stop = lsn_t(1,0);
 
     bool insideChkpt = false;
     while (lsn > scan_stop && scan.xct_next(lsn, r))
