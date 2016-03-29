@@ -23,6 +23,7 @@
 #include "dbinspect.h"
 #include "loganalysis.h"
 #include "experiments/restore_cmd.h"
+#include "dbscan.h"
 
 /*
  * Adapted from
@@ -51,7 +52,7 @@ void Command::init()
     REGISTER_COMMAND("mergeruns", MergeRuns);
     REGISTER_COMMAND("verifylog", VerifyLog);
     REGISTER_COMMAND("truncatelog", TruncateLog);
-    //REGISTER_COMMAND("dbstats", DBStats);
+    REGISTER_COMMAND("dbscan", DBScan);
     REGISTER_COMMAND("agglog", AggLog);
     REGISTER_COMMAND("logstats", LogStats);
     REGISTER_COMMAND("logpagestats", LogPageStats);

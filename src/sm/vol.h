@@ -22,7 +22,7 @@ class chkpt_restore_tab_t;
 class vol_t
 {
 public:
-    vol_t(const sm_options&, chkpt_t* chkpt_info);
+    vol_t(const sm_options&, chkpt_t* chkpt_info = nullptr);
     virtual ~vol_t();
 
     void shutdown(bool abrupt);

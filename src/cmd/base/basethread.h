@@ -35,11 +35,11 @@ protected:
     virtual void before_run();
     virtual void after_run();
 
+    static sm_options _options;
+
 private:
     pthread_mutex_t running_mutex;
     xct_t* current_xct;
-
-    static sm_options _options;
 };
 
 #endif

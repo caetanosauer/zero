@@ -32,8 +32,11 @@ void AggLog::run()
         }
     }
 
+    // if no logrec types given, aggregate all types
     if (filter.none()) {
-        throw runtime_error("AggLog requires at least one valid logrec type");
+        for (int i = 0; i < logrec_t::t_max_logrec; i++) {
+            filter.set(i);
+        }
     }
 
     logrec_t::kind_t begin = logrec_t::t_max_logrec;
