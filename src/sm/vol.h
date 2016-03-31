@@ -141,6 +141,8 @@ public:
     /** Method to create _alloc_cache and _stnode_cache */
     void build_caches(bool truncate);
 
+    bool caches_ready() { return _alloc_cache && _stnode_cache; }
+
 private:
     // variables read from volume header -- remain constant after mount
     int              _unix_fd;

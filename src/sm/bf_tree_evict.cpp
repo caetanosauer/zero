@@ -4,13 +4,8 @@
 
 #include "bf_hashtable.cpp"
 
-w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict) {
-#ifdef SIMULATE_MAINMEMORYDB
-    if (true) {
-        ERROUT (<<"MAINMEMORY-DB. _grab_free_block() shouldn't be called. wtf");
-        return RC(eINTERNAL);
-    }
-#endif // SIMULATE_MAINMEMORYDB
+w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
+{
     ret = 0;
     while (true) {
         // once the bufferpool becomes full, getting _freelist_lock everytime will be
@@ -52,13 +47,10 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict) {
     return RCOK;
 }
 
-w_rc_t bf_tree_m::_get_replacement_block() {
-#ifdef SIMULATE_MAINMEMORYDB
-    if (true) {
-        ERROUT (<<"MAINMEMORY-DB. _get_replacement_block() shouldn't be called. wtf");
-        return RC(eINTERNAL);
-    }
-#endif // SIMULATE_MAINMEMORYDB
+w_rc_t bf_tree_m::_get_replacement_block()
+{
+    get_cleaner()->wakeup();
+
     uint32_t evicted_count, unswizzled_count;
 
     /*
@@ -99,7 +91,8 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         uint32_t& unswizzled_count, evict_urgency_t /* urgency */,
         uint32_t preferred_count)
 {
-    _cleaner->wakeup();
+    get_cleaner()->wakeup();
+
     if (preferred_count == 0) {
         preferred_count = EVICT_BATCH_RATIO * _block_cnt + 1;
     }
@@ -133,7 +126,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
             idx = 0;
         }
         if (idx == _eviction_current_frame - 1) {
-            _cleaner->wakeup();
+            get_cleaner()->wakeup();
             if (evicted_count == 0) {
                 DBG(<< "Eviction stuck! Nonleafs: " << nonleaf_count
                         << " invalid parents: " << invalid_parents
