@@ -58,6 +58,7 @@ X_ADD_TESTCASE(test_ringbuffer btree_test_env)
 X_ADD_TESTCASE(test_restore btree_test_env)
 
 X_ADD_TESTCASE(stress_carray sm)
+X_ADD_TESTCASE(stress_cleaner sm)
 
 # CS: this makes sm_plog be compiled even if EXCLUDE_FROM_ALL is set (TODO fix it)
 # X_ADD_TESTCASE(test_plog btree_test_env_plog)

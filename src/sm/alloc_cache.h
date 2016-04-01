@@ -63,6 +63,8 @@ public:
 
     static const size_t extent_size;
 
+    static bool is_alloc_pid(PageID pid) { return pid % extent_size == 0; }
+
 private:
 
     /**

@@ -102,7 +102,7 @@ void page_cleaner_base::flush_workspace(size_t from, size_t to)
     }
 
     // Flush log to guarantee WAL property
-    W_COERCE(smlevel_0::log->flush_all());
+    W_COERCE(smlevel_0::log->flush(_clean_lsn));
 
     W_COERCE(smlevel_0::vol->write_many_pages(
                 _workspace[from].pid, &(_workspace[from]), to - from));

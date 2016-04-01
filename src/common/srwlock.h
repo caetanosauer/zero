@@ -56,6 +56,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #ifndef SRWLOCK_H
 #define SRWLOCK_H
 
+#include "sthread.h"
+
 class mcs_rwlock; // forward
 typedef mcs_rwlock srwlock_t;
 
