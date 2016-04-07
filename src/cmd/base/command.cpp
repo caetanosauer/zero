@@ -1,15 +1,5 @@
 #include "command.h"
 
-//#include "commands/logreplay.h"
-//#include "commands/verifylog.h"
-//#include "commands/dbstats.h"
-//#include "commands/agglog.h"
-//#include "commands/mergerestore.h"
-//#include "commands/cat.h"
-//#include "commands/skew.h"
-//#include "commands/dirtypagestats.h"
-//#include "commands/trace.h"
-
 #include "kits_cmd.h"
 #include "genarchive.h"
 #include "mergeruns.h"
@@ -24,6 +14,8 @@
 #include "loganalysis.h"
 #include "experiments/restore_cmd.h"
 #include "dbscan.h"
+
+#include <boost/foreach.hpp>
 
 /*
  * Adapted from
@@ -119,7 +111,7 @@ Command* Command::parse(int argc, char ** argv)
     return NULL;
 }
 
-void Command::setupSMOptions()
+void Command::setupSMOptions(po::options_description& options)
 {
     boost::program_options::options_description smoptions("Storage Manager Options");
     smoptions.add_options()
@@ -155,6 +147,8 @@ void Command::setupSMOptions()
         "Path to log directory")
     ("sm_dbfile", po::value<string>()->default_value("db"),
         "Path to the file on which to store database pages")
+    ("sm_format", po::value<bool>()->default_value(false),
+        "Format SM by emptying logdir and truncating DB file")
     ("sm_truncate_log", po::value<bool>()->default_value(false)
         ->implicit_value(true),
         "Whether to truncate log partitions at SM shutdown")
@@ -341,7 +335,7 @@ BaseScanner* LogScannerCommand::getScanner(
 
 void LogScannerCommand::setupOptions()
 {
-    setupSMOptions();
+    setupSMOptions(options);
     po::options_description logscanner("Log Scanner Options");
     logscanner.add_options()
         ("logdir,l", po::value<string>(&logdir)->required(),
@@ -360,3 +354,34 @@ void LogScannerCommand::setupOptions()
     options.add(logscanner);
 }
 
+void Command::setSMOptions(sm_options& sm_opt, const po::variables_map& values)
+{
+    BOOST_FOREACH(const po::variables_map::value_type& pair, values)
+    {
+        const std::string& key = pair.first;
+        try {
+            sm_opt.set_int_option(key, values[key].as<int>());
+        }
+        catch(boost::bad_any_cast const& e) {
+            try {
+                cerr << "Set option " << key << " to " << values[key].as<bool>() << endl;
+                sm_opt.set_bool_option(key, values[key].as<bool>());
+            }
+            catch(boost::bad_any_cast const& e) {
+                try {
+                    sm_opt.set_string_option(key, values[key].as<string>());
+                }
+                catch(boost::bad_any_cast const& e) {
+                    try {
+                        sm_opt.set_int_option(key, values[key].as<uint>());
+                    }
+                    catch(boost::bad_any_cast const& e) {
+                        cerr << "Could not process option " << key
+                            << " .. skippking." << endl;
+                        continue;
+                    }
+                }
+            }
+        }
+    };
+}

@@ -23,6 +23,10 @@ public:
     void setCommandString(string s) { commandString = s; }
     void setOptionValues(po::variables_map& vm) { optionValues = vm; }
 
+    /// Options passed down to the storage manager
+    static void setupSMOptions(po::options_description& options);
+    static void setSMOptions(sm_options& sm_opt, const po::variables_map& values);
+
 protected:
     po::options_description options;
     po::variables_map optionValues;
@@ -31,9 +35,6 @@ protected:
 
     /// Options common to all commands (e.g., help and config)
     void setupCommonOptions();
-
-    /// Options passed down to the storage manager
-    void setupSMOptions();
 
     void helpOption();
 

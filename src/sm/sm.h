@@ -1363,14 +1363,14 @@ public:
 
     static rc_t            activate_archiver();
 
+    /** Start-up parameters for the storage engine. */
+    static sm_options _options;
+
     static const sm_options& get_options() { return _options; }
 
 private:
 
     static int _instance_cnt;
-
-    /** Start-up parameters for the storage engine. */
-    static sm_options _options;
 
     void _set_option_logsize();
 

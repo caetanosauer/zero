@@ -24,7 +24,7 @@ add_executable(zapps main.cpp)
 
 set(zapps_LIBS
     # zapps components
-    base
+    zapps_base
     kits
     restore
     loginspect

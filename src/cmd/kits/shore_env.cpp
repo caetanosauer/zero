@@ -35,6 +35,8 @@
 #include "daemons.h"
 #include "util/random_input.h"
 
+// Get SM options spec from command class
+#include "command.h"
 
 #include <boost/algorithm/string.hpp>
 #include <boost/foreach.hpp>
@@ -775,36 +777,8 @@ int ShoreEnv::configure_sm()
 {
     TRACE( TRACE_DEBUG, "Configuring Shore...\n");
 
-    BOOST_FOREACH(const po::variables_map::value_type& pair, optionValues)
-    {
-        const std::string& key = pair.first;
-        try {
-            _popts->set_int_option(key, optionValues[key].as<int>());
-        }
-        catch(boost::bad_any_cast const& e) {
-            try {
-                cerr << "Set option " << key << " to " << optionValues[key].as<bool>() << endl;
-                _popts->set_bool_option(key, optionValues[key].as<bool>());
-            }
-            catch(boost::bad_any_cast const& e) {
-                try {
-                    _popts->set_string_option(key, optionValues[key].as<string>());
-                }
-                catch(boost::bad_any_cast const& e) {
-                    try {
-                        _popts->set_int_option(key, optionValues[key].as<uint>());
-                    }
-                    catch(boost::bad_any_cast const& e) {
-                        cerr << "Could not process option " << key
-                            << " .. skippking." << endl;
-                        continue;
-                    }
-                }
-            }
-        }
-    };
-
     upd_worker_cnt();
+    Command::setSMOptions(*_popts, optionValues);
 
     // If we reached this point the sm is configured correctly
     return (0);

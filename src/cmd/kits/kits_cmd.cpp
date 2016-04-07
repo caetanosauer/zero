@@ -41,6 +41,7 @@ private:
 
 void KitsCommand::setupOptions()
 {
+    setupSMOptions(options);
     boost::program_options::options_description kits("Kits Options");
     kits.add_options()
         ("benchmark,b", po::value<string>(&opt_benchmark)->required(),
@@ -77,7 +78,6 @@ void KitsCommand::setupOptions()
             failure (negative disables)")
     ;
     options.add(kits);
-    setupSMOptions();
 }
 
 KitsCommand::KitsCommand()
