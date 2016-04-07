@@ -1,5 +1,7 @@
 #include "dbscan.h"
 
+#include "allocator.h"
+
 void DBScan::setupOptions()
 {
     boost::program_options::options_description opt("DBScan Options");
@@ -42,7 +44,7 @@ void DBScan::run()
     smlevel_0::vol = vol;
     vol->build_caches(false);
 
-    vector<generic_page> buffer(BUFSIZE);
+    vector<generic_page, memalign_allocator<generic_page>> buffer(BUFSIZE);
 
     PageID pid = 0;
     PageID lastPID = vol->get_last_allocated_pid();
@@ -53,7 +55,7 @@ void DBScan::run()
         W_COERCE(vol->read_many_pages(pid, &buffer[0], count));
 
         for (size_t i = 0; i < count; i++) {
-            handlePage(pid, buffer[i], vol);
+            handlePage(pid++, buffer[i], vol);
         }
     }
 
