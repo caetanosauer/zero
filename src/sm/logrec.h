@@ -185,7 +185,7 @@ public:
 
     void fill(const generic_page_h& p, smsize_t length)
     {
-        w_assert3(p.store() != 0);
+        // w_assert3(p.store() != 0);
         fill(p.pid(), p.store(), p.tag(), length);
     }
 

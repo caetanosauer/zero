@@ -99,6 +99,7 @@ void bf_tree_cleaner::clean_candidates()
         i += cluster_size;
 
         ADD_TSTAT(cleaner_time_io, timer.time_us());
+        ADD_TSTAT(cleaned_pages, cluster_size);
     }
 }
 
@@ -168,17 +169,23 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
 
 policy_predicate_t bf_tree_cleaner::get_policy_predicate()
 {
-    return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
-    {
-        switch (policy) {
-            case cleaner_policy::highest_refcount:
+    switch (policy) {
+        case cleaner_policy::highest_refcount:
+            return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
+            {
                 return a.ref_count < b.ref_count;
-            case cleaner_policy::lowest_refcount:
+            };
+        case cleaner_policy::lowest_refcount:
+            return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
+            {
                 return a.ref_count > b.ref_count;
-            case cleaner_policy::oldest_lsn: default:
+            };
+        case cleaner_policy::oldest_lsn: default:
+            return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
+            {
                 return a.clean_lsn > b.clean_lsn;
-        }
-    };
+            };
+    }
 }
 
 void bf_tree_cleaner::collect_candidates()
@@ -201,14 +208,25 @@ void bf_tree_cleaner::collect_candidates()
             continue;
         }
 
+        // add new element to the back of vector
         candidates.emplace_back(idx, cb);
+
+        // manage heap if we are limiting the number of candidates
         if (num_candidates > 0) {
-            std::push_heap(candidates.begin(), candidates.end(), heap_cmp);
-            while (candidates.size() > num_candidates) {
-                std::pop_heap(candidates.begin(), candidates.end(), heap_cmp);
-                candidates.pop_back();
+            if (candidates.size() < num_candidates ||
+                    heap_cmp(candidates.front(), candidates.back()))
+            {
+                // if it's among the top-k candidates, push it into the heap
+                std::push_heap(candidates.begin(), candidates.end(), heap_cmp);
+                while (candidates.size() > num_candidates) {
+                    std::pop_heap(candidates.begin(), candidates.end(), heap_cmp);
+                    candidates.pop_back();
+                }
             }
+            // otherwise just remove it
+            else { candidates.pop_back(); }
         }
+
         cb.unpin();
     }
 
