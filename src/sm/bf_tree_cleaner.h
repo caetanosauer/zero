@@ -18,7 +18,8 @@ class bf_tree_m;
 enum class cleaner_policy {
     highest_refcount,
     lowest_refcount,
-    oldest_lsn
+    oldest_lsn,
+    mixed
 };
 
 /**
@@ -46,6 +47,7 @@ using policy_predicate_t =
     std::function<bool(const cleaner_cb_info&, const cleaner_cb_info&)>;
 
 class bf_tree_cleaner : public page_cleaner_base {
+    friend class candidate_collector_thread;
 public:
     /**
      * Constructs this object. This merely allocates arrays and objects.
@@ -82,8 +84,13 @@ private:
     void log_and_flush(size_t wpos);
     bool latch_and_copy(PageID, bf_idx, size_t wpos);
 
-    /** List of candidate dirty frames to be considered for cleaning */
-    std::vector<cleaner_cb_info> candidates;
+    /**
+     * List of candidate dirty frames to be considered for cleaning.
+     * We use two lists -- one is filled in parallel by the candidate collector
+     * thread and the other, already collected one, is used to copy and flush.
+     */
+    unique_ptr<vector<cleaner_cb_info>> next_candidates;
+    unique_ptr<vector<cleaner_cb_info>> curr_candidates;
 
     /// Cleaner policy options
     size_t num_candidates;
@@ -104,6 +111,7 @@ inline cleaner_policy make_cleaner_policy(string s)
     if (s == "highest_refcount") { return cleaner_policy::highest_refcount; }
     if (s == "lowest_refcount") { return cleaner_policy::lowest_refcount; }
     if (s == "oldest_lsn") { return cleaner_policy::oldest_lsn; }
+    if (s == "mixed") { return cleaner_policy::mixed; }
     return cleaner_policy::oldest_lsn;
 }
 

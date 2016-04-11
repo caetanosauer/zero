@@ -17,8 +17,25 @@
 #include "xct.h"
 #include <vector>
 
+class candidate_collector_thread : public smthread_t
+{
+public:
+    candidate_collector_thread(bf_tree_cleaner* cleaner)
+        : cleaner(cleaner) {};
+    virtual ~candidate_collector_thread() {};
+
+    virtual void run()
+    {
+        cleaner->collect_candidates();
+    }
+private:
+    bf_tree_cleaner* cleaner;
+};
+
 bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& options)
-    : page_cleaner_base(bufferpool, options)
+    : page_cleaner_base(bufferpool, options),
+    next_candidates(new vector<cleaner_cb_info>()),
+    curr_candidates(new vector<cleaner_cb_info>())
 {
     num_candidates = options.get_int_option("sm_cleaner_num_candidates", 0);
     min_write_size = options.get_int_option("sm_cleaner_min_write_size", 1);
@@ -29,7 +46,8 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& option
     policy = make_cleaner_policy(pstr);
 
     if (num_candidates > 0) {
-        candidates.reserve(num_candidates);
+        next_candidates->reserve(num_candidates);
+        curr_candidates->reserve(num_candidates);
     }
 }
 
@@ -39,19 +57,31 @@ bf_tree_cleaner::~bf_tree_cleaner()
 
 void bf_tree_cleaner::do_work()
 {
-    collect_candidates();
-    clean_candidates();
+    // fill up list of next candidates
+    next_candidates->clear();
+    candidate_collector_thread t(this);
+    t.fork();
+
+    // if there's something in the current list, clean it
+    if (curr_candidates->size() > 0) {
+        clean_candidates();
+    }
 
     if (!ignore_metadata) {
         lsn_t dur_lsn = smlevel_0::log->durable_lsn();
         W_COERCE(smlevel_0::vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
         W_COERCE(smlevel_0::vol->get_stnode_cache()->write_page(dur_lsn));
     }
+
+    // wait for collector and swap next list into current
+    t.join();
+    w_assert1(curr_candidates->empty());
+    curr_candidates.swap(next_candidates);
 }
 
 void bf_tree_cleaner::clean_candidates()
 {
-    if (candidates.empty()) {
+    if (curr_candidates->empty()) {
         return;
     }
     stopwatch_t timer;
@@ -60,13 +90,13 @@ void bf_tree_cleaner::clean_candidates()
 
     size_t i = 0;
     bool ignore_min_write = ignore_min_write_now();
-    while (i < candidates.size()) {
+    while (i < curr_candidates->size()) {
         if (should_exit()) { break; }
 
         // Get size of current cluster
         size_t cluster_size = 1;
-        for (size_t j = i + 1; j < candidates.size(); j++) {
-            if (candidates[j].pid != candidates[i].pid + (j - i)) {
+        for (size_t j = i + 1; j < curr_candidates->size(); j++) {
+            if (curr_candidates->at(j).pid != curr_candidates->at(i).pid + (j - i)) {
                 break;
             }
             cluster_size++;
@@ -83,8 +113,8 @@ void bf_tree_cleaner::clean_candidates()
         // Copy pages in the cluster to the workspace
         if (cluster_size > _workspace_size) { cluster_size = _workspace_size; }
         for (size_t k = 0; k < cluster_size; k++) {
-            PageID pid = candidates[i+k].pid;
-            bf_idx idx = candidates[i+k].idx;
+            PageID pid = curr_candidates->at(i+k).pid;
+            bf_idx idx = curr_candidates->at(i+k).idx;
 
             if (!latch_and_copy(pid, idx, k)) {
                 // If latch failed, cut down the current cluster
@@ -101,6 +131,8 @@ void bf_tree_cleaner::clean_candidates()
         ADD_TSTAT(cleaner_time_io, timer.time_us());
         ADD_TSTAT(cleaned_pages, cluster_size);
     }
+
+    curr_candidates->clear();
 }
 
 void bf_tree_cleaner::log_and_flush(size_t wpos)
@@ -131,6 +163,7 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     page.fix_nonbufferpool_page(const_cast<generic_page*>(&page_buffer[idx]));
     if (page.pid() != pid) {
         // New page was loaded in the frame -- skip it
+        cb.latch().latch_release();
         return false;
     }
 
@@ -180,7 +213,7 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate()
             {
                 return a.ref_count > b.ref_count;
             };
-        case cleaner_policy::oldest_lsn: default:
+        case cleaner_policy::oldest_lsn: default: // mixed also falls here
             return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
             {
                 return a.clean_lsn > b.clean_lsn;
@@ -191,12 +224,18 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate()
 void bf_tree_cleaner::collect_candidates()
 {
     stopwatch_t timer;
-    candidates.clear();
+    w_assert1(next_candidates->empty());
 
     // Comparator to be used by the heap
     auto heap_cmp = get_policy_predicate();
 
     bf_idx block_cnt = _bufferpool->_block_cnt;
+
+    // mixed policy = ignore null clean LSNs every 2 rounds
+    bool ignore_empty_clean_lsn = false;
+    if (policy == cleaner_policy::mixed) {
+        ignore_empty_clean_lsn = get_rounds_completed() % 4 != 0;
+    }
 
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
         bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
@@ -208,23 +247,28 @@ void bf_tree_cleaner::collect_candidates()
             continue;
         }
 
+        if (cb.get_clean_lsn() == lsn_t::null && ignore_empty_clean_lsn) {
+            cb.unpin();
+            continue;
+        }
+
         // add new element to the back of vector
-        candidates.emplace_back(idx, cb);
+        next_candidates->emplace_back(idx, cb);
 
         // manage heap if we are limiting the number of candidates
         if (num_candidates > 0) {
-            if (candidates.size() < num_candidates ||
-                    heap_cmp(candidates.front(), candidates.back()))
+            if (next_candidates->size() < num_candidates ||
+                heap_cmp(next_candidates->front(), next_candidates->back()))
             {
                 // if it's among the top-k candidates, push it into the heap
-                std::push_heap(candidates.begin(), candidates.end(), heap_cmp);
-                while (candidates.size() > num_candidates) {
-                    std::pop_heap(candidates.begin(), candidates.end(), heap_cmp);
-                    candidates.pop_back();
+                std::push_heap(next_candidates->begin(), next_candidates->end(), heap_cmp);
+                while (next_candidates->size() > num_candidates) {
+                    std::pop_heap(next_candidates->begin(), next_candidates->end(), heap_cmp);
+                    next_candidates->pop_back();
                 }
             }
             // otherwise just remove it
-            else { candidates.pop_back(); }
+            else { next_candidates->pop_back(); }
         }
 
         cb.unpin();
@@ -237,7 +281,7 @@ void bf_tree_cleaner::collect_candidates()
         return a.pid < b.pid;
     };
 
-    std::sort(candidates.begin(), candidates.end(), lt);
+    std::sort(next_candidates->begin(), next_candidates->end(), lt);
 
     ADD_TSTAT(cleaner_time_cpu, timer.time_us());
 }
