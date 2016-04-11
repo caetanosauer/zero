@@ -67,7 +67,7 @@ PageID get_next_pid_trace()
         }
         i = 0;
     }
-    if (i % 100000 == 0) { cout << i << endl; }
+    // if (i % 100000 == 0) { cout << i << endl; }
     return pid_trace[i++];
 }
 
@@ -196,6 +196,12 @@ public:
         smlevel_0::log = new log_core(sm_opt);
         smlevel_0::log->init();
 
+        bool archiving = sm_opt.get_bool_option("sm_archiving", false);
+        if (archiving) {
+            smlevel_0::logArchiver = new LogArchiver(sm_opt);
+            smlevel_0::logArchiver->fork();
+        }
+
         vol = new vol_t(sm_opt, nullptr);
         bf = new bf_tree_m(sm_opt);
 
@@ -203,16 +209,22 @@ public:
         smlevel_0::vol = vol;
 
         vol->build_caches(true /*format*/);
-        bf->get_cleaner();
         init_bf();
         load_trace();
 
+        cout << "stress_cleaner initialization done!" << endl;
+
+        bf->get_cleaner();
         page_dirtier_thread dirtier;
         dirtier.fork();
         dirtier.join();
 
         bf->shutdown();
         vol->shutdown(false);
+        if (archiving) {
+            smlevel_0::logArchiver->shutdown();
+            delete smlevel_0::logArchiver;
+        }
         smlevel_0::log->shutdown();
 
         delete bf;

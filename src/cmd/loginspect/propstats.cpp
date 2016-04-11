@@ -2,6 +2,8 @@
 
 #include "log_core.h"
 #include "log_storage.h"
+#include "stnode_page.h"
+#include "alloc_cache.h"
 
 class PropStatsHandler : public Handler {
 public:
@@ -17,14 +19,17 @@ public:
     // Counter of transaction commits
     size_t commits;
 
+    // Counter of page updates
+    size_t updates;
+
     PropStatsHandler(size_t psize)
-        : psize(psize), page_writes(0), commits(0)
+        : psize(psize), page_writes(0), commits(0), updates(0)
     {
     }
 
     virtual void initialize()
     {
-        out() << "# dirty_pages redo_length page_writes xct_end" << endl;
+        out() << "# dirty_pages redo_length page_writes xct_end updates" << endl;
     }
 
     virtual void invoke(logrec_t& r)
@@ -36,6 +41,13 @@ public:
         }
         // Code copied from chkpt_t::scan_log
         if (r.is_page_update()) {
+            // Ignore metadata pages
+            if (r.pid() % alloc_cache_t::extent_size == 0 ||
+                    r.pid() == stnode_page::stpid)
+            {
+                return;
+            }
+
             lsn_t lsn = r.lsn();
             w_assert0(r.is_redo());
             chkpt.mark_page_dirty(r.pid(), lsn, lsn);
@@ -44,6 +56,7 @@ public:
                 w_assert0(r.pid2() != 0);
                 chkpt.mark_page_dirty(r.pid2(), lsn, lsn);
             }
+            updates++;
         }
         else if (r.type() == logrec_t::t_page_write) {
             char* pos = r.data();
@@ -93,6 +106,7 @@ public:
             size_t rest = lsn.lo() + psize - rec_lsn.lo();
             redo_length = psize * (lsn.hi() - rec_lsn.hi()) + rest;
         }
+        ERROUT(<< "min_rec_lsn: " << rec_lsn);
 
         size_t dirty_page_count = 0;
         for (auto e : chkpt.buf_tab) {
@@ -103,10 +117,12 @@ public:
             << " " << redo_length / 1048576
             << " " << page_writes
             << " " << commits
+            << " " << updates
             << endl;
 
         page_writes = 0;
         commits = 0;
+        updates = 0;
     }
 };
 

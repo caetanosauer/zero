@@ -881,6 +881,12 @@ operator<<(ostream& o, const logrec_t& l)
                 o << " root_pid: " << *((PageID*) (l.data_ssx() + sizeof(StoreID)));
                 break;
             }
+        case t_page_write:
+            {
+                PageID first = *((PageID*) (l.data()));
+                PageID last = first + *((uint32_t*) (l.data() + sizeof(PageID) + sizeof(lsn_t))) - 1;
+                o << " pids: " << first << "-" << last;
+            }
 
 
         default: /* nothing */

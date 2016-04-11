@@ -189,13 +189,16 @@ void KitsCommand::runBenchmarkSpec()
         forkClients();
 
         int remaining = opt_warmup;
-        while (remaining > 0) {
+        while (remaining > 1) {
             remaining = ::sleep(remaining);
         }
 
         joinClients();
-        // sleep some more to get a gap in the log ticks
-        ::sleep(5);
+
+        if (opt_warmup > 1) {
+            // sleep some more to get a gap in the log ticks
+            ::sleep(5);
+        }
     }
 
     stopwatch_t timer;
