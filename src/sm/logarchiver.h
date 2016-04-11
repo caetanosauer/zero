@@ -19,6 +19,8 @@
 class sm_options;
 class LogScanner;
 
+typedef int32_t run_number_t;
+
 /** \brief Object to control execution of background threads.
  *
  * Encapsulates an activation loop that relies on pthread condition variables.
@@ -252,7 +254,7 @@ public:
         };
         struct BlockHeader {
             uint32_t entries;
-            uint8_t blockNumber;
+            uint32_t blockNumber;
         };
         struct RunInfo {
             lsn_t firstLSN;
@@ -385,8 +387,8 @@ public:
     class WriterThread : public BaseThread {
     private:
         ArchiveDirectory* directory;
-        uint8_t currentRun;
         lsn_t maxLSNInRun;
+        run_number_t currentRun;
 
     public:
         virtual void run();
@@ -405,7 +407,7 @@ public:
         WriterThread(AsyncRingBuffer* writebuf, ArchiveDirectory* directory)
             :
               BaseThread(writebuf, "LogArchiver_WriterThread"),
-              directory(directory), currentRun(0), maxLSNInRun(lsn_t::null)
+              directory(directory), maxLSNInRun(lsn_t::null), currentRun(0)
         {
         }
 
@@ -446,7 +448,7 @@ public:
         BlockAssembly(ArchiveDirectory* directory);
         virtual ~BlockAssembly();
 
-        bool start(int run);
+        bool start(run_number_t run);
         bool add(logrec_t* lr);
         void finish();
         void shutdown();
@@ -458,7 +460,7 @@ public:
         }
 
         // methods that abstract block metadata
-        static int getRunFromBlock(const char* b);
+        static run_number_t getRunFromBlock(const char* b);
         static lsn_t getLSNFromBlock(const char* b);
         static size_t getEndOfBlock(const char* b);
     private:
@@ -474,7 +476,7 @@ public:
         // PageID lastPID;
         lsn_t maxLSNInBlock;
         int maxLSNLength;
-        int lastRun;
+        run_number_t lastRun;
 
         // if using a variable-bucket index, this is the number of page IDs
         // that will be stored within a bucket (aka restore's segment)
@@ -485,9 +487,9 @@ public:
         size_t nextBucket;
     public:
         struct BlockHeader {
-            uint8_t run;
-            uint32_t end;
             lsn_t lsn;
+            uint32_t end;
+            run_number_t run;
         };
 
     };
@@ -651,28 +653,28 @@ public:
         logrec_t* top();
         void pop();
 
-        int topRun() { return w_heap.First().run; }
+        run_number_t topRun() { return w_heap.First().run; }
         size_t size() { return w_heap.NumElements(); }
     private:
-        uint8_t currentRun;
+        run_number_t currentRun;
         bool filledFirst;
         mem_mgmt_t* workspace;
 
         mem_mgmt_t::slot_t allocate(size_t length);
 
         struct HeapEntry {
-            uint8_t run;
-            PageID pid;
-            lsn_t lsn;
             mem_mgmt_t::slot_t slot;
+            lsn_t lsn;
+            run_number_t run;
+            PageID pid;
 
-            HeapEntry(uint8_t run, PageID pid, lsn_t lsn,
+            HeapEntry(run_number_t run, PageID pid, lsn_t lsn,
                     mem_mgmt_t::slot_t slot)
-                : run(run), pid(pid), lsn(lsn), slot(slot)
+                : slot(slot), lsn(lsn), run(run), pid(pid)
             {}
 
             HeapEntry()
-                : run(0), pid(0), lsn(lsn_t::null), slot(NULL, 0)
+                : slot(NULL, 0), lsn(lsn_t::null), run(0), pid(0)
             {}
 
             friend std::ostream& operator<<(std::ostream& os,
@@ -809,7 +811,7 @@ public:
      */
     const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
     const static int DFT_WSPACE_SIZE= 100; // 100MB
-    const static bool DFT_EAGER = false;
+    const static bool DFT_EAGER = true;
     const static bool DFT_READ_WHOLE_BLOCKS = true;
     const static int DFT_GRACE_PERIOD = 1000000; // 1 sec
 

@@ -287,7 +287,7 @@ void LogArchiver::WriterThread::run()
 
         DBGTHRD(<< "Picked block for write " << (void*) src);
 
-        int run = BlockAssembly::getRunFromBlock(src);
+        run_number_t run = BlockAssembly::getRunFromBlock(src);
         if (currentRun != run) {
             // when writer is restarted, currentRun resets to zero
             w_assert1(currentRun == 0 || run == currentRun + 1);
@@ -677,9 +677,6 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
             fname << archdir << "/" << LogArchiver::RUN_PREFIX
                 << lastLSN << "-" << runEndLSN;
 
-            std::string currentFName = archdir + "/" + CURR_RUN_FILE;
-            W_DO(me()->frename(appendFd, currentFName.c_str(), fname.str().c_str()));
-
             // register index information and write it on end of file
             if (archIndex && appendPos > 0) {
                 // take into account space for skip log record
@@ -689,6 +686,9 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
                 appendPos += blockSize;
                 archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
             }
+
+            std::string currentFName = archdir + "/" + CURR_RUN_FILE;
+            W_DO(me()->frename(appendFd, currentFName.c_str(), fname.str().c_str()));
 
             DBGTHRD(<< "Closing current output run: " << fname.str());
         }
@@ -941,7 +941,7 @@ bool LogArchiver::selection()
         return false;
     }
 
-    int run = heap->topRun();
+    run_number_t run = heap->topRun();
     if (!blkAssemb->start(run)) {
         return false;
     }
@@ -997,7 +997,7 @@ bool LogArchiver::BlockAssembly::hasPendingBlocks()
     return !writebuf->isEmpty();
 }
 
-int LogArchiver::BlockAssembly::getRunFromBlock(const char* b)
+run_number_t LogArchiver::BlockAssembly::getRunFromBlock(const char* b)
 {
     BlockHeader* h = (BlockHeader*) b;
     return h->run;
@@ -1015,7 +1015,7 @@ size_t LogArchiver::BlockAssembly::getEndOfBlock(const char* b)
     return h->end;
 }
 
-bool LogArchiver::BlockAssembly::start(int run)
+bool LogArchiver::BlockAssembly::start(run_number_t run)
 {
     DBGTHRD(<< "Requesting write block for selection");
     dest = writebuf->producerRequest();
@@ -2029,6 +2029,7 @@ rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
         fileoff_t offset)
 {
     CRITICAL_SECTION(cs, mutex);
+    w_assert1(offset % blockSize == 0);
 
     // check if it isn't an empty run (from truncation)
     if (offset > 0 && lastFinished < (int) runs.size()) {
