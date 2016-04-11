@@ -1619,6 +1619,7 @@ void xct_t::_update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) 
             //const_cast<fixable_page_h*>(page)->set_dirty();
         } else {
             // CS TODO: this does not work! Fix eviction and get rid of this!
+            w_assert0(false);
             // In some log type (so far only log_page_evict), we might update LSN only with
             // SH latch. In that case, we might have a race to update the LSN.
             // We should leave a larger value of LSN in that case.

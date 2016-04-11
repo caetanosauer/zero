@@ -1726,6 +1726,14 @@ bool LogArchiver::shouldActivate(bool logTooSlow)
         if (control.endLSN <= nextActLSN) {
             return false;
         }
+        if (control.endLSN.lo() == 0) {
+            // If durable_lsn is at the beginning of a new log partition,
+            // it can happen that at this point the file was not created
+            // yet, which would cause the reader thread to fail. This does
+            // not happen with eager archiving, so we should eventually
+            // remove it
+            return false;
+        }
         DBGTHRD(<< "Adjusted activation window to block boundary " <<
                 control.endLSN);
     }
