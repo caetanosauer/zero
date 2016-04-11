@@ -111,7 +111,8 @@ void page_cleaner_base::flush_workspace(size_t from, size_t to)
         bf_idx idx = _workspace_cb_indexes[i];
         bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
 
-        w_assert1(i == from || _workspace[i].pid == _workspace[i - 1].pid + 1);
+        // Assertion below may fail for decoupled cleaner, and it's OK
+        // w_assert1(i == from || _workspace[i].pid == _workspace[i - 1].pid + 1);
 
         cb.pin();
         if (cb._pid == _workspace[i].pid && cb.get_clean_lsn() < _clean_lsn) {

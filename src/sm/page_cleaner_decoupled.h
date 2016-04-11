@@ -18,7 +18,6 @@ protected:
     virtual void do_work();
 
 private:
-    bool workspace_empty;
     void fill_cb_indexes();
 };
 
