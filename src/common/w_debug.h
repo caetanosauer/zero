@@ -241,6 +241,7 @@ extern w_debug _w_debug;
 #endif
 
 #define DBG1(a) DBGOUT1(a)
+#define DBG2(a) DBGOUT2(a)
 #define DBG3(a) DBGOUT3(a)
 #define DBG5(a) DBGOUT5(a)
 
@@ -281,7 +282,7 @@ extern w_debug _w_debug;
 #endif *//* defined(W_TRACE) */
 /* ************************************************************************  */
 
-#define DBG2(a,f,l) DBGPRINT(a,f,l) // used by smthread.h
+// #define DBG2(a,f,l) DBGPRINT(a,f,l) // used by smthread.h
 
 #define DBGTHRD(arg) DBG(<<" th."<<sthread_t::me()->id << " " arg)
 

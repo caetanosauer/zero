@@ -16,7 +16,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
             CRITICAL_SECTION(cs, &_freelist_lock);
             if (_freelist_len > 0) { // here, we do the real check
                 bf_idx idx = FREELIST_HEAD;
-                DBGTHRD(<< "Grabbing idx " << idx);
+                DBG3(<< "Grabbing idx " << idx);
                 w_assert1(_is_valid_idx(idx));
                 // w_assert1 (!get_cb(idx)._used);
                 ret = idx;
@@ -28,7 +28,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
                     FREELIST_HEAD = _freelist[idx];
                     w_assert1 (FREELIST_HEAD > 0 && FREELIST_HEAD < _block_cnt);
                 }
-                DBGTHRD(<< "New head " << FREELIST_HEAD);
+                DBG3(<< "New head " << FREELIST_HEAD);
                 w_assert1(ret != FREELIST_HEAD);
                 return RCOK;
             }
@@ -68,7 +68,7 @@ w_rc_t bf_tree_m::_get_replacement_block()
             return RCOK;
         }
         g_me()->sleep(100);
-        DBGOUT1(<<"woke up. now there should be some page to evict. urgency=" << urgency);
+        DBG3(<<"woke up. now there should be some page to evict. urgency=" << urgency);
         // debug_dump(std::cout);
     }
 
@@ -128,7 +128,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         if (idx == _eviction_current_frame - 1) {
             get_cleaner()->wakeup();
             if (evicted_count == 0) {
-                DBG(<< "Eviction stuck! Nonleafs: " << nonleaf_count
+                DBG1(<< "Eviction stuck! Nonleafs: " << nonleaf_count
                         << " invalid parents: " << invalid_parents
                         << " dirty: " << dirty_count);
                 rounds++;
@@ -237,7 +237,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         parent_h.fix_nonbufferpool_page(parent);
         lsn_t old = parent_h.get_emlsn_general(child_slotid);
         if (old < _buffer[idx].lsn) {
-            DBGOUT1(<< "Updated EMLSN on page " << parent_h.pid()
+            DBG3(<< "Updated EMLSN on page " << parent_h.pid()
                     << " slot=" << child_slotid
                     << " (child pid=" << pid << ")"
                     << ", OldEMLSN=" << old << " NewEMLSN=" << _buffer[idx].lsn);
@@ -268,7 +268,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         bool removed = _hashtable->remove(pid);
         w_assert1(removed);
 
-        DBG3(<< "EVICTED " << idx << " pid " << pid);
+        DBG2(<< "EVICTED " << idx << " pid " << pid);
         cb.clear_except_latch();
         // -1 indicates page was evicted (i.e., it's invalid and can be read into)
         cb._pin_cnt = -1;
