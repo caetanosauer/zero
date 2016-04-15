@@ -166,7 +166,8 @@ void chkpt_t::scan_log()
     // Set when scan finds begin of previous checkpoint
     lsn_t scan_stop = lsn_t(1,0);
 
-    bool insideChkpt = false;
+    // CS TODO: not needed with file serialization
+    // bool insideChkpt = false;
     while (lsn > scan_stop && scan.xct_next(lsn, r))
     {
         if (r.is_skip() || r.type() == logrec_t::t_comment) {
@@ -204,52 +205,67 @@ void chkpt_t::scan_log()
         switch (r.type())
         {
             case logrec_t::t_chkpt_begin:
-                if (insideChkpt) {
-                    // Signal to stop backward log scan loop now
-                    scan_stop = lsn;
+                // CS TODO: not needed with file serialization
+                // if (insideChkpt) {
+                //     // Signal to stop backward log scan loop now
+                //     scan_stop = lsn;
+                // }
+                {
+                    fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn);
+                    if (fs::exists(fpath)) {
+                        ifstream ifs(fpath.string(), ios::binary);
+                        deserialize_binary(ifs);
+                        ifs.close();
+                        scan_stop = lsn;
+                    }
                 }
+
                 break;
 
             case logrec_t::t_chkpt_bf_tab:
-                if (insideChkpt) {
-                    const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
-                    for (uint i = 0; i < dp->count; i++) {
-                        mark_page_dirty(dp->brec[i].pid, dp->brec[i].page_lsn,
-                                dp->brec[i].rec_lsn);
-                    }
-                }
+                // CS TODO: not needed with file serialization
+                // if (insideChkpt) {
+                //     const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
+                //     for (uint i = 0; i < dp->count; i++) {
+                //         mark_page_dirty(dp->brec[i].pid, dp->brec[i].page_lsn,
+                //                 dp->brec[i].rec_lsn);
+                //     }
+                // }
                 break;
 
 
             case logrec_t::t_chkpt_xct_lock:
-                if (insideChkpt) {
-                    const chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r.data();
-                    if (is_xct_active(dp->tid)) {
-                        for (uint i = 0; i < dp->count; i++) {
-                            add_lock(dp->tid, dp->xrec[i].lock_mode,
-                                    dp->xrec[i].lock_hash);
-                        }
-                    }
-                }
+                // CS TODO: not needed with file serialization
+                // if (insideChkpt) {
+                //     const chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r.data();
+                //     if (is_xct_active(dp->tid)) {
+                //         for (uint i = 0; i < dp->count; i++) {
+                //             add_lock(dp->tid, dp->xrec[i].lock_mode,
+                //                     dp->xrec[i].lock_hash);
+                //         }
+                //     }
+                // }
                 break;
 
             case logrec_t::t_chkpt_xct_tab:
-                if (insideChkpt) {
-                    const chkpt_xct_tab_t* dp = (chkpt_xct_tab_t*) r.data();
-                    for (size_t i = 0; i < dp->count; ++i) {
-                        tid_t tid = dp->xrec[i].tid;
-                        w_assert1(!tid.is_null());
-                        mark_xct_active(tid, dp->xrec[i].first_lsn,
-                                dp->xrec[i].last_lsn);
-                    }
-                }
+                // CS TODO: not needed with file serialization
+                // if (insideChkpt) {
+                //     const chkpt_xct_tab_t* dp = (chkpt_xct_tab_t*) r.data();
+                //     for (size_t i = 0; i < dp->count; ++i) {
+                //         tid_t tid = dp->xrec[i].tid;
+                //         w_assert1(!tid.is_null());
+                //         mark_xct_active(tid, dp->xrec[i].first_lsn,
+                //                 dp->xrec[i].last_lsn);
+                //     }
+                // }
                 break;
 
 
-            case logrec_t::t_chkpt_end:
+                // CS TODO: not needed with file serialization
+            // case logrec_t::t_chkpt_end:
                 // checkpoints should not run concurrently
-                w_assert0(!insideChkpt);
-                insideChkpt = true;
+                // w_assert0(!insideChkpt);
+                // insideChkpt = true;
                 break;
 
             // CS TODO: why do we need this? Isn't it related to 2PC?
@@ -300,9 +316,7 @@ void chkpt_t::scan_log()
                 break;
 
             case logrec_t::t_chkpt_backup_tab:
-                if (insideChkpt) {
-                    // CS TODO
-                }
+                // CS TODO
                 break;
 
             case logrec_t::t_restore_begin:
@@ -673,26 +687,136 @@ void chkpt_m::take()
 
     // Insert chkpt_begin log record.
     logrec_t* logrec = new logrec_t;
-    LOG_INSERT(chkpt_begin_log(lsn_t::null), NULL);
+    lsn_t begin_lsn;
+    LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
     W_COERCE(ss_m::log->flush_all());
 
+    // Collect checkpoint information from log
     curr_chkpt.scan_log();
-    curr_chkpt.serialize();
+
+    // Serialize chkpt to file
+    fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn_t::null);
+    fs::path newpath = smlevel_0::log->get_storage()->make_chkpt_path(begin_lsn);
+    ofstream ofs(fpath.string(), ios::binary | ios::trunc);
+    curr_chkpt.serialize_binary(ofs);
+    ofs.close();
+    fs::rename(fpath, newpath);
 
     _min_rec_lsn = curr_chkpt.get_min_rec_lsn();
     _min_xct_lsn = curr_chkpt.get_min_xct_lsn();
 
-    // Insert chkpt_end log record
-    // CS TODO -- are the "min" LSNs still required in the logrec?
-    LOG_INSERT(chkpt_end_log (_last_end_lsn, _min_rec_lsn, _min_xct_lsn),
-            &_last_end_lsn);
-
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_mutex.release_write();
 
-    W_COERCE(ss_m::log->flush_all());
-
     delete logrec;
+}
+
+void chkpt_t::serialize_binary(ofstream& ofs)
+{
+    ofs.write((char*)&highest_tid, sizeof(tid_t));
+
+    size_t buf_tab_size = buf_tab.size();
+    ofs.write((char*)&buf_tab_size, sizeof(size_t));
+    for(buf_tab_t::const_iterator it = buf_tab.begin();
+            it != buf_tab.end(); ++it)
+    {
+        ofs.write((char*)&it->first, sizeof(PageID));
+        ofs.write((char*)&it->second, sizeof(buf_tab_entry_t));
+    }
+
+    size_t xct_tab_size = xct_tab.size();
+    ofs.write((char*)&xct_tab_size, sizeof(size_t));
+    for(xct_tab_t::const_iterator it=xct_tab.begin();
+            it != xct_tab.end(); ++it)
+    {
+        ofs.write((char*)&it->first, sizeof(tid_t));
+        ofs.write((char*)&it->second.state, sizeof(smlevel_0::xct_state_t));
+        ofs.write((char*)&it->second.last_lsn, sizeof(lsn_t));
+        ofs.write((char*)&it->second.first_lsn, sizeof(lsn_t));
+
+        size_t lock_tab_size = it->second.locks.size();
+        ofs.write((char*)&lock_tab_size, sizeof(size_t));
+        for(vector<lock_info_t>::const_iterator jt = it->second.locks.begin();
+                jt != it->second.locks.end(); ++jt)
+        {
+            ofs.write((char*)&jt, sizeof(lock_info_t));
+        }
+    }
+
+    size_t bkp_path_size = bkp_path.size();
+    ofs.write((char*)&bkp_path_size, sizeof(size_t));
+    if (!bkp_path.empty()) {
+        ofs.write((char*)&bkp_path, bkp_path.size());
+    }
+}
+
+void chkpt_t::deserialize_binary(ifstream& ifs)
+{
+    if(!ifs.is_open()) {
+        cerr << "Could not open input stream for chkpt file" << endl;;
+        W_FATAL(fcINTERNAL);
+    }
+
+    ifs.read((char*)&highest_tid, sizeof(tid_t));
+
+    size_t buf_tab_size;
+    ifs.read((char*)&buf_tab_size, sizeof(size_t));
+    for(uint i=0; i<buf_tab_size; i++) {
+        PageID pid;
+        ifs.read((char*)&pid, sizeof(PageID));
+
+        buf_tab_entry_t entry;
+        ifs.read((char*)&entry, sizeof(buf_tab_entry_t));
+
+        DBGOUT1(<<"pid[]="<<pid<< " , " <<
+                  "rec_lsn[]="<<entry.rec_lsn<< " , " <<
+                  "page_lsn[]="<<entry.page_lsn);
+
+        // buf_tab[pid] = entry;
+        mark_page_dirty(pid, entry.page_lsn, entry.rec_lsn);
+    }
+
+    size_t xct_tab_size;
+    ifs.read((char*)&xct_tab_size, sizeof(size_t));
+    for(uint i=0; i<xct_tab_size; i++) {
+        tid_t tid;
+        ifs.read((char*)&tid, sizeof(tid_t));
+
+        xct_tab_entry_t entry;
+        ifs.read((char*)&entry.state, sizeof(smlevel_0::xct_state_t));
+        ifs.read((char*)&entry.last_lsn, sizeof(lsn_t));
+        ifs.read((char*)&entry.first_lsn, sizeof(lsn_t));
+
+        DBGOUT1(<<"tid[]="<<tid<<" , " <<
+                  "state[]="<<entry.state<< " , " <<
+                  "last_lsn[]="<<entry.last_lsn<<" , " <<
+                  "first_lsn[]="<<entry.first_lsn);
+
+        if (entry.state != smlevel_0::xct_ended) {
+            mark_xct_active(tid, entry.first_lsn, entry.last_lsn);
+
+            if (is_xct_active(tid)) {
+                size_t lock_tab_size;
+                ifs.read((char*)&lock_tab_size, sizeof(size_t));
+                for(uint j=0; j<lock_tab_size; j++) {
+                    lock_info_t lock_entry;
+                    ifs.read((char*)&lock_entry, sizeof(lock_info_t));
+                    // entry.locks.push_back(lock_entry);
+                    add_lock(tid, lock_entry.lock_mode, lock_entry.lock_hash);
+
+                    DBGOUT1(<< "    lock_mode[]="<<lock_entry.lock_mode
+                            << " , lock_hash[]="<<lock_entry.lock_hash);
+                }
+            }
+            // xct_tab[tid] = entry;
+        }
+    }
+
+    size_t bkp_path_size;
+    ifs.read((char*)&bkp_path_size, sizeof(size_t));
+    if (!bkp_path.empty()) {
+        ifs.read((char*)&bkp_path, bkp_path_size);
+    }
 }
 
 chkpt_thread_t::chkpt_thread_t(int interval)
@@ -707,8 +831,7 @@ chkpt_thread_t::~chkpt_thread_t()
 {
 }
 
-void
-chkpt_thread_t::run()
+void chkpt_thread_t::run()
 {
     while(!_retire)
     {
@@ -754,3 +877,4 @@ chkpt_thread_t::awaken()
     DO_PTHREAD(pthread_cond_signal(&_awaken_cond));
     DO_PTHREAD(pthread_mutex_unlock(&_awaken_lock));
 }
+

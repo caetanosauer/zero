@@ -137,6 +137,8 @@ public:
 private:
     void init();
     void serialize();
+    void serialize_binary(ofstream& ofs);
+    void deserialize_binary(ifstream& ofs);
     void cleanup();
     void acquire_lock(logrec_t& r);
 };
