@@ -453,20 +453,22 @@ w_rc_t ShoreTPCCEnv::load_data()
 	gen_cid_array(cid_array);
 
     // 3. Fire up the loader threads
-    array_guard_t< guard<table_builder_t> > loaders(new guard<table_builder_t>[_loaders_to_use]);
-    long total_units = _scaling_factor*UNIT_PER_WH;
+    unique_ptr<table_builder_t> loaders[_loaders_to_use];
+    long total_units = _scaling_factor * UNIT_PER_WH;
 
-    // WARNING: unit_per_thread must divide by ORDERS_PER_UNIT!
-    long units_per_thread = (total_units + _loaders_to_use-1)/_loaders_to_use;
-    long divisor = ORDERS_PER_DIST/ORDERS_PER_UNIT;
-    units_per_thread = ((units_per_thread + divisor-1)/divisor)*divisor;
-
-
+    // WARNING: unit_per_thread must divide this constant
+    long min_chunk = ORDERS_PER_DIST/ORDERS_PER_UNIT; // 3000/30 = 100
+    long chunks_per_thread = (total_units/min_chunk) / _loaders_to_use;
+    long units_per_thread = chunks_per_thread * min_chunk;
 
     for(int i=0; i < _loaders_to_use; i++) {
-	long start = i*units_per_thread;
-	long count = (start+units_per_thread > total_units)? total_units-start : units_per_thread;
-	loaders[i] = new table_builder_t(this, i, start, count, cid_array);
+	long count = units_per_thread;
+	long start = i * count;
+        if (i == _loaders_to_use - 1) {
+            // Last loader will get the remainder
+            count = total_units - start;
+        }
+	loaders[i].reset(new table_builder_t(this, i, start, count, cid_array));
 	loaders[i]->fork();
     }
 
