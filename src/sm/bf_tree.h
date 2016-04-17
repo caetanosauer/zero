@@ -306,7 +306,7 @@ public:
     /**
      * Release the latch on the page.
      */
-    void unfix(const generic_page* p);
+    void unfix(const generic_page* p, bool evict = false);
 
     /**
      * Returns if the page is already marked dirty.

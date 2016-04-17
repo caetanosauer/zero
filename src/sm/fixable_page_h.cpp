@@ -15,10 +15,11 @@
 
 int fixable_page_h::force_Q_fixing = 0;  // <<<>>>
 
-void fixable_page_h::unfix() {
+void fixable_page_h::unfix(bool evict)
+{
     if (_pp) {
         if (_bufferpool_managed) {
-            smlevel_0::bf->unfix(_pp);
+            smlevel_0::bf->unfix(_pp, evict);
         }
         _pp   = NULL;
         _mode = LATCH_NL;

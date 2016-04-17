@@ -1008,13 +1008,27 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
 }
 
 
-void bf_tree_m::unfix(const generic_page* p) {
+void bf_tree_m::unfix(const generic_page* p, bool evict)
+{
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb.latch().held_by_me());
-    cb.unpin();
-    w_assert1(cb._pin_cnt >= 0);
+    if (evict) {
+        w_assert0(cb.latch().mode() == LATCH_EX);
+        bool removed = _hashtable->remove(p->pid);
+        w_assert1(removed);
+
+        cb.clear_except_latch();
+        // -1 indicates page was evicted (i.e., it's invalid and can be read into)
+        cb._pin_cnt = -1;
+
+        _add_free_block(idx);
+    }
+    else {
+        cb.unpin();
+        w_assert1(cb._pin_cnt >= 0);
+    }
     DBG(<< "Unfixed " << idx << " pin count " << cb._pin_cnt);
     cb.latch().latch_release();
 }

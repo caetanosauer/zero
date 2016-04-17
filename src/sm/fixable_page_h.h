@@ -61,7 +61,7 @@ public:
 
     /// Unassociate us with any page; releases latch we may have held on previously
     /// associated page.
-    void unfix();
+    void unfix(bool evict = false);
 
     /// Is this page really fixed in bufferpool or a psuedo-fix?
     bool is_bufferpool_managed() const { return _bufferpool_managed; }

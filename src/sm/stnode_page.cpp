@@ -15,13 +15,16 @@ stnode_cache_t::stnode_cache_t(bool create)
     w_assert0(res == 0);
 
     if (create) {
-        memset(_stnode_page, 0, sizeof(generic_page));
+        memset(&_stnode_page, 0, sizeof(generic_page));
         prev_page_lsn = lsn_t::null;
     }
     else {
-        W_COERCE(smlevel_0::vol->read_page_verify(stnode_page::stpid,
-                    (generic_page*) _stnode_page));
-        prev_page_lsn = _stnode_page->lsn;
+        fixable_page_h p;
+        W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX,
+                    false, create));
+        memcpy(&_stnode_page, p.get_generic_page(), sizeof(stnode_page));
+        prev_page_lsn = p.lsn();
+        p.unfix(true /* evict */);
     }
 }
 
@@ -38,12 +41,12 @@ PageID stnode_cache_t::get_root_pid(StoreID store) const
     //
     // JIRA: ZERO-168 notes that DROP INDEX/TABLE currently are not
     // implemented and to fix this routine once they are.
-    return _stnode_page->get(store).root;
+    return _stnode_page.get(store).root;
 }
 
 stnode_t stnode_cache_t::get_stnode(StoreID store) const
 {
-    return _stnode_page->get(store);
+    return _stnode_page.get(store);
 }
 
 bool stnode_cache_t::is_allocated(StoreID store) const
@@ -59,7 +62,7 @@ StoreID stnode_cache_t::get_min_unused_stid() const
     // Let's start from 1, not 0.  All user store ID's will begin with 1.
     // Store-ID 0 will be a special store-ID for stnode_page/alloc_page's
     for (size_t i = 1; i < stnode_page::max; ++i) {
-        if (!_stnode_page->get(i).is_used()) {
+        if (!_stnode_page.get(i).is_used()) {
             return i;
         }
     }
@@ -72,7 +75,7 @@ void stnode_cache_t::get_used_stores(std::vector<StoreID>& ret) const
 
     CRITICAL_SECTION (cs, _latch);
     for (size_t i = 1; i < stnode_page::max; ++i) {
-        if (_stnode_page->get(i).is_used()) {
+        if (_stnode_page.get(i).is_used()) {
             ret.push_back((StoreID) i);
         }
     }
@@ -87,7 +90,7 @@ rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum, bool redo)
         return RC(eSTCACHEFULL);
     }
 
-    _stnode_page->set_root(snum, root_pid);
+    _stnode_page.set_root(snum, root_pid);
 
     if (!redo) {
         sysevent::log_create_store(root_pid, snum, prev_page_lsn);
@@ -100,7 +103,7 @@ rc_t stnode_cache_t::sx_append_extent(extent_id_t ext, bool redo)
 {
     CRITICAL_SECTION (cs, _latch);
 
-    _stnode_page->set_last_extent(ext);
+    _stnode_page.set_last_extent(ext);
 
     if (!redo) {
         sysevent::log_append_extent(ext, prev_page_lsn);
@@ -114,14 +117,14 @@ void stnode_cache_t::dump(ostream& out)
     CRITICAL_SECTION (cs, _latch);
     out << "STNODE CACHE:" << endl;
     for (size_t i = 1; i < stnode_page::max; ++i) {
-        stnode_t s = _stnode_page->get(i);
+        stnode_t s = _stnode_page.get(i);
         if (s.is_used()) {
             out << "stid: " << i
                 << " root: " << s.root
                 << endl;
         }
     }
-    cout << "last_extent: " << _stnode_page->get_last_extent() << endl;
+    cout << "last_extent: " << _stnode_page.get_last_extent() << endl;
 }
 
 lsn_t stnode_cache_t::get_page_lsn() {
