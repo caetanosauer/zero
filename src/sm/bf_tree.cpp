@@ -1054,7 +1054,11 @@ void bf_tree_m::set_page_lsn(generic_page* p, lsn_t lsn)
 {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
-    get_cb(idx).set_page_lsn(lsn);
+    bf_tree_cb_t& cb = get_cb(idx);
+    w_assert1(cb.latch().held_by_me());
+    w_assert1(cb.latch().mode() == LATCH_EX);
+    w_assert1(cb.get_page_lsn() < lsn);
+    cb.set_page_lsn(lsn);
 }
 
 lsn_t bf_tree_m::get_page_lsn(generic_page* p)
