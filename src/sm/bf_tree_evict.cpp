@@ -200,8 +200,14 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         }
 
         // parent is latched in SH mode, OK because it just overwrites an emlsn
+        // CS TODO: bugfix -- latch must be acquired in EX mode because we will
+        // generate a log record, which will update the PageLSN and set the
+        // previous-page pointer based on the old value. This means that all
+        // operations that update the PageLSN must be serialized: thus the EX
+        // mode is required.
         bf_tree_cb_t& parent_cb = get_cb(parent_idx);
-        latch_rc = parent_cb.latch().latch_acquire(LATCH_SH,
+        // latch_rc = parent_cb.latch().latch_acquire(LATCH_SH,
+        latch_rc = parent_cb.latch().latch_acquire(LATCH_EX,
                 sthread_t::WAIT_IMMEDIATE);
         if (latch_rc.is_error()) {
             // just give up. If we try to latch it unconditionally, we may
@@ -242,6 +248,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
                     << " (child pid=" << pid << ")"
                     << ", OldEMLSN=" << old << " NewEMLSN=" << _buffer[idx].lsn);
             w_assert1(parent_cb.latch().held_by_me());
+            w_assert1(parent_cb.latch().mode() == LATCH_EX);
             W_COERCE(_sx_update_child_emlsn(parent_h, child_slotid, _buffer[idx].lsn));
             // Note that we are not grabbing EX latch on parent here.
             // This is safe because no one else should be touching these exact bytes,

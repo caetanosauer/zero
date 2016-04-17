@@ -1615,26 +1615,24 @@ void xct_t::_update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) 
         // CS TODO: BUG! latch must always be EX for per-page log chain consistency
         if (page->latch_mode() == LATCH_EX) {
             const_cast<fixable_page_h*>(page)->update_page_lsn(new_lsn);
-            // CS: already setting dirty below
-            //const_cast<fixable_page_h*>(page)->set_dirty();
         } else {
             // CS TODO: this does not work! Fix eviction and get rid of this!
             w_assert0(false);
             // In some log type (so far only log_page_evict), we might update LSN only with
             // SH latch. In that case, we might have a race to update the LSN.
             // We should leave a larger value of LSN in that case.
-            DBGOUT3(<<"Update LSN without EX latch. Atomic CAS to deal with races");
-            const lsndata_t new_lsn_data = new_lsn.data();
-            lsndata_t *addr = reinterpret_cast<lsndata_t*>(&page->get_generic_page()->lsn);
-            lsndata_t cas_tmp = *addr;
-            while (!lintel::unsafe::atomic_compare_exchange_strong<lsndata_t>(
-                addr, &cas_tmp, new_lsn_data)) {
-                if (lsn_t(cas_tmp) > new_lsn) {
-                    DBGOUT1(<<"Someone else has already set a larger LSN. ");
-                    break;
-                }
-            }
-            w_assert1(page->get_page_lsn() >= new_lsn);
+            // DBGOUT3(<<"Update LSN without EX latch. Atomic CAS to deal with races");
+            // const lsndata_t new_lsn_data = new_lsn.data();
+            // lsndata_t *addr = reinterpret_cast<lsndata_t*>(&page->get_generic_page()->lsn);
+            // lsndata_t cas_tmp = *addr;
+            // while (!lintel::unsafe::atomic_compare_exchange_strong<lsndata_t>(
+            //     addr, &cas_tmp, new_lsn_data)) {
+            //     if (lsn_t(cas_tmp) > new_lsn) {
+            //         DBGOUT1(<<"Someone else has already set a larger LSN. ");
+            //         break;
+            //     }
+            // }
+            // w_assert1(page->get_page_lsn() >= new_lsn);
         }
     }
 }
