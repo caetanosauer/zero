@@ -17,80 +17,22 @@
 #include "xct.h"
 #include <vector>
 
-// CS TODO: the control logic is pretty much the same as page_cleaner_base
-// We shoul unify that in a base class
-class candidate_collector_thread : public smthread_t
+class candidate_collector_thread : public worker_thread_t
 {
 public:
     candidate_collector_thread(bf_tree_cleaner* cleaner)
-        : cleaner(cleaner), _busy(false), _wakeup_requested(false),
-        _stop_requested(false)
+        : worker_thread_t(-1), cleaner(cleaner)
     {};
 
     virtual ~candidate_collector_thread() {};
 
-    virtual void run()
+    virtual void do_work()
     {
-        auto predicate = [this] { return _wakeup_requested; };
-
-        while (true) {
-            if (_stop_requested) { return; }
-
-            {
-                unique_lock<mutex> lck(_cond_mutex);
-                // Only activate upon recieving a wakeup signal
-                _wakeup_condvar.wait(lck, predicate);
-
-                if (_stop_requested) { return; }
-                _wakeup_requested = false;
-                _busy = true;
-            }
-
-            cleaner->collect_candidates();
-
-            {
-                // Notify waiting threads that we are done with this round
-                lock_guard<mutex> lck(_cond_mutex);
-                _busy = false;
-                _done_condvar.notify_all();
-            }
-        }
-    }
-
-    void wakeup()
-    {
-        unique_lock<mutex> lck(_cond_mutex);
-        _wakeup_requested = true;
-        _wakeup_condvar.notify_one();
-    }
-
-    void stop()
-    {
-        _stop_requested = true;
-        wakeup();
-        join();
-    }
-
-    void wait_and_swap()
-    {
-        // Once mutex is acquired, we know that collect_candiadates()
-        // is not running, i.e., the next_candidates list is safe
-        unique_lock<mutex> lck(_cond_mutex);
-        while (_busy) {
-            _done_condvar.wait(lck);
-        }
-        w_assert1(cleaner->curr_candidates->empty());
-        cleaner->curr_candidates.swap(cleaner->next_candidates);
+        cleaner->collect_candidates();
     }
 
 private:
     bf_tree_cleaner* cleaner;
-    std::mutex _cond_mutex;
-    std::condition_variable _wakeup_condvar;
-    std::condition_variable _done_condvar;
-    bool _busy;
-    bool _wakeup_requested;
-    std::atomic<bool> _stop_requested;
 };
 
 bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& options)
@@ -126,9 +68,13 @@ bf_tree_cleaner::~bf_tree_cleaner()
 
 void bf_tree_cleaner::do_work()
 {
+    // Only used in async mode
+    unsigned long round = 0;
+
     // fill up list of next candidates
     next_candidates->clear();
     if (collector) {
+        round = collector->get_rounds_completed();
         collector->wakeup();
     }
     else {
@@ -149,7 +95,9 @@ void bf_tree_cleaner::do_work()
 
     // synchronize with asynchronous collector
     if (collector) {
-        collector->wait_and_swap();
+        collector->wait_for_round(round + 1);
+        w_assert1(curr_candidates->empty());
+        curr_candidates.swap(next_candidates);
     }
 }
 

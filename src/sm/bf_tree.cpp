@@ -171,7 +171,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 void bf_tree_m::shutdown()
 {
     if (_cleaner) {
-        _cleaner->shutdown();
+        _cleaner->stop();
         delete _cleaner;
     }
 }
