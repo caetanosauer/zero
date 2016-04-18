@@ -425,6 +425,8 @@ ss_m::_destruct_once()
 
         W_COERCE(log->flush_all());
         bf->get_cleaner()->wakeup(true);
+        // CS TODO: two wakeups are necessary when using the async collector
+        bf->get_cleaner()->wakeup(true);
         me()->check_actual_pin_count(0);
 
         // Force alloc and stnode pages

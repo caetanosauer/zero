@@ -241,6 +241,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Ignore min_write_size every N rounds of cleaning")
     ("sm_cleaner_ignore_metadata", po::value<bool>(),
         "Do not write metadata pages (stnode and alloc caches) in cleaner")
+    ("sm_cleaner_async_candidate_collection", po::value<bool>(),
+        "Collect candidate frames to be cleaned in an asynchronous thread")
     ("sm_archiver_workspace_size", po::value<int>(),
         "Workspace size archiver")
     ("sm_archiver_block_size", po::value<int>()->default_value(1024*1024),

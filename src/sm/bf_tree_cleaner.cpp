@@ -17,19 +17,80 @@
 #include "xct.h"
 #include <vector>
 
+// CS TODO: the control logic is pretty much the same as page_cleaner_base
+// We shoul unify that in a base class
 class candidate_collector_thread : public smthread_t
 {
 public:
     candidate_collector_thread(bf_tree_cleaner* cleaner)
-        : cleaner(cleaner) {};
+        : cleaner(cleaner), _busy(false), _wakeup_requested(false),
+        _stop_requested(false)
+    {};
+
     virtual ~candidate_collector_thread() {};
 
     virtual void run()
     {
-        cleaner->collect_candidates();
+        auto predicate = [this] { return _wakeup_requested; };
+
+        while (true) {
+            if (_stop_requested) { return; }
+
+            {
+                unique_lock<mutex> lck(_cond_mutex);
+                // Only activate upon recieving a wakeup signal
+                _wakeup_condvar.wait(lck, predicate);
+
+                if (_stop_requested) { return; }
+                _wakeup_requested = false;
+                _busy = true;
+            }
+
+            cleaner->collect_candidates();
+
+            {
+                // Notify waiting threads that we are done with this round
+                lock_guard<mutex> lck(_cond_mutex);
+                _busy = false;
+                _done_condvar.notify_all();
+            }
+        }
     }
+
+    void wakeup()
+    {
+        unique_lock<mutex> lck(_cond_mutex);
+        _wakeup_requested = true;
+        _wakeup_condvar.notify_one();
+    }
+
+    void stop()
+    {
+        _stop_requested = true;
+        wakeup();
+        join();
+    }
+
+    void wait_and_swap()
+    {
+        // Once mutex is acquired, we know that collect_candiadates()
+        // is not running, i.e., the next_candidates list is safe
+        unique_lock<mutex> lck(_cond_mutex);
+        while (_busy) {
+            _done_condvar.wait(lck);
+        }
+        w_assert1(cleaner->curr_candidates->empty());
+        cleaner->curr_candidates.swap(cleaner->next_candidates);
+    }
+
 private:
     bf_tree_cleaner* cleaner;
+    std::mutex _cond_mutex;
+    std::condition_variable _wakeup_condvar;
+    std::condition_variable _done_condvar;
+    bool _busy;
+    bool _wakeup_requested;
+    std::atomic<bool> _stop_requested;
 };
 
 bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& options)
@@ -41,26 +102,39 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& option
     min_write_size = options.get_int_option("sm_cleaner_min_write_size", 1);
     min_write_ignore_freq = options.get_int_option("sm_cleaner_min_write_ignore_freq", 0);
     ignore_metadata = options.get_bool_option("sm_cleaner_ignore_metadata", false);
+    async_candidate_collection =
+        options.get_bool_option("sm_cleaner_async_candidate_collection", false);
 
     string pstr = options.get_string_option("sm_cleaner_policy", "");
     policy = make_cleaner_policy(pstr);
 
     if (num_candidates > 0) {
-        next_candidates->reserve(num_candidates);
         curr_candidates->reserve(num_candidates);
+        next_candidates->reserve(num_candidates);
+    }
+
+    if (async_candidate_collection) {
+        collector.reset(new candidate_collector_thread(this));
+        collector->fork();
     }
 }
 
 bf_tree_cleaner::~bf_tree_cleaner()
 {
+    if (collector) { collector->stop(); }
 }
 
 void bf_tree_cleaner::do_work()
 {
     // fill up list of next candidates
     next_candidates->clear();
-    candidate_collector_thread t(this);
-    t.fork();
+    if (collector) {
+        collector->wakeup();
+    }
+    else {
+        collect_candidates();
+        curr_candidates.swap(next_candidates);
+    }
 
     // if there's something in the current list, clean it
     if (curr_candidates->size() > 0) {
@@ -73,10 +147,10 @@ void bf_tree_cleaner::do_work()
         W_COERCE(smlevel_0::vol->get_stnode_cache()->write_page(dur_lsn));
     }
 
-    // wait for collector and swap next list into current
-    t.join();
-    w_assert1(curr_candidates->empty());
-    curr_candidates.swap(next_candidates);
+    // synchronize with asynchronous collector
+    if (collector) {
+        collector->wait_and_swap();
+    }
 }
 
 void bf_tree_cleaner::clean_candidates()

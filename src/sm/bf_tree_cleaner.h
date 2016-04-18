@@ -46,6 +46,9 @@ struct cleaner_cb_info {
 using policy_predicate_t =
     std::function<bool(const cleaner_cb_info&, const cleaner_cb_info&)>;
 
+// Forward declaration
+class candidate_collector_thread;
+
 class bf_tree_cleaner : public page_cleaner_base {
     friend class candidate_collector_thread;
 public:
@@ -104,6 +107,12 @@ private:
 
     /// Do not clean alloc/stnode pages, which are not managed in the buffer pool
     bool ignore_metadata;
+
+    /// Use an asynchronous thread to collect candidates, thus allowing overlap
+    /// of CPU utilization and I/O
+    bool async_candidate_collection;
+
+    unique_ptr<candidate_collector_thread> collector;
 };
 
 inline cleaner_policy make_cleaner_policy(string s)
