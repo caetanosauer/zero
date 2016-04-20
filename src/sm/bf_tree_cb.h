@@ -9,6 +9,7 @@
 #include "latch.h"
 #include "bf_tree.h"
 #include <string.h>
+#include <atomic>
 
 #include <assert.h>
 
@@ -51,6 +52,30 @@
  *
  */
 struct bf_tree_cb_t {
+    /**
+     * Maximum value of the per-frame refcount (reference counter).  We cap the
+     * refcount to avoid contention on the cacheline of the frame's control
+     * block (due to ping-pongs between sockets) when multiple sockets
+     * read-access the same frame.  The refcount max value should have enough
+     * granularity to separate cold from hot pages.
+     *
+     * CS TODO: but doesnt the latch itself already incur such cacheline
+     * bouncing?  If so, then we could simply move the refcount inside latch_t
+     * (which must have the same size as a cacheline) and be done with it. No
+     * additional overhead on cache coherence other than the latching itself is
+     * expected. We could reuse the field _total_count in latch_t, or even
+     * split it into to 16-bit integers: one for shared and one for exclusive
+     * latches. This field is currently only used for tests, but it doesn't
+     * make sense to count CB references and latch acquisitions in separate
+     * variables.
+     */
+    static const uint16_t BP_MAX_REFCOUNT = 1024;
+
+    /**
+     * Initial value of the per-frame refcount (reference counter).
+     */
+    static const uint16_t BP_INITIAL_REFCOUNT = 0;
+
     /** clears all properties. */
     inline void clear () {
         clear_latch();
@@ -66,6 +91,19 @@ struct bf_tree_cb_t {
 #else
         ::memset(this, 0, sizeof(bf_tree_cb_t)-sizeof(latch_t));
 #endif
+    }
+
+    /** Initializes all fields -- called by fix when fetching a new page */
+    void init(PageID pid, lsn_t page_lsn)
+    {
+        clear_except_latch();
+        _pin_cnt = 0;
+        _pid = pid;
+        _used = true;
+        _ref_count = BP_INITIAL_REFCOUNT;
+        _ref_count_ex = BP_INITIAL_REFCOUNT;
+        _clean_lsn = page_lsn;
+        _page_lsn = page_lsn;
     }
 
     /** clears latch */
@@ -97,14 +135,13 @@ struct bf_tree_cb_t {
     /// Reference count incremented only by X-latching
     uint16_t _ref_count_ex; // +2 -> 12
 
-    /// true if this block is actually used
-    bool _used;          // +1  -> 13
-    /// Whether this page is swizzled from the parent
-    bool _swizzled;      // +1 -> 14
-    /// Whether this page is concurrently being swizzled by another thread
-    bool _concurrent_swizzling;      // +1 -> 15
     /// Filler
-    uint8_t _fill16;        // +1 -> 16
+    uint16_t _fill14;        // +2 -> 14
+
+    /// true if this block is actually used
+    std::atomic<bool> _used;          // +1  -> 15
+    /// Whether this page is swizzled from the parent
+    std::atomic<bool> _swizzled;      // +1 -> 16
 
     // CS TODO: testing approach of maintaining page LSN in CB
     lsn_t _page_lsn; // +8 -> 24
@@ -147,6 +184,20 @@ struct bf_tree_cb_t {
     void unpin()
     {
         lintel::unsafe::atomic_fetch_sub(&_pin_cnt, 1);
+    }
+
+    void inc_ref_count()
+    {
+        if (_ref_count < BP_MAX_REFCOUNT) {
+            ++_ref_count;
+        }
+    }
+
+    void inc_ref_count_ex()
+    {
+        if (_ref_count < BP_MAX_REFCOUNT) {
+            ++_ref_count_ex;
+        }
     }
 
     // disabled (no implementation)

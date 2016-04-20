@@ -87,28 +87,6 @@ const float EVICT_BATCH_RATIO = 0.01;
 */
 const uint16_t EVICT_MAX_ROUNDS = 20;
 
-/**
- * Maximum value of the per-frame refcount (reference counter).
- * We cap the refcount to avoid contention on the cacheline of the frame's control
- * block (due to ping-pongs between sockets) when multiple sockets read-access the same frame.
- * The refcount max value should have enough granularity to separate cold from hot pages.
- *
- * CS TODO: but doesnt the latch itself already incur such cacheline bouncing?
- * If so, then we could simply move the refcount inside latch_t (which must
- * have the same size as a cacheline) and be done with it. No additional
- * overhead on cache coherence other than the latching itself is expected. We
- * could reuse the field _total_count in latch_t, or even split it into to
- * 16-bit integers: one for shared and one for exclusive latches. This field is
- * currently only used for tests, but it doesn't make sense to count CB
- * references and latch acquisitions in separate variables.
- */
-const uint16_t BP_MAX_REFCOUNT = 1024;
-
-/**
- * Initial value of the per-frame refcount (reference counter).
- */
-const uint16_t BP_INITIAL_REFCOUNT = 0;
-
 class bf_eviction_thread_t : public smthread_t
 {
 public:
@@ -279,26 +257,6 @@ public:
     void switch_parent (PageID, generic_page*);
 
     /**
-     * Swizzle a child pointer in the parent page to speed-up accesses on the child.
-     * @param[in] parent parent of the requested page. this has to be latched (but SH latch is enough).
-     * @param[in] slot identifier of the slot to swizzle. 0 is pid0, -1 is foster.
-     * If these child pages aren't in bufferpool yet, this method ignores the child.
-     * It should be loaded beforehand.
-     */
-    void swizzle_child (generic_page* parent, general_recordid_t slot);
-
-    /**
-     * Swizzle a bunch of child pointers in the parent page to speed-up accesses on them.
-     * @param[in] parent parent of the requested page. this has to be latched (but SH latch is enough).
-     * @param[in] slots identifiers of the slots to swizzle. 0 is pid0, -1 is foster.
-     * If these child pages aren't in bufferpool yet, this method ignores the child.
-     * They should be loaded beforehand.
-     * @param[in] slots_size length of slots.
-     */
-    void swizzle_children (generic_page* parent, const general_recordid_t *slots,
-                            uint32_t slots_size);
-
-    /**
      * Search in the given page to find the slot that contains the page id as a child.
      * Returns >0 if a normal slot, 0 if pid0, -1 if foster, -2 if not found.
      */
@@ -393,8 +351,6 @@ private:
      * there aren't such concurrent threads by other means.
      */
     void   _convert_to_disk_page (generic_page* page) const;
-    /** if the pid is a swizzled pointer, convert it to the original page id. */
-    void   _convert_to_pageid (PageID* pid) const;
 
     /** finds a free block and returns its index. if free list is empty and 'evict' = true, it evicts some page. */
     w_rc_t _grab_free_block(bf_idx& ret, bool evict = true);
@@ -447,8 +403,6 @@ private:
      */
     bool   _unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot);
 
-    bool   _are_there_many_swizzled_pages() const;
-
     /**
      * Deletes the given block from this buffer pool. This method must be called when
      *  1. there is no concurrent accesses on the page (thus no latch)
@@ -457,8 +411,6 @@ private:
      * Used from the dirty page cleaner to delete a page with "tobedeleted" flag.
      */
     void   _delete_block (bf_idx idx);
-
-    void   _swizzle_child_pointer(generic_page* parent, PageID* pointer_addr);
 
     /**
      * \brief System transaction for upadting child EMLSN in parent

@@ -238,6 +238,27 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                                    lsn_t emlsn)
 {
     if (is_swizzled_pointer(pid)) {
+        w_assert1(!virgin_page);
+
+        bf_idx idx = pid ^ SWIZZLED_PID_BIT;
+        w_assert1(_is_valid_idx(idx));
+        bf_tree_cb_t &cb = get_cb(idx);
+
+        W_DO(cb.latch().latch_acquire(mode,
+                    conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+
+        w_assert1(_is_active_idx(idx));
+        w_assert1(cb._pin_cnt > 0);
+        w_assert1(cb._pid == _buffer[idx].pid);
+
+        cb.inc_ref_count();
+        if (mode == LATCH_EX) {
+            cb.inc_ref_count_ex();
+        }
+
+        page = &(_buffer[idx]);
+
+        return RCOK;
     }
 
 #if W_DEBUG_LEVEL>0
@@ -264,16 +285,13 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
         if (idx == 0)
         {
-            // 1. page is not registered in hash table therefore it is not an in_doubt page either
-            // 2. page is registered in hash table already but force loading, meaning it is an
-            //    in_doubt page and the actual page has not been loaded into buffer pool yet
-
             // STEP 1) Grab a free frame to read into
             W_DO(_grab_free_block(idx));
             w_assert1(idx != 0);
             bf_tree_cb_t &cb = get_cb(idx);
 
-            // STEP 2) Acquire EX latch, so that only one thread attempts read
+            // STEP 2) Acquire EX latch before hash table insert, to make sure
+            // nobody will access this page until we're done
             w_rc_t check_rc = cb.latch().latch_acquire(LATCH_EX,
                     sthread_t::WAIT_IMMEDIATE);
             if (check_rc.is_error())
@@ -283,19 +301,19 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                 continue;
             }
 
-            // STEP 3) register the page on the hashtable, so that only one
-            // thread reads it (it may be latched by other concurrent fix)
+            // Register the page on the hashtable atomically. This guarantees
+            // that only one thread will attempt to read the page
             bf_idx parent_idx = parent ? parent - _buffer : 0;
             bool registered = _hashtable->insert_if_not_exists(pid,
                     bf_idx_pair(idx, parent_idx));
             if (!registered) {
-                cb.clear_except_latch();
                 cb.latch().latch_release();
                 _add_free_block(idx);
                 continue;
             }
+            cb.pin();
 
-            // STEP 4) Read page from disk
+            // Read page from disk
             page = &_buffer[idx];
 
             if (!virgin_page) {
@@ -319,43 +337,19 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                 }
             }
 
-            // STEP 5) initialize control block
-            w_assert1(cb.latch().held_by_me());
-            w_assert1(cb.latch().mode() == LATCH_EX);
-
-            cb.clear_except_latch();
-            cb._pin_cnt = 0;
-            cb._pid = pid;
-            cb._used = true;
-            cb._ref_count = BP_INITIAL_REFCOUNT;
-            cb._ref_count_ex = BP_INITIAL_REFCOUNT;
-            cb._clean_lsn = page->lsn;
-            cb._page_lsn = page->lsn;
+            cb.init(pid, page->lsn);
+            W_COERCE(cb.latch().latch_acquire(mode, sthread_t::WAIT_IMMEDIATE));
 
             // STEP 6) Fix successful -- pin page and downgrade latch
-            // Just loaded a page, the page loading was due to:
-            // User transaction - page was not involved in the recovery
-            // operation
-            // UNDO operation - the page is needed for b-tree search traversal
-            // of an UNDO operation
-            // REDO operation - on-demand or mixed REDO triggered by user
-            // transaction page was in_doubt (using lock for concurrency
-            // control) Page is safe to access, not calling
-            // _validate_access(page) for page access validation purpose
-            DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: retrieved a new page: " << pid);
             cb.pin();
             w_assert1(cb.latch().held_by_me());
             w_assert1(cb._pin_cnt > 0);
             DBG(<< "Fixed " << idx << " pin count " << cb._pin_cnt);
 
             if (mode != LATCH_EX) {
-                // CS: I dont know what LATCh_Q is about
-                // Ignoring for now
                 w_assert1(mode == LATCH_SH);
                 cb.latch().downgrade();
             }
-
-            return RCOK;
         }
         else
         {
@@ -366,50 +360,76 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             // meaning the actual page is in buffer pool already
 
             W_DO(cb.latch().latch_acquire(mode, conditional ?
-                    sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+                        sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
 
-            if (cb._pin_cnt < 0 || cb._pid != pid)
-            {
+            if (cb._pin_cnt < 0 || cb._pid != pid) {
                 // Page was evicted between hash table probe and latching
                 DBG(<< "Page evicted right before latching. Retrying.");
                 cb.latch().latch_release();
                 continue;
             }
 
-            if (cb._ref_count < BP_MAX_REFCOUNT) {
-                ++cb._ref_count;
-            }
-            if (mode == LATCH_EX && cb._ref_count_ex) {
-                ++cb._ref_count_ex;
+            cb.pin();
+            cb.inc_ref_count();
+            if (mode == LATCH_EX) {
+                cb.inc_ref_count_ex();
             }
 
             page = &(_buffer[idx]);
 
-            // Page was already loaded in buffer pool by:
-            //     Recovery operation - was an in_doubt page
-            // or
-            //     Previous user transaction - was not an in_doubt page
-            // we need to validate the page only if running in concurrent mode
-            // and the request coming from a user transaction
-            //
-            // Two scenarios:
-            //     User transaction - validate
-            //     Recovery operation - allow
-            //                    from_recovery - UNDO operation
-            //                    cb._recovery_access - REDO operation
-            //         Two different ways to indicate caller from recovery, because
-            //         REDO is page driven so we can mark cb._recovery_access
-            //         but UNDO is transaction driven, not able to associate it to target
-            //         page and also it has to traversal B-tree (visit multiple pages), so
-            //         it is relying on input parameter 'from_recovery'
-
             w_assert1(cb.latch().held_by_me());
-            cb.pin();
             // CS TODO: race condition! assert succeeds, but 0 is printed below
             w_assert1(cb._pin_cnt > 0);
             DBG(<< "Fix set pin cnt of " << idx << " to " << cb._pin_cnt);
             w_assert1(cb._pin_cnt > 0);
-            return RCOK;
+        }
+
+        if (_enable_swizzling && parent) {
+            // swizzle pointer for next invocations
+            w_assert1(!is_swizzled(page));
+            bf_tree_cb_t &cb = get_cb(idx);
+
+            // Get slot on parent page
+            w_assert1(_is_active_idx(parent - _buffer));
+            w_assert1(latch_mode(parent) != LATCH_NL);
+            fixable_page_h p;
+            p.fix_nonbufferpool_page(parent);
+            general_recordid_t slot = find_page_id_slot (parent, pid);
+
+            if (!is_swizzled(parent) ||
+                    //  don't swizzle foster child
+                    *p.child_slot_address(GeneralRecordIds::FOSTER_CHILD) == pid)
+            {
+                return RCOK;
+            }
+
+            // this is a new (virgin) page which has not been linked yet.
+            // skip swizzling this page
+            if (slot == GeneralRecordIds::INVALID && virgin_page) {
+                return RCOK;
+            }
+
+            // Update _swizzled flag atomically
+            bool old_value = false;
+            if (!std::atomic_compare_exchange_strong(&cb._swizzled, &old_value, true)) {
+                // CAS failed -- some other thread is swizzling
+                return RCOK;
+            }
+            w_assert1(is_swizzled(page));
+
+            // To simplify the tree traversal while unswizzling,
+            // we never swizzle foster-child pointers.
+            w_assert1(slot >= GeneralRecordIds::PID0); // was w_assert1(slot >= -1);
+            w_assert1(slot <= p.max_child_slot());
+
+            // Replace pointer with swizzled version
+            PageID* addr = p.child_slot_address(slot);
+            // CS TODO: what about concurrent traversals of the pointer?
+            // Are we assuming that installing this pointer happnes
+            // atomically?  How about visibility, i.e., memory fence?
+            // I don't like this...
+            *addr = idx | SWIZZLED_PID_BIT;
+            ++_swizzled_page_count_approximate;
         }
     }
 }
@@ -468,24 +488,19 @@ void bf_tree_m::switch_parent(PageID pid, generic_page* parent)
     w_assert0(found);
 }
 
-void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
-    DBGOUT3 (<< "converting the page " << page->pid << "... ");
-
+void bf_tree_m::_convert_to_disk_page(generic_page* page) const
+{
     fixable_page_h p;
     p.fix_nonbufferpool_page(page);
     int max_slot = p.max_child_slot();
     for (int i= -1; i<=max_slot; i++) {
-        _convert_to_pageid(p.child_slot_address(i));
-    }
-}
-
-void bf_tree_m::_convert_to_pageid (PageID* pid) const {
-    if ((*pid) & SWIZZLED_PID_BIT) {
-        bf_idx idx = (*pid) ^ SWIZZLED_PID_BIT;
-        w_assert1(_is_active_idx(idx));
-        bf_tree_cb_t &cb = get_cb(idx);
-        DBGOUT3 (<< "_convert_to_pageid(): converted a swizzled pointer bf_idx=" << idx << " to page-id=" << cb._pid);
-        *pid = cb._pid;
+        PageID* pid = p.child_slot_address(i);
+        if ((*pid) & SWIZZLED_PID_BIT) {
+            bf_idx idx = (*pid) ^ SWIZZLED_PID_BIT;
+            w_assert1(_is_active_idx(idx));
+            bf_tree_cb_t &cb = get_cb(idx);
+            *pid = cb._pid;
+        }
     }
 }
 
@@ -510,82 +525,6 @@ general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, PageID pid) 
 
 ///////////////////////////////////   SWIZZLE/UNSWIZZLE BEGIN ///////////////////////////////////
 
-void bf_tree_m::swizzle_child(generic_page* parent, general_recordid_t slot)
-{
-    return swizzle_children(parent, &slot, 1);
-}
-
-void bf_tree_m::swizzle_children(generic_page* parent, const general_recordid_t* slots,
-                                 uint32_t slots_size) {
-    w_assert1(_enable_swizzling);
-    w_assert1(parent != NULL);
-    w_assert1(latch_mode(parent) != LATCH_NL);
-    w_assert1(_is_active_idx(parent - _buffer));
-    w_assert1(is_swizzled(parent)); // swizzling is transitive.
-
-    fixable_page_h p;
-    p.fix_nonbufferpool_page(parent);
-    for (uint32_t i = 0; i < slots_size; ++i) {
-        general_recordid_t slot = slots[i];
-        // To simplify the tree traversal while unswizzling,
-        // we never swizzle foster-child pointers.
-        w_assert1(slot >= GeneralRecordIds::PID0); // was w_assert1(slot >= -1);
-        w_assert1(slot <= p.max_child_slot());
-
-        PageID* addr = p.child_slot_address(slot);
-        if (((*addr) & SWIZZLED_PID_BIT) == 0) {
-            _swizzle_child_pointer(parent, addr);
-        }
-    }
-}
-
-void bf_tree_m::_swizzle_child_pointer(generic_page* parent, PageID* pointer_addr) {
-    PageID pid = *pointer_addr;
-    //w_assert1((child_pid & SWIZZLED_PID_BIT) == 0);
-    bf_idx_pair p;
-    bf_idx idx = 0;
-    if (_hashtable->lookup(pid, p)) {
-        idx = p.first;
-    }
-    // so far, we don't swizzle a child page if it's not in bufferpool yet.
-    if (idx == 0) {
-        DBGOUT1(<< "Unexpected! the child page " << pid << " isn't in bufferpool yet. gave up swizzling it");
-        // this is still okay. swizzling is best-effort
-        return;
-    }
-    bool concurrent_swizzling = false;
-    while (!lintel::unsafe::atomic_compare_exchange_strong(const_cast<bool*>(&(get_cb(idx)._concurrent_swizzling)), &concurrent_swizzling, true))
-    { }
-
-    if ((pid & SWIZZLED_PID_BIT) != 0) {
-        /* another thread swizzled it for us */
-        get_cb(idx)._concurrent_swizzling = false;
-        return;
-    }
-
-    // To swizzle the child, add a pin on the page.
-    // We might fail here in a very unlucky case.  Still, it's fine.
-    // bool pinned = _increment_pin_cnt_no_assumption (idx);
-    // if (!pinned) {
-    //     DBGOUT1(<< "Unlucky! the child page " << child_pid << " has been just evicted. gave up swizzling it");
-    //     get_cb(idx)._concurrent_swizzling = false;
-    //     return;
-    // }
-
-    // we keep the pin until we unswizzle it.
-    *pointer_addr = idx | SWIZZLED_PID_BIT; // overwrite the pointer in parent page.
-    get_cb(idx)._swizzled = true;
-#ifdef BP_TRACK_SWIZZLED_PTR_CNT
-    get_cb(parent)->_swizzled_ptr_cnt_hint++;
-#endif
-    ++_swizzled_page_count_approximate;
-    get_cb(idx)._concurrent_swizzling = false;
-}
-
-bool bf_tree_m::_are_there_many_swizzled_pages() const {
-    return _swizzled_page_count_approximate >= (int) (_block_cnt * 2 / 10);
-}
-
 bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
     fixable_page_h node_p;
     node_p.fix_nonbufferpool_page(_buffer + node_idx);
@@ -608,6 +547,11 @@ struct latch_auto_release {
     latch_t &_latch;
 };
 
+/*
+ * CS TODO: this function is used to unswizzle a pointer (child_slot on page parent_idx)
+ * when performing eviction using tree traversal. Since our current eviction mechanism
+ * does not use traversal, it is currently unused.
+ */
 bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     // misc checks. if any check fails, just returns false.
     bf_tree_cb_t &parent_cb = get_cb(parent_idx);
