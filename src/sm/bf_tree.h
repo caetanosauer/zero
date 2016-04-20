@@ -40,8 +40,8 @@ enum evict_urgency_t {
 
 /** a swizzled pointer (page ID) has this bit ON. */
 const uint32_t SWIZZLED_PID_BIT = 0x80000000;
-inline bool is_swizzled_pointer (PageID shpid) {
-    return (shpid & SWIZZLED_PID_BIT) != 0;
+inline bool is_swizzled_pointer (PageID pid) {
+    return (pid & SWIZZLED_PID_BIT) != 0;
 }
 
 
@@ -227,22 +227,22 @@ public:
 
     /**
      * Fixes a non-root page in the bufferpool. This method receives the parent page and efficiently
-     * fixes the page if the shpid (pointer) is already swizzled by the parent page.
-     * The optimization is transparent for most of the code because the shpid stored in the parent
+     * fixes the page if the pid (pointer) is already swizzled by the parent page.
+     * The optimization is transparent for most of the code because the pid stored in the parent
      * page is automatically (and atomically) changed to a swizzled pointer by the bufferpool.
      *
      * @param[out] page         the fixed page.
      * @param[in]  parent       parent of the page to be fixed. has to be already latched. if you can't provide this,
      *                          use fix_direct() though it can't exploit pointer swizzling.
      * @param[in]  vol          volume ID.
-     * @param[in]  shpid        ID of the page to fix (or bufferpool index when swizzled)
+     * @param[in]  pid        ID of the page to fix (or bufferpool index when swizzled)
      * @param[in]  mode         latch mode.  has to be SH or EX.
      * @param[in]  conditional  whether the fix is conditional (returns immediately even if failed).
      * @param[in]  virgin_page  whether the page is a new page thus doesn't have to be read from disk.
      *
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, PageID shpid,
+    w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, PageID pid,
                           latch_mode_t mode, bool conditional, bool virgin_page,
                           lsn_t emlsn = lsn_t::null);
 
@@ -364,7 +364,7 @@ public:
      * Search in the given page to find the slot that contains the page id as a child.
      * Returns >0 if a normal slot, 0 if pid0, -1 if foster, -2 if not found.
      */
-    general_recordid_t find_page_id_slot (generic_page* page, PageID shpid) const;
+    general_recordid_t find_page_id_slot (generic_page* page, PageID pid) const;
 
     /**
      * Returns if the page is swizzled by parent or the volume descriptor.
@@ -380,7 +380,7 @@ public:
       * identifier as it is.
       * Do NOT call this method without a latch.
       */
-    PageID normalize_shpid(PageID shpid) const;
+    PageID normalize_pid(PageID pid) const;
 
     /**
      * Dumps all contents of this bufferpool.
@@ -392,13 +392,13 @@ public:
      * this method is solely for debugging. It's slow and unsafe.
      */
     void  debug_dump_page_pointers (std::ostream &o, generic_page *page) const;
-    void  debug_dump_pointer (std::ostream &o, PageID shpid) const;
+    void  debug_dump_pointer (std::ostream &o, PageID pid) const;
 
     /**
      * Returns the non-swizzled page-ID for the given pointer that might be swizzled.
      * This is NOT safe against concurrent eviction and should be used just for debugging.
      */
-    PageID  debug_get_original_pageid (PageID shpid) const;
+    PageID  debug_get_original_pageid (PageID pid) const;
 
     /**
      * Returns if the given page is managed by this bufferpool.
@@ -442,7 +442,7 @@ public:
      * but the actual page is not in buffer pool yet
      * Load the actual page into buffer pool
      */
-    w_rc_t load_for_redo(bf_idx idx, PageID shpid);
+    w_rc_t load_for_redo(bf_idx idx, PageID pid);
 
     size_t get_size() { return _block_cnt; }
 
@@ -451,7 +451,7 @@ public:
 private:
 
     /** fixes a non-swizzled page. */
-    w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, PageID shpid,
+    w_rc_t fix(generic_page* parent, generic_page*& page, PageID pid,
                                latch_mode_t mode, bool conditional, bool virgin_page,
                                lsn_t emlsn = lsn_t::null);
 
@@ -465,8 +465,8 @@ private:
      * there aren't such concurrent threads by other means.
      */
     void   _convert_to_disk_page (generic_page* page) const;
-    /** if the shpid is a swizzled pointer, convert it to the original page id. */
-    void   _convert_to_pageid (PageID* shpid) const;
+    /** if the pid is a swizzled pointer, convert it to the original page id. */
+    void   _convert_to_pageid (PageID* pid) const;
 
     /** finds a free block and returns its index. if free list is empty and 'evict' = true, it evicts some page. */
     w_rc_t _grab_free_block(bf_idx& ret, bool evict = true);

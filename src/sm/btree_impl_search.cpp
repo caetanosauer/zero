@@ -236,7 +236,7 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
                 should_try_ex = true;
             } else {
                 // this is also just a hint. TODO can we avoid normalize overhead?
-                should_try_ex = (smlevel_0::bf->normalize_shpid(pid_to_follow_opaqueptr)
+                should_try_ex = (smlevel_0::bf->normalize_pid(pid_to_follow_opaqueptr)
                                     == leaf_pid_causing_failed_upgrade);
             }
         }

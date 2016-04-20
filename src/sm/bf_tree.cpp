@@ -263,15 +263,14 @@ void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx, PageID page_update
     return;
 }
 
-w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
-                                   PageID shpid, latch_mode_t mode,
+w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
+                                   PageID pid, latch_mode_t mode,
                                    bool conditional, bool virgin_page,
                                    lsn_t emlsn)
 {
-    w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
+    if (is_swizzled_pointer(pid)) {
+    }
 
-    // note that the hashtable is separated from this bufferpool.
-    // we need to make sure the returned block is still there, and retry otherwise.
 #if W_DEBUG_LEVEL>0
     int retry_count = 0;
 #endif
@@ -280,17 +279,17 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
         const uint32_t ONE_MICROSEC = 10000;
 #if W_DEBUG_LEVEL>0
         if (++retry_count % 10000 == 0) {
-            DBGOUT1(<<"keep trying to fix.. " << shpid << ". current retry count=" << retry_count);
+            DBGOUT1(<<"keep trying to fix.. " << pid << ". current retry count=" << retry_count);
         }
 #endif
         bf_idx_pair p;
         bf_idx idx = 0;
-        if (_hashtable->lookup(shpid, p)) {
+        if (_hashtable->lookup(pid, p)) {
             idx = p.first;
             if (parent && p.second != parent - _buffer) {
                 // need to fix update parent pointer
                 p.second = parent - _buffer;
-                _hashtable->update(shpid, p);
+                _hashtable->update(pid, p);
             }
         }
 
@@ -318,7 +317,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // STEP 3) register the page on the hashtable, so that only one
             // thread reads it (it may be latched by other concurrent fix)
             bf_idx parent_idx = parent ? parent - _buffer : 0;
-            bool registered = _hashtable->insert_if_not_exists(shpid,
+            bool registered = _hashtable->insert_if_not_exists(pid,
                     bf_idx_pair(idx, parent_idx));
             if (!registered) {
                 cb.clear_except_latch();
@@ -335,16 +334,16 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
                 if (parent && emlsn.is_null()) {
                     // Get emlsn from parent
-                    general_recordid_t recordid = find_page_id_slot(parent, shpid);
+                    general_recordid_t recordid = find_page_id_slot(parent, pid);
                     btree_page_h parent_h;
                     parent_h.fix_nonbufferpool_page(parent);
                     emlsn = parent_h.get_emlsn_general(recordid);
                 }
 
-                w_rc_t read_rc = smlevel_0::vol->read_page_verify(shpid, page, emlsn);
+                w_rc_t read_rc = smlevel_0::vol->read_page_verify(pid, page, emlsn);
                 if (read_rc.is_error())
                 {
-                    _hashtable->remove(shpid);
+                    _hashtable->remove(pid);
                     cb.latch().latch_release();
                     _add_free_block(idx);
                     return read_rc;
@@ -357,7 +356,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
             cb.clear_except_latch();
             cb._pin_cnt = 0;
-            cb._pid = shpid;
+            cb._pid = pid;
             cb._used = true;
             cb._ref_count = BP_INITIAL_REFCOUNT;
             cb._ref_count_ex = BP_INITIAL_REFCOUNT;
@@ -374,7 +373,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // transaction page was in_doubt (using lock for concurrency
             // control) Page is safe to access, not calling
             // _validate_access(page) for page access validation purpose
-            DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: retrieved a new page: " << shpid);
+            DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: retrieved a new page: " << pid);
             cb.pin();
             w_assert1(cb.latch().held_by_me());
             w_assert1(cb._pin_cnt > 0);
@@ -400,7 +399,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             W_DO(cb.latch().latch_acquire(mode, conditional ?
                     sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
 
-            if (cb._pin_cnt < 0 || cb._pid != shpid)
+            if (cb._pin_cnt < 0 || cb._pid != pid)
             {
                 // Page was evicted between hash table probe and latching
                 DBG(<< "Page evicted right before latching. Retrying.");
@@ -519,18 +518,18 @@ void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
     }
 }
 
-void bf_tree_m::_convert_to_pageid (PageID* shpid) const {
-    if ((*shpid) & SWIZZLED_PID_BIT) {
-        bf_idx idx = (*shpid) ^ SWIZZLED_PID_BIT;
+void bf_tree_m::_convert_to_pageid (PageID* pid) const {
+    if ((*pid) & SWIZZLED_PID_BIT) {
+        bf_idx idx = (*pid) ^ SWIZZLED_PID_BIT;
         w_assert1(_is_active_idx(idx));
         bf_tree_cb_t &cb = get_cb(idx);
         DBGOUT3 (<< "_convert_to_pageid(): converted a swizzled pointer bf_idx=" << idx << " to page-id=" << cb._pid);
-        *shpid = cb._pid;
+        *pid = cb._pid;
     }
 }
 
-general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, PageID shpid) const {
-    w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
+general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, PageID pid) const {
+    w_assert1((pid & SWIZZLED_PID_BIT) == 0);
 
     fixable_page_h p;
     p.fix_nonbufferpool_page(page);
@@ -538,9 +537,9 @@ general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, PageID shpid
 
     //for (int i = -1; i <= max_slot; ++i) {
     for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot; ++i) {
-        // ERROUT(<< "Looking for child " << shpid << " on " <<
+        // ERROUT(<< "Looking for child " << pid << " on " <<
         //         *p.child_slot_address(i));
-        if (*p.child_slot_address(i) == shpid) {
+        if (*p.child_slot_address(i) == pid) {
             // ERROUT(<< "OK");
             return i;
         }
@@ -581,7 +580,7 @@ void bf_tree_m::swizzle_children(generic_page* parent, const general_recordid_t*
 
 void bf_tree_m::_swizzle_child_pointer(generic_page* parent, PageID* pointer_addr) {
     PageID pid = *pointer_addr;
-    //w_assert1((child_shpid & SWIZZLED_PID_BIT) == 0);
+    //w_assert1((child_pid & SWIZZLED_PID_BIT) == 0);
     bf_idx_pair p;
     bf_idx idx = 0;
     if (_hashtable->lookup(pid, p)) {
@@ -607,7 +606,7 @@ void bf_tree_m::_swizzle_child_pointer(generic_page* parent, PageID* pointer_add
     // We might fail here in a very unlucky case.  Still, it's fine.
     // bool pinned = _increment_pin_cnt_no_assumption (idx);
     // if (!pinned) {
-    //     DBGOUT1(<< "Unlucky! the child page " << child_shpid << " has been just evicted. gave up swizzling it");
+    //     DBGOUT1(<< "Unlucky! the child page " << child_pid << " has been just evicted. gave up swizzling it");
     //     get_cb(idx)._concurrent_swizzling = false;
     //     return;
     // }
@@ -632,8 +631,8 @@ bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
     int max_slot = node_p.max_child_slot();
     // skipping foster pointer...
     for (int32_t j = 0; j <= max_slot; ++j) {
-        PageID shpid = *node_p.child_slot_address(j);
-        if ((shpid & SWIZZLED_PID_BIT) != 0) {
+        PageID pid = *node_p.child_slot_address(j);
+        if ((pid & SWIZZLED_PID_BIT) != 0) {
             return true;
         }
     }
@@ -641,7 +640,7 @@ bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
 }
 
 w_rc_t bf_tree_m::load_for_redo(bf_idx idx,
-                  PageID shpid)
+                  PageID pid)
 {
     // Special function for Recovery REDO phase
     // idx is in hash table already
@@ -650,13 +649,13 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx,
     // Caller of this fumction is responsible for acquire and release EX latch on this page
 
     w_rc_t rc = RCOK;
-    w_assert1(shpid != 0);
+    w_assert1(pid != 0);
 
-    DBGOUT3(<<"REDO phase: loading page " << shpid
+    DBGOUT3(<<"REDO phase: loading page " << pid
             << " into buffer pool frame " << idx);
 
     // Load the physical page from disk
-    W_DO(smlevel_0::vol->read_page(shpid, &_buffer[idx]));
+    W_DO(smlevel_0::vol->read_page(pid, &_buffer[idx]));
 
     // For the loaded page, compare its checksum
     // If inconsistent, return error
@@ -664,7 +663,7 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx,
         uint32_t checksum = _buffer[idx].calculate_checksum();
         if (checksum != _buffer[idx].checksum)
         {
-            ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid
+            ERROUT(<<"bf_tree_m: bad page checksum in page " << pid
                     << " -- expected " << checksum
                     << " got " << _buffer[idx].checksum);
             return RC (eBADCHECKSUM);
@@ -672,9 +671,9 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx,
     }
 
     // Then, page ID must match, otherwise raise error
-    if (shpid != _buffer[idx].pid) {
+    if (pid != _buffer[idx].pid) {
         W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
-                << "." << shpid << " was " << _buffer[idx].pid);
+                << "." << pid << " was " << _buffer[idx].pid);
     }
 
     return rc;
@@ -710,12 +709,12 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     if (child_slot >= (uint32_t) parent.max_child_slot()+1) {
         return false;
     }
-    PageID* shpid_addr = parent.child_slot_address(child_slot);
-    PageID shpid = *shpid_addr;
-    if ((shpid & SWIZZLED_PID_BIT) == 0) {
+    PageID* pid_addr = parent.child_slot_address(child_slot);
+    PageID pid = *pid_addr;
+    if ((pid & SWIZZLED_PID_BIT) == 0) {
         return false;
     }
-    bf_idx child_idx = shpid ^ SWIZZLED_PID_BIT;
+    bf_idx child_idx = pid ^ SWIZZLED_PID_BIT;
     bf_tree_cb_t &child_cb = get_cb(child_idx);
     w_assert1(child_cb._used);
     w_assert1(child_cb._swizzled);
@@ -737,8 +736,8 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     // _decrement_pin_cnt_assume_positive(child_idx);
     --_swizzled_page_count_approximate;
 
-    *shpid_addr = child_cb._pid;
-    w_assert1(((*shpid_addr) & SWIZZLED_PID_BIT) == 0);
+    *pid_addr = child_cb._pid;
+    w_assert1(((*pid_addr) & SWIZZLED_PID_BIT) == 0);
 
     return true;
 }
@@ -798,23 +797,23 @@ void bf_tree_m::debug_dump_page_pointers(std::ostream& o, generic_page* page) co
     }
     o << std::endl;
 }
-void bf_tree_m::debug_dump_pointer(ostream& o, PageID shpid) const
+void bf_tree_m::debug_dump_pointer(ostream& o, PageID pid) const
 {
-    if (shpid & SWIZZLED_PID_BIT) {
-        bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
+    if (pid & SWIZZLED_PID_BIT) {
+        bf_idx idx = pid ^ SWIZZLED_PID_BIT;
         o << "swizzled(bf_idx=" << idx;
         o << ", page=" << get_cb(idx)._pid << ")";
     } else {
-        o << "normal(page=" << shpid << ")";
+        o << "normal(page=" << pid << ")";
     }
 }
 
-PageID bf_tree_m::debug_get_original_pageid (PageID shpid) const {
-    if (is_swizzled_pointer(shpid)) {
-        bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
+PageID bf_tree_m::debug_get_original_pageid (PageID pid) const {
+    if (is_swizzled_pointer(pid)) {
+        bf_idx idx = pid ^ SWIZZLED_PID_BIT;
         return get_cb(idx)._pid;
     } else {
-        return shpid;
+        return pid;
     }
 }
 
@@ -877,7 +876,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     w_assert1(!cb.latch().is_latched());
     cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
 
-    DBGOUT1(<<"delete block: remove page shpid = " << cb._pid);
+    DBGOUT1(<<"delete block: remove page pid = " << cb._pid);
     bool removed = _hashtable->remove(cb._pid);
     w_assert1(removed);
 
@@ -962,11 +961,11 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
 }
 
 w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
-                                     PageID shpid, latch_mode_t mode, bool conditional,
+                                     PageID pid, latch_mode_t mode, bool conditional,
                                      bool virgin_page, lsn_t emlsn)
 {
     INC_TSTAT(bf_fix_nonroot_count);
-    return _fix_nonswizzled(parent, page, shpid, mode, conditional, virgin_page, emlsn);
+    return fix(parent, page, pid, mode, conditional, virgin_page, emlsn);
 }
 
 w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
@@ -980,7 +979,7 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
     if (!_is_valid_idx(idx)) {
         // Load root page
         PageID root_pid = smlevel_0::vol->get_store_root(store);
-        W_DO(_fix_nonswizzled(NULL, page, root_pid, mode, conditional, virgin));
+        W_DO(fix(NULL, page, root_pid, mode, conditional, virgin));
 
         bf_idx_pair p;
         bool found = _hashtable->lookup(root_pid, p);
@@ -1139,21 +1138,21 @@ void pin_for_refix_holder::release() {
 }
 
 
-PageID bf_tree_m::normalize_shpid(PageID shpid) const {
+PageID bf_tree_m::normalize_pid(PageID pid) const {
     generic_page* page;
 #ifdef SIMULATE_MAINMEMORYDB
-    bf_idx idx = shpid;
+    bf_idx idx = pid;
     page = &_buffer[idx];
     return page->pid;
 #else
     // if (is_swizzling_enabled()) {
-        if (is_swizzled_pointer(shpid)) {
-            bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
+        if (is_swizzled_pointer(pid)) {
+            bf_idx idx = pid ^ SWIZZLED_PID_BIT;
             page = &_buffer[idx];
             return page->pid;
         }
     // }
-    return shpid;
+    return pid;
 #endif
 }
 

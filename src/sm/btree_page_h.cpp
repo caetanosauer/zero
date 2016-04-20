@@ -21,28 +21,28 @@
 
 PageID btree_page_h::pid0() const
 {
-    PageID shpid = page()->btree_pid0;
-    if (shpid) {
-        return smlevel_0::bf->normalize_shpid(shpid);
+    PageID pid = page()->btree_pid0;
+    if (pid) {
+        return smlevel_0::bf->normalize_pid(pid);
     }
-    return shpid;
+    return pid;
 }
 
 PageID btree_page_h::get_foster() const {
-    PageID shpid = page()->btree_foster;
-    if (shpid) {
-        return smlevel_0::bf->normalize_shpid(shpid);
+    PageID pid = page()->btree_foster;
+    if (pid) {
+        return smlevel_0::bf->normalize_pid(pid);
     }
-    return shpid;
+    return pid;
 }
 
 PageID btree_page_h::child(slotid_t slot) const
 {
-    PageID shpid = child_opaqueptr(slot);
-    if (shpid) {
-        return smlevel_0::bf->normalize_shpid(shpid);
+    PageID pid = child_opaqueptr(slot);
+    if (pid) {
+        return smlevel_0::bf->normalize_pid(pid);
     }
-    return shpid;
+    return pid;
 }
 
 btrec_t&
