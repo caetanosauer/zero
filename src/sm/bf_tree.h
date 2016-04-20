@@ -90,10 +90,7 @@ inline bool is_swizzled_pointer (PageID pid) {
 #define BP_TRACK_SWIZZLED_PTR_CNT
 
 // Use the new layout with swizzling
-#if !defined SIMULATE_MAINMEMORYDB && !defined SIMULATE_NO_SWIZZLING
-# define BP_ALTERNATE_CB_LATCH
-#endif
-
+#define BP_ALTERNATE_CB_LATCH
 
 #ifndef PAUSE_SWIZZLING_ON
 const bool _bf_pause_swizzling = false; // compiler will strip this out from if clauses. so, no overhead.

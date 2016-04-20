@@ -78,13 +78,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     //     _replacement_policy = POLICY_RANDOM;
     // }
 
-#ifdef SIMULATE_NO_SWIZZLING
-    _enable_swizzling = false;
-    bufferpool_swizzle = false;
-    DBGOUT0 (<< "THIS MESSAGE MUST NOT APPEAR unless you intended."
-            << " Completely turned off swizzling in bufferpool.");
-#endif // SIMULATE_NO_SWIZZLING
-
     DBGOUT1 (<< "constructing bufferpool with " << nbufpages << " blocks of "
             << SM_PAGESIZE << "-bytes pages... enable_swizzling=" <<
             _enable_swizzling);
@@ -452,10 +445,6 @@ bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
     bf_idx idx = page - _buffer;
     w_assert1(_is_active_idx(idx));
 
-#ifdef SIMULATE_MAINMEMORYDB
-    if (true) return idx;
-#endif // SIMULATE_MAINMEMORYDB
-
     w_assert1(get_cb(idx)._pin_cnt >= 0);
     w_assert1(get_cb(idx).latch().held_by_me());
 
@@ -466,10 +455,6 @@ bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
 
 void bf_tree_m::unpin_for_refix(bf_idx idx) {
     w_assert1(_is_active_idx(idx));
-
-#ifdef SIMULATE_MAINMEMORYDB
-    if (true) return;
-#endif // SIMULATE_MAINMEMORYDB
 
     w_assert1(get_cb(idx)._pin_cnt > 0);
 
@@ -1140,11 +1125,6 @@ void pin_for_refix_holder::release() {
 
 PageID bf_tree_m::normalize_pid(PageID pid) const {
     generic_page* page;
-#ifdef SIMULATE_MAINMEMORYDB
-    bf_idx idx = pid;
-    page = &_buffer[idx];
-    return page->pid;
-#else
     // if (is_swizzling_enabled()) {
         if (is_swizzled_pointer(pid)) {
             bf_idx idx = pid ^ SWIZZLED_PID_BIT;
@@ -1153,7 +1133,6 @@ PageID bf_tree_m::normalize_pid(PageID pid) const {
         }
     // }
     return pid;
-#endif
 }
 
 bool pidCmp(const PageID& a, const PageID& b) { return a < b; }
