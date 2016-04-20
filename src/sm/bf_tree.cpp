@@ -40,12 +40,6 @@
 
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////
 
-#ifdef PAUSE_SWIZZLING_ON
-bool bf_tree_m::_bf_pause_swizzling = true;
-uint64_t bf_tree_m::_bf_swizzle_ex = 0;
-uint64_t bf_tree_m::_bf_swizzle_ex_fails = 0;
-#endif // PAUSE_SWIZZLING_ON
-
 bf_tree_m::bf_tree_m(const sm_options& options)
 {
     // sm_bufboolsize given in MB -- default 8GB
@@ -237,24 +231,6 @@ bf_idx bf_tree_m::lookup(PageID pid) const
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////
 // NOTE most of the page fix/unfix functions are in bf_tree_inline.h.
 // These functions are here are because called less frequently.
-
-
-void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx, PageID page_updated)
-{
-    // Special function for REDO phase of the system Recovery process
-    // The physical page is loaded in buffer pool, idx is known but we
-    // need to associate it with fixable_page data structure
-    // Swizzling must be off
-
-    w_assert1(!smlevel_0::bf->is_swizzling_enabled());
-    w_assert1 (_is_active_idx(idx));
-    _pp = &(smlevel_0::bf->_buffer[idx]);
-
-    // Store lptid_t (vol and store IDs and page number) into the data buffer in the page
-    _buffer[idx].pid = page_updated;
-
-    return;
-}
 
 w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                                    PageID pid, latch_mode_t mode,
@@ -541,7 +517,7 @@ void bf_tree_m::swizzle_child(generic_page* parent, general_recordid_t slot)
 
 void bf_tree_m::swizzle_children(generic_page* parent, const general_recordid_t* slots,
                                  uint32_t slots_size) {
-    w_assert1(is_swizzling_enabled());
+    w_assert1(_enable_swizzling);
     w_assert1(parent != NULL);
     w_assert1(latch_mode(parent) != LATCH_NL);
     w_assert1(_is_active_idx(parent - _buffer));
@@ -622,46 +598,6 @@ bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
         }
     }
     return false;
-}
-
-w_rc_t bf_tree_m::load_for_redo(bf_idx idx,
-                  PageID pid)
-{
-    // Special function for Recovery REDO phase
-    // idx is in hash table already
-    // but the actual page has not loaded from disk into buffer pool yet
-
-    // Caller of this fumction is responsible for acquire and release EX latch on this page
-
-    w_rc_t rc = RCOK;
-    w_assert1(pid != 0);
-
-    DBGOUT3(<<"REDO phase: loading page " << pid
-            << " into buffer pool frame " << idx);
-
-    // Load the physical page from disk
-    W_DO(smlevel_0::vol->read_page(pid, &_buffer[idx]));
-
-    // For the loaded page, compare its checksum
-    // If inconsistent, return error
-    if (_buffer[idx].checksum != 0) {
-        uint32_t checksum = _buffer[idx].calculate_checksum();
-        if (checksum != _buffer[idx].checksum)
-        {
-            ERROUT(<<"bf_tree_m: bad page checksum in page " << pid
-                    << " -- expected " << checksum
-                    << " got " << _buffer[idx].checksum);
-            return RC (eBADCHECKSUM);
-        }
-    }
-
-    // Then, page ID must match, otherwise raise error
-    if (pid != _buffer[idx].pid) {
-        W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
-                << "." << pid << " was " << _buffer[idx].pid);
-    }
-
-    return rc;
 }
 
 struct latch_auto_release {
@@ -802,47 +738,6 @@ PageID bf_tree_m::debug_get_original_pageid (PageID pid) const {
     }
 }
 
-w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
-    if (_enable_swizzling == enabled) {
-        return RCOK;
-    }
-    DBGOUT1 (<< "changing the pointer swizzling setting in the bufferpool to " << enabled << "... ");
-
-    // changing this setting affects all buffered pages because
-    //   swizzling-off : "_parent" in the control block is not set
-    //   swizzling-on : "_parent" in the control block is set
-
-    // first, flush out all dirty pages. we assume there is no concurrent transaction
-    // which produces dirty pages from here on. if there is, booomb.
-    _cleaner->wakeup(true);
-
-    // clear all properties. could call uninstall_volume for each of them,
-    // but nuking them all is faster.
-    for (bf_idx i = 0; i < _block_cnt; i++) {
-        bf_tree_cb_t &cb = get_cb(i);
-        cb.clear();
-    }
-    _freelist[0] = 1;
-    for (bf_idx i = 1; i < _block_cnt - 1; ++i) {
-        _freelist[i] = i + 1;
-    }
-    _freelist[_block_cnt - 1] = 0;
-    _freelist_len = _block_cnt - 1; // -1 because [0] isn't a valid block
-
-    //re-create hashtable
-    delete _hashtable;
-    int buckets = w_findprime(1024 + (_block_cnt / 4));
-    _hashtable = new bf_hashtable<bf_idx_pair>(buckets);
-    w_assert0(_hashtable != NULL);
-
-    // finally switch the property
-    _enable_swizzling = enabled;
-
-    DBGOUT1 (<< "changing the pointer swizzling setting done. ");
-    return RCOK;
-}
-
-
 w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_t child_slotid,
                                          lsn_t child_emlsn) {
     sys_xct_section_t sxs (true); // this transaction will output only one log!
@@ -928,8 +823,6 @@ bf_idx bf_tree_m::get_root_page_idx(StoreID store) {
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////
-
-const uint32_t SWIZZLED_LRU_UPDATE_INTERVAL = 1000;
 
 w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
                                        idx, latch_mode_t mode, bool conditional) {
@@ -1084,26 +977,14 @@ bool bf_tree_m::upgrade_latch_conditional(const generic_page* p) {
     }
 }
 
-void print_latch_holders(latch_t* latch);
-
-
 ///////////////////////////////////   Page fix/unfix END         ///////////////////////////////////
 
-///////////////////////////////////   LRU/Freelist BEGIN ///////////////////////////////////
-#ifdef BP_MAINTAIN_PARENT_PTR
-// bool bf_tree_m::_is_in_swizzled_lru (bf_idx idx) const {
-//     w_assert1 (_is_active_idx(idx));
-//     return SWIZZLED_LRU_NEXT(idx) != 0 || SWIZZLED_LRU_PREV(idx) != 0 || SWIZZLED_LRU_HEAD == idx;
-// }
-#endif // BP_MAINTAIN_PARENT_PTR
 bool bf_tree_m::is_swizzled(const generic_page* page) const
 {
     bf_idx idx = page - _buffer;
     w_assert1 (_is_active_idx(idx));
     return get_cb(idx)._swizzled;
 }
-
-///////////////////////////////////   LRU/Freelist END ///////////////////////////////////
 
 bool bf_tree_m::_is_valid_idx(bf_idx idx) const {
     return idx > 0 && idx < _block_cnt;
@@ -1125,13 +1006,11 @@ void pin_for_refix_holder::release() {
 
 PageID bf_tree_m::normalize_pid(PageID pid) const {
     generic_page* page;
-    // if (is_swizzling_enabled()) {
-        if (is_swizzled_pointer(pid)) {
-            bf_idx idx = pid ^ SWIZZLED_PID_BIT;
-            page = &_buffer[idx];
-            return page->pid;
-        }
-    // }
+    if (is_swizzled_pointer(pid)) {
+        bf_idx idx = pid ^ SWIZZLED_PID_BIT;
+        page = &_buffer[idx];
+        return page->pid;
+    }
     return pid;
 }
 

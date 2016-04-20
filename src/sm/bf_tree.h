@@ -44,28 +44,6 @@ inline bool is_swizzled_pointer (PageID pid) {
     return (pid & SWIZZLED_PID_BIT) != 0;
 }
 
-
-// A flag for the experiment to simulate a bufferpool without swizzling.
-// "_enable_swizzling" in bf_tree_m merely turns on/off swizzling of non-root pages.
-// to make it completely off, define this flag.
-// this's a compile-time flag because this simulation is just a redundant code (except the experiment)
-// which should go away for best performance.
-// #define SIMULATE_NO_SWIZZLING
-
-// A flag to additionally take EX latch on swizzling a pointer.
-// This is NOT required because reading/writing a 4-bytes integer is always atomic,
-// and because we keep hashtable entry for swizzled pages. So, it's fine even if
-// another thread reads the stale value (non-swizzled page id).
-// this flag is just for testing the contribution of the above idea.
-// #define EX_LATCH_ON_SWIZZLING
-// allow avoiding swizzling. this is also just for an experiment.
-// #define PAUSE_SWIZZLING_ON
-
-// A flag for the experiment to simulate a bufferpool without eviction.
-// All pages are fixed and never evicted, assuming a bufferpool larger than data.
-// Also, this flag assumes there is only one volume.
-// #define SIMULATE_MAINMEMORYDB
-
 // A flag whether the bufferpool maintains replacement priority per page.
 #define BP_MAINTAIN_REPLACEMENT_PRIORITY
 
@@ -91,10 +69,6 @@ inline bool is_swizzled_pointer (PageID pid) {
 
 // Use the new layout with swizzling
 #define BP_ALTERNATE_CB_LATCH
-
-#ifndef PAUSE_SWIZZLING_ON
-const bool _bf_pause_swizzling = false; // compiler will strip this out from if clauses. so, no overhead.
-#endif // PAUSE_SWIZZLING_ON
 
 /**
  * When unswizzling is triggered, _about_ this number of frames will be unswizzled at once.
@@ -170,12 +144,6 @@ class bf_tree_m {
     friend class page_cleaner_decoupled;
 
 public:
-#ifdef PAUSE_SWIZZLING_ON
-    static bool _bf_pause_swizzling; // this can be turned on/off from any place. ugly, but it's just for an experiment.
-    static uint64_t _bf_swizzle_ex; // approximate statistics. how many times ex-latch were taken on page swizzling
-    static uint64_t _bf_swizzle_ex_fails; // approximate statistics. how many times ex-latch upgrade failed on page swizzling
-#endif // PAUSE_SWIZZLING_ON
-
     /** constructs the buffer pool. */
     bf_tree_m (const sm_options&);
 
@@ -186,18 +154,6 @@ public:
 
     /** returns the total number of blocks in this bufferpool. */
     inline bf_idx get_block_cnt() const {return _block_cnt;}
-
-    /**
-     * returns if pointer swizzling is currently enabled.
-     */
-    inline bool is_swizzling_enabled() const {return _enable_swizzling;}
-    /**
-     * enables or disables pointer swizzling in this bufferpool.
-     * this method will essentially re-create the bufferpool,
-     * flushing all dirty pages and evicting all pages.
-     * this method should be used only when it has to be, such as before/after REDO recovery.
-     */
-    w_rc_t set_swizzling_enabled(bool enabled);
 
     /** returns the control block corresponding to the given memory frame index */
     bf_tree_cb_t& get_cb(bf_idx idx) const;
@@ -242,21 +198,6 @@ public:
     w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, PageID pid,
                           latch_mode_t mode, bool conditional, bool virgin_page,
                           lsn_t emlsn = lsn_t::null);
-
-    /**
-     * Special function for the REDO phase in system Recovery process
-     * The page has been loaded into buffer pool and in the hashtable with known idx
-     * This function associates the page in buffer pool with fixable_page data structure.
-     * also store the vol and store number into the buffer (store number is not in cb)
-     * There is no parent involved, and swizzling must be disabled.
-     * @param[out] page the fixed page.
-     * @param[in] idx idx of the page.
-     */
-    void associate_page(generic_page*&_pp, bf_idx idx, PageID page_updated);
-
-    /**
-     * New version of fix_direct: requires a given EMLSN
-     */
 
     /**
      * Adds an additional pin count for the given page (which must be already latched).
@@ -366,8 +307,6 @@ public:
     /**
      * Returns if the page is swizzled by parent or the volume descriptor.
      * Do NOT call this method without a latch.
-     * Also, do not call this function when is_swizzling_enabled() is false.
-     * It returns a bogus result in that case (or asserts).
      */
     bool is_swizzled (const generic_page* page) const;
 
@@ -432,14 +371,6 @@ public:
         evict_urgency_t urgency = EVICT_NORMAL,
         uint32_t preferred_count = 0);
 
-
-    /**
-     * Used during REDO phase in Recovery only
-     * The specified page has cb in buffer pool, also registered in hashtable
-     * but the actual page is not in buffer pool yet
-     * Load the actual page into buffer pool
-     */
-    w_rc_t load_for_redo(bf_idx idx, PageID pid);
 
     size_t get_size() { return _block_cnt; }
 
