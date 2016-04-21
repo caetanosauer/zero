@@ -102,6 +102,8 @@ rc_t restart_m::_collect_spr_logs(
     list<uint32_t>& lr_offsets)
 {
     w_assert0(!emlsn.is_null());
+    // make sure log is durable until the lsn we're trying to fetch
+    smlevel_0::log->flush(emlsn);
 
     // Allocate initial buffer -- expand later if needed
     // CS: regular allocation is fine since SPR isn't such a critical operation
