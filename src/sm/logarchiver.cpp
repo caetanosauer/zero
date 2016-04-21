@@ -341,7 +341,7 @@ LogArchiver::LogArchiver(const sm_options& options)
     shutdownFlag(false), control(&shutdownFlag), selfManaged(true),
     flushReqLSN(lsn_t::null)
 {
-    std::string archdir = options.get_string_option("sm_archdir", "");
+    std::string archdir = options.get_string_option("sm_archdir", "archive");
     size_t workspaceSize = 1024 * 1024 * // convert MB -> B
         options.get_int_option("sm_archiver_workspace_size", DFT_WSPACE_SIZE);
     size_t blockSize =

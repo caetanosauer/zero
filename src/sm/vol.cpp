@@ -724,7 +724,6 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
 rc_t vol_t::write_backup(PageID first, size_t count, void* buf)
 {
     w_assert0(_backup_write_fd > 0);
-    w_assert1(first + count <= (PageID) num_used_pages());
     w_assert1(count > 0);
     size_t offset = size_t(first) * sizeof(generic_page);
 

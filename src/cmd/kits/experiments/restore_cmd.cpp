@@ -47,7 +47,7 @@ void RestoreCmd::setupOptions()
         ("segmentSize", po::value<unsigned>(&opt_segmentSize)
             ->default_value(1024),
             "Size of restore segment in number of pages")
-        ("singlePass", po::value<bool>(&opt_singlePass)->default_value(false)
+        ("singlePass", po::value<bool>(&opt_singlePass)->default_value(true)
             ->implicit_value(true),
             "Whether to use single-pass restore scheduler from the start")
         ("instant", po::value<bool>(&opt_instant)->default_value(true)
@@ -91,11 +91,6 @@ void RestoreCmd::loadOptions(sm_options& options)
 
 void RestoreCmd::run()
 {
-    if (!smlevel_0::logArchiver) {
-        throw runtime_error("Log Archive is required to perform restore. \
-                Specify path to archive directory with --sm_archdir");
-    }
-
     // STEP 1 - load database and take backup
     if (opt_load) {
         // delete existing backups
@@ -104,6 +99,12 @@ void RestoreCmd::run()
         }
     }
     init();
+
+    if (!smlevel_0::logArchiver) {
+        throw runtime_error("Log Archive is required to perform restore. \
+                Specify path to archive directory with --sm_archdir");
+    }
+
 
     if (opt_load) {
         shoreEnv->load();

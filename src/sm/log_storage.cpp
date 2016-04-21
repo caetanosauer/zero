@@ -78,7 +78,7 @@ log_storage::log_storage(const sm_options& options)
     :
         _skip_log(new skip_log)
 {
-    std::string logdir = options.get_string_option("sm_logdir", "");
+    std::string logdir = options.get_string_option("sm_logdir", "log");
     if (logdir.empty()) {
         cerr << "ERROR: sm_logdir must be set to enable logging." << endl;
         W_FATAL(eCRASH);

@@ -303,7 +303,7 @@ void Command::setupSMOptions(po::options_description& options)
         "Path to a backup directory")
     ("sm_bufferpool_replacement_policy", po::value<string>(),
         "Replacement Policy")
-    ("sm_archdir", po::value<string>(),
+    ("sm_archdir", po::value<string>()->default_value("archive"),
         "Path to archive directory");
     options.add(smoptions);
 }
