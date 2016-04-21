@@ -187,8 +187,10 @@ testdriver_thread_t::do_construct()
     }
 
     if(_options.get_bool_option("sm_testenv_init_vol", true)) {
-        _options.set_bool_option("sm_truncate", true);
+        _options.set_bool_option("sm_format", true);
     }
+    _options.set_bool_option("sm_shutdown_clean", false);
+    _options.set_int_option("sm_cleaner_interval_msec", 0);
 }
 
 rc_t

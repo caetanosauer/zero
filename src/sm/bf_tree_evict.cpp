@@ -159,7 +159,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         btree_page_h p;
         p.fix_nonbufferpool_page(_buffer + idx);
         if (p.tag() != t_btree_p || !p.is_leaf() || cb.is_dirty()
-                || !cb._used || p.pid() == p.root())
+                || !cb._used || p.pid() == p.root() || cb._swizzled)
         {
             cb.latch().latch_release();
             DBG3(<< "Eviction failed on flags for " << idx);

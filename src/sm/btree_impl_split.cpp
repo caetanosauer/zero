@@ -181,24 +181,6 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, PageID& new_page_id,
     w_assert0(move_count > 0);
     DBG(<< "NEW FOSTER CHILD " << new_page);
 
-    // set parent pointer on hash table
-    smlevel_0::bf->switch_parent(new_page_id, page.get_generic_page());
-
-    // set parent pointer for children that moved to new page
-    int max_slot = new_page.max_child_slot();
-    for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot;
-            ++i)
-    {
-        PageID shpid = *new_page.child_slot_address(i);
-        if ((shpid & SWIZZLED_PID_BIT) == 0) {
-            smlevel_0::bf->switch_parent(new_page_id, new_page.get_generic_page());
-        }
-        else {
-            // CS TODO handle swizzled case
-            w_assert0(false);
-        }
-    }
-
     /*
      * Step 3: Delete moved records and update foster child pointer and high
      * fence on overflowing page. Foster parent is not recompressed after
@@ -214,7 +196,30 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, PageID& new_page_id,
     w_assert0(foster_set);
 
     /*
-     * Step 4: Log bulk deletion and foster update on parent
+     * Step 4: Update parent pointers of the moved records and the new
+     * foster child. This is only required because of swizzling.
+     */
+
+    // set parent pointer on hash table
+    smlevel_0::bf->switch_parent(new_page_id, page.get_generic_page());
+
+    // set parent pointer for children that moved to new page
+    if (!new_page.is_leaf()) {
+        int max_slot = new_page.max_child_slot();
+        for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot;
+                ++i)
+        {
+            PageID pid = *new_page.child_slot_address(i);
+            if (smlevel_0::bf->is_swizzled_pointer(pid)) {
+                bool success = smlevel_0::bf->unswizzle(new_page.get_generic_page(), i, false, &pid);
+                w_assert0(success);
+            }
+            smlevel_0::bf->switch_parent(pid, new_page.get_generic_page());
+        }
+    }
+
+    /*
+     * Step 5: Log bulk deletion and foster update on parent
      */
     W_DO(log_btree_split(new_page, page, move_count, split_key, new_chain));
 
@@ -362,7 +367,7 @@ rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
 
 rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent,
                                                              PageID surely_need_child_pid,
-                                                             const bool from_recovery)
+                                                             const bool /*from_recovery*/)
 {
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.latch_mode() == LATCH_EX);

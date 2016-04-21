@@ -169,14 +169,12 @@ btree_impl::_sx_grow_tree(btree_page_h& rp)
     for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot;
             ++i)
     {
-        PageID shpid = *cp.child_slot_address(i);
-        if ((shpid & SWIZZLED_PID_BIT) == 0) {
-            smlevel_0::bf->switch_parent(shpid, cp.get_generic_page());
+        PageID pid = *cp.child_slot_address(i);
+        if (smlevel_0::bf->is_swizzled_pointer(pid)) {
+            bool success = smlevel_0::bf->unswizzle(cp.get_generic_page(), i, false, &pid);
+            w_assert0(success);
         }
-        else {
-            // CS TODO handle swizzled case
-            w_assert0(false);
-        }
+        smlevel_0::bf->switch_parent(pid, cp.get_generic_page());
     }
 
     w_assert3(cp.is_consistent(true, true));

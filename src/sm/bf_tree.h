@@ -40,9 +40,6 @@ enum evict_urgency_t {
 
 /** a swizzled pointer (page ID) has this bit ON. */
 const uint32_t SWIZZLED_PID_BIT = 0x80000000;
-inline bool is_swizzled_pointer (PageID pid) {
-    return (pid & SWIZZLED_PID_BIT) != 0;
-}
 
 // A flag whether the bufferpool maintains replacement priority per page.
 #define BP_MAINTAIN_REPLACEMENT_PRIORITY
@@ -155,6 +152,9 @@ public:
     /** returns the root-page index of the root page, which is always kept in the volume descriptor:*/
     bf_idx get_root_page_idx(StoreID store);
 
+    static bool is_swizzled_pointer (PageID pid) {
+        return (pid & SWIZZLED_PID_BIT) != 0;
+    }
 
     /**
      * Fixes a non-root page in the bufferpool. This method receives the parent page and efficiently
@@ -334,6 +334,22 @@ public:
 
     page_cleaner_base* get_cleaner();
 
+    /**
+     * Tries to unswizzle the given child page from the parent page.  If, for
+     * some reason, unswizzling was impossible or troublesome, gives up and
+     * returns false
+     *
+     * @pre parent is latched in any mode; child is latched in EX mode (if apply=true)
+     * @return whether the child page has been unswizzled
+     *
+     * @param[out] pid_ret Unswizzled PageID is returned in pid_ret (if not null)
+     * @param[in] apply If apply == true, pointer is actually unswizzled
+     * in parent; otherwise just return what the unswizzled pointer would be
+     * (i.e., the ret_pid)
+     */
+    bool unswizzle(generic_page* parent, uint32_t child_slot, bool apply = true,
+            PageID* ret_pid = nullptr);
+
 private:
 
     /** fixes a non-swizzled page. */
@@ -395,13 +411,6 @@ private:
 
     /** Core implementation of evict_blocks(). */
     w_rc_t _evict_blocks(EvictionContext &context);
-
-    /**
-     * Tries to unswizzle the given child page from the parent page.
-     * If, for some reason, unswizzling was impossible or troublesome, gives up and returns false.
-     * @return whether the child page has been unswizzled
-     */
-    bool   _unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot);
 
     /**
      * Deletes the given block from this buffer pool. This method must be called when

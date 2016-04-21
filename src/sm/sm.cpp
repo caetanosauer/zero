@@ -240,9 +240,9 @@ ss_m::_construct_once()
      */
     shutting_down = false;
     shutdown_clean = _options.get_bool_option("sm_shutdown_clean", false);
-    if (_options.get_bool_option("sm_format", false)) {
-        shutdown_clean = true;
-    }
+    // if (_options.get_bool_option("sm_format", false)) {
+    //     shutdown_clean = true;
+    // }
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing lock manager");
 
