@@ -1459,6 +1459,10 @@ void btree_page_h::insert_nonghost(const w_keystr_t &key, const cvec_t &elem) {
         w_assert3 (rec.key().compare(key) == 0);
 #endif // W_DEBUG_LEVEL > 2
 
+        // CS TODO: slot 0 is never used, because when the page is empty, slot
+        // == 0, which mins replace_item_data will be invoked on slot 1. This
+        // means that all methods that iterate over slots (e.g.,
+        // _convrt_to_disk_page) must skip slot 0 (what a great design ...)
         if (!page()->replace_item_data(slot+1, _element_offset(slot), elem)) {
             w_assert1(false); // should not happen because ghost should have had enough space
         }

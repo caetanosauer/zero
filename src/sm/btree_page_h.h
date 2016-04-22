@@ -1293,6 +1293,7 @@ inline PageID* btree_page_h::page_pointer_address(int offset) {
         return &page()->btree_pid0;
     }
 
+    // CS TODO: why +1 here? what happens when offset == 0?
     return &page()->item_child(offset+1);
 }
 

@@ -207,7 +207,7 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     generic_page& pdest = _workspace[wpos];
     ::memcpy(&pdest, page_buffer + idx, sizeof (generic_page));
     pdest.lsn = cb.get_page_lsn();
-    // CS TODO: swizzling!
+
     // if the page contains a swizzled pointer, we need to convert
     // the data back to the original pointer.  we need to do this
     // before releasing SH latch because the pointer might be

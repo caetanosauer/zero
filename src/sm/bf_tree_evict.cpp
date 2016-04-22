@@ -131,6 +131,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
                 DBG1(<< "Eviction stuck! Nonleafs: " << nonleaf_count
                         << " invalid parents: " << invalid_parents
                         << " dirty: " << dirty_count);
+                nonleaf_count = invalid_parents = dirty_count = 0;
                 rounds++;
                 usleep(5000); //5ms
             }
@@ -159,10 +160,10 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         btree_page_h p;
         p.fix_nonbufferpool_page(_buffer + idx);
         if (p.tag() != t_btree_p || !p.is_leaf() || cb.is_dirty()
-                || !cb._used || p.pid() == p.root() || cb._swizzled)
+                || !cb._used || p.pid() == p.root())
         {
             cb.latch().latch_release();
-            DBG3(<< "Eviction failed on flags for " << idx);
+            DBG5(<< "Eviction failed on flags for " << idx);
             if (!p.is_leaf()) { nonleaf_count++; }
             if (cb.is_dirty()) { dirty_count++; }
             idx++;
@@ -226,10 +227,21 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         // it on gdb right after, I guet true. NO IDEA what's happening!
         // w_assert0(parent->tag == t_btree_p);
 
-        general_recordid_t child_slotid = find_page_id_slot(parent, pid);
-        // How can this happen if we have latch on both?
+        // Unswizzle before attempting eviction
+        general_recordid_t child_slotid;
+        if (cb._swizzled) {
+            // Search for swizzled address
+            PageID swizzled_pid = idx ^ SWIZZLED_PID_BIT;
+            child_slotid = find_page_id_slot(parent, swizzled_pid);
+        }
+        else {
+            child_slotid = find_page_id_slot(parent, pid);
+        }
+
+        // CS TODO: How can this happen if we have latch on both?
+        // -> parent pointer may be wrong, that's how!
         if (child_slotid == GeneralRecordIds::INVALID) {
-            DBG3(<< "Eviction failed on slot for " << idx
+            DBG5(<< "Eviction failed on slot for " << idx
                     << " pin count is " << cb._pin_cnt);
             parent_cb.latch().latch_release();
             cb.latch().latch_release();
@@ -238,10 +250,17 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
             continue;
         }
 
+        if (cb._swizzled) {
+            bool ret = unswizzle(parent, child_slotid);
+            w_assert0(ret);
+            w_assert1(!cb._swizzled);
+        }
+
         // Step 4: Page will be evicted -- update EMLSN on parent
         btree_page_h parent_h;
         parent_h.fix_nonbufferpool_page(parent);
         lsn_t old = parent_h.get_emlsn_general(child_slotid);
+        _buffer[idx].lsn = cb.get_page_lsn();
         if (old < _buffer[idx].lsn) {
             DBG3(<< "Updated EMLSN on page " << parent_h.pid()
                     << " slot=" << child_slotid

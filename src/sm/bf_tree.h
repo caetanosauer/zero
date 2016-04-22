@@ -347,7 +347,7 @@ public:
      * in parent; otherwise just return what the unswizzled pointer would be
      * (i.e., the ret_pid)
      */
-    bool unswizzle(generic_page* parent, uint32_t child_slot, bool apply = true,
+    bool unswizzle(generic_page* parent, general_recordid_t child_slot, bool apply = true,
             PageID* ret_pid = nullptr);
 
 private:

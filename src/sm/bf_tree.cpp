@@ -496,9 +496,13 @@ void bf_tree_m::_convert_to_disk_page(generic_page* page) const
     fixable_page_h p;
     p.fix_nonbufferpool_page(page);
     int max_slot = p.max_child_slot();
-    for (int i= -1; i<=max_slot; i++) {
+    for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot; ++i) {
+        // CS TODO: Slot 1 (which is actually 0 in the internal page
+        // representation) is never used, so we must skip it manually here to
+        // avoid getting an invalid page below.
+        if (i == 1) { continue; }
         PageID* pid = p.child_slot_address(i);
-        if ((*pid) & SWIZZLED_PID_BIT) {
+        if (is_swizzled_pointer(*pid)) {
             bf_idx idx = (*pid) ^ SWIZZLED_PID_BIT;
             w_assert1(_is_active_idx(idx));
             bf_tree_cb_t &cb = get_cb(idx);
@@ -507,9 +511,8 @@ void bf_tree_m::_convert_to_disk_page(generic_page* page) const
     }
 }
 
-general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, PageID pid) const {
-    w_assert1((pid & SWIZZLED_PID_BIT) == 0);
-
+general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, PageID pid) const
+{
     fixable_page_h p;
     p.fix_nonbufferpool_page(page);
     int max_slot = p.max_child_slot();
@@ -550,7 +553,7 @@ bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
  * Parent page must be latched in any mode;
  * child must me latched in EX mode (if apply == true).
  */
-bool bf_tree_m::unswizzle(generic_page* parent, uint32_t child_slot, bool apply,
+bool bf_tree_m::unswizzle(generic_page* parent, general_recordid_t child_slot, bool apply,
         PageID* ret_pid)
 {
     bf_idx parent_idx = parent - _buffer;
@@ -558,16 +561,12 @@ bool bf_tree_m::unswizzle(generic_page* parent, uint32_t child_slot, bool apply,
     // CS TODO: foster parent of a node created during a split will not have a
     // swizzled pointer to the new node; breaking the rule for now
     // if (!parent_cb._used || !parent_cb._swizzled) {
-    if (!parent_cb._used) {
-        return false;
-    }
+    w_assert1(parent_cb._used);
     w_assert1(parent_cb.latch().held_by_me());
 
     fixable_page_h p;
     p.fix_nonbufferpool_page(parent);
-    if (child_slot >= (uint32_t) p.max_child_slot()+1) {
-        return false;
-    }
+    w_assert1(child_slot <= p.max_child_slot());
 
     PageID* pid_addr = p.child_slot_address(child_slot);
     PageID pid = *pid_addr;
@@ -589,6 +588,7 @@ bool bf_tree_m::unswizzle(generic_page* parent, uint32_t child_slot, bool apply,
         child_cb._swizzled = false;
         *pid_addr = child_cb._pid;
         w_assert1(!is_swizzled_pointer(*pid_addr));
+        w_assert1(p.child_slot_address(child_slot) == pid_addr);
     }
 
     if (ret_pid) { *ret_pid = child_cb._pid; }
@@ -687,6 +687,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb._pin_cnt == 0);
     w_assert1(!cb.latch().is_latched());
+    w_assert1(!cb._swizzled);
     cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
 
     DBGOUT1(<<"delete block: remove page pid = " << cb._pid);
