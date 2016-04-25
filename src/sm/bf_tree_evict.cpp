@@ -111,7 +111,6 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
 
     unsigned rounds = 0;
     unsigned nonleaf_count = 0;
-    unsigned invalid_parents = 0;
     unsigned dirty_count = 0;
 
     /*
@@ -126,22 +125,22 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
             idx = 0;
         }
         if (idx == _eviction_current_frame - 1) {
-            get_cleaner()->wakeup();
-            if (evicted_count == 0) {
-                DBG1(<< "Eviction stuck! Nonleafs: " << nonleaf_count
-                        << " invalid parents: " << invalid_parents
+            // Wake up and wait for cleaner
+            get_cleaner()->wakeup(true);
+            if (rounds > 0 && evicted_count == 0) {
+                DBG(<< "Eviction stuck! Nonleafs: " << nonleaf_count
                         << " dirty: " << dirty_count);
-                nonleaf_count = invalid_parents = dirty_count = 0;
+                nonleaf_count = dirty_count = 0;
                 rounds++;
-                usleep(5000); //5ms
             }
-            else { return RCOK; }
+            else if (evicted_count > 0) {
+                // best-effort approach: sorry, we evicted as many as we could
+                return RCOK;
+            }
         }
 
         // CS TODO -- why do we latch CB manually instead of simply fixing
         // the page??
-        // CS TODO: if parent pointer is invalid, we can assume the
-        // pointer is unswizzled and ignore the parent below
 
         bf_tree_cb_t& cb = get_cb(idx);
         rc_t latch_rc;
@@ -220,45 +219,34 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
             continue;
         }
         w_assert1(parent_cb.latch().held_by_me());
+        w_assert1(parent_cb.latch().mode() == LATCH_EX);
 
-        // Step 3: look for emlsn slot on parent
+        // Step 3: look for emlsn slot on parent (must be found because parent
+        // pointer is kept consistent at all times)
         generic_page *parent = &_buffer[parent_idx];
-        // CS TODO: this assertion fails sometimes, but then if I print
-        // it on gdb right after, I guet true. NO IDEA what's happening!
-        // w_assert0(parent->tag == t_btree_p);
+        btree_page_h parent_h;
+        parent_h.fix_nonbufferpool_page(parent);
 
-        // Unswizzle before attempting eviction
         general_recordid_t child_slotid;
-        if (cb._swizzled) {
+        bool is_swizzled = cb._swizzled;
+        if (is_swizzled) {
             // Search for swizzled address
-            PageID swizzled_pid = idx ^ SWIZZLED_PID_BIT;
+            PageID swizzled_pid = idx | SWIZZLED_PID_BIT;
             child_slotid = find_page_id_slot(parent, swizzled_pid);
         }
         else {
             child_slotid = find_page_id_slot(parent, pid);
         }
+        w_assert1 (child_slotid != GeneralRecordIds::INVALID);
 
-        // CS TODO: How can this happen if we have latch on both?
-        // -> parent pointer may be wrong, that's how!
-        if (child_slotid == GeneralRecordIds::INVALID) {
-            DBG5(<< "Eviction failed on slot for " << idx
-                    << " pin count is " << cb._pin_cnt);
-            parent_cb.latch().latch_release();
-            cb.latch().latch_release();
-            invalid_parents++;
-            idx++;
-            continue;
-        }
-
-        if (cb._swizzled) {
+        // Unswizzle pointer on parent before evicting
+        if (is_swizzled) {
             bool ret = unswizzle(parent, child_slotid);
             w_assert0(ret);
             w_assert1(!cb._swizzled);
         }
 
         // Step 4: Page will be evicted -- update EMLSN on parent
-        btree_page_h parent_h;
-        parent_h.fix_nonbufferpool_page(parent);
         lsn_t old = parent_h.get_emlsn_general(child_slotid);
         _buffer[idx].lsn = cb.get_page_lsn();
         if (old < _buffer[idx].lsn) {

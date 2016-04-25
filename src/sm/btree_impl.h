@@ -493,24 +493,6 @@ public:
     /**
      * \brief Splits a page, making the new page as foster-child.
      *  \details
-     * The new page is pointed by the old page in the "foster" property.
-     * This function does not adopt the new separator key to parent,
-     * making the by-effect minimal.
-     *
-     * If the given page already has a foster child, the new page
-     * jumps between them. For example, [old page] -> [page a].
-     * will be [old page] -> [new page] -> [page a].
-     *
-     * Context: only in system transaction.
-     * @param[in] page the page to split. also called "old" page.
-     * @param[out] new_page_id ID of the newly created page.
-     * @param[in] triggering_key the key to be inserted after this split.
-     * used to determine split policy.
-     */
-    static rc_t                 _sx_split_foster(btree_page_h &page, PageID &new_page_id,
-        const w_keystr_t &triggering_key);
-
-    /**
      * Alternative version which uses full logging and is independent of the
      * buffer pool, i.e., it does not require fixing pages. This version should
      * work for single page recovery, instant restart, as well as instant
@@ -530,8 +512,14 @@ public:
      * but this could also be implemented as a third log record.
      *
      * \author Caetano Sauer
+     *
+     * Context: only in system transaction.
+     * @param[in] page the page to split. also called "old" page.
+     * @param[out] new_page_id ID of the newly created page.
+     * @param[in] triggering_key the key to be inserted after this split.
+     * used to determine split policy.
      */
-    static rc_t                 _sx_split_foster_new(btree_page_h &page,
+    static rc_t                 _sx_split_foster(btree_page_h &page,
             PageID &new_page_id, const w_keystr_t &triggering_key);
 
     /**

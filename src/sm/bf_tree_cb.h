@@ -100,6 +100,7 @@ struct bf_tree_cb_t {
         _pin_cnt = 0;
         _pid = pid;
         _used = true;
+        _swizzled = false;
         _ref_count = BP_INITIAL_REFCOUNT;
         _ref_count_ex = BP_INITIAL_REFCOUNT;
         _clean_lsn = page_lsn;

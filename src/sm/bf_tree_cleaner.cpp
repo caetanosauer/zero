@@ -177,7 +177,7 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     // CS TODO: policy option: wait for latch or just attempt conditionally
     rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, WAIT_IMMEDIATE);
     if (latch_rc.is_error()) {
-        // Could not latch page in EX mode -- just skip it
+        // Could not latch page in SH mode -- just skip it
         return false;
     }
 

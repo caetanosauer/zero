@@ -147,8 +147,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     _hashtable = new bf_hashtable<bf_idx_pair>(buckets);
     w_assert0(_hashtable != NULL);
 
-    _swizzled_page_count_approximate = 0;
-
     _eviction_current_frame = 0;
     DO_PTHREAD(pthread_mutex_init(&_eviction_lock, NULL));
 
@@ -280,8 +278,8 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             idx = p.first;
             if (parent && p.second != parent - _buffer) {
                 // need to fix update parent pointer
-                p.second = parent - _buffer;
-                _hashtable->update(pid, p);
+                // p.second = parent - _buffer;
+                // _hashtable->update(pid, p);
             }
         }
 
@@ -393,21 +391,16 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             p.fix_nonbufferpool_page(parent);
             general_recordid_t slot = find_page_id_slot (parent, pid);
 
-            if (!is_swizzled(parent)
-                    //  don't swizzle foster child
-                    //  CS TODO: why?? allowing for now, because otherwise a
-                    //  split will require unswizzling
-                    // || *p.child_slot_address(GeneralRecordIds::FOSTER_CHILD) == pid
-                )
-            {
-                return RCOK;
-            }
+            if (!is_swizzled(parent)) { return RCOK; }
 
             // this is a new (virgin) page which has not been linked yet.
             // skip swizzling this page
-            if (slot == GeneralRecordIds::INVALID && virgin_page) {
-                return RCOK;
-            }
+            if (slot == GeneralRecordIds::INVALID && virgin_page) { return RCOK; }
+            // Not worth swizzling foster children, since they will soon be
+            // adopted (an thus unswizzled)
+            if (slot == GeneralRecordIds::FOSTER_CHILD) { return RCOK; }
+            w_assert1(slot > GeneralRecordIds::FOSTER_CHILD);
+            w_assert1(slot <= p.max_child_slot());
 
             // Update _swizzled flag atomically
             bool old_value = false;
@@ -417,20 +410,15 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             }
             w_assert1(is_swizzled(page));
 
-            // To simplify the tree traversal while unswizzling,
-            // we never swizzle foster-child pointers. CS TODO: WHY??
-            // w_assert1(slot >= GeneralRecordIds::PID0);
-            w_assert1(slot >= GeneralRecordIds::FOSTER_CHILD);
-            w_assert1(slot <= p.max_child_slot());
-
             // Replace pointer with swizzled version
             PageID* addr = p.child_slot_address(slot);
-            // CS TODO: what about concurrent traversals of the pointer?
-            // Are we assuming that installing this pointer happnes
-            // atomically?  How about visibility, i.e., memory fence?
-            // I don't like this...
             *addr = idx | SWIZZLED_PID_BIT;
-            ++_swizzled_page_count_approximate;
+
+#if W_DEBUG_LEVEL > 0
+            PageID swizzled_pid = idx | SWIZZLED_PID_BIT;
+            general_recordid_t child_slotid = find_page_id_slot(parent, swizzled_pid);
+            w_assert1(child_slotid != GeneralRecordIds::INVALID);
+#endif
         }
 
         return RCOK;
@@ -472,20 +460,34 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 
 void bf_tree_m::switch_parent(PageID pid, generic_page* parent)
 {
+#if W_DEBUG_LEVEL > 0
+    // Given PID must actually be an entry in the parent
+    general_recordid_t child_slotid = find_page_id_slot(parent, pid);
+    w_assert1 (child_slotid != GeneralRecordIds::INVALID);
+#endif
+
+    if (is_swizzled_pointer(pid)) {
+        general_recordid_t child_slotid = find_page_id_slot(parent, pid);
+        // passing apply=false just to convert pointer without actually unswizzling it
+        bool success = unswizzle(parent, child_slotid, false, &pid);
+        w_assert0(success);
+    }
+    w_assert1(!is_swizzled_pointer(pid));
+
     bf_idx_pair p;
     bool found = _hashtable->lookup(pid, p);
     // if page is not cached, there is nothing to update
     if (!found) { return; }
 
     bf_idx parent_idx = parent - _buffer;
-    // TODO CS: this assertion fails sometimes -- why?
-    // Is it because of concurrent adoptions which race and one wins and the
-    // other simply does a "dummy" adoption?
+    // CS TODO: this assertion fails when using slot 1 sometimes
     // w_assert1(parent_idx != p.second);
-    // ERROUT(<< "Parent of " << pid << " updated to " << parent_idx
-    //         << " from " << p.second);
-    p.second = parent_idx;
-    found = _hashtable->update(pid, p);
+    DBG5(<< "Parent of " << pid << " updated to " << parent_idx
+            << " from " << p.second);
+    if (parent_idx != p.second) {
+        p.second = parent_idx;
+        found = _hashtable->update(pid, p);
+    }
 
     // page cannot be evicted since first lookup because caller latched it
     w_assert0(found);
@@ -497,13 +499,14 @@ void bf_tree_m::_convert_to_disk_page(generic_page* page) const
     p.fix_nonbufferpool_page(page);
     int max_slot = p.max_child_slot();
     for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot; ++i) {
-        // CS TODO: Slot 1 (which is actually 0 in the internal page
-        // representation) is never used, so we must skip it manually here to
-        // avoid getting an invalid page below.
-        if (i == 1) { continue; }
         PageID* pid = p.child_slot_address(i);
         if (is_swizzled_pointer(*pid)) {
             bf_idx idx = (*pid) ^ SWIZZLED_PID_BIT;
+            // CS TODO: Slot 1 (which is actually 0 in the internal page
+            // representation) is not used sometimes (I think when a page is
+            // first created?) so we must skip it manually here to avoid
+            // getting an invalid page below.
+            if (i == 1 && !_is_active_idx(idx)) { continue; }
             w_assert1(_is_active_idx(idx));
             bf_tree_cb_t &cb = get_cb(idx);
             *pid = cb._pid;
@@ -517,7 +520,6 @@ general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, PageID pid) 
     p.fix_nonbufferpool_page(page);
     int max_slot = p.max_child_slot();
 
-    //for (int i = -1; i <= max_slot; ++i) {
     for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot; ++i) {
         // ERROUT(<< "Looking for child " << pid << " on " <<
         //         *p.child_slot_address(i));
@@ -550,8 +552,7 @@ bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
  * when performing eviction using tree traversal. Since our current eviction mechanism
  * does not use traversal, it is currently unused.
  *
- * Parent page must be latched in any mode;
- * child must me latched in EX mode (if apply == true).
+ * Parent and child must me latched in EX mode if apply == true.
  */
 bool bf_tree_m::unswizzle(generic_page* parent, general_recordid_t child_slot, bool apply,
         PageID* ret_pid)
@@ -583,12 +584,20 @@ bool bf_tree_m::unswizzle(generic_page* parent, general_recordid_t child_slot, b
     if (apply) {
         // Since we have EX latch, we can just set the _swizzled flag
         // Otherwise there would be a race between swizzlers and unswizzlers
+        // Parent is updated without requiring EX latch. This is correct as
+        // long as fix call can deal with swizzled pointers not being really
+        // swizzled.
         w_assert1(child_cb.latch().held_by_me());
         w_assert1(child_cb.latch().mode() == LATCH_EX);
+        w_assert1(parent_cb.latch().held_by_me());
+        w_assert1(parent_cb.latch().mode() == LATCH_EX);
         child_cb._swizzled = false;
         *pid_addr = child_cb._pid;
         w_assert1(!is_swizzled_pointer(*pid_addr));
-        w_assert1(p.child_slot_address(child_slot) == pid_addr);
+#if W_DEBUG_LEVEL > 0
+        general_recordid_t child_slotid = find_page_id_slot(parent, child_cb._pid);
+        w_assert1(child_slotid != GeneralRecordIds::INVALID);
+#endif
     }
 
     if (ret_pid) { *ret_pid = child_cb._pid; }

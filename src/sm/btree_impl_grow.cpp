@@ -132,7 +132,6 @@ btree_impl::_sx_grow_tree(btree_page_h& rp)
         W_DO(smlevel_0::vol->deallocate_page(new_pid));
         return RCOK;
     }
-    DBGOUT1("TREE grow");
 
     // create a new page that will take over all entries currently in the root.
     // this page will be the left-most child (pid0) of the root
@@ -166,15 +165,9 @@ btree_impl::_sx_grow_tree(btree_page_h& rp)
     // If old root had any children, now they all have a wrong parent in the
     // buffer pool hash table. Therefore, we need to update it for each child
     int max_slot = cp.max_child_slot();
-    for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot;
-            ++i)
+    for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot; ++i)
     {
-        PageID pid = *cp.child_slot_address(i);
-        if (smlevel_0::bf->is_swizzled_pointer(pid)) {
-            bool success = smlevel_0::bf->unswizzle(cp.get_generic_page(), i, false, &pid);
-            w_assert0(success);
-        }
-        smlevel_0::bf->switch_parent(pid, cp.get_generic_page());
+        smlevel_0::bf->switch_parent(*cp.child_slot_address(i), cp.get_generic_page());
     }
 
     w_assert3(cp.is_consistent(true, true));
@@ -182,6 +175,8 @@ btree_impl::_sx_grow_tree(btree_page_h& rp)
 
     // that's it. then, we adopt keys to the new root page later
     w_assert3(rp.is_consistent(true, true));
+
+    DBG1("Btree growth -- root split on " << rp.pid() << " into " << new_pid);
 
     W_DO (sxs.end_sys_xct (RCOK));
     return RCOK;

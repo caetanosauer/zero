@@ -479,12 +479,6 @@ private:
 
     /** the dirty page cleaner. */
     page_cleaner_base*   _cleaner;
-    /**
-     * Unreliable count of swizzled pages in this bufferpool.
-     * The value is incremented and decremented without atomic operations.
-     * So, this should be only used as statistics.
-     */
-    int32_t              _swizzled_page_count_approximate;
 
     /** whether to swizzle non-root pages. */
     bool                 _enable_swizzling;
