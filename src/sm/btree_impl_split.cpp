@@ -69,7 +69,7 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, PageID &new_page_id) {
     // initialize as an empty child:
     new_page.format_steal(page.get_page_lsn(), new_page_id, page.store(),
                           page.root(), page.level(), 0, lsn_t::null,
-                          page.get_foster(), page.get_foster_emlsn(),
+                          page.get_foster_opaqueptr(), page.get_foster_emlsn(),
                           fence, fence, chain_high, false);
     page.accept_empty_child(page.get_page_lsn(), new_page_id, false /*not from redo*/);
 

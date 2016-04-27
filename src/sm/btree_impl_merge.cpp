@@ -241,7 +241,7 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
             scratch_p.btree_root(),
             scratch_p.level(),      // destination (foster child page) is the new page
             new_pid0, new_pid0_emlsn,
-            scratch_p.get_foster(),        // Destination's foster page id (if exists)
+            scratch_p.get_foster_opaqueptr(),        // Destination's foster page id (if exists)
             scratch_p.get_foster_emlsn(),  // Destination's foster page emlsn (if exists)
             mid_key,                       // low fence key of the destination
             high_key,                      // high key of the destination, confusing naming, this is actually the foster key
@@ -262,7 +262,7 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
             scratch_p.btree_root(),
             scratch_p.level(),        // destination (foster child page) is the new page
             0, lsn_t::null,           // Not needed for leaf page
-            scratch_p.get_foster(),        // Destination's foster page id (if exists)
+            scratch_p.get_foster_opaqueptr(),        // Destination's foster page id (if exists)
             scratch_p.get_foster_emlsn(),  // Destination's foster page emlsn (if exists)
             mid_key,                       // low fence key of the destination
             high_key,                      // high key of the destination, confusing nameing, this is actually the foster key
@@ -285,8 +285,8 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
     W_DO(page.format_steal(page.get_page_lsn(),
              scratch_p.pid(), scratch_p.store(),
              scratch_p.btree_root(), scratch_p.level(),   // source (foster parent) is the new page
-             scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
-             scratch_p.get_foster(), scratch_p.get_foster_emlsn(),  // No change in foster relationship
+             scratch_p.pid0_opaqueptr(), scratch_p.get_pid0_emlsn(),
+             scratch_p.get_foster_opaqueptr(), scratch_p.get_foster_emlsn(),  // No change in foster relationship
              low_key,        // low fence is the existing one
              mid_key,        // high key, confusing naming, this is actually the foster key, now is the low fence key of the destination page
              chain_high_key, // high fence key of the foster chain, it is the existing one because we have the same chain_high for all foster pages
@@ -517,9 +517,9 @@ void btree_impl::_ux_merge_foster_apply_parent(
                                scratch_p.store(),
                                scratch_p.btree_root(),    // destination (foster parent page) is the new page
                                scratch_p.level(),
-                               scratch_p.pid0(), scratch_p.get_pid0_emlsn(),  // Non-leaf only
+                               scratch_p.pid0_opaqueptr(), scratch_p.get_pid0_emlsn(),  // Non-leaf only
                                // foster-child's foster will be the next one after merge
-                               foster_p.get_foster(), foster_p.get_foster_emlsn(),
+                               foster_p.get_foster_opaqueptr(), foster_p.get_foster_emlsn(),
                                low_key,              // low fence key from destination page
                                high_key,             // high key, confusing naming, it is actually the foster key
                                                      // it is from the source page

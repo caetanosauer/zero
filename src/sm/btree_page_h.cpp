@@ -177,8 +177,8 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
         // For non-leaf page only
         w_assert1(steal_src2);
         w_assert1(is_node());
-        w_assert1(steal_src2->pid0() != pid0);
-        w_assert1(steal_src2->pid0() != 0);
+        w_assert1(steal_src2->pid0_opaqueptr() != pid0);
+        w_assert1(steal_src2->pid0_opaqueptr() != 0);
 
         // before stealing regular records from src2, steal it's pid0:
         cvec_t       stolen_key(steal_src2->get_fence_low_key() + page()->btree_prefix_length,
@@ -281,7 +281,7 @@ rc_t btree_page_h::format_foster_child(btree_page_h& parent,
     page()->btree_pid0 = new_pid0;
     page()->btree_pid0_emlsn = new_pid0_emlsn;
     page()->btree_level = parent.level();
-    page()->btree_foster = parent.get_foster();
+    page()->btree_foster = parent.get_foster_opaqueptr();
     page()->btree_foster_emlsn = parent.get_foster_emlsn();
     page()->init_items();
 
@@ -307,6 +307,8 @@ rc_t btree_page_h::format_foster_child(btree_page_h& parent,
 
     // Move records from parent
     for (int i = mid_slot; i < parent.nrecs(); ++i) {
+        // CS: if this is a branch node, first pointer is already on pid0
+        if (parent.is_node() && i == mid_slot) { continue; }
         // get full uncompressed key from src slot #i into key:
         cvec_t key(parent.get_prefix_key(), parent.get_prefix_length());
         size_t      trunc_key_length;
@@ -1743,7 +1745,7 @@ btree_page_h::print(bool print_elem) {
     const int L = 3;
 
     for (i = 0; i < L - level(); i++)  cout << '\t';
-    cout << pid0() << "=" << pid0() << endl;
+    cout << "PID0 = " << pid0_opaqueptr() << endl;
 
     for (i = 0; i < nrecs(); i++)  {
         for (int j = 0; j < L - level(); j++)  cout << '\t' ;
@@ -1757,7 +1759,7 @@ btree_page_h::print(bool print_elem) {
                 cout << ", elen="  << r.elen() << " bytes: " << r.elem();
             }
         } else {
-            cout << "pid = " << r.child() << ", emlsn=" << r.child_emlsn();
+            cout << ", pid = " << r.child() << ", emlsn=" << r.child_emlsn();
         }
         cout << ">" << endl;
     }

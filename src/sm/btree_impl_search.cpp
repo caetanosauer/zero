@@ -171,6 +171,7 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
     btree_page_h followed_p; // for latch coupling
     btree_page_h *next = &followed_p;
     while (true) {
+        w_assert1(current->latch_mode() != LATCH_NL);
         if (do_inquery_verify) inquery_verify_fact(*current); // check the current page
 
         // use fence key to tell if this is the page

@@ -350,6 +350,9 @@ public:
     bool unswizzle(generic_page* parent, general_recordid_t child_slot, bool apply = true,
             PageID* ret_pid = nullptr);
 
+    // Used for debugging
+    void print_page(PageID pid);
+
 private:
 
     /** fixes a non-swizzled page. */

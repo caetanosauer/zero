@@ -425,6 +425,28 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
     }
 }
 
+void bf_tree_m::print_page(PageID pid)
+{
+    bf_idx_pair p;
+    bf_idx idx = 0;
+
+    if (is_swizzled_pointer(pid)) {
+        idx = pid ^ SWIZZLED_PID_BIT;
+    }
+    else if (_hashtable->lookup(pid, p)) {
+        idx = p.first;
+    }
+    else {
+        cout << "not cached" << endl;
+        return;
+    }
+
+    generic_page* page = &_buffer[idx];
+    btree_page_h bp;
+    bp.fix_nonbufferpool_page(page);
+    bp.print(true);
+}
+
 bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
     w_assert1(page != NULL);
     w_assert1(latch_mode(page) != LATCH_NL);

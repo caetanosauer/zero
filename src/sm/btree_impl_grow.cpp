@@ -78,7 +78,7 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
         //  The root has pid0. Copy child page over parent,
         //  and free child page.
         btree_page_h cp;
-        W_DO( cp.fix_nonroot(rp, rp.pid0(), LATCH_EX));
+        W_DO( cp.fix_nonroot(rp, rp.pid0_opaqueptr(), LATCH_EX));
 
         // steal all from child
         w_keystr_t fence_low, fence_high, dummy_chain_high;
@@ -88,7 +88,7 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
         W_DO(rp.format_steal(rp.get_page_lsn(), rp_pid, rp.store(), rp_pid, // root page id is not changed.
                              cp.level(), // one level shorter
                              cp.pid(), cp.get_page_lsn(), // left-most is cp's left-most
-                             cp.get_foster(), cp.get_foster_emlsn(),// foster is cp's foster
+                             cp.get_foster_opaqueptr(), cp.get_foster_emlsn(),// foster is cp's foster
                              fence_low, fence_high, dummy_chain_high,
                              true, // log it to avoid write-order dependency. anyway it's very rare!
                              &cp, 0, cp.nrecs()));
@@ -143,8 +143,10 @@ btree_impl::_sx_grow_tree(btree_page_h& rp)
     btree_page_h cp;
     W_DO(cp.fix_nonroot(rp, new_pid, LATCH_EX, false, true));
     W_DO(cp.format_steal(cp.get_page_lsn(), new_pid, rp.store(), rp.pid(), rp.level(),
-        rp.pid0(), rp.get_pid0_emlsn(), // copy pid0 of root too
-        rp.get_foster(), rp.get_foster_emlsn(),
+        // CS: opaqueptr is important here because we don't want to unswizzle pid0
+        // (I wasted many hours with this damn bug!!)
+        rp.pid0_opaqueptr(), rp.get_pid0_emlsn(), // copy pid0 of root too
+        rp.get_foster_opaqueptr(), rp.get_foster_emlsn(),
                          cp_fence_low, cp_fence_high, cp_chain_high, // use current root's fence keys
                          true, // log it
                          &rp, 0, rp.nrecs() // steal everything from root
