@@ -145,6 +145,11 @@ void bf_tree_cleaner::clean_candidates()
             }
         }
 
+        if (cluster_size == 0) {
+            i++;
+            continue;
+        }
+
         ADD_TSTAT(cleaner_time_copy, timer.time_us());
 
         log_and_flush(cluster_size);
