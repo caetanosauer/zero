@@ -393,9 +393,9 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
             if (!is_swizzled(parent)) { return RCOK; }
 
-            // this is a new (virgin) page which has not been linked yet.
-            // skip swizzling this page
-            if (slot == GeneralRecordIds::INVALID && virgin_page) { return RCOK; }
+            // Either a virgin page which hasn't been linked yet, or some other
+            // thread won the race and already swizzled the pointer
+            if (slot == GeneralRecordIds::INVALID) { return RCOK; }
             // Not worth swizzling foster children, since they will soon be
             // adopted (an thus unswizzled)
             if (slot == GeneralRecordIds::FOSTER_CHILD) { return RCOK; }
