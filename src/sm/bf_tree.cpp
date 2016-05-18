@@ -995,7 +995,7 @@ void WarmupThread::fixChildren(btree_page_h& parent, size_t& fixed, size_t max)
 {
     btree_page_h page;
     if (parent.get_foster() > 0) {
-        page.fix_nonroot(parent, parent.get_foster(), LATCH_SH);
+        page.fix_nonroot(parent, parent.get_foster_opaqueptr(), LATCH_SH);
         fixed++;
         fixChildren(page, fixed, max);
         page.unfix();
@@ -1005,8 +1005,9 @@ void WarmupThread::fixChildren(btree_page_h& parent, size_t& fixed, size_t max)
         return;
     }
 
-    page.fix_nonroot(parent, parent.pid0(), LATCH_SH);
+    page.fix_nonroot(parent, parent.pid0_opaqueptr(), LATCH_SH);
     fixed++;
+    w_assert1(parent.level() > page.level());
     fixChildren(page, fixed, max);
     page.unfix();
 
@@ -1015,9 +1016,10 @@ void WarmupThread::fixChildren(btree_page_h& parent, size_t& fixed, size_t max)
         if (fixed >= max) {
             return;
         }
-        PageID pid = parent.child(j);
+        PageID pid = parent.child_opaqueptr(j);
         page.fix_nonroot(parent, pid, LATCH_SH);
         fixed++;
+        w_assert1(parent.level() > page.level());
         fixChildren(page, fixed, max);
         page.unfix();
     }
