@@ -1023,17 +1023,6 @@ inline int btree_page_h::_compare_slot_with_key(int slot, const void* key_nopref
     // slow path:
     return _compare_key_noprefix(slot, key_noprefix, key_len);
 }
-inline int btree_page_h::_robust_compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key key_poor) const {
-    // fast path using poor_man_key's:
-    int result = page()->robust_item_poor(slot+1) - (int)key_poor;
-    if (result != 0) {
-        return result;
-    }
-
-    // slow path:
-    return _robust_compare_key_noprefix(slot, key_noprefix, key_len);
-}
-
 
 void
 btree_page_h::search(const char *key_raw, size_t key_raw_len,
@@ -1093,84 +1082,6 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
         int mid = (low + high) / 2;
         w_assert1(low<mid && mid<high);
         int d = _compare_slot_with_key(mid, key_noprefix, key_len, poormkey);
-        if (d < 0) {        // search key after slot
-            low = mid;
-        } else if (d > 0) { // search key before slot
-            high = mid;
-        } else {
-            found_key   = true;
-            return_slot = mid;
-            w_assert1(mid>=0 && mid<number_of_records);
-            return;
-        }
-    }
-    w_assert1(low+1 == high);
-    return_slot = high;
-    w_assert1(high>=0 && high<=number_of_records);
-}
-
-void
-btree_page_h::robust_search(const char *key_raw, size_t key_raw_len,
-                     bool& found_key, slotid_t& return_slot) const {
-    int number_of_records = page()->robust_number_of_items() - 1;
-    int prefix_length     = ACCESS_ONCE(page()->btree_prefix_length);
-
-    if (number_of_records < 0 || prefix_length < 0 || prefix_length > (int)key_raw_len) {
-        found_key   = false;
-        return_slot = 0;
-        return;
-    }
-    w_assert1((uint) prefix_length <= key_raw_len);
-
-    const void* key_noprefix  = key_raw     + prefix_length;
-    size_t      key_len       = key_raw_len - prefix_length;
-
-    poor_man_key poormkey = _extract_poor_man_key(key_noprefix, key_len);
-
-
-    /*
-     * Binary search.
-     */
-
-    found_key = false;
-    int low = -1, high = number_of_records;
-    // LOOP INVARIANT: low < high AND slot_key(low) < key < slot_key(high)
-    // where slots before real ones hold -infinity and ones after hold +infinity
-
-    // [optional] check the last record (high-1) if it exists to speed-up sorted insert:
-    if (high > 0) {
-        int d = _robust_compare_slot_with_key(high-1, key_noprefix, key_len, poormkey);
-        if (d < 0) { // search key bigger than highest slot
-            return_slot = high;
-            return;
-        } else if (d == 0) {
-            found_key   = true;
-            return_slot = high-1;
-            return;
-        }
-        high--;
-    }
-
-#if 0
-    // [optional] check the first record (0) if it exists to speed-up reverse sorted insert:
-    if (high > 0) {
-        int d = _robust_compare_slot_with_key(0, key_noprefix, key_len, poormkey);
-        if (d > 0) { // search key lower than lowest slot
-            return_slot = 0;
-            return;
-        } else if (d == 0) {
-            found_key   = true;
-            return_slot = 0;
-            return;
-        }
-        low++;
-    }
-#endif
-
-    while (low+1 < high) {
-        int mid = (low + high) / 2;
-        w_assert1(low<mid && mid<high);
-        int d = _robust_compare_slot_with_key(mid, key_noprefix, key_len, poormkey);
         if (d < 0) {        // search key after slot
             low = mid;
         } else if (d > 0) { // search key before slot

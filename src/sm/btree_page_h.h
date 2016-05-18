@@ -561,19 +561,6 @@ public:
     void            search(const char *key_raw, size_t key_raw_len,
                            bool& found_key, slotid_t& return_slot) const;
 
-    /**
-     * This method provides the same results as the normal search
-     * method when our associated B-tree page is not being
-     * concurrently modified.
-     *
-     * When the B-tree page is being concurrently modified, however,
-     * unlike the normal method this version does not trigger
-     * assertions or cause other faults (e.g., segmentation fault);
-     * it may however in this case provide garbage values.
-     */
-    void            robust_search(const char *key_raw, size_t key_raw_len,
-                                  bool& found_key, slotid_t& return_slot) const;
-
 
     /**
      * Search for given key in this interior node, determining which
@@ -957,50 +944,6 @@ private:
     /// compare slot slot's key with given key (as key_noprefix,key_len,poor tuple)
     /// result <0 if slot's key is before given key
     int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
-
-
-    // ======================================================================
-    //   BEGIN: Private robust record accessors
-    // ======================================================================
-
-    /*
-     * These methods provide the same results as the corresponding
-     * non-robust versions when our associated B-tree page is not
-     * being concurrently modified.
-     *
-     * When the B-tree page is being concurrently modified, however,
-     * unlike the normal methods these versions do not trigger
-     * assertions or cause other faults (e.g., segmentation fault);
-     * they may however in this case provide garbage values.
-     *
-     * Slot arguments here should be less than a result of
-     * page()->robust_number_of_items()-1.
-     *
-     * The memory regions indicated by _robust_*_key_noprefix() are
-     * always safe to access, but may contain garbage or have a length
-     * different from the actual slot's key_noprefix.
-     */
-
-    /**
-     * [Robust] Retrieves the key WITHOUT prefix of specified slot in a leaf
-     *
-     * @pre we are a leaf node
-     */
-    const char*     _robust_leaf_key_noprefix(slotid_t slot,  size_t &len) const;
-    /**
-     * [Robust] Retrieves the key WITHOUT prefix of specified slot in an interior node
-     *
-     * @pre we are an interior node
-     */
-    const char*     _robust_node_key_noprefix(slotid_t slot,  size_t &len) const;
-
-    /// [Robust] returns compare(specified-key, key_noprefix)
-    int _robust_compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const;
-
-    /// [Robust] compare slot slot's key with given key (as key_noprefix,key_len,poor tuple)
-    /// result <0 if slot's key is before given key
-    int _robust_compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
-
 
     // ======================================================================
     //   BEGIN: Miscellaneous private members
@@ -1425,22 +1368,6 @@ inline const char* btree_page_h::_leaf_key_noprefix(slotid_t slot,  size_t &len)
     len = *data++;
     return (const char*)data;
 }
-inline const char* btree_page_h::_robust_leaf_key_noprefix(slotid_t slot,  size_t &len) const {
-    w_assert1(slot>=0);
-
-    size_t variable_length;
-    key_length_t* data = (key_length_t*)page()->robust_item_data(slot+1, variable_length);
-    if (variable_length < sizeof(key_length_t)) {
-        len = 0;
-        return (const char*)data;
-    }
-    len = *data++;
-    if (len+sizeof(key_length_t) > variable_length) {
-        len = 0;
-        return (const char*)data;
-    }
-    return (const char*)data;
-}
 
 inline const char* btree_page_h::_node_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_node());
@@ -1448,17 +1375,6 @@ inline const char* btree_page_h::_node_key_noprefix(slotid_t slot,  size_t &len)
 
     len = page()->item_length(slot+1) - sizeof(lsn_t);
     return page()->item_data(slot+1);
-}
-inline const char* btree_page_h::_robust_node_key_noprefix(slotid_t slot,  size_t &len) const {
-    w_assert1(slot>=0);
-
-    const char* data = page()->robust_item_data(slot+1, len);
-    if (len >= sizeof(lsn_t)) {
-        len -= sizeof(lsn_t);
-    } else {
-        len = 0;
-    }
-    return data;
 }
 
 inline size_t btree_page_h::_element_offset(int slot) const {
@@ -1479,18 +1395,6 @@ inline int btree_page_h::_compare_key_noprefix(slotid_t slot, const void *key_no
         curkey = _leaf_key_noprefix(slot, curkey_len);
     } else {
         curkey = _node_key_noprefix(slot, curkey_len);
-    }
-
-    return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
-}
-inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void *key_noprefix,
-                                                      size_t key_len) const {
-    size_t      curkey_len;
-    const char *curkey;
-    if (page()->robust_is_leaf()) {
-        curkey = _robust_leaf_key_noprefix(slot, curkey_len);
-    } else {
-        curkey = _robust_node_key_noprefix(slot, curkey_len);
     }
 
     return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
