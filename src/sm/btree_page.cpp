@@ -20,6 +20,8 @@ void btree_page_data::init_items() {
     w_assert3(_items_are_consistent());
 }
 
+// CS TODO: delete this method! (general rebalance not supported: split has its
+// own impementation and merge is not implemented)
 void btree_page_data::remove_items(
                       const int item_count,    // In: Number of records to remove
                       const w_keystr_t &high)  // In: high fence after record removal
@@ -283,6 +285,7 @@ void btree_page_data::delete_range(int from, int to)
 
 void btree_page_data::truncate_all(size_t amount, size_t pos)
 {
+    // CS TODO: this class does not know anything about fence keys!!
     // fence keys must already be truncated, so we skip item 0
     for (int i = 1; i < nitems; i++) {
         body_offset_t offset = head[i].offset;
