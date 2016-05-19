@@ -14,7 +14,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_defrag.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_grow.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_lock.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_merge.cpp
+    # ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_merge.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_search.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_split.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_verify.cpp

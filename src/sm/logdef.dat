@@ -189,43 +189,6 @@ btree_ghost_reserve 1110000 1.0  (const btree_page_h& page, const w_keystr_t& ke
 btree_foster_adopt  1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
     PageID new_child_pid, lsn_t child_emlsn, const w_keystr_t& new_child_key);
 
-# page is foster-parent (dest), page2 is foster_child (src) which will disappear.
-# Self contained log (not minimal logging). So, page=dest, page2=src.
-# high - high key of the destination page (foster key if exists)
-# chain_high - high fence key of all foster nodes (parent and child nodes)
-# foster_pid0 - page id of the foster page in destination page
-# foster_emlsn - emlsn of the foster page in destination page
-# prefix_len - source page prefix length
-# move_count - how many records to move
-# record_data - self-contain record data for all the moved records
-# record_data_len - size of data in record_data
-btree_foster_merge  1110100 1.42 (const btree_page_h& page, const btree_page_h& page2, 
-    const w_keystr_t& high, const w_keystr_t& chain_high, PageID foster_pid0, lsn_t foster_emlsn,
-    const int16_t prefix_len, const int32_t move_count, const smsize_t record_buffer_len,
-    const cvec_t& record_data);
-    
-# "page" is the foster-child (dest). "page2" is the foster-parent (src).
-# Self contained log (not minimal logging). So, page=dest, page2=src.
-# fence - low fence key of the destination page, also foster key (high) of the source page
-# high - high key of the destination page (foster key if exists)
-# chain_high - high fence key of all foster nodes (parent and child nodes)
-# prefix_len - source page prefix length, which would be the prefix length for destination page
-# move_count - how many records to move
-# record_data - self-contain record data for all the moved records
-# record_data_len - size of data in record_data
-btree_foster_rebalance       1110100 1.42 (const btree_page_h& page, const btree_page_h& page2,
-    const w_keystr_t& fence, PageID new_pid0, lsn_t pid0_emlsn, 
-    const w_keystr_t& high, const w_keystr_t& chain_high, const int16_t prefix_len,
-    const int32_t move_count, const smsize_t record_data_len, const cvec_t& record_data);
-
-btree_foster_rebalance_norec 1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
-    const w_keystr_t& fence);
-
-# "page" is the real-parent. "page2" is the foster-parent.
-btree_foster_deadopt         1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
-    PageID deadopted_pid, lsn_t deadopted_emlsn,
-    int32_t foster_slot, const w_keystr_t& low, const w_keystr_t& high);
-
 # page == foster parent, page2 == foster child
 btree_split            1110100 1.0 (const btree_page_h& page,
     const btree_page_h& page2, uint16_t move_count,
