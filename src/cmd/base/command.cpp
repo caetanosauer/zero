@@ -1,6 +1,7 @@
 #include "command.h"
 
 #include "kits_cmd.h"
+#include "http.h"
 #include "genarchive.h"
 #include "mergeruns.h"
 #include "agglog.h"
@@ -53,6 +54,7 @@ void Command::init()
     REGISTER_COMMAND("kits", KitsCommand);
     REGISTER_COMMAND("restore", RestoreCmd);
     REGISTER_COMMAND("propstats", PropStats);
+    REGISTER_COMMAND("webserver", Webserver);
 }
 
 void Command::setupCommonOptions()

@@ -2,6 +2,7 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/src/cmd/base
   ${CMAKE_SOURCE_DIR}/src/cmd/restore
   ${CMAKE_SOURCE_DIR}/src/cmd/kits
+  ${CMAKE_SOURCE_DIR}/src/cmd/webserver
   ${CMAKE_SOURCE_DIR}/src/cmd/loginspect
   ${CMAKE_SOURCE_DIR}/config
   ${CMAKE_SOURCE_DIR}/src/sm
@@ -18,6 +19,7 @@ INCLUDE_DIRECTORIES (
 add_subdirectory(base)
 add_subdirectory(restore)
 add_subdirectory(kits)
+add_subdirectory(webserver)
 add_subdirectory(loginspect)
 
 add_executable(zapps main.cpp)
@@ -27,6 +29,7 @@ set(zapps_LIBS
     zapps_base
     kits
     restore
+    webserver
     loginspect
     # Zero/Shore libraries
     sm
