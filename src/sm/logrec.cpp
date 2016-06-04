@@ -142,11 +142,11 @@ logrec_t::fill(PageID p, StoreID store, uint16_t tag, smsize_t l)
     header._pid = p;
     header._stid = store;
     char *dat = is_single_sys_xct() ? data_ssx() : data();
-    if (l != align(l)) {
+    if (l != ALIGN_BYTE(l)) {
         // zero out extra space to keep purify happy
-        memset(dat+l, 0, align(l)-l);
+        memset(dat+l, 0, ALIGN_BYTE(l)-l);
     }
-    unsigned int tmp = align(l) + (is_single_sys_xct() ? hdr_single_sys_xct_sz : hdr_non_ssx_sz) + sizeof(lsn_t);
+    unsigned int tmp = ALIGN_BYTE(l) + (is_single_sys_xct() ? hdr_single_sys_xct_sz : hdr_non_ssx_sz) + sizeof(lsn_t);
     tmp = (tmp + 7) & unsigned(-8); // force 8-byte alignment
     w_assert1(tmp <= sizeof(*this));
     header._len = tmp;

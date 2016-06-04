@@ -323,11 +323,11 @@ public:
      * Align to 8-byte boundary.
      * We now support *only* 8-byte alignment of records
      */
-#    ifndef align
+#    ifndef ALIGN_BYTE
 #    define ALIGNON 0x8
 #    define ALIGNON1 (ALIGNON-1)
-#    define align(sz) ((size_t)((sz + ALIGNON1) & ~ALIGNON1))
-#    endif /* align */
+#    define ALIGN_BYTE(sz) ((size_t)((sz + ALIGNON1) & ~ALIGNON1))
+#    endif /* ALIGN_BYTE */
     static bool        is_aligned(size_t sz);
     static bool        is_aligned(const void* s);
 
@@ -430,7 +430,7 @@ public:
 inline bool
 w_base_t::is_aligned(size_t sz)
 {
-    return (align(sz) == sz);
+    return (ALIGN_BYTE(sz) == sz);
 }
 
 inline bool
