@@ -1,4 +1,4 @@
-#define private public
+//#define private public
 #include "logcat.h"
 #include "logarchiver.h"
 #undef private
