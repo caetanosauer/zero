@@ -1548,7 +1548,7 @@ bool btree_page_h::check_chance_for_norecord_split(const w_keystr_t& key_to_inse
     } else {
         space_for_split += get_chain_fence_high_length(); // otherwise chain-fence-high is unchanged
     }
-    return (usable_space() >= align(space_for_split)); // otherwise it's too late
+    return (usable_space() >= ALIGN_BYTE(space_for_split)); // otherwise it's too late
 }
 
 void btree_page_h::suggest_fence_for_split(w_keystr_t &mid,
