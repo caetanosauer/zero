@@ -29,7 +29,6 @@ set(zapps_LIBS
     zapps_base
     kits
     restore
-    webserver
     loginspect
     # Zero/Shore libraries
     sm

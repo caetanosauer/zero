@@ -723,7 +723,7 @@ int ShoreEnv::close_sm()
     }
 
     // Final stats
-    gatherstats_sm();
+    gatherstats_sm(std::cout);
 
     /*
      *  destroying the ss_m instance causes the SSM to shutdown
@@ -745,7 +745,7 @@ int ShoreEnv::close_sm()
 
 static sm_stats_info_t oldstats;
 
-void ShoreEnv::gatherstats_sm()
+void ShoreEnv::gatherstats_sm(ostream &stream)
 {
     // sm_du_stats_t stats;
     // memset(&stats, 0, sizeof(stats));
@@ -757,7 +757,7 @@ void ShoreEnv::gatherstats_sm()
     diff -= _last_sm_stats;
 
     // Print the diff and save the latest reading
-    cout << diff << endl;
+    stream << diff << endl;
     _last_sm_stats = stats;
 }
 

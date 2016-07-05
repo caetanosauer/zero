@@ -602,7 +602,7 @@ public:
     int enable_fake_disk_latency(const int adelay);
 
     // Collects and print statistics from the SM
-    void gatherstats_sm();
+    void gatherstats_sm(ostream &);
 
     // Takes a checkpoint (forces dirty pages)
     int checkpoint();
@@ -684,4 +684,3 @@ protected:
 
 
 #endif /* __SHORE_ENV_H */
-

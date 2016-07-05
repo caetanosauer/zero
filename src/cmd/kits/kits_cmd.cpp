@@ -80,6 +80,11 @@ void KitsCommand::setupOptions()
     options.add(kits);
 }
 
+ShoreEnv* KitsCommand::getShoreEnv()
+{
+    return shoreEnv;
+}
+
 KitsCommand::KitsCommand()
     : mtype(MT_UNDEF), clientsForked(false)
 {
