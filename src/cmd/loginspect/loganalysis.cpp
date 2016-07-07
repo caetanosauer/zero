@@ -72,8 +72,7 @@ void LogAnalysis::run()
         }
 
         cout << "Log-scan dirty pages: "
-            << h.activeTAs.size()
-            << " committed " << h.xctCount
+            << h.dirtyPages.size()
             << endl;
 
         {
