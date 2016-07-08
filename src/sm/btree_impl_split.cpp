@@ -287,8 +287,7 @@ rc_t btree_impl::_ux_adopt_foster_core (btree_page_h &parent, btree_page_h &chil
 }
 
 rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
-                                                      btree_page_h &child, bool &pushedup,
-                                                      const bool from_recovery)
+                                                      btree_page_h &child, bool &pushedup)
 {
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.is_node());
@@ -313,15 +312,14 @@ rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
 
     // this is a VERY good chance. So, why not sweep all (but a few unlucky execptions)
     // foster-children.
-    W_DO(_sx_adopt_foster_sweep_approximate(parent, surely_need_child_pid, from_recovery));
+    W_DO(_sx_adopt_foster_sweep_approximate(parent, surely_need_child_pid));
     // note, this function might switch parent upon its split.
     // so, the caller is really responsible to restart search on seeing pushedup == true
     return RCOK;
 }
 
 rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent,
-                                                             PageID surely_need_child_pid,
-                                                             const bool /*from_recovery*/)
+                                                             PageID surely_need_child_pid)
 {
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.latch_mode() == LATCH_EX);

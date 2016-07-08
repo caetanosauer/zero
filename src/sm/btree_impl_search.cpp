@@ -87,7 +87,8 @@ btree_impl::_ux_lookup_core(StoreID store, const w_keystr_t& key,
 rc_t
 btree_impl::_ux_traverse(StoreID store, const w_keystr_t &key,
                          traverse_mode_t traverse_mode, latch_mode_t leaf_latch_mode,
-                         btree_page_h &leaf, bool allow_retry, const bool from_undo) {
+                         btree_page_h &leaf, bool allow_retry)
+{
     INC_TSTAT(bt_traverse_cnt);
     if (key.is_posinf()) {
         if (traverse_mode == t_fence_contain) {
@@ -121,7 +122,7 @@ btree_impl::_ux_traverse(StoreID store, const w_keystr_t &key,
         }
 
         rc_t rc = _ux_traverse_recurse (root_p, key, traverse_mode, leaf_latch_mode, leaf,
-                                        leaf_pid_causing_failed_upgrade, from_undo);
+                                        leaf_pid_causing_failed_upgrade);
         if (rc.is_error()) {
             if (rc.err_num() == eGOODRETRY) {
                 // did some opportunistic structure modification, and going to retry
@@ -154,8 +155,8 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
                                  btree_impl::traverse_mode_t  traverse_mode,
                                  latch_mode_t                 leaf_latch_mode,
                                  btree_page_h&                leaf,
-                                 PageID&                     leaf_pid_causing_failed_upgrade,
-                                 const bool                   from_undo) {
+                                 PageID&                     leaf_pid_causing_failed_upgrade)
+{
     INC_TSTAT(bt_partial_traverse_cnt);
 
     /// cache the flag to avoid calling the functions each time
@@ -222,7 +223,7 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
             && is_ex_recommended(pid_to_follow_opaqueptr)) { // next is VERY hot
             // note: is_ex_recommended is just a hint, so using opaque ptr is okay.
             // in most cases, the pid is always swizzled or always non-swizzled, thus accurate.
-            W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow_opaqueptr, from_undo /*from_recovery*/));
+            W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow_opaqueptr));
         }
 
         bool should_try_ex = false;
@@ -250,7 +251,7 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
         if (slot_to_follow != t_follow_foster && next->get_foster() != 0) {
             // We followed a real-child pointer and found that it has foster... let's adopt it! (but
             // opportunistically).  Same as  eager adoption, retry if eGOODRETRY, otherwise go on
-            W_DO(_ux_traverse_try_opportunistic_adopt(*current, *next, from_undo /*from_recovery*/));
+            W_DO(_ux_traverse_try_opportunistic_adopt(*current, *next));
         }
 
         current->unfix();
@@ -351,8 +352,9 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
         }
     }
 }
-rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current,
-                                                   PageID next_pid, const bool from_recovery) {
+
+rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current, PageID next_pid)
+{
     w_assert1(current.is_fixed());
     queue_based_lock_t *mutex = mutex_for_high_contention(next_pid);
     w_assert1(mutex);
@@ -375,17 +377,19 @@ rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current,
             return RCOK;
         } else {
             // this page has been requested for adoption many times.  Let's do it!
-            W_DO(_sx_adopt_foster_sweep_approximate(next, 0, from_recovery));
+            W_DO(_sx_adopt_foster_sweep_approximate(next, 0));
         }
     }
     return RC(eGOODRETRY); // to be safe, let's restart.  this is anyway rare event
 }
+
 rc_t btree_impl::_ux_traverse_try_opportunistic_adopt(btree_page_h &current,
-                                      btree_page_h &next, const bool from_recovery) {
+                                      btree_page_h &next)
+{
     w_assert1(current.is_fixed());
     w_assert1(next.is_fixed());
     bool pushedup;
-    W_DO(_sx_opportunistic_adopt_foster(current, next, pushedup, from_recovery));
+    W_DO(_sx_opportunistic_adopt_foster(current, next, pushedup));
     // if it's pushed up, we restart the search from root
     // (we can keep searching with a bit complicated code..  but wouldn't worth it)
     if (pushedup) {

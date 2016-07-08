@@ -85,7 +85,7 @@ rc_t btree_m::update(
     if(key.get_length_as_nonkeystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
-    W_DO(btree_impl::_ux_update(store, key, elem, false));  // Not from UNDO
+    W_DO(btree_impl::_ux_update(store, key, elem));
     return RCOK;
 }
 
@@ -108,13 +108,13 @@ rc_t btree_m::overwrite(
     smsize_t                          offset,
     smsize_t                          elen)
 {
-    W_DO(btree_impl::_ux_overwrite(store, key, el, offset, elen, false));  // Not from UNDO
+    W_DO(btree_impl::_ux_overwrite(store, key, el, offset, elen));
     return RCOK;
 }
 
 rc_t btree_m::remove(StoreID store, const w_keystr_t &key)
 {
-    W_DO(btree_impl::_ux_remove(store, key, false));  // Not from UNDO
+    W_DO(btree_impl::_ux_remove(store, key));
     return RCOK;
 }
 
@@ -152,7 +152,7 @@ btree_m::print(const PageID& current,
     W_FATAL(fcNOTIMPLEMENTED);
 
     {
-        PageID original_pid = smlevel_0::bf->debug_get_original_pageid(current);
+        // PageID original_pid = smlevel_0::bf->debug_get_original_pageid(current);
         btree_page_h page;
         // W_COERCE( page.fix_direct(original_pid, LATCH_SH));// coerce ok-- debugging
 
@@ -233,14 +233,14 @@ btree_m::remove_as_undo(StoreID store, const w_keystr_t &key)
 {
     // UNDO insert operation
     no_lock_section_t nolock;
-    return btree_impl::_ux_remove(store,key, true);  // From UNDO
+    return btree_impl::_ux_remove(store,key);
 }
 
 rc_t btree_m::update_as_undo(StoreID store, const w_keystr_t &key, const cvec_t &elem)
 {
     // UNDO update operation
     no_lock_section_t nolock;
-    return btree_impl::_ux_update(store, key, elem, true);  // from UNDO
+    return btree_impl::_ux_update(store, key, elem);
 }
 
 rc_t btree_m::overwrite_as_undo(StoreID store, const w_keystr_t &key,
@@ -248,7 +248,7 @@ rc_t btree_m::overwrite_as_undo(StoreID store, const w_keystr_t &key,
 {
     // UNDO update operation
     no_lock_section_t nolock;
-    return btree_impl::_ux_overwrite(store, key, el, offset, elen, true);  // from UNDO
+    return btree_impl::_ux_overwrite(store, key, el, offset, elen);
 }
 rc_t
 btree_m::undo_ghost_mark(StoreID store, const w_keystr_t &key)
