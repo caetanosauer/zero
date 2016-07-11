@@ -93,7 +93,7 @@ bool         smlevel_0::shutting_down = false;
     sm_naive_allocator smlevel_0::allocator;
 #endif
 
-
+memalign_allocator<char, smlevel_0::IO_ALIGN> smlevel_0::aligned_allocator;
 
             //controlled by AutoTurnOffLogging:
 bool        smlevel_0::lock_caching_default = true;

@@ -107,6 +107,7 @@ class lsn_t;
 
 class sm_naive_allocator;
 class sm_tls_allocator;
+template <typename T, size_t A> class memalign_allocator;
 
 class chkpt_m;
 class restart_m;
@@ -324,6 +325,9 @@ public:
 #else
     static sm_naive_allocator allocator;
 #endif
+
+    static constexpr size_t IO_ALIGN = 512;
+    static memalign_allocator<char, IO_ALIGN> aligned_allocator;
 
     static bool         shutdown_clean;
     static bool         shutting_down;
