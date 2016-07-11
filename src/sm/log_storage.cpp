@@ -34,7 +34,7 @@ typedef smlevel_0::fileoff_t fileoff_t;
 const string log_storage::log_prefix = "log.";
 const string log_storage::log_regex = "log\\.[1-9][0-9]*";
 const string log_storage::chkpt_prefix = "chkpt_";
-const string log_storage::chkpt_regex = "chkpt_[1-9][0-9]*\\.[1-9][0-9]*";
+const string log_storage::chkpt_regex = "chkpt_[1-9][0-9]*\\.[0-9][0-9]*";
 
 class partition_recycler_t : public smthread_t
 {

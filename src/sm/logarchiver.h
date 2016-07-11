@@ -331,9 +331,7 @@ public:
      */
     class ArchiveDirectory {
     public:
-        ArchiveDirectory(std::string archdir, size_t blockSize,
-                size_t bucketSize = 0, bool reformat = false,
-                lsn_t tailLSN = lsn_t::null);
+        ArchiveDirectory(const sm_options& options);
         virtual ~ArchiveDirectory();
 
         struct RunFileStats {
@@ -372,12 +370,20 @@ public:
         fileoff_t appendPos;
         size_t blockSize;
 
+        fs::path archpath;
+        const static string RUN_PREFIX;
+        const static string CURR_RUN_FILE;
+        const static string CURR_MERGE_FILE;
+        const static string run_regex;
+        const static string current_regex;
+
         // closeCurrentRun needs mutual exclusion because it is called by both
         // the writer thread and the archiver thread in processFlushRequest
         pthread_mutex_t mutex;
 
+        fs::path make_run_path(lsn_t begin, lsn_t end) const;
+        fs::path make_current_run_path() const;
         rc_t openNewRun();
-        os_dirent_t* scanDir(os_dir_t& dir);
     };
 
     /** \brief Asynchronous writer thread to produce run files on disk
@@ -766,8 +772,7 @@ public:
         virtual ~MergerDaemon()
         {}
 
-        rc_t runSync(size_t fanin, size_t minRunSize, size_t maxRunSize);
-        void runAsync(size_t fanin, size_t minRunSize, size_t maxRunSize);
+        rc_t runSync(size_t fanin, size_t maxRunSize);
         rc_t join(bool terminate);
 
     private:
@@ -821,10 +826,6 @@ public:
     const static int DFT_GRACE_PERIOD = 1000000; // 1 sec
 
     const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
-    const static char* RUN_PREFIX;
-    const static char* CURR_RUN_FILE;
-    const static char* CURR_MERGE_FILE;
-    const static size_t MAX_LOGREC_SIZE;
     const static size_t IO_ALIGN;
 
 private:

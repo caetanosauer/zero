@@ -198,8 +198,11 @@ void LogArchiveScanner::run()
     BaseScanner::initialize();
 
     size_t blockSize = options["sm_archiver_block_size"].as<int>();
+    sm_options opt;
+    opt.set_string_option("sm_archdir", archdir);
+    opt.set_int_option("sm_archiver_block_size", blockSize);
     LogArchiver::ArchiveDirectory* directory = new
-        LogArchiver::ArchiveDirectory(archdir, blockSize);
+        LogArchiver::ArchiveDirectory(opt);
 
     std::vector<std::string> runFiles;
 
@@ -275,9 +278,13 @@ void MergeScanner::run()
     // CS TODO blockSize not used anymore
     size_t blockSize = options["sm_archiver_block_size"].as<int>();
     size_t bucketSize = options["sm_archiver_bucket_size"].as<int>();
+    sm_options opt;
+    opt.set_string_option("sm_archdir", archdir);
+    opt.set_int_option("sm_archiver_block_size", blockSize);
+    opt.set_int_option("sm_archiver_bucket_size", bucketSize);
 
     LogArchiver::ArchiveDirectory* directory = new
-        LogArchiver::ArchiveDirectory(archdir, blockSize, bucketSize);
+        LogArchiver::ArchiveDirectory(opt);
     LogArchiver::ArchiveScanner logScan(directory);
 
     LogArchiver::ArchiveScanner::RunMerger* merger =

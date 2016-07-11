@@ -11,16 +11,19 @@
 #include <sm_base.h>
 #include <sstream>
 #include <sys/stat.h>
+#include <boost/regex.hpp>
 
 #include "stopwatch.h"
 
 typedef mem_mgmt_t::slot_t slot_t;
 
 // definition of static members
-const char* LogArchiver::RUN_PREFIX = "archive_";
-const char* LogArchiver::CURR_RUN_FILE = "current_run";
-const char* LogArchiver::CURR_MERGE_FILE = "current_merge";
-const size_t LogArchiver::MAX_LOGREC_SIZE = 3 * log_storage::BLOCK_SIZE;
+const string LogArchiver::ArchiveDirectory::RUN_PREFIX = "archive_";
+const string LogArchiver::ArchiveDirectory::CURR_RUN_FILE = "current_run";
+const string LogArchiver::ArchiveDirectory::CURR_MERGE_FILE = "current_merge";
+const string LogArchiver::ArchiveDirectory::run_regex =
+    "^archive_[1-9][0-9]*\\.[0-9]+-[1-9][0-9]*\\.[0-9]+$";
+const string LogArchiver::ArchiveDirectory::current_regex = "current_run|current_merge";
 
 // CS: Aligning with the Linux standard FS block size
 // We could try using 512 (typical hard drive sector) at some point,
@@ -341,14 +344,10 @@ LogArchiver::LogArchiver(const sm_options& options)
     shutdownFlag(false), control(&shutdownFlag), selfManaged(true),
     flushReqLSN(lsn_t::null)
 {
-    std::string archdir = options.get_string_option("sm_archdir", "archive");
     size_t workspaceSize = 1024 * 1024 * // convert MB -> B
         options.get_int_option("sm_archiver_workspace_size", DFT_WSPACE_SIZE);
     size_t blockSize =
         options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
-    size_t bucketSize =
-        options.get_int_option("sm_archiver_bucket_size", 0);
-    bool reformat = options.get_bool_option("sm_format", false);
 
     eager = options.get_bool_option("sm_archiver_eager", DFT_EAGER);
     readWholeBlocks = options.get_bool_option(
@@ -356,12 +355,7 @@ LogArchiver::LogArchiver(const sm_options& options)
     slowLogGracePeriod = options.get_int_option(
             "sm_archiver_slow_log_grace_period", DFT_GRACE_PERIOD);
 
-    if (archdir.empty()) {
-        W_FATAL_MSG(fcINTERNAL,
-                << "Option for archive directory must be specified");
-    }
-
-    directory = new ArchiveDirectory(archdir, blockSize, bucketSize, reformat);
+    directory = new ArchiveDirectory(options);
     nextActLSN = directory->getStartLSN();
 
     consumer = new LogConsumer(directory->getStartLSN(), blockSize);
@@ -463,27 +457,20 @@ size_t LogArchiver::ArchiveDirectory::getFileSize(int fd)
     return fs.st_size;
 }
 
-os_dirent_t* LogArchiver::ArchiveDirectory::scanDir(os_dir_t& dir)
+LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
+    : appendFd(-1), mergeFd(-1), appendPos(0)
 {
-    if (dir == NULL) {
-        dir = os_opendir(archdir.c_str());
-        if (!dir) {
-            cerr << "Error: could not open log archive dir: " <<
-                archdir << endl;
-            W_COERCE(RC(eOS));
-        }
-        //DBGTHRD(<< "Opened log archive directory " << archdir);
+    archdir = options.get_string_option("sm_archdir", "archive");
+    blockSize = options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
+    size_t bucketSize =
+        options.get_int_option("sm_archiver_bucket_size", 0);
+    bool reformat = options.get_bool_option("sm_format", false);
+
+    if (archdir.empty()) {
+        W_FATAL_MSG(fcINTERNAL,
+                << "Option for archive directory must be specified");
     }
 
-    return os_readdir(dir);
-}
-
-LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
-        size_t blockSize, size_t bucketSize, bool reformat, lsn_t tailLSN)
-    : archdir(archdir),
-    appendFd(-1), mergeFd(-1), appendPos(0), blockSize(blockSize)
-{
-    // CS TODO: use boost, just like log_storage
     if (!fs::exists(archdir)) {
         if (reformat) {
             fs::create_directories(archdir);
@@ -493,44 +480,36 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
         }
     }
 
-    // TODO delete runs if reformat=true (copy from log_storage)
-    // open archdir and extract last archived LSN
-    {
-        lsn_t highestLSN = lsn_t::null;
-        os_dir_t dir = NULL;
-        os_dirent_t* entry = scanDir(dir);
-        while (entry != NULL) {
-            const char* runName = entry->d_name;
-            if (strncmp(RUN_PREFIX, runName, strlen(RUN_PREFIX)) == 0) {
-                // parse lsn from file name
-                lsn_t currLSN = parseLSN(runName);
+    archpath = archdir;
+    fs::directory_iterator it(archpath), eod;
+    boost::regex run_rx(run_regex, boost::regex::perl);
+    boost::regex current_rx(current_regex, boost::regex::perl);
+    lsn_t highestLSN = lsn_t::null;
 
-                if (currLSN > highestLSN) {
-                    DBGTHRD("Highest LSN found so far in archdir: "
-                            << currLSN);
-                    highestLSN = currLSN;
-                }
+    for (; it != eod; it++) {
+        fs::path fpath = it->path();
+        string fname = fpath.filename().string();
+
+        if (boost::regex_match(fname, run_rx)) {
+            if (reformat) {
+                fs::remove(fpath);
+                continue;
             }
-            if (strcmp(CURR_RUN_FILE, runName) == 0
-                    || strcmp(CURR_MERGE_FILE, runName) == 0)
-            {
-                DBGTHRD(<< "Found unfinished log archive run. Deleting");
-                string path = archdir + "/" + runName;
-                if (unlink(path.c_str()) < 0) {
-                    cerr << "Log archiver: failed to delete "
-                        << runName << endl;
-                    W_FATAL(fcOS);
-                }
+            // parse lsn from file name
+            lsn_t currLSN = parseLSN(fname.c_str());
+            if (currLSN > highestLSN) {
+                DBGTHRD("Highest LSN found so far in archdir: " << currLSN);
+                highestLSN = currLSN;
             }
-            entry = scanDir(dir);
         }
-        startLSN = highestLSN;
-        os_closedir(dir);
-    }
-
-    // if no runs found in archive dir, try using the suggested tailLSN
-    if (startLSN.hi() == 0) {
-        startLSN = tailLSN;
+        else if (boost::regex_match(fname, current_rx)) {
+            DBGTHRD(<< "Found unfinished log archive run. Deleting");
+            fs::remove(fpath);
+        }
+        else {
+            cerr << "ArchiveDirectory cannot parse filename " << fname << endl;
+            W_FATAL(fcINTERNAL);
+        }
     }
 
     // no runs found in archive log -- start from first available partition
@@ -541,12 +520,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
 
         while (nextPartition <= max) {
             string fname = smlevel_0::log->make_log_name(nextPartition);
-
-            // check if file exists
-            struct stat st;
-            if (stat(fname.c_str(), &st) == 0) {
-                break;
-            }
+            if (fs::exists(fname)) { break; }
             nextPartition++;
         }
 
@@ -569,17 +543,19 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
     // create/load index
     archIndex = new ArchiveIndex(blockSize, startLSN, bucketSize);
 
-    std::vector<std::string> runFiles;
-    listFiles(runFiles);
-    std::vector<std::string>::const_iterator it;
-    for(it=runFiles.begin(); it!=runFiles.end(); ++it) {
-        std::string fname = archdir + "/" + *it;
-        W_COERCE(archIndex->loadRunInfo(fname.c_str()));
-    }
+    {
+        std::vector<std::string> runFiles;
+        listFiles(runFiles);
+        std::vector<std::string>::const_iterator it;
+        for(it=runFiles.begin(); it!=runFiles.end(); ++it) {
+            std::string fname = archdir + "/" + *it;
+            W_COERCE(archIndex->loadRunInfo(fname.c_str()));
+        }
 
-    // sort runinfo vector by lsn
-    if (runFiles.size() > 0) {
-        archIndex->init();
+        // sort runinfo vector by lsn
+        if (runFiles.size() > 0) {
+            archIndex->init();
+        }
     }
 
     // CS TODO this should be initialized statically, but whatever...
@@ -605,16 +581,15 @@ LogArchiver::ArchiveDirectory::~ArchiveDirectory()
 rc_t LogArchiver::ArchiveDirectory::listFiles(std::vector<std::string>& list)
 {
     list.clear();
-    os_dir_t dir = NULL;
-    os_dirent_t* entry = scanDir(dir);
-    while (entry != NULL) {
-        const char* runName = entry->d_name;
-        if (strncmp(RUN_PREFIX, runName, strlen(RUN_PREFIX)) == 0) {
-            list.push_back(std::string(runName));
+
+    fs::directory_iterator it(archpath), eod;
+    boost::regex run_rx(run_regex, boost::regex::basic);
+    for (; it != eod; it++) {
+        string fname = it->path().filename().string();
+        if (boost::regex_match(fname, run_rx)) {
+            list.push_back(fname);
         }
-        entry = scanDir(dir);
     }
-    os_closedir(dir);
 
     return RCOK;
 }
@@ -671,6 +646,16 @@ rc_t LogArchiver::ArchiveDirectory::openNewRun()
     return RCOK;
 }
 
+fs::path LogArchiver::ArchiveDirectory::make_run_path(lsn_t begin, lsn_t end) const
+{
+    return archpath / fs::path(RUN_PREFIX + begin.str() + "-" + end.str());
+}
+
+fs::path LogArchiver::ArchiveDirectory::make_current_run_path() const
+{
+    return archpath / fs::path(CURR_RUN_FILE);
+}
+
 rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
 {
     CRITICAL_SECTION(cs, mutex);
@@ -684,10 +669,6 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
         }
 
         if (lastLSN != runEndLSN) {
-            std::stringstream fname;
-            fname << archdir << "/" << LogArchiver::RUN_PREFIX
-                << lastLSN << "-" << runEndLSN;
-
             // register index information and write it on end of file
             if (archIndex && appendPos > 0) {
                 // take into account space for skip log record
@@ -698,10 +679,10 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
                 archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
             }
 
-            std::string currentFName = archdir + "/" + CURR_RUN_FILE;
-            W_DO(me()->frename(appendFd, currentFName.c_str(), fname.str().c_str()));
+            fs::path new_path = make_run_path(lastLSN, runEndLSN);
+            fs::rename(make_current_run_path(), new_path);
 
-            DBGTHRD(<< "Closing current output run: " << fname.str());
+            DBGTHRD(<< "Closing current output run: " << new_path.str());
         }
 
         W_DO(me()->close(appendFd));
@@ -731,13 +712,11 @@ rc_t LogArchiver::ArchiveDirectory::append(char* data, size_t length)
 rc_t LogArchiver::ArchiveDirectory::openForScan(int& fd, lsn_t runBegin,
         lsn_t runEnd)
 {
-    std::stringstream fname;
-    fname << archdir << "/" << LogArchiver::RUN_PREFIX
-        << runBegin << "-" << runEnd;
+    fs::path fpath = make_run_path(runBegin, runEnd);
 
     // Using direct I/O
     int flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_DIRECT;
-    W_DO(me()->open(fname.str().c_str(), flags, 0744, fd));
+    W_DO(me()->open(fpath.string().c_str(), flags, 0744, fd));
 
     return RCOK;
 }
@@ -1198,7 +1177,8 @@ LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
     }
 
     // Using direct I/O
-    posix_memalign((void**) &buffer, IO_ALIGN, readSize + IO_ALIGN);
+    int res = posix_memalign((void**) &buffer, IO_ALIGN, readSize + IO_ALIGN);
+    w_assert0(res == 0);
     // buffer = new char[directory->getBlockSize()];
 
     if (directory->getIndex()) {
@@ -1913,7 +1893,7 @@ tryagain:
         DBG5(<< "Log record with length "
                 << (remaining > 1 ? lr->length() : -1)
                 << " does not fit in current block of " << remaining);
-        w_assert0(remaining <= LogArchiver::MAX_LOGREC_SIZE);
+        w_assert0(remaining <= sizeof(logrec_t));
         memcpy(truncBuf, src + pos, remaining);
         truncCopied = remaining;
         truncMissing = lr->length() - remaining;
@@ -1994,7 +1974,8 @@ LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize, lsn_t startLSN,
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
     writeBuffer = new char[blockSize];
     // Using direct I/O
-    posix_memalign((void**) &readBuffer, IO_ALIGN, blockSize);
+    int res = posix_memalign((void**) &readBuffer, IO_ALIGN, blockSize);
+    w_assert0(res == 0);
     // readBuffer = new char[blockSize];
 
     // last run in the array is always the one being currently generated
@@ -2199,7 +2180,8 @@ rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
     // read header of last block in file -- its number is the block count
     // Using direct I/O -- must read whole align block
     char* buffer;
-    posix_memalign((void**) &buffer, IO_ALIGN, IO_ALIGN);
+    int res = posix_memalign((void**) &buffer, IO_ALIGN, IO_ALIGN);
+    w_assert0(res == 0);
     W_DO(me()->pread(fd, buffer, IO_ALIGN, fsize - blockSize));
 
     BlockHeader* header = (BlockHeader*) buffer;
@@ -2386,8 +2368,7 @@ bool runComp(const RunFileStats& a, const RunFileStats& b)
 // order, and only for all available runs at once. It fits the purposes of our
 // restore experiments, but it should be fixed in the future. See comments in
 // the header file.
-rc_t LogArchiver::MergerDaemon::runSync(size_t fanin, size_t minRunSize,
-        size_t maxRunSize)
+rc_t LogArchiver::MergerDaemon::runSync(size_t fanin, size_t maxRunSize)
 {
     list<RunFileStats> stats;
     indir->listFileStats(stats);
