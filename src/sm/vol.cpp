@@ -486,6 +486,7 @@ rc_t vol_t::read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn)
 
         btree_page_h p;
         p.fix_nonbufferpool_page(buf);
+        p.update_page_lsn(buf->lsn);
         W_DO(smlevel_0::recovery->recover_single_page(p, emlsn));
         delete_dirty_page(pnum);
         // cerr << "Recovered " << pnum << " to LSN " << emlsn << endl;

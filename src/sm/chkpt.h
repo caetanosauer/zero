@@ -113,7 +113,7 @@ public: // required for restart for now
     string bkp_path;
 
 public:
-    void scan_log();
+    void scan_log(lsn_t scan_start = lsn_t::null);
 
     void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn);
     void mark_page_clean(PageID pid, lsn_t lsn);

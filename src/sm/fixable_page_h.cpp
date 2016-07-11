@@ -111,21 +111,14 @@ bool fixable_page_h::is_dirty() const {
 
 lsn_t fixable_page_h::get_page_lsn() const
 {
-    if (_bufferpool_managed)
-    {
-        w_assert1(_pp);
-        return smlevel_0::bf->get_page_lsn(_pp);
-    }
-    return lsn_t::null;
+    w_assert1(_pp);
+    return smlevel_0::bf->get_page_lsn(_pp);
 }
 
 void fixable_page_h::update_page_lsn(const lsn_t & lsn) const
 {
-    if (_bufferpool_managed)
-    {
-        w_assert1(_pp);
-        smlevel_0::bf->set_page_lsn(_pp, lsn);
-    }
+    w_assert1(_pp);
+    smlevel_0::bf->set_page_lsn(_pp, lsn);
 }
 
 void fixable_page_h::set_img_page_lsn(const lsn_t & lsn)

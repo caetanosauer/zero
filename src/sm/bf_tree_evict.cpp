@@ -1,6 +1,7 @@
 #include "bf_tree_cb.h"
 #include "bf_tree.h"
 #include "btree_page_h.h"
+#include "log_core.h" // debug: for printing log tail
 
 #include "bf_hashtable.cpp"
 
@@ -16,9 +17,9 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
             CRITICAL_SECTION(cs, &_freelist_lock);
             if (_freelist_len > 0) { // here, we do the real check
                 bf_idx idx = FREELIST_HEAD;
-                DBG3(<< "Grabbing idx " << idx);
+                DBG5(<< "Grabbing idx " << idx);
                 w_assert1(_is_valid_idx(idx));
-                // w_assert1 (!get_cb(idx)._used);
+                w_assert1 (!get_cb(idx)._used);
                 ret = idx;
 
                 --_freelist_len;
@@ -28,7 +29,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
                     FREELIST_HEAD = _freelist[idx];
                     w_assert1 (FREELIST_HEAD > 0 && FREELIST_HEAD < _block_cnt);
                 }
-                DBG3(<< "New head " << FREELIST_HEAD);
+                DBG5(<< "New head " << FREELIST_HEAD);
                 w_assert1(ret != FREELIST_HEAD);
                 return RCOK;
             }
@@ -82,6 +83,7 @@ void bf_tree_m::_add_free_block(bf_idx idx)
     // CS TODO: Eviction is apparently broken, since I'm seeing the same
     // frame being freed twice by two different threads.
     w_assert1(idx != FREELIST_HEAD);
+    w_assert1(!get_cb(idx)._used);
     ++_freelist_len;
     _freelist[idx] = FREELIST_HEAD;
     FREELIST_HEAD = idx;
@@ -159,7 +161,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         btree_page_h p;
         p.fix_nonbufferpool_page(_buffer + idx);
         if (p.tag() != t_btree_p || !p.is_leaf() || cb.is_dirty()
-                || !cb._used || p.pid() == p.root())
+                || !cb._used || p.pid() == p.root() || p.get_foster() != 0)
         {
             cb.latch().latch_release();
             DBG5(<< "Eviction failed on flags for " << idx);
@@ -179,6 +181,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
             idx++;
             continue;
         }
+        w_assert1(_is_active_idx(idx));
 
         // Step 2: latch parent in SH mode
         generic_page *page = &_buffer[idx];
@@ -221,8 +224,12 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         w_assert1(parent_cb.latch().held_by_me());
         w_assert1(parent_cb.latch().mode() == LATCH_EX);
 
+        // Parent may have been evicted if it is a foster parent of a leaf node.
+        // In that case, parent_cb._used will be false
+
         // Step 3: look for emlsn slot on parent (must be found because parent
         // pointer is kept consistent at all times)
+        w_assert1(_is_active_idx(parent_idx));
         generic_page *parent = &_buffer[parent_idx];
         btree_page_h parent_h;
         parent_h.fix_nonbufferpool_page(parent);
@@ -257,22 +264,6 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
             w_assert1(parent_cb.latch().held_by_me());
             w_assert1(parent_cb.latch().mode() == LATCH_EX);
             W_COERCE(_sx_update_child_emlsn(parent_h, child_slotid, _buffer[idx].lsn));
-            // Note that we are not grabbing EX latch on parent here.
-            // This is safe because no one else should be touching these exact bytes,
-            // and because EMLSN values are aligned to be "regular register".
-            // However, we still need to mark the frame as dirty.
-            //
-            // CS TODO: the SH latch is OK as long as no other thread also
-            // updates the page LSN with an SH latch. It should not be the
-            // case, but I have observed this in experiments, namely an adopt
-            // log record where the page2-prev (i.e, child chain) and a
-            // page_evict on the same page point to the same log record. This
-            // could only happen if the two log records are being generated at
-            // the same time with a race, i.e., the adopt does NOT have an EX
-            // latch on the child! The adopt code has an assertion that child
-            // has EX latch, so I don't know what's happening!
-            // - Perhaps the SH latch release does not issue a memory fence?
-            //    Nope -- it does issue memory fence
             w_assert1(parent_h.get_emlsn_general(child_slotid) == _buffer[idx].lsn);
         }
 
@@ -282,7 +273,8 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         bool removed = _hashtable->remove(pid);
         w_assert1(removed);
 
-        DBG2(<< "EVICTED " << idx << " pid " << pid);
+        DBG2(<< "EVICTED " << idx << " pid " << pid
+                << " log-tail " << smlevel_0::log->curr_lsn());
         cb.clear_except_latch();
         // -1 indicates page was evicted (i.e., it's invalid and can be read into)
         cb._pin_cnt = -1;

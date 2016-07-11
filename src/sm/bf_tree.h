@@ -156,6 +156,9 @@ public:
         return (pid & SWIZZLED_PID_BIT) != 0;
     }
 
+    // Used for debugging
+    bool _is_frame_latched(generic_page* frame, latch_mode_t mode);
+
     /**
      * Fixes a non-root page in the bufferpool. This method receives the parent page and efficiently
      * fixes the page if the pid (pointer) is already swizzled by the parent page.

@@ -68,7 +68,8 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn)
     // If this backup is enough recent, we have to apply only a few logs.
     w_assert1(p.is_fixed());
     PageID pid = p.pid();
-    DBGOUT1(<< "Single-Page-Recovery on " << pid << ", EMLSN=" << emlsn);
+    DBGOUT1(<< "Starting SPR page " << pid << ", EMLSN=" << emlsn << ", log-tail= "
+            << smlevel_0::log->curr_lsn());
 
     // CS TODO: because of cleaner bug, we fetch page from disk itself.  In
     // other words, if we are performing write elision, then we must read from
@@ -185,12 +186,13 @@ rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer,
     for (iter = offsets.begin(); iter != offsets.end(); iter++) {
         logrec_t* lr = (logrec_t*) (buffer + *iter);
 
+        w_assert3(smlevel_0::bf->_is_frame_latched(p.get_generic_page(), LATCH_EX));
         w_assert1(lr->valid_header(lsn_t::null));
         w_assert1(iter == offsets.begin() || lr->is_multi_page() ||
                (prev_lsn == lr->page_prev_lsn() && p.pid() == lr->pid()));
 
         if (lr->is_redo() && p.lsn() < lr->lsn_ck()) {
-            DBGOUT1(<< "Applying Single-Page-Recovery. current page(" << p.pid()
+            DBGOUT1(<< "SPR page(" << p.pid()
                     << ") LSN=" << p.lsn() << ", log=" << *lr);
 
             w_assert1(pid == lr->pid() || pid == lr->pid2());
@@ -203,7 +205,7 @@ rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer,
             lr->redo(&p);
         }
 
-        prev_lsn = lr->lsn_ck();
+        prev_lsn = lr->lsn();
     }
 
     return RCOK;

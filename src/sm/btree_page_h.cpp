@@ -1333,13 +1333,16 @@ bool btree_page_h::_is_enough_spacious_ghost(const w_keystr_t &key, slotid_t slo
 }
 
 rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
-                                 const cvec_t &elem) {
+                                 const cvec_t &elem, bool redo)
+{
     w_assert2( is_fixed());
     w_assert2( is_leaf());
 
     // log FIRST. note that this might apply the deferred ghost creation too.
     // so, this cannot be done later than any of following
-    W_DO (log_btree_insert (*this, key, elem, false /*is_sys_txn*/));
+    if (!redo) {
+        W_DO (log_btree_insert (*this, key, elem, false /*is_sys_txn*/));
+    }
 
     // which slot to replace?
     bool found;

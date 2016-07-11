@@ -287,8 +287,9 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         {
             // STEP 1) Grab a free frame to read into
             W_DO(_grab_free_block(idx));
-            w_assert1(idx != 0);
+            w_assert1(_is_valid_idx(idx));
             bf_tree_cb_t &cb = get_cb(idx);
+            w_assert1(!cb._used);
 
             // STEP 2) Acquire EX latch before hash table insert, to make sure
             // nobody will access this page until we're done
@@ -314,6 +315,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
             // Read page from disk
             page = &_buffer[idx];
+            cb.init(pid, lsn_t::null);
 
             if (!virgin_page) {
                 INC_TSTAT(bf_fix_nonroot_miss_count);
@@ -330,17 +332,19 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                 if (read_rc.is_error())
                 {
                     _hashtable->remove(pid);
+                    cb.clear_except_latch();
                     cb.latch().latch_release();
                     _add_free_block(idx);
                     return read_rc;
                 }
+                cb.init(pid, page->lsn);
             }
 
-            cb.init(pid, page->lsn);
+            w_assert1(_is_active_idx(idx));
 
             // STEP 6) Fix successful -- pin page and downgrade latch
             cb.pin();
-            w_assert1(cb.latch().held_by_me());
+            w_assert1(cb.latch().is_mine());
             w_assert1(cb._pin_cnt > 0);
             DBG(<< "Fixed page " << pid << " (miss) to frame " << idx);
 
@@ -367,6 +371,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                 continue;
             }
 
+            w_assert1(_is_active_idx(idx));
             cb.pin();
             cb.inc_ref_count();
             if (mode == LATCH_EX) {
@@ -423,6 +428,15 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
         return RCOK;
     }
+}
+
+bool bf_tree_m::_is_frame_latched(generic_page* frame, latch_mode_t mode)
+{
+    bf_idx idx = frame - _buffer;
+    w_assert1(_is_valid_idx(idx));
+    if (!_is_active_idx(idx)) { return false; }
+    bf_tree_cb_t& cb = get_cb(idx);
+    return cb.latch().mode() == mode;
 }
 
 void bf_tree_m::print_page(PageID pid)
@@ -867,7 +881,7 @@ void bf_tree_m::unfix(const generic_page* p, bool evict)
     bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb.latch().held_by_me());
     if (evict) {
-        w_assert0(cb.latch().mode() == LATCH_EX);
+        w_assert0(cb.latch().is_mine());
         bool removed = _hashtable->remove(p->pid);
         w_assert1(removed);
 
@@ -905,11 +919,21 @@ bool bf_tree_m::is_used (bf_idx idx) const {
 void bf_tree_m::set_page_lsn(generic_page* p, lsn_t lsn)
 {
     uint32_t idx = p - _buffer;
+
+    // CS: workaround for design limitation of restore. When redoing a log
+    // record, the LSN should only be updated if the page image being used
+    // belongs to the buffer pool. Initially, we checked this by only calling
+    // this method when _bufferpool_managed was set in fixable_page_h. However,
+    // that would break single-page recovery, since fix_nonbufferpool_page is
+    // required in that case. To fix that, I enabled updating page LSN for any
+    // page image, and the check below makes sure it belongs to the buffer pool
+    if (!_is_valid_idx(idx)) { return; }
+
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t& cb = get_cb(idx);
-    w_assert1(cb.latch().held_by_me());
+    w_assert1(cb.latch().is_mine());
     w_assert1(cb.latch().mode() == LATCH_EX);
-    w_assert1(cb.get_page_lsn() < lsn);
+    w_assert1(cb.get_page_lsn() <= lsn);
     cb.set_page_lsn(lsn);
 }
 

@@ -152,11 +152,14 @@ void chkpt_m::wakeup_thread()
 *  corresponding to the latest completed checkpoint.
 *
 *********************************************************************/
-void chkpt_t::scan_log()
+void chkpt_t::scan_log(lsn_t scan_start)
 {
     init();
 
-    lsn_t scan_start = smlevel_0::log->durable_lsn();
+    if (scan_start.is_null()) {
+        scan_start = smlevel_0::log->durable_lsn();
+    }
+    w_assert1(scan_start <= smlevel_0::log->durable_lsn());
     if (scan_start == lsn_t(1,0)) { return; }
 
     log_i scan(*smlevel_0::log, scan_start, false); // false == backward scan
@@ -692,7 +695,7 @@ void chkpt_m::take()
     W_COERCE(ss_m::log->flush_all());
 
     // Collect checkpoint information from log
-    curr_chkpt.scan_log();
+    curr_chkpt.scan_log(begin_lsn);
 
     // Serialize chkpt to file
     fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn_t::null);
