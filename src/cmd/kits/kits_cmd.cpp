@@ -39,6 +39,37 @@ private:
     unsigned delay;
 };
 
+class FailureThread : public smthread_t
+{
+public:
+    FailureThread(unsigned delay, bool* flag)
+        : smthread_t(t_regular, "FailureThread"),
+        delay(delay), flag(flag)
+    {
+    }
+
+    virtual ~FailureThread() {}
+
+    virtual void run()
+    {
+        ::sleep(delay);
+
+        vol_t* vol = smlevel_0::vol;
+        w_assert0(vol);
+        vol->mark_failed();
+
+        // disable eager archiving
+        smlevel_0::logArchiver->setEager(false);
+
+        *flag = true;
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+    }
+
+private:
+    unsigned delay;
+    bool* flag;
+};
+
 void KitsCommand::setupOptions()
 {
     setupSMOptions(options);
@@ -76,6 +107,8 @@ void KitsCommand::setupOptions()
         ("crashDelay", po::value<int>(&opt_crashDelay)->default_value(-1),
             "Time (sec) to wait before aborting execution to simulate system \
             failure (negative disables)")
+        ("failDelay", po::value<int>(&opt_failDelay)->default_value(-1),
+            "Time to wait before marking the volume as failed (simulates media failure)")
     ;
     options.add(kits);
 }
@@ -125,9 +158,18 @@ void KitsCommand::run()
     }
 
     // Spawn crash thread if requested
+    CrashThread* crash_thread;
     if (opt_crashDelay >= 0) {
-        CrashThread* t = new CrashThread(opt_crashDelay);
-        t->fork();
+        crash_thread = new CrashThread(opt_crashDelay);
+        crash_thread->fork();
+    }
+
+    // Spawn failure thread if requested
+    FailureThread* failure_thread = nullptr;
+    if (opt_failDelay >= 0) {
+        hasFailed = false;
+        failure_thread = new FailureThread(opt_failDelay, &hasFailed);
+        failure_thread->fork();
     }
 
     if (opt_num_trxs > 0 || opt_duration > 0) {
@@ -135,6 +177,12 @@ void KitsCommand::run()
     }
 
     finish();
+
+    if (failure_thread) {
+        failure_thread->join();
+        delete failure_thread;
+    }
+    // crash_thread aborts the program, so we don't worry about joining it
 }
 
 void KitsCommand::init()
@@ -290,6 +338,24 @@ void KitsCommand::joinClients()
 void KitsCommand::doWork()
 {
     forkClients();
+
+    if (opt_failDelay > 0) {
+        // Start benchmark and wait for failure thread to mark device failed
+        sleep(opt_failDelay);
+        while (!hasFailed) {
+            sleep(1);
+            lintel::atomic_thread_fence(lintel::memory_order_consume);
+        }
+
+        vol_t* vol = smlevel_0::vol;
+        w_assert0(vol);
+
+        // Now wait for device to be restored -- check every 1 second
+        while (vol->is_failed()) {
+            sleep(1);
+            vol->check_restore_finished();
+        }
+    }
 
     // If running for a time duration, wait specified number of seconds
     if (mtype == MT_TIME_DUR) {

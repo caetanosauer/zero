@@ -12,7 +12,6 @@
 #include "logpagestats.h"
 #include "dbinspect.h"
 #include "loganalysis.h"
-#include "experiments/restore_cmd.h"
 #include "dbscan.h"
 
 #include <boost/foreach.hpp>
@@ -51,7 +50,6 @@ void Command::init()
     REGISTER_COMMAND("dbinspect", DBInspect);
     REGISTER_COMMAND("loganalysis", LogAnalysis);
     REGISTER_COMMAND("kits", KitsCommand);
-    REGISTER_COMMAND("restore", RestoreCmd);
     REGISTER_COMMAND("propstats", PropStats);
 }
 
@@ -197,12 +195,6 @@ void Command::setupSMOptions(po::options_description& options)
         "Enable instant restart")
     ("sm_restart_log_based_redo", po::value<bool>(),
         "Perform non-instant restart with log-based redo instead of page-based")
-    ("sm_restore_segsize", po::value<int>(),
-        "Segment size restore")
-    ("sm_restore_prefetcher_window", po::value<int>(),
-        "Segment size restore")
-    ("sm_backup_prefetcher_segments", po::value<int>(),
-        "Segment size restore")
     ("sm_rawlock_gc_interval_ms", po::value<int>(),
         "Garbage Collection Interval in ms")
     ("sm_rawlock_lockpool_segsize", po::value<int>(),
@@ -273,6 +265,12 @@ void Command::setupSMOptions(po::options_description& options)
         "Ticker interval in millisec")
     ("sm_prefetch", po::value<bool>(),
         "Enable/Disable prefetching")
+    ("sm_backup_prefetcher_segments", po::value<int>(),
+        "Segment size restore")
+    ("sm_restore_segsize", po::value<int>(),
+        "Segment size restore")
+    ("sm_restore_prefetcher_window", po::value<int>(),
+        "Segment size restore")
     ("sm_restore_instant", po::value<bool>(),
         "Enable/Disable instant restore")
     ("sm_restore_reuse_buffer", po::value<bool>(),
@@ -285,6 +283,12 @@ void Command::setupSMOptions(po::options_description& options)
         "Attempt to read at most this many bytes when scanning log archive")
     ("sm_restore_preemptive", po::value<bool>(),
         "Use preemptive scheduling during restore")
+    ("sm_restore_sched_singlepass", po::value<bool>(),
+        "Use single-pass scheduling in restore")
+    ("sm_restore_sched_ondemand", po::value<bool>(),
+        "Support on-demand restore")
+    ("sm_restore_sched_random", po::value<bool>(),
+        "Use random page order in restore scheduler")
     ("sm_bufferpool_swizzle", po::value<bool>(),
         "Enable/Disable bufferpool swizzle")
     ("sm_archiver_eager", po::value<bool>(),

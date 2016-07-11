@@ -33,7 +33,9 @@ protected:
     bool opt_spread;
     unsigned opt_warmup;
     int opt_crashDelay;
+    int opt_failDelay;
 
+    bool hasFailed;
     MeasurementType mtype;
 
     // overridden in sub-commands to set their own options
