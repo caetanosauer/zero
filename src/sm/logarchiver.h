@@ -16,6 +16,10 @@
 #include <queue>
 #include <set>
 
+#define BOOST_FILESYSTEM_NO_DEPRECATED
+#include <boost/filesystem.hpp>
+namespace fs = boost::filesystem;
+
 class sm_options;
 class LogScanner;
 
@@ -328,7 +332,8 @@ public:
     class ArchiveDirectory {
     public:
         ArchiveDirectory(std::string archdir, size_t blockSize,
-                size_t bucketSize = 0, lsn_t tailLSN = lsn_t::null);
+                size_t bucketSize = 0, bool reformat = false,
+                lsn_t tailLSN = lsn_t::null);
         virtual ~ArchiveDirectory();
 
         struct RunFileStats {

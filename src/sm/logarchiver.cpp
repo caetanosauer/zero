@@ -348,6 +348,7 @@ LogArchiver::LogArchiver(const sm_options& options)
         options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
     size_t bucketSize =
         options.get_int_option("sm_archiver_bucket_size", 0);
+    bool reformat = options.get_bool_option("sm_format", false);
 
     eager = options.get_bool_option("sm_archiver_eager", DFT_EAGER);
     readWholeBlocks = options.get_bool_option(
@@ -360,7 +361,7 @@ LogArchiver::LogArchiver(const sm_options& options)
                 << "Option for archive directory must be specified");
     }
 
-    directory = new ArchiveDirectory(archdir, blockSize, bucketSize);
+    directory = new ArchiveDirectory(archdir, blockSize, bucketSize, reformat);
     nextActLSN = directory->getStartLSN();
 
     consumer = new LogConsumer(directory->getStartLSN(), blockSize);
@@ -478,11 +479,21 @@ os_dirent_t* LogArchiver::ArchiveDirectory::scanDir(os_dir_t& dir)
 }
 
 LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
-        size_t blockSize, size_t bucketSize, lsn_t tailLSN)
+        size_t blockSize, size_t bucketSize, bool reformat, lsn_t tailLSN)
     : archdir(archdir),
     appendFd(-1), mergeFd(-1), appendPos(0), blockSize(blockSize)
 {
     // CS TODO: use boost, just like log_storage
+    if (!fs::exists(archdir)) {
+        if (reformat) {
+            fs::create_directories(archdir);
+        } else {
+            cerr << "Error: could not open the log directory " << archdir <<endl;
+            W_COERCE(RC(eOS));
+        }
+    }
+
+    // TODO delete runs if reformat=true (copy from log_storage)
     // open archdir and extract last archived LSN
     {
         lsn_t highestLSN = lsn_t::null;
