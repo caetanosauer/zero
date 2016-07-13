@@ -682,7 +682,7 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
             fs::path new_path = make_run_path(lastLSN, runEndLSN);
             fs::rename(make_current_run_path(), new_path);
 
-            DBGTHRD(<< "Closing current output run: " << new_path.str());
+            DBGTHRD(<< "Closing current output run: " << new_path.string());
         }
 
         W_DO(me()->close(appendFd));

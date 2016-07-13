@@ -860,6 +860,7 @@ void chkpt_thread_t::run()
         if (!_wakeup) { continue; }
 
         ss_m::chkpt->take();
+        ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
     }
 }
 
