@@ -122,6 +122,7 @@ xct_abort          1000000 0.0 ();
 xct_freeing_space  1000000 0.0 ();
 xct_end            1000000 0.0 ();
 xct_end_group      1000000 0.0 (const xct_t** l, int llen);
+xct_latency_dump   0000000 0.0 (unsigned long nsec);
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################

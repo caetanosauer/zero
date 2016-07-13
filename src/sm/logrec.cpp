@@ -432,7 +432,11 @@ chkpt_end_log::chkpt_end_log(const lsn_t& lsn, const lsn_t& min_rec_lsn,
     fill((PageID) 0, (3 * sizeof(lsn_t)) + (3 * sizeof(int)));
 }
 
-
+xct_latency_dump_log::xct_latency_dump_log(unsigned long nsec)
+{
+    *((unsigned long*) _data) = nsec;
+    fill((PageID) 0, sizeof(unsigned long));
+}
 
 /*********************************************************************
  *

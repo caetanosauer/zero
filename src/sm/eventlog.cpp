@@ -90,3 +90,10 @@ void sysevent::log_append_extent(extent_id_t ext, lsn_t& prev_page_lsn)
     W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
     delete lr;
 }
+
+void sysevent::log_xct_latency_dump(unsigned long nsec)
+{
+    logrec_t* lr = new xct_latency_dump_log(nsec);
+    W_COERCE(smlevel_0::log->insert(*lr, nullptr));
+    delete lr;
+}

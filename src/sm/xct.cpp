@@ -29,6 +29,7 @@
 #include "lock_raw.h"
 #include "log_lsn_tracker.h"
 #include "log_core.h"
+#include "eventlog.h"
 
 #include "allocator.h"
 
@@ -340,6 +341,7 @@ xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
     }
 
     w_assert3(state() == xct_active);
+    _begin_tstamp = std::chrono::high_resolution_clock::now();
 }
 
 
@@ -1134,6 +1136,10 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
     // in case the next transaction are read-only.
     lsn_t inherited_read_watermark;
 
+    // Static thread-local variables used to measure transaction latency
+    static thread_local unsigned long _accum_latency = 0;
+    static thread_local unsigned int _latency_count = 0;
+
     W_DO(_pre_commit(flags));
 
     if (_last_lsn.valid() || !smlevel_0::log)  {
@@ -1202,6 +1208,17 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         change_state(xct_active);
     } else {
         _xct_chain_len = 0;
+    }
+
+    auto end_tstamp = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end_tstamp - _begin_tstamp);
+    _accum_latency += elapsed.count();
+    _latency_count++;
+    // dump average latency every 100 commits
+    if (_latency_count % 100 == 0) {
+        sysevent::log_xct_latency_dump(_accum_latency / _latency_count);
+        _accum_latency = 0;
+        _latency_count = 0;
     }
 
     return RCOK;
@@ -1589,7 +1606,7 @@ xct_t::_sync_logbuf(bool block, bool signal)
 }
 
 rc_t
-xct_t::get_logbuf(logrec_t*& ret, int t)
+xct_t::get_logbuf(logrec_t*& ret, int)
 {
     // then , use tentative log buffer.
     // CS: system transactions should also go through log reservation,
