@@ -13,6 +13,7 @@
 #include "dbinspect.h"
 #include "loganalysis.h"
 #include "dbscan.h"
+#include "addbackup.h"
 
 #include <boost/foreach.hpp>
 
@@ -44,6 +45,7 @@ void Command::init()
     REGISTER_COMMAND("verifylog", VerifyLog);
     REGISTER_COMMAND("truncatelog", TruncateLog);
     REGISTER_COMMAND("dbscan", DBScan);
+    REGISTER_COMMAND("addbackup", AddBackup);
     REGISTER_COMMAND("agglog", AggLog);
     REGISTER_COMMAND("logstats", LogStats);
     REGISTER_COMMAND("logpagestats", LogPageStats);

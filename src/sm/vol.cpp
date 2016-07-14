@@ -321,32 +321,8 @@ void vol_t::list_backups(
     }
 }
 
-rc_t vol_t::sx_add_backup(string path, bool redo)
+rc_t vol_t::sx_add_backup(const string& path, lsn_t backupLSN, bool redo)
 {
-    // Make sure backup volume header matches this volume
-    stnode_page stpage;
-    {
-        int fd = -1;
-        int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC;
-        rc_t rc = me()->open(path.c_str(), open_flags, 0666, fd);
-        if (rc.is_error())  {
-            W_IGNORE(me()->close(fd));
-            return RC_AUGMENT(rc);
-        }
-        rc = me()->read(fd, &stpage, sizeof(generic_page));
-        if (rc.is_error())  {
-            W_IGNORE(me()->close(fd));
-            return RC_AUGMENT(rc);
-        }
-
-        W_DO(me()->close(fd));
-    }
-
-    lsn_t backupLSN = stpage.getBackupLSN();
-
-    // will change vol_t state -- start critical section
-    // Multiple adds of the same backup file are weird, but not an error.
-    // The mutex is just ot protect against mounts and checkpoints
     spinlock_write_critical_section cs(&_mutex);
 
     _backups.push_back(path);
@@ -355,7 +331,7 @@ rc_t vol_t::sx_add_backup(string path, bool redo)
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        W_DO(log_add_backup(path.c_str()));
+        W_DO(log_add_backup(path, backupLSN));
         W_DO(ssx.end_sys_xct(RCOK));
     }
 

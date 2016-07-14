@@ -9,6 +9,7 @@ set(loginspect_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/loganalysis.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/propstats.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/dbscan.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/addbackup.cpp
     )
 
 add_library (loginspect ${loginspect_SRCS})

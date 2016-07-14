@@ -577,18 +577,20 @@ void chkpt_backup_tab_t::read(
 chkpt_backup_tab_log::chkpt_backup_tab_log(int cnt,
                                            const string* paths)
 {
+    // CS TODO
     fill(0, (new (_data) chkpt_backup_tab_t(cnt, paths))->size());
 }
 
 void chkpt_backup_tab_log::redo(fixable_page_h*)
 {
+    // CS TODO
     chkpt_backup_tab_t* tab = (chkpt_backup_tab_t*) _data;
     std::vector<string> paths;
     tab->read(paths);
     w_assert0(tab->count == paths.size());
 
     for (size_t i = 0; i < tab->count; i++) {
-        W_COERCE(smlevel_0::vol->sx_add_backup(paths[i], false /* log */));
+        W_COERCE(smlevel_0::vol->sx_add_backup(paths[i], lsn_t::null, false /* log */));
     }
 }
 
@@ -633,18 +635,19 @@ void chkpt_restore_tab_log::redo(fixable_page_h*)
     }
 }
 
-add_backup_log::add_backup_log(const char* dev_name)
+add_backup_log::add_backup_log(const string& path, lsn_t backupLSN)
 {
-    size_t length = strlen(dev_name);
-    w_assert0(length < smlevel_0::max_devname);
-    memcpy(data_ssx(), dev_name, length);
-    fill((PageID) 0, length);
+    *((lsn_t*) data_ssx()) = backupLSN;
+    w_assert0(path.length() < smlevel_0::max_devname);
+    memcpy(data_ssx() + sizeof(lsn_t), path.data(), path.length());
+    fill((PageID) 0, sizeof(lsn_t) + path.length());
 }
 
 void add_backup_log::redo(fixable_page_h*)
 {
-    const char* dev_name = (const char*) data_ssx();
-    W_COERCE(smlevel_0::vol->sx_add_backup(dev_name, false));
+    lsn_t backupLSN = *((lsn_t*) data_ssx());
+    const char* dev_name = (const char*) (data_ssx() + sizeof(lsn_t));
+    W_COERCE(smlevel_0::vol->sx_add_backup(string(dev_name), backupLSN, false));
 }
 
 undo_done_log::undo_done_log()

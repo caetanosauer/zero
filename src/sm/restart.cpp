@@ -74,7 +74,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <unistd.h>
 #include <sstream>
 
-restart_m::restart_m(const sm_options& options)
+restart_m::restart_m(const sm_options&)
     : _restart_thread(NULL)
 {
 }

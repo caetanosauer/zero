@@ -71,7 +71,7 @@ public:
     rc_t write_backup(PageID first, size_t count, void* buf);
 
     /** Add a backup file to be used for restore */
-    rc_t sx_add_backup(string path, bool redo = false);
+    rc_t sx_add_backup(const string& path, lsn_t backupLSN, bool redo = false);
 
     void list_backups(std::vector<string>& backups);
 
