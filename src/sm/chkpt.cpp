@@ -128,10 +128,16 @@ chkpt_m::chkpt_m(const sm_options& options)
 
 chkpt_m::~chkpt_m()
 {
+    retire_thread();
+}
+
+void chkpt_m::retire_thread()
+{
     if (_chkpt_thread) {
         _chkpt_thread->retire();
         W_COERCE(_chkpt_thread->join());
         delete _chkpt_thread;
+        _chkpt_thread = nullptr;
     }
 }
 
@@ -704,6 +710,7 @@ void chkpt_m::take()
     curr_chkpt.serialize_binary(ofs);
     ofs.close();
     fs::rename(fpath, newpath);
+    smlevel_0::log->get_storage()->add_checkpoint(begin_lsn);
 
     _min_rec_lsn = curr_chkpt.get_min_rec_lsn();
     _min_xct_lsn = curr_chkpt.get_min_xct_lsn();

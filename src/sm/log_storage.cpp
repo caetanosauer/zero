@@ -368,8 +368,8 @@ shared_ptr<partition_t> log_storage::create_partition(partition_number_t pnum)
     }
 
     // take checkpoint & kick-off partition recycler (oportunistically)
+    if (smlevel_0::chkpt) { smlevel_0::chkpt->wakeup_thread(); }
     if (_max_partitions > 0) {
-        if (smlevel_0::chkpt) { smlevel_0::chkpt->wakeup_thread(); }
         if (smlevel_0::bf && smlevel_0::bf->get_cleaner()) {
             smlevel_0::bf->get_cleaner()->wakeup();
         }
@@ -394,6 +394,12 @@ void log_storage::wakeup_recycler(bool chkpt_only)
         _recycler_thread->fork();
     }
     _recycler_thread->wakeup();
+}
+
+void log_storage::add_checkpoint(lsn_t lsn)
+{
+    spinlock_write_critical_section cs(&_partition_map_latch);
+    _checkpoints.push_back(lsn);
 }
 
 unsigned log_storage::delete_old_partitions(bool chkpt_only, partition_number_t older_than)

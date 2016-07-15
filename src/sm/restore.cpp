@@ -721,20 +721,7 @@ void RestoreMgr::run()
         ERROUT(<< "Restore waiting for log archiver to reach LSN "
                 << failureLSN);
 
-        // wait for log record to be consumed
-        while (la->getNextConsumedLSN() < failureLSN) {
-            la->activate(failureLSN, true);
-            ::usleep(10000); // 10ms
-        }
-
-        // Time to wait until requesting a log archive flush (msec). If we're
-        // lucky, log is archiving very fast and a flush request is not needed.
-        int waitBeforeFlush = 100;
-        ::usleep(waitBeforeFlush * 1000);
-
-        if (la->getDirectory()->getLastLSN() < failureLSN) {
-            la->requestFlushSync(failureLSN);
-        }
+        la->archiveUntilLSN(failureLSN);
 
         ERROUT(<< "Log archiver finished in " << timer.time() << " seconds");
     }
@@ -751,7 +738,6 @@ void RestoreMgr::run()
             backup->prefetch(i);
         }
     }
-
 
     restoreLoop();
 

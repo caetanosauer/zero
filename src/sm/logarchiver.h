@@ -802,6 +802,7 @@ public:
     void shutdown();
     bool requestFlushAsync(lsn_t);
     void requestFlushSync(lsn_t);
+    void archiveUntilLSN(lsn_t);
 
     ArchiveDirectory* getDirectory() { return directory; }
     lsn_t getNextConsumedLSN() { return consumer->getNextLSN(); }

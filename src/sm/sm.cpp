@@ -412,6 +412,9 @@ ss_m::_destruct_once()
         recovery = 0;
     }
 
+    // retire chkpt thread (calling take() directly still possible)
+    chkpt->retire_thread();
+
     // now it's safe to do the clean_up
     // The code for distributed txn (prepared xcts has been deleted, the input paramter
     // in cleanup() is not used
@@ -434,19 +437,21 @@ ss_m::_destruct_once()
         W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
         W_COERCE(vol->get_stnode_cache()->write_page(dur_lsn));
 
-        chkpt->take();
-
-        if (truncate) {
-            W_COERCE(_truncate_log());
-        }
+        if (truncate) { W_COERCE(_truncate_log()); }
+        else { chkpt->take(); }
 
         ERROUT(<< "All pages cleaned successfully");
     }
     else {
         ERROUT(<< "SM performing dirty shutdown");
-
     }
+
     delete chkpt; chkpt = 0;
+
+    ERROUT(<< "Terminating log archiver");
+    if (logArchiver) {
+        logArchiver->shutdown();
+    }
 
     nprepared = xct_t::cleanup(true /* now dispose of prepared xcts */);
     w_assert1(nprepared == 0);
@@ -457,11 +462,6 @@ ss_m::_destruct_once()
     bt->destruct_once();
     delete bt; bt = 0; // btree manager
     delete lm; lm = 0;
-
-    ERROUT(<< "Terminating log archiver");
-    if (logArchiver) {
-        logArchiver->shutdown();
-    }
 
 #ifndef USE_ATOMIC_COMMIT // otherwise clog and log point to the same object
     if(clog) {
@@ -509,12 +509,20 @@ rc_t ss_m::_truncate_log()
 {
     DBGTHRD(<< "Truncating log on LSN " << log->durable_lsn());
 
+    // Wait for cleaner to finish its current round
+    bf->shutdown();
+
     W_DO(log->flush_all());
     W_DO(log->truncate());
     W_DO(log->flush_all());
 
     // this should be an "empty" checkpoint
     chkpt->take();
+
+    if (logArchiver) {
+        logArchiver->archiveUntilLSN(log->durable_lsn());
+    }
+
     log->get_storage()->delete_old_partitions();
 
     return RCOK;

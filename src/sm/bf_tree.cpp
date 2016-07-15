@@ -158,6 +158,7 @@ void bf_tree_m::shutdown()
     if (_cleaner) {
         _cleaner->stop();
         delete _cleaner;
+        _cleaner = NULL;
     }
 }
 

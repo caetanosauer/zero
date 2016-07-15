@@ -1840,6 +1840,27 @@ void LogArchiver::requestFlushSync(lsn_t reqLSN)
     }
 }
 
+void LogArchiver::archiveUntilLSN(lsn_t lsn)
+{
+    // if lsn.lo() == 0, archiver will not activate and it will get stuck
+    w_assert1(lsn.lo() > 0);
+
+    // wait for log record to be consumed
+    // while (getNextConsumedLSN() < lsn) {
+    //     activate(lsn, true);
+    //     ::usleep(10000); // 10ms
+    // }
+
+    // Time to wait until requesting a log archive flush (msec). If we're
+    // lucky, log is archiving very fast and a flush request is not needed.
+    int waitBeforeFlush = 100;
+    ::usleep(waitBeforeFlush * 1000);
+
+    if (getDirectory()->getLastLSN() < lsn) {
+        requestFlushSync(lsn);
+    }
+}
+
 bool LogScanner::hasPartialLogrec()
 {
     return truncMissing > 0;
