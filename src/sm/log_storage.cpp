@@ -408,7 +408,7 @@ unsigned log_storage::delete_old_partitions(bool chkpt_only, partition_number_t 
 
     if (older_than == 0 && smlevel_0::chkpt) {
         lsn_t min_lsn = smlevel_0::chkpt->get_min_active_lsn();
-        older_than = min_lsn.hi();
+        older_than = min_lsn.is_null() ? smlevel_0::log->durable_lsn().hi() : min_lsn.hi();
         if (smlevel_0::logArchiver) {
             lsn_t lastArchivedLSN = smlevel_0::logArchiver->getDirectory()->getLastLSN();
             if (older_than > lastArchivedLSN.hi()) {

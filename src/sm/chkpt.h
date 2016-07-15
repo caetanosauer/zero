@@ -106,6 +106,7 @@ class chkpt_t {
     friend class chkpt_m;
 private:
     tid_t highest_tid;
+    lsn_t last_scan_start;
 
 public: // required for restart for now
     buf_tab_t buf_tab;
@@ -128,6 +129,7 @@ public:
 
     lsn_t get_min_rec_lsn() const;
     lsn_t get_min_xct_lsn() const;
+    lsn_t get_last_scan_start() const { return last_scan_start; }
 
     tid_t get_highest_tid() { return highest_tid; }
     void set_highest_tid(tid_t tid) { highest_tid = tid; }
@@ -160,12 +162,13 @@ class chkpt_thread_t;
  *********************************************************************/
 class chkpt_m : public smlevel_0 {
 public:
-    chkpt_m(const sm_options&);
+    chkpt_m(const sm_options&, lsn_t last_chkpt_lsni = lsn_t::null);
     virtual ~chkpt_m();
 
 public:
     void take();
     void wakeup_thread();
+    void retire_thread();
 
     lsn_t get_min_rec_lsn() { return _min_rec_lsn; }
     lsn_t get_min_xct_lsn() { return _min_xct_lsn; }

@@ -326,7 +326,7 @@ ss_m::_construct_once()
     }
     bt->construct_once();
 
-    chkpt = new chkpt_m(_options);
+    chkpt = new chkpt_m(_options, chkpt_info->get_last_scan_start());
     if (! chkpt)  {
         W_FATAL(eOUTOFMEMORY);
     }
