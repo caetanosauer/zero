@@ -122,7 +122,7 @@ public:
 
     bool is_failed() const
     {
-        lintel::atomic_thread_fence(lintel::memory_order_acquire);
+        spinlock_read_critical_section cs(&_mutex);
         return _failed;
     }
 
@@ -201,13 +201,6 @@ private:
 
     /** Open backup file descriptor for retore or taking new backup */
     rc_t open_backup();
-
-    // setting failed status only allowed internally (private method)
-    void set_failed(bool failed)
-    {
-        _failed = failed;
-        lintel::atomic_thread_fence(lintel::memory_order_release);
-    }
 
     lsn_t get_dirty_page_emlsn(PageID pid) const;
     void delete_dirty_page(PageID pid);

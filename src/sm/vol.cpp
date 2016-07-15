@@ -142,9 +142,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
 {
     spinlock_write_critical_section cs(&_mutex);
 
-    if (is_failed()) {
-        return RCOK;
-    }
+    if (_failed) { return RCOK; }
 
     bool useBackup = _backups.size() > 0;
 
@@ -173,7 +171,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
     _restore_mgr = new RestoreMgr(ss_m::get_options(),
             ss_m::logArchiver->getDirectory(), this, useBackup);
 
-    set_failed(true);
+    _failed = true;
 
     lsn_t failureLSN = lsn_t::null;
     if (!redo) {
@@ -194,9 +192,7 @@ void vol_t::chkpt_restore_progress(chkpt_restore_tab_t* tab)
     w_assert0(tab);
     spinlock_read_critical_section cs(&_mutex);
 
-    if (!is_failed()) {
-        return;
-    }
+    if (!_failed) { return; }
     w_assert0(_restore_mgr);
 
     RestoreBitmap* bitmap = _restore_mgr->getBitmap();
@@ -221,27 +217,17 @@ void vol_t::chkpt_restore_progress(chkpt_restore_tab_t* tab)
 
 bool vol_t::check_restore_finished()
 {
-    if (!is_failed()) {
-        return true;
-    }
-
     // with a read latch, check if finished -- most likely no
     {
         spinlock_read_critical_section cs(&_mutex);
-        if (!is_failed()) {
-            return true;
-        }
-        if (!_restore_mgr->finished()) {
-            return false;
-        }
+        if (!_failed) { return true; }
+        if (!_restore_mgr->finished()) { return false; }
     }
     // restore finished -- update status with write latch
     {
         spinlock_write_critical_section cs(&_mutex);
         // check again for race
-        if (!is_failed()) {
-            return true;
-        }
+        if (!_failed) { return true; }
 
         // close restore manager
         if (_restore_mgr->try_shutdown()) {
@@ -257,7 +243,7 @@ bool vol_t::check_restore_finished()
                 _current_backup_lsn = lsn_t::null;
             }
 
-            set_failed(false);
+            _failed = false;
             return true;
         }
     }
@@ -267,7 +253,7 @@ bool vol_t::check_restore_finished()
 
 void vol_t::redo_segment_restore(unsigned segment)
 {
-    w_assert0(_restore_mgr && is_failed());
+    w_assert1(_restore_mgr && is_failed());
     _restore_mgr->markSegmentRestored(segment, true /* redo */);
 }
 
@@ -282,7 +268,7 @@ rc_t vol_t::dismount(bool abrupt)
     w_assert1(_unix_fd >= 0);
 
     if (!abrupt) {
-        if (is_failed()) {
+        if (_failed) {
             // wait for ongoing restore to complete
             _restore_mgr->setSinglePass();
             _restore_mgr->join();
@@ -291,11 +277,11 @@ rc_t vol_t::dismount(bool abrupt)
                 _backup_fd = -1;
                 _current_backup_lsn = lsn_t::null;
             }
-            set_failed(false);
+            _failed = false;
         }
         // CS TODO -- also make sure no restart is ongoing
     }
-    else if (is_failed()) {
+    else if (_failed) {
         DBG(<< "WARNING: Volume shutting down abruptly during restore!");
     }
 
@@ -518,51 +504,51 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
      * for restore, however, would remain the same.
      */
 
-    while (is_failed()) {
+    while (_failed) { // unsafe read at first -- latch acquired to verify it below
         if(ignoreRestore) {
             // volume is failed, but we don't want to restore
             return RC(eVOLFAILED);
         }
-        else {
-            {
-                // Pin avoids restore mgr being destructed while we access it.
-                // If it returns false, then restore manager was terminated,
-                // which implies that restore process is done and we can safely
-                // read the volume
-                spinlock_read_critical_section cs(&_mutex);
-                if (!_restore_mgr->pin()) { break; }
-            }
 
-            // volume is failed, but we want restore to take place
-            int i = 0;
-            while(i < cnt) {
-                if (!_restore_mgr->isRestored(first_page + i)) {
-                    DBG(<< "Page read triggering restore of " << first_page + i);
-                    bool reqSucceeded = false;
-                    if(cnt == 1) {
-                        reqSucceeded = _restore_mgr->requestRestore(first_page + i, buf);
-                    }
-                    else {
-                        reqSucceeded = _restore_mgr->requestRestore(first_page + i, NULL);
-                    }
-                    _restore_mgr->waitUntilRestored(first_page + i);
-                    w_assert1(_restore_mgr->isRestored(first_page));
-                    if (reqSucceeded) {
-                        // page is loaded in buffer pool already
-                        w_assert1(buf->pid == first_page + i);
-                        if (_log_page_reads) {
-                            sysevent::log_page_read(first_page + i);
-                        }
-                        _restore_mgr->unpin();
-                        return RCOK;
-                    }
-                }
-                i++;
-            }
-            _restore_mgr->unpin();
-            check_restore_finished();
-            break;
+        {
+            // Pin avoids restore mgr being destructed while we access it.
+            // If it returns false, then restore manager was terminated,
+            // which implies that restore process is done and we can safely
+            // read the volume
+            spinlock_read_critical_section cs(&_mutex);
+            if (!_failed) { break; }
+            if (!_restore_mgr->pin()) { break; }
         }
+
+        // volume is failed, but we want restore to take place
+        int i = 0;
+        while(i < cnt) {
+            if (!_restore_mgr->isRestored(first_page + i)) {
+                DBG(<< "Page read triggering restore of " << first_page + i);
+                bool reqSucceeded = false;
+                if(cnt == 1) {
+                    reqSucceeded = _restore_mgr->requestRestore(first_page + i, buf);
+                }
+                else {
+                    reqSucceeded = _restore_mgr->requestRestore(first_page + i, NULL);
+                }
+                _restore_mgr->waitUntilRestored(first_page + i);
+                w_assert1(_restore_mgr->isRestored(first_page));
+                if (reqSucceeded) {
+                    // page is loaded in buffer pool already
+                    w_assert1(buf->pid == first_page + i);
+                    if (_log_page_reads) {
+                        sysevent::log_page_read(first_page + i);
+                    }
+                    _restore_mgr->unpin();
+                    return RCOK;
+                }
+            }
+            i++;
+        }
+        _restore_mgr->unpin();
+        check_restore_finished();
+        break;
     }
 
     w_assert1(cnt > 0);
@@ -770,7 +756,7 @@ rc_t vol_t::write_many_pages(PageID first_page, const generic_page* const buf, i
     //     break;
     // }
 
-    if (is_failed() && !ignoreRestore) {
+    if (_failed && !ignoreRestore) {
         check_restore_finished();
     }
 
