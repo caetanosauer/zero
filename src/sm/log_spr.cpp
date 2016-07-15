@@ -186,7 +186,6 @@ rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer,
     for (iter = offsets.begin(); iter != offsets.end(); iter++) {
         logrec_t* lr = (logrec_t*) (buffer + *iter);
 
-        w_assert3(smlevel_0::bf->_is_frame_latched(p.get_generic_page(), LATCH_EX));
         w_assert1(lr->valid_header(lsn_t::null));
         w_assert1(iter == offsets.begin() || lr->is_multi_page() ||
                (prev_lsn == lr->page_prev_lsn() && p.pid() == lr->pid()));
