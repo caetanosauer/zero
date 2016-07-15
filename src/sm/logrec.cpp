@@ -720,7 +720,7 @@ void restore_end_log::redo(fixable_page_h*)
 
 restore_segment_log::restore_segment_log(uint32_t segment)
 {
-    char* pos = _data;
+    char* pos = data_ssx();
 
     memcpy(pos, &segment, sizeof(uint32_t));
     pos += sizeof(uint32_t);
@@ -731,7 +731,7 @@ restore_segment_log::restore_segment_log(uint32_t segment)
     pos += sizeof(unsigned long);
 #endif
 
-    fill((PageID) 0, pos - _data);
+    fill((PageID) 0, pos - data_ssx());
 }
 
 void restore_segment_log::redo(fixable_page_h*)
@@ -893,6 +893,12 @@ operator<<(ostream& o, const logrec_t& l)
                 PageID first = *((PageID*) (l.data()));
                 PageID last = first + *((uint32_t*) (l.data() + sizeof(PageID) + sizeof(lsn_t))) - 1;
                 o << " pids: " << first << "-" << last;
+                break;
+            }
+        case t_restore_segment:
+            {
+                o << " segment: " << *((uint32_t*) l.data_ssx());
+                break;
             }
 
 
