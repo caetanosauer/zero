@@ -326,37 +326,35 @@ rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent,
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.latch_mode() == LATCH_EX);
     w_assert1 (parent.is_node());
-    while (true) {
-        clear_ex_need(parent.pid()); // after these adopts, we don't need to be eager on this page.
-        for (slotid_t i = -1; i < parent.nrecs(); ++i) {
-            PageID shpid = i == -1 ? parent.pid0() : parent.child(i);
-            PageID shpid_opaqueptr = i == -1 ? parent.pid0_opaqueptr() : parent.child_opaqueptr(i);
-            if (shpid != surely_need_child_pid && get_expected_childrens(shpid) == 0) {
-                continue; // then doesn't matter (this could be false in low probability, but it's fine)
-            }
-            btree_page_h child;
-            rc_t rc = child.fix_nonroot(parent, shpid_opaqueptr, LATCH_EX, true /*conditional*/,
-                                        false /*virgin_page*/);
-            // if we can't instantly get latch, just skip it. we can defer it arbitrary
-            if (rc.is_error()) {
-                continue;
-            }
-            if (child.get_foster() == 0) {
-                continue; // no foster. just ignore
-            }
-            W_DO(_sx_adopt_foster (parent, child));
+
+    clear_ex_need(parent.pid()); // after these adopts, we don't need to be eager on this page.
+    for (slotid_t i = -1; i < parent.nrecs(); ++i) {
+        PageID shpid = i == -1 ? parent.pid0() : parent.child(i);
+        PageID shpid_opaqueptr = i == -1 ? parent.pid0_opaqueptr() : parent.child_opaqueptr(i);
+        if (shpid != surely_need_child_pid && get_expected_childrens(shpid) == 0) {
+            continue; // then doesn't matter (this could be false in low probability, but it's fine)
         }
-        // go on to foster-child of this parent, if exists
-        if (parent.get_foster() == 0) {
-            break;
+        btree_page_h child;
+        rc_t rc = child.fix_nonroot(parent, shpid_opaqueptr, LATCH_EX, true /*conditional*/,
+                false /*virgin_page*/);
+        // if we can't instantly get latch, just skip it. we can defer it arbitrary
+        if (rc.is_error()) {
+            continue;
         }
+        if (child.get_foster() == 0) {
+            continue; // no foster. just ignore
+        }
+        W_DO(_sx_adopt_foster (parent, child));
+    }
+
+    // go on to foster-child of this parent, if exists
+    if (parent.get_foster() != 0) {
         btree_page_h foster_p;
         W_DO(foster_p.fix_nonroot(parent, parent.get_foster_opaqueptr(), LATCH_EX,
-                                  false /*conditional*/, false /*virgin_page*/));// latch coupling
-        parent.unfix();
-        parent = foster_p;
+                    false /*conditional*/, false /*virgin_page*/));// latch coupling
+        W_DO(_sx_adopt_foster_sweep_approximate(foster_p, surely_need_child_pid));
     }
-    parent.unfix(); // unfix right now. Some one might be waiting for us
+
     return RCOK;
 }
 
