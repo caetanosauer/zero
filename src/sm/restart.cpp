@@ -126,7 +126,7 @@ void restart_m::log_analysis()
 
     //Re-add backups
     // CS TODO only works for one backup
-    smlevel_0::vol->sx_add_backup(chkpt.bkp_path, true);
+    // smlevel_0::vol->sx_add_backup(chkpt.bkp_path, true);
 
     ADD_TSTAT(restart_log_analysis_time, timer.time_us());
     sysevent::log(logrec_t::t_loganalysis_end);
@@ -134,7 +134,7 @@ void restart_m::log_analysis()
     ERROUT(<< "Log analysis found "
             << chkpt.buf_tab.size() << " dirty pages and "
             << chkpt.xct_tab.size() << " active transactions");
-    chkpt.dump(cerr);
+    // chkpt.dump(cerr);
 }
 
 /*********************************************************************

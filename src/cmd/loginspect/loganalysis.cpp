@@ -42,7 +42,8 @@ void LogAnalysis::run()
     for(buf_tab_t::const_iterator it = chkpt.buf_tab.begin();
                             it != chkpt.buf_tab.end(); ++it)
     {
-        cout << it->first << " ";
+        cout << it->first << "(" << it->second.rec_lsn
+            << "-" << it->second.page_lsn << ") " << endl;
     }
     cout << endl;
     cout << endl;
@@ -80,7 +81,7 @@ void LogAnalysis::run()
             cout << '\t';
             unordered_set<PageID>::const_iterator it;
             for (it = h.dirtyPages.begin(); it != h.dirtyPages.end(); it++) {
-                cout << *it << " ";
+                cout << *it << " " << endl;
             }
             cout << endl << endl;
         }
@@ -110,7 +111,7 @@ void LogAnalysisHandler::invoke(logrec_t& r)
         xctCount++;
     }
 
-    if (r.is_page_update()) {
+    if (r.is_redo()) {
         dirtyPages.insert(r.pid());
         if (r.is_multi_page()) {
             dirtyPages.insert(r.pid2());

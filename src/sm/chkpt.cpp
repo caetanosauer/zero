@@ -195,8 +195,8 @@ void chkpt_t::scan_log(lsn_t scan_start)
             }
         }
 
-        if (r.is_page_update()) {
-            w_assert0(r.is_redo());
+        // CS: A CLR is not considered a page update for some reason...
+        if (r.is_redo()) {
             mark_page_dirty(r.pid(), lsn, lsn);
 
             if (r.is_multi_page()) {
@@ -671,14 +671,14 @@ void chkpt_t::dump(ostream& os)
             << endl;
     }
 
-    // os << "DIRTY PAGES" << endl;
-    // for(buf_tab_t::const_iterator it = buf_tab.begin();
-    //                         it != buf_tab.end(); ++it)
-    // {
-    //     os << it->first << "(" << it->second.rec_lsn
-    //         << "-" << it->second.page_lsn << ") ";
-    // }
-    // os << endl;
+    os << "DIRTY PAGES" << endl;
+    for(buf_tab_t::const_iterator it = buf_tab.begin();
+                            it != buf_tab.end(); ++it)
+    {
+        os << it->first << "(" << it->second.rec_lsn
+            << "-" << it->second.page_lsn << ") " << endl;
+    }
+    os << endl;
 }
 
 void chkpt_m::take()
