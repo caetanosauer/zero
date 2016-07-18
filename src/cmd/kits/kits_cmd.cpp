@@ -83,9 +83,12 @@ void KitsCommand::setupOptions()
             and backups are deleted, and dataset is loaded from scratch")
         ("trxs", po::value<int>(&opt_num_trxs)->default_value(0),
             "Number of transactions to execute")
+        ("logVolume", po::value<unsigned>(&opt_log_volume)->default_value(0),
+            "Run benchmark until the given amount of log volume (in MB) is reached \
+            (overrides the trxs option)")
         ("duration", po::value<unsigned>(&opt_duration)->default_value(0),
             "Run benchmark for the given number of seconds (overrides the \
-            trxs option)")
+            logVolume option)")
         ("threads,t", po::value<int>(&opt_num_threads)->default_value(4),
             "Number of threads to execute benchmark with")
         ("select_trx,s", po::value<int>(&opt_select_trx)->default_value(0),
@@ -172,7 +175,7 @@ void KitsCommand::run()
         failure_thread->fork();
     }
 
-    if (opt_num_trxs > 0 || opt_duration > 0) {
+    if (runBenchAfterLoad()) {
         runBenchmark();
     }
 
@@ -251,14 +254,14 @@ void KitsCommand::runBenchmarkSpec()
 
     stopwatch_t timer;
 
-    if (opt_num_trxs > 0 || opt_duration > 0) {
+    if (runBenchAfterLoad()) {
         TRACE(TRACE_ALWAYS, "begin measurement\n");
         createClients<Client, Environment>();
     }
 
     doWork();
 
-    if (opt_num_trxs > 0 || opt_duration > 0) {
+    if (runBenchAfterLoad()) {
         joinClients();
     }
 
@@ -284,8 +287,19 @@ void KitsCommand::createClients()
     int current_prs_id = -1;
     int wh_id = 0;
 
-    mtype = opt_duration > 0 ? MT_TIME_DUR : MT_NUM_OF_TRXS;
-    int trxsPerThread = opt_num_trxs / opt_num_threads;
+    mtype = MT_UNDEF;
+    int trxsPerThread = 0;
+    if (opt_duration > 0) {
+        mtype = MT_TIME_DUR;
+    }
+    else if (opt_num_trxs > 0) {
+        mtype = MT_NUM_OF_TRXS;
+        trxsPerThread = opt_num_trxs / opt_num_threads;
+    }
+    else if (opt_log_volume > 0) {
+        mtype = MT_LOG_VOL;
+    }
+
     for (int i = 0; i < opt_num_threads; i++) {
         // create & fork testing threads
         if (opt_spread) {
@@ -337,6 +351,8 @@ void KitsCommand::joinClients()
 
 void KitsCommand::doWork()
 {
+    lsn_t last_log_tail = smlevel_0::log->durable_lsn();
+
     forkClients();
 
     if (opt_failDelay > 0) {
@@ -362,6 +378,25 @@ void KitsCommand::doWork()
         int remaining = opt_duration;
         while (remaining > 0) {
             remaining = ::sleep(remaining);
+        }
+    }
+    else if (mtype == MT_LOG_VOL) {
+        // check every second
+        size_t part_size = smlevel_0::log->get_storage()->get_partition_size();
+        unsigned long generated_log_vol = 0;
+        while (generated_log_vol / 1048576 < opt_log_volume) {
+            ::sleep(1);
+            lsn_t log_tail = smlevel_0::log->durable_lsn();
+            unsigned partitions = log_tail.hi() - last_log_tail.hi();
+            if (partitions == 0) {
+                generated_log_vol += log_tail.lo() - last_log_tail.lo();
+            }
+            else {
+                generated_log_vol += part_size - last_log_tail.lo();
+                generated_log_vol += part_size * (partitions-1);
+                generated_log_vol += log_tail.lo();
+            }
+            last_log_tail = log_tail;
         }
     }
 }

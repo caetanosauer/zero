@@ -423,6 +423,7 @@ ss_m::_destruct_once()
 
     // log truncation requires clean shutdown
     bool truncate = _options.get_bool_option("sm_truncate_log", false);
+    bool truncate_archive = _options.get_bool_option("sm_truncate_archive", false);
     if (shutdown_clean || truncate) {
         ERROUT(<< "SM performing clean shutdown");
 
@@ -437,7 +438,7 @@ ss_m::_destruct_once()
         W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
         W_COERCE(vol->get_stnode_cache()->write_page(dur_lsn));
 
-        if (truncate) { W_COERCE(_truncate_log()); }
+        if (truncate) { W_COERCE(_truncate_log(truncate_archive)); }
         else { chkpt->take(); }
 
         ERROUT(<< "All pages cleaned successfully");
@@ -505,21 +506,27 @@ ss_m::_destruct_once()
      ERROUT(<< "SM shutdown complete!");
 }
 
-rc_t ss_m::_truncate_log()
+rc_t ss_m::_truncate_log(bool truncate_archive)
 {
     DBGTHRD(<< "Truncating log on LSN " << log->durable_lsn());
 
     // Wait for cleaner to finish its current round
     bf->shutdown();
-
     W_DO(log->flush_all());
+
+    if (truncate_archive && logArchiver) {
+        std::cerr << "TRUNCATE" << std::endl;
+        logArchiver->archiveUntilLSN(log->durable_lsn());
+        logArchiver->getDirectory()->deleteAllRuns();
+    }
+
     W_DO(log->truncate());
     W_DO(log->flush_all());
 
     // this should be an "empty" checkpoint
     chkpt->take();
 
-    if (logArchiver) {
+    if (!truncate_archive && logArchiver) {
         logArchiver->archiveUntilLSN(log->durable_lsn());
     }
 

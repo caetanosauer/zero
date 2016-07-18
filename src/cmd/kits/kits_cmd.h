@@ -25,6 +25,7 @@ protected:
     string opt_conffile;
     int opt_num_trxs;
     unsigned opt_duration;
+    unsigned opt_log_volume;
     int opt_num_threads;
     int opt_select_trx;
     int opt_queried_sf;
@@ -57,6 +58,11 @@ protected:
     void mkdirs(string);
     void ensureEmptyPath(string);
     void ensureParentPathExists(string);
+
+    bool runBenchAfterLoad()
+    {
+        return opt_duration > 0 || opt_num_trxs > 0 || opt_log_volume > 0;
+    }
 
 private:
     std::vector<base_client_t*> clients;

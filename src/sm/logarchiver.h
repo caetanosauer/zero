@@ -357,6 +357,7 @@ public:
 
         rc_t listFiles(std::vector<std::string>& list);
         rc_t listFileStats(std::list<RunFileStats>& list);
+        void deleteAllRuns();
 
         static lsn_t parseLSN(const char* str, bool end = true);
         static size_t getFileSize(int fd);

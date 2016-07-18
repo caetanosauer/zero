@@ -598,7 +598,7 @@ public:
      */
     static rc_t         log_file_was_archived(const char * logfile);
 
-    rc_t                _truncate_log();
+    rc_t                _truncate_log(bool truncate_archive = false);
 
 private:
 //    void                _construct_once(LOG_WARN_CALLBACK_FUNC x=NULL,

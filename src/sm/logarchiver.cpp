@@ -1861,6 +1861,18 @@ void LogArchiver::archiveUntilLSN(lsn_t lsn)
     }
 }
 
+void LogArchiver::ArchiveDirectory::deleteAllRuns()
+{
+    fs::directory_iterator it(archpath), eod;
+    boost::regex run_rx(run_regex, boost::regex::basic);
+    for (; it != eod; it++) {
+        string fname = it->path().filename().string();
+        if (boost::regex_match(fname, run_rx)) {
+            fs::remove(it->path());
+        }
+    }
+}
+
 bool LogScanner::hasPartialLogrec()
 {
     return truncMissing > 0;
