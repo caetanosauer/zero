@@ -11,11 +11,13 @@ class AggLog : public LogScannerCommand {
 public:
     void run();
     void setupOptions();
+    string jsonReply();
 
 private:
     vector<string> typeStrings;
     string beginType;
     string endType;
+    string json;
     int interval;
 };
 
@@ -26,11 +28,14 @@ public:
             logrec_t::kind_t end = logrec_t::t_max_logrec);
     virtual void invoke(logrec_t& r);
     virtual void finalize();
+    string jsonReply();
+
 protected:
     vector<unsigned> counts;
     bitset<logrec_t::t_max_logrec> filter;
     const int interval;
-    int currentTick;
+    int currentTick, jsonResultIndex;
+    std::stringstream ssJsonResult[logrec_t::t_max_logrec];
 
     logrec_t::kind_t begin;
     logrec_t::kind_t end;

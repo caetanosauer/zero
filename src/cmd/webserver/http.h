@@ -3,6 +3,7 @@
 
 #include "command.h"
 #include "kits_cmd.h"
+#include "agglog.h"
 #include <boost/asio.hpp>
 #include <string>
 #include <memory>
@@ -13,7 +14,7 @@ using namespace boost::asio;
 
 class HandleKits
 {
-    KitsCommand kits;
+    KitsCommand *kits;
     bool kitsRunning;
     po::variables_map vm;
 
@@ -21,6 +22,7 @@ public:
     HandleKits();
     void runKits();
     string getStats();
+    string aggLog();
 };
 
 class http_headers

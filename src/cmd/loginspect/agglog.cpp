@@ -67,13 +67,19 @@ void AggLog::run()
     s->add_handler(&h);
     s->fork();
     s->join();
+    json = h.jsonReply();
     delete s;
+}
+
+string AggLog::jsonReply()
+{
+    return json;
 }
 
 AggregateHandler::AggregateHandler(bitset<logrec_t::t_max_logrec> filter,
         int interval, logrec_t::kind_t begin, logrec_t::kind_t end)
     : filter(filter), interval(interval), currentTick(0),
-    begin(begin), end(end), seenBegin(false)
+    begin(begin), end(end), seenBegin(false), jsonResultIndex(0)
 {
     assert(interval > 0);
     counts.reserve(logrec_t::t_max_logrec);
@@ -90,6 +96,8 @@ AggregateHandler::AggregateHandler(bitset<logrec_t::t_max_logrec> filter,
     for (int i = 0; i < logrec_t::t_max_logrec; i++) {
         if (filter[i]) {
             cout << " " << logrec_t::get_type_str((logrec_t::kind_t) i);
+            ssJsonResult[jsonResultIndex] << "\"" << logrec_t::get_type_str((logrec_t::kind_t) i) <<  "\" : [";
+            jsonResultIndex++;
         }
     }
     cout << endl;
@@ -128,10 +136,23 @@ void AggregateHandler::dumpCounts()
     for (size_t i = 0; i < counts.capacity(); i++) {
         if (filter[i]) {
             cout << counts[i] << '\t';
+            ssJsonResult[i] << counts[i] << ", ";
             counts[i] = 0;
         }
     }
     cout << endl;
+}
+
+string AggregateHandler::jsonReply()
+{
+    string reply("{ ");
+    for (int i = 0; i < jsonResultIndex; i++) {
+        reply += ssJsonResult[i].str();
+        reply[reply.size() - 2] = ']';
+        reply += ", ";
+    }
+    reply[reply.size() - 2] = '}';
+    return reply;
 }
 
 void AggregateHandler::finalize()

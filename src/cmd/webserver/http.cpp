@@ -50,6 +50,16 @@ std::string http_headers::get_response(HandleKits &kits)
      ssOut << std::endl;
      ssOut <<   kitsStats;
   }
+  else if(url == "/agglog")
+  {
+     string json = kits.aggLog();
+     std::string sHTML = "<html><body><h1>Stats</h1></body></html>";
+     ssOut << "HTTP/1.1 200 OK" << std::endl;
+     ssOut << "content-type: text/html" << std::endl;
+     ssOut << "content-length: " << json.length() << std::endl;
+     ssOut << std::endl;
+     ssOut <<   json;
+  }
   else
   {
      std::string sHTML = "<html><body><h1>404 Not Found</h1><p>There's nothing here.</p></body></html>";
@@ -284,23 +294,26 @@ void session::interact(std::shared_ptr<session> pThis, HandleKits &kits)
 HandleKits::HandleKits():
     kitsRunning(false)
     {
-        kits.setupOptions();
+        kits = new KitsCommand();
+        kits->setupOptions();
     }
 
 void HandleKits::runKits()
 {
     if (kitsRunning) {
-        kits.join();
+        kits->join();
         kitsRunning = false;
+        delete kits;
+        kits = new KitsCommand();
+        kits->setupOptions();
     }
-    kits._forked = false;
     int argc=9;
     char* argv[9]={"zapps", "kits", "-b", "tpcb", "--duration", "90", "-t", "1", "--load"};
-    po::store(po::parse_command_line(argc,argv,kits.getOptions()), vm);
+    po::store(po::parse_command_line(argc,argv,kits->getOptions()), vm);
     po::notify(vm);
-    kits.setOptionValues(vm);
+    kits->setOptionValues(vm);
 
-    kits.fork();
+    kits->fork();
     kitsRunning = true;
     //kits.shoreEnv->gatherstats_sm();
 
@@ -308,7 +321,7 @@ void HandleKits::runKits()
 string HandleKits::getStats()
 {
     std::stringstream ssOut, ssReturn;
-    kits.getShoreEnv()->gatherstats_sm(ssOut);
+    kits->getShoreEnv()->gatherstats_sm(ssOut);
     string varJson, parJson;
     ssReturn << "{";
     while (ssOut >> varJson) {
@@ -321,3 +334,19 @@ string HandleKits::getStats()
 
     return strReturn;
 };
+
+string HandleKits::aggLog()
+{
+    AggLog agglog;
+    agglog.setupOptions();
+    int argc=4;
+    char* argv[4]={"zapps", "agglog", "-l", "log"};
+    po::variables_map varMap;
+    po::store(po::parse_command_line(argc,argv,agglog.getOptions()), varMap);
+    po::notify(varMap);
+    agglog.setOptionValues(varMap);
+
+    agglog.fork();
+    agglog.join();
+    return agglog.jsonReply();
+}
