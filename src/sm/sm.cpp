@@ -514,9 +514,8 @@ rc_t ss_m::_truncate_log(bool truncate_archive)
     bf->shutdown();
     W_DO(log->flush_all());
 
+    logArchiver->archiveUntilLSN(log->durable_lsn());
     if (truncate_archive && logArchiver) {
-        std::cerr << "TRUNCATE" << std::endl;
-        logArchiver->archiveUntilLSN(log->durable_lsn());
         logArchiver->getDirectory()->deleteAllRuns();
     }
 
@@ -526,9 +525,8 @@ rc_t ss_m::_truncate_log(bool truncate_archive)
     // this should be an "empty" checkpoint
     chkpt->take();
 
-    if (!truncate_archive && logArchiver) {
-        logArchiver->archiveUntilLSN(log->durable_lsn());
-    }
+    // generate an "empty" log archive run
+    logArchiver->archiveUntilLSN(log->durable_lsn());
 
     log->get_storage()->delete_old_partitions();
 

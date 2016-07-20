@@ -583,7 +583,7 @@ rc_t LogArchiver::ArchiveDirectory::listFiles(std::vector<std::string>& list)
     list.clear();
 
     fs::directory_iterator it(archpath), eod;
-    boost::regex run_rx(run_regex, boost::regex::basic);
+    boost::regex run_rx(run_regex, boost::regex::perl);
     for (; it != eod; it++) {
         string fname = it->path().filename().string();
         if (boost::regex_match(fname, run_rx)) {
@@ -1667,9 +1667,20 @@ bool LogArchiver::processFlushRequest()
 
 bool LogArchiver::isLogTooSlow()
 {
+    if (!eager) { return false; }
+
     int minActWindow = directory->getBlockSize();
-    if (eager && control.endLSN.hi() == nextActLSN.hi() &&
-            control.endLSN.lo() - nextActLSN.lo() < minActWindow)
+
+    auto isSmallWindow = [minActWindow](lsn_t endLSN, lsn_t nextLSN) {
+        int nextHi = nextLSN.hi();
+        int nextLo = nextLSN.lo();
+        int endHi = endLSN.hi();
+        int endLo = endLSN.lo();
+        return (endHi == nextHi && endLo - nextLo< minActWindow) ||
+            (endHi == nextHi + 1 && endLo < minActWindow);
+    };
+
+    if (isSmallWindow(control.endLSN, nextActLSN))
     {
         // If this happens to often, the block size should be decreased.
         ::usleep(slowLogGracePeriod);
@@ -1679,10 +1690,8 @@ bool LogArchiver::isLogTooSlow()
         // However, if it seems like log activity has stopped (i.e.,
         // durable_lsn did not advance since we started), then we proceed
         // with the small activation window.
-        bool smallWindow = control.endLSN.hi() == nextActLSN.hi() &&
-                control.endLSN.lo() - nextActLSN.lo() < minActWindow;
         bool logStopped = control.endLSN == smlevel_0::log->durable_lsn();
-        if (!smallWindow && !logStopped) {
+        if (!isSmallWindow(control.endLSN, nextActLSN) && !logStopped) {
             return false;
         }
         INC_TSTAT(la_log_slow);
@@ -1836,7 +1845,7 @@ void LogArchiver::requestFlushSync(lsn_t reqLSN)
         if (flushReqLSN == lsn_t::null) {
             break;
         }
-        ::usleep(1000); // 1ms
+        ::usleep(10000); // 10ms
     }
 }
 
@@ -1846,15 +1855,10 @@ void LogArchiver::archiveUntilLSN(lsn_t lsn)
     w_assert1(lsn.lo() > 0);
 
     // wait for log record to be consumed
-    // while (getNextConsumedLSN() < lsn) {
-    //     activate(lsn, true);
-    //     ::usleep(10000); // 10ms
-    // }
-
-    // Time to wait until requesting a log archive flush (msec). If we're
-    // lucky, log is archiving very fast and a flush request is not needed.
-    int waitBeforeFlush = 100;
-    ::usleep(waitBeforeFlush * 1000);
+    while (getNextConsumedLSN() < lsn) {
+        activate(lsn, true);
+        ::usleep(10000); // 10ms
+    }
 
     if (getDirectory()->getLastLSN() < lsn) {
         requestFlushSync(lsn);
@@ -1864,7 +1868,7 @@ void LogArchiver::archiveUntilLSN(lsn_t lsn)
 void LogArchiver::ArchiveDirectory::deleteAllRuns()
 {
     fs::directory_iterator it(archpath), eod;
-    boost::regex run_rx(run_regex, boost::regex::basic);
+    boost::regex run_rx(run_regex, boost::regex::perl);
     for (; it != eod; it++) {
         string fname = it->path().filename().string();
         if (boost::regex_match(fname, run_rx)) {
