@@ -843,7 +843,7 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
         w_assert0(found);
         idx = p.first;
 
-        if (_enable_swizzling) {
+        // if (_enable_swizzling) {
             // Swizzle pointer to root in _root_pages array
             bool old_value = false;
             if (!std::atomic_compare_exchange_strong(&(get_cb(idx)._swizzled),
@@ -854,7 +854,7 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
             }
             w_assert1(is_swizzled(page));
             _root_pages[store] = idx;
-        }
+        // }
     }
     else {
         // Pointer to root page was swizzled -- direct access to CB
