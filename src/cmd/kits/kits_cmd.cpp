@@ -160,6 +160,14 @@ void KitsCommand::run()
         cout << "Loading finished!" << endl;
     }
 
+    if (opt_warmup > 0) {
+        TRACE(TRACE_ALWAYS, "warming up buffer\n");
+        WarmupThread t;
+        t.fork();
+        t.join();
+        cout << "Warmup finished!" << endl;
+    }
+
     // Spawn crash thread if requested
     CrashThread* crash_thread;
     if (opt_crashDelay >= 0) {
@@ -227,29 +235,6 @@ void KitsCommand::runBenchmarkSpec()
 
     if (opt_queried_sf <= 0) {
         opt_queried_sf = shoreEnv->get_sf();
-    }
-
-    if (opt_warmup > 0) {
-        TRACE(TRACE_ALWAYS, "warming up buffer\n");
-        WarmupThread t;
-        t.fork();
-        t.join();
-
-        // run transactions for the given number of seconds
-        createClients<Client, Environment>();
-        forkClients();
-
-        int remaining = opt_warmup;
-        while (remaining > 1) {
-            remaining = ::sleep(remaining);
-        }
-
-        joinClients();
-
-        if (opt_warmup > 1) {
-            // sleep some more to get a gap in the log ticks
-            ::sleep(5);
-        }
     }
 
     stopwatch_t timer;
