@@ -368,10 +368,10 @@ shared_ptr<partition_t> log_storage::create_partition(partition_number_t pnum)
     }
 
     // take checkpoint & kick-off partition recycler (oportunistically)
-    if (smlevel_0::chkpt) { smlevel_0::chkpt->wakeup_thread(); }
     if (_max_partitions > 0) {
         if (smlevel_0::bf && smlevel_0::bf->get_cleaner()) {
             smlevel_0::bf->get_cleaner()->wakeup();
+            if (smlevel_0::chkpt) { smlevel_0::chkpt->wakeup_thread(); }
         }
     }
     wakeup_recycler();
