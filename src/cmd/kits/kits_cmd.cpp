@@ -389,3 +389,8 @@ void KitsCommand::finish()
     // shoreEnv has stop() and close(), and close calls stop (confusing!)
     shoreEnv->close();
 }
+
+bool KitsCommand::running()
+{
+    return clientsForked;
+}

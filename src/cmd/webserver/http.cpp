@@ -2,9 +2,9 @@
 #include <time.h>
 
 
-  http_headers::http_headers ()
-  {
-  }
+http_headers::http_headers ()
+{
+}
 
 std::string http_headers::get_response(HandleKits &kits)
 {
@@ -32,9 +32,10 @@ std::string http_headers::get_response(HandleKits &kits)
   }
   else if(url == "/startkits")
   {
-     std::string sHTML = "<html><body><h1>Starting Kits</h1></body></html>";
+     std::string sHTML = "{\"kitsStart\":true}";
      ssOut << "HTTP/1.1 200 OK" << std::endl;
-     ssOut << "content-type: text/html" << std::endl;
+     ssOut << "Access-Control-Allow-Origin: *" << std::endl;
+     ssOut << "content-type: application/json" << std::endl;
      ssOut << "content-length: " << sHTML.length() << std::endl;
      ssOut << std::endl;
      ssOut << sHTML;
@@ -45,7 +46,8 @@ std::string http_headers::get_response(HandleKits &kits)
      string kitsStats = kits.getStats();
      std::string sHTML = "<html><body><h1>Stats</h1></body></html>";
      ssOut << "HTTP/1.1 200 OK" << std::endl;
-     ssOut << "content-type: text/html" << std::endl;
+     ssOut << "Access-Control-Allow-Origin: *" << std::endl;
+     ssOut << "content-type: application/json" << std::endl;
      ssOut << "content-length: " << kitsStats.length() << std::endl;
      ssOut << std::endl;
      ssOut <<   kitsStats;
@@ -55,7 +57,8 @@ std::string http_headers::get_response(HandleKits &kits)
      string json = kits.aggLog();
      std::string sHTML = "<html><body><h1>Stats</h1></body></html>";
      ssOut << "HTTP/1.1 200 OK" << std::endl;
-     ssOut << "content-type: text/html" << std::endl;
+     ssOut << "Access-Control-Allow-Origin: *" << std::endl;
+     ssOut << "content-type: application/json" << std::endl;
      ssOut << "content-length: " << json.length() << std::endl;
      ssOut << std::endl;
      ssOut <<   json;
@@ -292,21 +295,54 @@ void session::interact(std::shared_ptr<session> pThis, HandleKits &kits)
 
 
 HandleKits::HandleKits():
-    kitsRunning(false)
-    {
-        kits = new KitsCommand();
-        kits->setupOptions();
+kitsRunning(false)
+{
+    kits = new KitsCommand();
+    kits->setupOptions();
+}
+
+
+void counters(std::vector<std::string> &counters, KitsCommand *kits)
+{
+    //wait for kits runs
+    while(!kits->running());
+    //kits started!
+    std::stringstream ssOut;
+    kits->getShoreEnv()->gatherstats_sm(ssOut);
+    string varJson, parJson;
+    while (ssOut >> varJson) {
+        ssOut >> parJson;
+        counters.push_back("\"" + varJson + "\" :  [" + parJson + ", ");
     }
+
+    while(kits->running()) {
+        //wait 1 second
+        std::this_thread::sleep_for (std::chrono::seconds(1));
+        std::stringstream ss;
+        kits->getShoreEnv()->gatherstats_sm(ss);
+        for(int i = 0; i < counters.size(); i++) {
+            ss >> varJson;
+            ss >> parJson;
+            counters[i]+=(parJson + ", ");
+        }
+
+        //string strReturn = ssReturn.str();
+        //strReturn[strReturn.length()-1] = '\0';
+        //strReturn[strReturn.length()-2] = '}';
+    }
+};
+
 
 void HandleKits::runKits()
 {
-    if (kitsRunning) {
+    if (kits->running()) {
         kits->join();
         kitsRunning = false;
         delete kits;
         kits = new KitsCommand();
         kits->setupOptions();
     }
+
     int argc=9;
     char* argv[9]={"zapps", "kits", "-b", "tpcb", "--duration", "90", "-t", "1", "--load"};
     po::store(po::parse_command_line(argc,argv,kits->getOptions()), vm);
@@ -314,22 +350,22 @@ void HandleKits::runKits()
     kits->setOptionValues(vm);
 
     kits->fork();
+    t1 = new std::thread (counters, std::ref(countersJson), kits);
     kitsRunning = true;
     //kits.shoreEnv->gatherstats_sm();
 
 };
+
 string HandleKits::getStats()
 {
-    std::stringstream ssOut, ssReturn;
-    kits->getShoreEnv()->gatherstats_sm(ssOut);
-    string varJson, parJson;
-    ssReturn << "{";
-    while (ssOut >> varJson) {
-        ssOut >> parJson;
-        ssReturn << "\"" << varJson << "\" : \"" << parJson << "\", ";
+    std::string strReturn;
+    strReturn = "{";
+    for (int i = 0; i < countersJson.size(); i++) {
+        //countersJson[i][countersJson[i].length()-2] = ']';
+        strReturn += (countersJson[i]+ ", ");
+        strReturn[strReturn.size()-4] = ']';
     }
-    string strReturn = ssReturn.str();
-    strReturn[strReturn.length()-1] = '\0';
+    strReturn[strReturn.length()-1] = ' ';
     strReturn[strReturn.length()-2] = '}';
 
     return strReturn;

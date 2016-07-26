@@ -7,6 +7,8 @@
 #include <boost/asio.hpp>
 #include <string>
 #include <memory>
+#include <thread>
+#include <chrono>         // std::chrono::seconds
 
 using namespace boost;
 using namespace boost::system;
@@ -14,15 +16,19 @@ using namespace boost::asio;
 
 class HandleKits
 {
+private:
     KitsCommand *kits;
+    std::thread *t1;
     bool kitsRunning;
     po::variables_map vm;
+    std::vector<std::string> countersJson;
 
 public:
     HandleKits();
     void runKits();
     string getStats();
     string aggLog();
+    //void counters(std::vector<std::string> &countersJson);
 };
 
 class http_headers
