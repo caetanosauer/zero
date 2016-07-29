@@ -44,7 +44,6 @@ std::string http_headers::get_response(HandleKits &kits)
   else if(url == "/getstats")
   {
      string kitsStats = kits.getStats();
-     std::string sHTML = "<html><body><h1>Stats</h1></body></html>";
      ssOut << "HTTP/1.1 200 OK" << std::endl;
      ssOut << "Access-Control-Allow-Origin: *" << std::endl;
      ssOut << "content-type: application/json" << std::endl;
@@ -55,7 +54,16 @@ std::string http_headers::get_response(HandleKits &kits)
   else if(url == "/agglog")
   {
      string json = kits.aggLog();
-     std::string sHTML = "<html><body><h1>Stats</h1></body></html>";
+     ssOut << "HTTP/1.1 200 OK" << std::endl;
+     ssOut << "Access-Control-Allow-Origin: *" << std::endl;
+     ssOut << "content-type: application/json" << std::endl;
+     ssOut << "content-length: " << json.length() << std::endl;
+     ssOut << std::endl;
+     ssOut <<   json;
+  }
+  else if(url == "/iskitsrunning")
+  {
+     string json = kits.isRunning();
      ssOut << "HTTP/1.1 200 OK" << std::endl;
      ssOut << "Access-Control-Allow-Origin: *" << std::endl;
      ssOut << "content-type: application/json" << std::endl;
@@ -386,3 +394,10 @@ string HandleKits::aggLog()
     agglog.join();
     return agglog.jsonReply();
 }
+
+string HandleKits::isRunning()
+{
+    if (kits->running())
+        return "{\"isRunning\" : true}";
+    return "{\"isRunning\" : false}";
+};
