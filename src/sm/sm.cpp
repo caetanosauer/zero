@@ -514,9 +514,9 @@ rc_t ss_m::_truncate_log(bool truncate_archive)
     bf->shutdown();
     W_DO(log->flush_all());
 
-    if (truncate_archive && logArchiver) {
+    if (logArchiver) {
         logArchiver->archiveUntilLSN(log->durable_lsn());
-        logArchiver->getDirectory()->deleteAllRuns();
+        if (truncate_archive) { logArchiver->getDirectory()->deleteAllRuns(); }
     }
 
     W_DO(log->truncate());
