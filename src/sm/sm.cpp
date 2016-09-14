@@ -514,9 +514,9 @@ rc_t ss_m::_truncate_log(bool truncate_archive)
     bf->shutdown();
     W_DO(log->flush_all());
 
-    logArchiver->archiveUntilLSN(log->durable_lsn());
-    if (truncate_archive && logArchiver) {
-        logArchiver->getDirectory()->deleteAllRuns();
+    if (logArchiver) {
+        logArchiver->archiveUntilLSN(log->durable_lsn());
+        if (truncate_archive) { logArchiver->getDirectory()->deleteAllRuns(); }
     }
 
     W_DO(log->truncate());
@@ -526,7 +526,9 @@ rc_t ss_m::_truncate_log(bool truncate_archive)
     chkpt->take();
 
     // generate an "empty" log archive run
-    logArchiver->archiveUntilLSN(log->durable_lsn());
+    if(logArchiver) {
+        logArchiver->archiveUntilLSN(log->durable_lsn());
+    }
 
     log->get_storage()->delete_old_partitions();
 

@@ -48,7 +48,11 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
     spinlock_write_critical_section cs(&_mutex);
 
     // CS TODO: do we need/want OPEN_SYNC?
-    int open_flags = smthread_t::OPEN_SYNC | smthread_t::OPEN_DIRECT;
+    int open_flags = smthread_t::OPEN_SYNC;
+    if(_use_o_direct) {
+        open_flags |= smthread_t::OPEN_DIRECT;
+    }
+
     open_flags |= _readonly ? smthread_t::OPEN_RDONLY : smthread_t::OPEN_RDWR;
     if (truncate) {
         open_flags |= smthread_t::OPEN_TRUNC | smthread_t::OPEN_CREATE;
