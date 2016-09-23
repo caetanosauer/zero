@@ -116,13 +116,13 @@ inline const std::string& sm_options::get_string_option(const std::string& optio
 }
 
 inline void sm_options::set_int_option(const std::string& option_name, int64_t value) {
-    _int_options.insert(std::pair<std::string, int64_t>(option_name, value));
+    _int_options[option_name] = value;
 }
 inline void sm_options::set_bool_option(const std::string& option_name, bool value) {
-    _bool_options.insert(std::pair<std::string, bool>(option_name, value));
+    _bool_options[option_name] = value;
 }
 inline void sm_options::set_string_option(const std::string& option_name, const std::string& value) {
-    _string_options.insert(std::pair<std::string, std::string>(option_name, value));
+    _string_options[option_name] = value;
 }
 
 #endif // SM_OPTIONS_H
