@@ -33,7 +33,7 @@ void worker_thread_t::wakeup(bool wait)
 
     if (wait) {
         // Wait for worker to finish one round
-        wait_for_round(this_round + 1);
+        wait_for_round(this_round);
     }
 }
 
