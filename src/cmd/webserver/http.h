@@ -28,6 +28,7 @@ public:
     void runKits();
     string getStats();
     string aggLog();
+    string getCounters();
     string isRunning();
     //void counters(std::vector<std::string> &countersJson);
 };

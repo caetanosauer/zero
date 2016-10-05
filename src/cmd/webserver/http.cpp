@@ -41,15 +41,26 @@ std::string http_headers::get_response(HandleKits &kits)
      ssOut << sHTML;
      kits.runKits();
   }
-  else if(url == "/getstats")
+  else if(url == "/counters")
   {
-     string kitsStats = kits.getStats();
+     string json = kits.getCounters();
+
      ssOut << "HTTP/1.1 200 OK" << std::endl;
      ssOut << "Access-Control-Allow-Origin: *" << std::endl;
      ssOut << "content-type: application/json" << std::endl;
-     ssOut << "content-length: " << kitsStats.length() << std::endl;
+     ssOut << "content-length: " << json.length() << std::endl;
      ssOut << std::endl;
-     ssOut <<   kitsStats;
+     ssOut <<   json;
+  }
+  else if(url == "/getstats")
+  {
+     string json = kits.getStats();
+     ssOut << "HTTP/1.1 200 OK" << std::endl;
+     ssOut << "Access-Control-Allow-Origin: *" << std::endl;
+     ssOut << "content-type: application/json" << std::endl;
+     ssOut << "content-length: " << json.length() << std::endl;
+     ssOut << std::endl;
+     ssOut <<   json;
   }
   else if(url == "/agglog")
   {
@@ -394,6 +405,38 @@ string HandleKits::aggLog()
     agglog.join();
     return agglog.jsonReply();
 }
+
+string HandleKits::getCounters()
+{
+    AggLog agglog;
+    agglog.setupOptions();
+    int argc=4;
+    char* argv[4]={"zapps", "agglog", "-l", "log"};
+    po::variables_map varMap;
+    po::store(po::parse_command_line(argc,argv,agglog.getOptions()), varMap);
+    po::notify(varMap);
+    agglog.setOptionValues(varMap);
+
+    agglog.fork();
+    agglog.join();
+    string json = agglog.jsonReply();
+    json[json.length() -2] = ',';
+    cout << json;
+
+    std::string jsonStats;
+    //strReturn = "{";
+    for (int i = 0; i < countersJson.size(); i++) {
+        //countersJson[i][countersJson[i].length()-2] = ']';
+        jsonStats += (countersJson[i]+ ", ");
+        jsonStats[jsonStats.size()-4] = ']';
+    }
+    jsonStats[jsonStats.length()-1] = ' ';
+    jsonStats[jsonStats.length()-2] = '}';
+
+    json +=jsonStats;
+
+    return json;
+};
 
 string HandleKits::isRunning()
 {
