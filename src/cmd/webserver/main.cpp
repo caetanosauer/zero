@@ -18,9 +18,20 @@ void accept_and_run(ip::tcp::acceptor& acceptor, io_service& io_service, HandleK
 
 int main(int argc, char ** argv)
 {
+    short unsigned int tcpPort = 8080;
+    if (argc>=2)
+    {
+        tcpPort = (short unsigned int) std::stoi(argv[1]);
+        if (tcpPort > 65500)
+        {
+            cout << "ERROR: Define a valid port" << endl;
+            return EXIT_FAILURE;
+        }
+    }
+    cout << "Web server is running on port " << tcpPort << endl;
     HandleKits kits;
     io_service io_service;
-    ip::tcp::endpoint endpoint{ip::tcp::v4(), 8080};
+    ip::tcp::endpoint endpoint{ip::tcp::v4(), tcpPort};
     ip::tcp::acceptor acceptor{io_service, endpoint};
     acceptor.listen();
     accept_and_run(acceptor, io_service, kits);
