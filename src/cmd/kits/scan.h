@@ -16,10 +16,7 @@ public:
     }
 
     virtual ~base_scan_t() {
-        if (btcursor) {
-            btcursor->close();
-            delete btcursor;
-        }
+        if (btcursor) delete btcursor;
     };
 
     w_rc_t open_scan(bool forward = true) {

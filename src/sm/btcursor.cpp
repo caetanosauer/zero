@@ -377,9 +377,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
 
             // take lock for the fence key
             if (_needs_lock) {
-                lockid_t lid (_store,
-                        (const unsigned char*) neighboring_fence.buffer_as_keystr(),
-                        neighboring_fence.get_length_as_keystr());
+                lockid_t lid (_store, (const unsigned char*) neighboring_fence.buffer_as_keystr(), neighboring_fence.get_length_as_keystr());
                 okvl_mode lock_mode;
                 if (only_low_fence_exact_match) {
                     lock_mode = _ex_lock ? ALL_X_GAP_N: ALL_S_GAP_N;
@@ -402,42 +400,40 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
         // take lock on the next key.
         // NOTE: until we get locks, we aren't sure the key really becomes
         // the next key. So, we use the temporary variable _tmp_next_key_buf.
-        if (_needs_lock) {
-            const okvl_mode *mode = NULL;
-            {
-                p.get_key(_slot, _tmp_next_key_buf);
-                if (_forward) {
-                    int d = _tmp_next_key_buf.compare(_upper);
-                    if (d < 0) {
-                        mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
-                    } else if (d == 0 && _upper_inclusive) {
-                        mode = _ex_lock ? &ALL_X_GAP_N : &ALL_S_GAP_N;
-                    } else {
-                        eof = true;
-                        mode = &ALL_N_GAP_N;
-                    }
+        const okvl_mode *mode = NULL;
+        {
+            p.get_key(_slot, _tmp_next_key_buf);
+            if (_forward) {
+                int d = _tmp_next_key_buf.compare(_upper);
+                if (d < 0) {
+                    mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
+                } else if (d == 0 && _upper_inclusive) {
+                    mode = _ex_lock ? &ALL_X_GAP_N : &ALL_S_GAP_N;
                 } else {
-                    int d = _tmp_next_key_buf.compare(_lower);
-                    if (d > 0) {
-                        mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
-                    } else if (d == 0 && _lower_inclusive) {
-                        mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
-                    } else {
-                        eof = true;
-                        mode = _ex_lock ? &ALL_N_GAP_X : &ALL_N_GAP_S;
-                    }
+                    eof = true;
+                    mode = &ALL_N_GAP_N;
+                }
+            } else {
+                int d = _tmp_next_key_buf.compare(_lower);
+                if (d > 0) {
+                    mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
+                } else if (d == 0 && _lower_inclusive) {
+                    mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
+                } else {
+                    eof = true;
+                    mode = _ex_lock ? &ALL_N_GAP_X : &ALL_N_GAP_S;
                 }
             }
-            if (!mode->is_empty()) {
-                rc_t rc = btree_impl::_ux_lock_key (_store, p, _tmp_next_key_buf,
-                        LATCH_SH, *mode, false);
-                if (rc.is_error()) {
-                    if (rc.err_num() == eLOCKRETRY) {
-                        W_DO(_check_page_update(p));
-                        continue;
-                    } else {
-                        return rc;
-                    }
+        }
+        if (_needs_lock && !mode->is_empty()) {
+            rc_t rc = btree_impl::_ux_lock_key (_store, p, _tmp_next_key_buf,
+                    LATCH_SH, *mode, false);
+            if (rc.is_error()) {
+                if (rc.err_num() == eLOCKRETRY) {
+                    W_DO(_check_page_update(p));
+                    continue;
+                } else {
+                    return rc;
                 }
             }
         }
