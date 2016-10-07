@@ -560,14 +560,21 @@ w_rc_t table_man_t<T>::fetch_table(ss_m* db, lock_mode_t /* alm */)
 
     bool eof = false;
     int counter = -1;
-    table_row_t tuple;
+
+    table_row_t* tuple = get_tuple();
+    rep_row_t areprow(ts());
+    rep_row_t areprow_key(ts());
+    areprow.set(_ptable->maxsize());
+    areprow_key.set(_ptable->maxsize());
+    tuple->_rep = &areprow;
+    tuple->_rep_key = &areprow_key;
 
     W_DO(db->begin_xct());
 
     // 1. scan the table
     table_scan_iter_impl<T> t_scan(this);
     while(!eof) {
-	W_DO(t_scan.next(eof, tuple));
+	W_DO(t_scan.next(eof, *tuple));
 	counter++;
     }
     TRACE( TRACE_ALWAYS, "%s:%d pages\n", _ptable->name(), counter);
@@ -578,15 +585,16 @@ w_rc_t table_man_t<T>::fetch_table(ss_m* db, lock_mode_t /* alm */)
         eof = false;
         counter = -1;
         while(!eof) {
-            W_DO(i_scan.next(eof, tuple));
+            W_DO(i_scan.next(eof, *tuple));
             counter++;
         }
         TRACE( TRACE_ALWAYS, "\t%s:%d pages\n", index->name().c_str(), counter);
     }
 
     W_DO(db->commit_xct());
+    give_tuple(tuple);
 
-    return RC(eNOTIMPLEMENTED);
+    return RCOK;
 }
 
 #if 0 // CS -- TODO migrate to other file

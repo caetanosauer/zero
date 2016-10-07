@@ -166,7 +166,7 @@ void KitsCommand::run()
         // t.fork();
         // t.join();
 
-        shoreEnv->db_fetch();
+        W_COERCE(shoreEnv->db_fetch());
         cout << "Warmup finished!" << endl;
     }
 
