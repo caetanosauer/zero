@@ -162,9 +162,11 @@ void KitsCommand::run()
 
     if (opt_warmup > 0) {
         TRACE(TRACE_ALWAYS, "warming up buffer\n");
-        WarmupThread t;
-        t.fork();
-        t.join();
+        // WarmupThread t;
+        // t.fork();
+        // t.join();
+
+        shoreEnv->db_fetch();
         cout << "Warmup finished!" << endl;
     }
 

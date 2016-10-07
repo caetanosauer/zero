@@ -584,7 +584,7 @@ public:
 
     // fetch the current db to buffer pool
     // virtual void db_fetch_init();
-    // virtual w_rc_t db_fetch() { return(RCOK); }
+    virtual w_rc_t db_fetch() { return(RCOK); }
 
     // Environment workers
     uint upd_worker_cnt();
