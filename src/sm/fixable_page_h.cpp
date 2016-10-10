@@ -28,13 +28,14 @@ void fixable_page_h::unfix(bool evict)
 
 w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent,
                                    PageID shpid, latch_mode_t mode,
-                                   bool conditional, bool virgin_page)
+                                   bool conditional, bool virgin_page, bool only_if_hit)
 {
     w_assert1(parent.is_fixed());
     w_assert1(mode != LATCH_NL);
 
     unfix();
-    W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, shpid, mode, conditional, virgin_page));
+    W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, shpid, mode, conditional,
+                virgin_page, only_if_hit));
     w_assert1(bf_tree_m::is_swizzled_pointer(shpid)
             || smlevel_0::bf->get_cb(_pp)->_pid == shpid);
     _bufferpool_managed = true;

@@ -172,12 +172,14 @@ public:
      * @param[in]  pid        ID of the page to fix (or bufferpool index when swizzled)
      * @param[in]  mode         latch mode.  has to be SH or EX.
      * @param[in]  conditional  whether the fix is conditional (returns immediately even if failed).
+     * @param[in]  only_if_hit  fix is only successful if frame is already on buffer (i.e., hit)
      * @param[in]  virgin_page  whether the page is a new page thus doesn't have to be read from disk.
      *
      * To use this method, you need to include bf_tree_inline.h.
      */
     w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, PageID pid,
                           latch_mode_t mode, bool conditional, bool virgin_page,
+                          bool only_if_hit = false,
                           lsn_t emlsn = lsn_t::null);
 
     /**
@@ -361,7 +363,7 @@ private:
     /** fixes a non-swizzled page. */
     w_rc_t fix(generic_page* parent, generic_page*& page, PageID pid,
                                latch_mode_t mode, bool conditional, bool virgin_page,
-                               lsn_t emlsn = lsn_t::null);
+                               bool only_if_hit = false, lsn_t emlsn = lsn_t::null);
 
     /**
      * Given an image of page which might have swizzled pointers,

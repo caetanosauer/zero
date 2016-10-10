@@ -333,8 +333,12 @@ rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent,
                 continue; // then doesn't matter (this could be false in low probability, but it's fine)
             }
             btree_page_h child;
+            // CS TODO: modified method to only try this if ifx is not a miss; otherwise,
+            // some pages will be fetched and replaced just to see that they don't have
+            // anything to adopt -- i.e., this "opportunistic" adopt is actually very
+            // disturbing
             rc_t rc = child.fix_nonroot(parent, shpid_opaqueptr, LATCH_EX, true /*conditional*/,
-                                        false /*virgin_page*/);
+                                        true /*virgin_page*/, true /* only_if_hit */);
             // if we can't instantly get latch, just skip it. we can defer it arbitrary
             if (rc.is_error()) {
                 continue;

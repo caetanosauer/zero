@@ -90,7 +90,7 @@ public:
      */
     w_rc_t fix_nonroot(const fixable_page_h &parent,
                        PageID pid, latch_mode_t mode, bool conditional=false,
-                       bool virgin_page=false);
+                       bool virgin_page=false, bool only_if_hit = false);
 
     w_rc_t fix_direct(PageID pid, latch_mode_t mode, bool conditional=false,
                        bool virgin_page=false);

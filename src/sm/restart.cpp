@@ -384,7 +384,7 @@ void restart_m::redo_page_pass()
 
         // simply fixing the page will take care of single-page recovery
         W_COERCE(smlevel_0::bf->fix_nonroot(
-                    page, NULL, pid, LATCH_SH, false, false, lastLSN));
+                    page, NULL, pid, LATCH_SH, false, false, false, lastLSN));
         smlevel_0::bf->unfix(page);
 
         iter++;

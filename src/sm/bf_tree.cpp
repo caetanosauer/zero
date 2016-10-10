@@ -233,7 +233,7 @@ bf_idx bf_tree_m::lookup(PageID pid) const
 
 w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                                    PageID pid, latch_mode_t mode,
-                                   bool conditional, bool virgin_page,
+                                   bool conditional, bool virgin_page, bool only_if_hit,
                                    lsn_t emlsn)
 {
     if (is_swizzled_pointer(pid)) {
@@ -285,6 +285,10 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
         if (idx == 0)
         {
+            if (only_if_hit) {
+                return RC(stINUSE);
+            }
+
             // STEP 1) Grab a free frame to read into
             W_DO(_grab_free_block(idx));
             w_assert1(_is_valid_idx(idx));
@@ -819,10 +823,10 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
 
 w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
                                      PageID pid, latch_mode_t mode, bool conditional,
-                                     bool virgin_page, lsn_t emlsn)
+                                     bool virgin_page, bool only_if_hit, lsn_t emlsn)
 {
     INC_TSTAT(bf_fix_nonroot_count);
-    return fix(parent, page, pid, mode, conditional, virgin_page, emlsn);
+    return fix(parent, page, pid, mode, conditional, virgin_page, only_if_hit, emlsn);
 }
 
 w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
