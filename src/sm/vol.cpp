@@ -449,13 +449,14 @@ rc_t vol_t::read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn)
     // if (checksum != buf->checksum && !emlsn.is_null())
 
     if (buf->lsn < emlsn) {
-        if (buf->pid == 0) { // virgin page
-            buf->lsn = lsn_t::null;
-            buf->pid = pnum;
-            buf->tag = t_btree_p;
-        }
+        // if (buf->lsn == lsn_t::null) { // virgin page
+        //     buf->lsn = lsn_t::null;
+        //     buf->pid = pnum;
+        //     buf->tag = t_btree_p;
+        // }
 
         btree_page_h p;
+        buf->pid = pnum;
         p.fix_nonbufferpool_page(buf);
         p.update_page_lsn(buf->lsn);
         W_DO(smlevel_0::recovery->recover_single_page(p, emlsn));
@@ -483,22 +484,6 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
         bool ignoreRestore)
 {
     DBG(<< "Page read: from " << first_page << " to " << first_page + cnt);
-
-    #ifdef ZERO_INIT
-    /*
-     * When a write into the buffer pool of potentially uninitialized
-     * memory occurs (such as padding)
-     * there is a purify/valgrind supression to keep the SM from being gigged
-     * for the SM-using application's legitimate behavior.  However, this
-     * uninitialized memory writes to a page in the buffer pool
-     * colors the corresponding bytes in the buffer pool with the
-     * "uninitialized" memory color.  When a new page is read in from
-     * disk, nothing changes the color of the page back to "initialized",
-     * and you suddenly see UMR or UMC errors from valid buffer pool pages.
-     */
-    memset(buf, '\0', cnt * sizeof(generic_page));
-    #endif
-
 
     /*
      * CS: If volume is marked as failed, we must invoke restore manager and
@@ -638,37 +623,23 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     // No need to hold latch here -- mutual exclusion is guaranteed because
     // only one thread may set _backup_write_fd (i.e., open file) above.
 
-    if (flushArchive) {
-        LogArchiver* la = smlevel_0::logArchiver;
-        W_DO(smlevel_0::log->flush_all());
-        lsn_t currLSN = smlevel_0::log->curr_lsn();
-        // wait for log record to be consumed
-        while (la->getNextConsumedLSN() < currLSN) {
-            ::usleep(10000); // 10ms
-        }
-
-        // Time to wait until requesting a log archive flush (msec). If we're
-        // lucky, log is archiving very fast and a flush request is not needed.
-        int waitBeforeFlush = 5000; // 5 sec
-        ::usleep(waitBeforeFlush * 1000);
-
-        DBGTHRD(<< "Taking sharp backup until " << currLSN);
-
-        if (la->getDirectory()->getLastLSN() < currLSN) {
-            la->requestFlushSync(currLSN);
-        }
-    }
-
     // Maximum LSN which is guaranteed to be reflected in the backup
-    lsn_t backupLSN = ss_m::logArchiver->getDirectory()->getLastLSN();
+    // lsn_t backupLSN = ss_m::logArchiver->getDirectory()->getLastLSN();
 
     DBG1(<< "Taking backup until LSN " << backupLSN);
 
     // Instantiate special restore manager for taking backup
     RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
             this, useBackup, true /* takeBackup */);
+
     restore.setSinglePass(true);
     restore.setInstant(false);
+    if (flushArchive) {
+        lsn_t currLSN = smlevel_0::log->durable_lsn();
+        restore.setFailureLSN(currLSN);
+        DBGTHRD(<< "Taking sharp backup until " << currLSN);
+    }
+
     restore.fork();
     restore.join();
     // TODO -- do we have to catch errors from restore thread?

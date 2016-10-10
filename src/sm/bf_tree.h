@@ -331,7 +331,7 @@ public:
     w_rc_t evict_blocks(
         uint32_t &evicted_count,
         uint32_t &unswizzled_count,
-        evict_urgency_t urgency = EVICT_NORMAL,
+        // evict_urgency_t urgency = EVICT_NORMAL,
         uint32_t preferred_count = 0);
 
 

@@ -401,6 +401,8 @@ void LogArchiver::initLogScanner(LogScanner* logScanner)
  */
 void LogArchiver::shutdown()
 {
+    // CS TODO BUG: we need some sort of pin mechanism (e.g., shared_ptr) for shutdown,
+    // because threads may still be accessing the log archive here.
     DBGTHRD(<< "LOG ARCHIVER SHUTDOWN STARTING");
     // this flag indicates that reader and writer threads delivering null
     // blocks is not an error, but a termination condition
@@ -1930,6 +1932,7 @@ tryagain:
     // we need at least two bytes to read the length
     else if (remaining == 1 || lr->length() > remaining) {
         // remainder of logrec must be read from next block
+        w_assert0(remaining < sizeof(baseLogHeader) || lr->valid_header());
         DBG5(<< "Log record with length "
                 << (remaining > 1 ? lr->length() : -1)
                 << " does not fit in current block of " << remaining);

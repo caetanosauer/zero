@@ -79,7 +79,6 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn)
     // necessary (similar to how restore works currently).
 
     // W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
-    w_assert1(pid == p.pid());
     w_assert0(p.lsn() <= emlsn);
 
     char* buffer = NULL;

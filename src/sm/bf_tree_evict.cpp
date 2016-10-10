@@ -90,7 +90,7 @@ void bf_tree_m::_add_free_block(bf_idx idx)
 }
 
 w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
-        uint32_t& unswizzled_count, evict_urgency_t /* urgency */,
+        uint32_t& unswizzled_count,
         uint32_t preferred_count)
 {
     get_cleaner()->wakeup();

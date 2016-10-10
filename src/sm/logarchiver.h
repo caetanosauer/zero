@@ -547,7 +547,7 @@ public:
 
             RunScanner(lsn_t b, lsn_t e, PageID f, PageID l, fileoff_t o,
                     ArchiveDirectory* directory, size_t readSize = 0);
-            virtual ~RunScanner();
+            ~RunScanner();
 
             bool next(logrec_t*& lr);
 
@@ -895,7 +895,7 @@ public:
     }
 
     ~LogScanner() {
-        delete truncBuf;
+        delete[] truncBuf;
     }
 
     size_t getBlockSize() {
