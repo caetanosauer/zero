@@ -195,7 +195,6 @@ rc_t takeBackupTest(ss_m* ssm, test_volume_t* test_volume)
     TEST (test, function) { \
         test_env->empty_logdata_dir(); \
         options.set_bool_option("sm_archiving", true); \
-        options.set_int_option("sm_archiver_block_size", BLOCK_SIZE); \
         options.set_string_option("sm_archdir", test_env->archive_dir); \
         options.set_int_option("sm_restore_segsize", SEGMENT_SIZE); \
         options.set_bool_option("sm_restore_sched_singlepass", option_singlepass); \

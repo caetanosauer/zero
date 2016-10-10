@@ -346,8 +346,9 @@ LogArchiver::LogArchiver(const sm_options& options)
 {
     size_t workspaceSize = 1024 * 1024 * // convert MB -> B
         options.get_int_option("sm_archiver_workspace_size", DFT_WSPACE_SIZE);
-    size_t blockSize =
-        options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
+    size_t blockSize = DFT_BLOCK_SIZE;
+    // CS TODO: archiver currently only works with 1MB blocks
+        // options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
 
     eager = options.get_bool_option("sm_archiver_eager", DFT_EAGER);
     readWholeBlocks = options.get_bool_option(
@@ -461,7 +462,9 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
     : appendFd(-1), mergeFd(-1), appendPos(0)
 {
     archdir = options.get_string_option("sm_archdir", "archive");
-    blockSize = options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
+    // CS TODO: archiver currently only works with 1MB blocks
+    blockSize = DFT_BLOCK_SIZE;
+        // options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
     size_t bucketSize =
         options.get_int_option("sm_archiver_bucket_size", 0);
     bool reformat = options.get_bool_option("sm_format", false);

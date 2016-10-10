@@ -35,7 +35,9 @@ BlockScanner::BlockScanner(const po::variables_map& options,
     : BaseScanner(options), pnum(-1)
 {
     logdir = options["logdir"].as<string>().c_str();
-    blockSize = options["sm_archiver_block_size"].as<int>();
+    // blockSize = options["sm_archiver_block_size"].as<int>();
+    // CS TODO no option for archiver block size
+    blockSize = LogArchiver::DFT_BLOCK_SIZE;
     logScanner = new LogScanner(blockSize);
     currentBlock = new char[blockSize];
 
@@ -197,10 +199,12 @@ void LogArchiveScanner::run()
 {
     BaseScanner::initialize();
 
-    size_t blockSize = options["sm_archiver_block_size"].as<int>();
+    // CS TODO no option for archiver block size
+    size_t blockSize = LogArchiver::DFT_BLOCK_SIZE;
+    // size_t blockSize = options["sm_archiver_block_size"].as<int>();
     sm_options opt;
     opt.set_string_option("sm_archdir", archdir);
-    opt.set_int_option("sm_archiver_block_size", blockSize);
+    // opt.set_int_option("sm_archiver_block_size", blockSize);
     LogArchiver::ArchiveDirectory* directory = new
         LogArchiver::ArchiveDirectory(opt);
 
@@ -276,11 +280,13 @@ void MergeScanner::run()
     BaseScanner::initialize();
 
     // CS TODO blockSize not used anymore
-    size_t blockSize = options["sm_archiver_block_size"].as<int>();
+    // CS TODO no option for archiver block size
+    size_t blockSize = LogArchiver::DFT_BLOCK_SIZE;
+    // size_t blockSize = options["sm_archiver_block_size"].as<int>();
     size_t bucketSize = options["sm_archiver_bucket_size"].as<int>();
     sm_options opt;
     opt.set_string_option("sm_archdir", archdir);
-    opt.set_int_option("sm_archiver_block_size", blockSize);
+    // opt.set_int_option("sm_archiver_block_size", blockSize);
     opt.set_int_option("sm_archiver_bucket_size", bucketSize);
 
     LogArchiver::ArchiveDirectory* directory = new

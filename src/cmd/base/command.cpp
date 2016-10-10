@@ -244,8 +244,9 @@ void Command::setupSMOptions(po::options_description& options)
         "Collect candidate frames to be cleaned in an asynchronous thread")
     ("sm_archiver_workspace_size", po::value<int>(),
         "Workspace size archiver")
-    ("sm_archiver_block_size", po::value<int>()->default_value(1024*1024),
-        "Archiver Block size")
+    // CS TODO: archiver currently only works with 1MB blocks
+    // ("sm_archiver_block_size", po::value<int>()->default_value(1024*1024),
+    //     "Archiver Block size")
     ("sm_archiver_bucket_size", po::value<int>()->default_value(128),
         "Archiver bucket size")
     ("sm_merge_factor", po::value<int>(),
