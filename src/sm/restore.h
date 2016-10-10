@@ -8,6 +8,8 @@
 
 #include <queue>
 #include <map>
+#include <vector>
+#include <atomic>
 
 class sm_options;
 class RestoreBitmap;
@@ -15,12 +17,13 @@ class RestoreScheduler;
 class generic_page;
 class BackupReader;
 class SegmentWriter;
+class RestoreThread;
 
 /** \brief Class that controls the process of restoring a failed volume
  *
  * \author Caetano Sauer
  */
-class RestoreMgr : public smthread_t {
+class RestoreMgr {
 public:
     /** \brief Constructor method
      *
@@ -103,11 +106,19 @@ public:
      */
     PageID getPidForSegment(unsigned segment);
 
+    /** \brief Kick-off restore threads and start recovering.
+     */
+    void start();
+
+    /** \brief Waits until try_shutdown() returns true
+     */
+    void shutdown();
+
     /** \brief True if all segments have been restored
      *
      * CS TODO -- concurrency control?
      */
-    bool finished()
+    bool all_pages_restored()
     { return numRestoredPages == lastUsedPid; }
 
     size_t getSegmentSize() { return segmentSize; }
@@ -117,20 +128,17 @@ public:
     BackupReader* getBackup() { return backup; }
     unsigned getPrefetchWindow() { return prefetchWindow; }
 
-    virtual void run();
-
     bool try_shutdown();
 
 protected:
-    // Two bitmaps are required for asynchronous writing: one to tell which
-    // segments were replayed but not yet written (these are not available for
-    // transactions yet), and one to tell which segments were restored and
-    // written back already (thus available to transactions)
     RestoreBitmap* bitmap;
-    RestoreBitmap* replayedBitmap;
     RestoreScheduler* scheduler;
     LogArchiver::ArchiveDirectory* archive;
     vol_t* volume;
+
+    // CS TODO: get rid of this annoying dependence on smthread_t
+    std::vector<std::unique_ptr<RestoreThread>> restoreThreads;
+    // std::vector<std::unique_ptr<std::thread>> restoreThreads;
 
     std::map<PageID, generic_page*> bufferedRequests;
     srwlock_t requestMutex;
@@ -141,7 +149,7 @@ protected:
     /** \brief Number of pages restored so far
      * (must be a multiple of segmentSize)
      */
-    size_t numRestoredPages;
+    std::atomic<size_t> numRestoredPages;
 
     /** \brief First page ID to be restored (i.e., skipping metadata pages)
      */
@@ -189,6 +197,10 @@ protected:
      * (false only for experiments that simulate traditional restore)
      */
     bool instantRestore;
+
+    /** \brief Number of concurrent threads performing restore
+    */
+    size_t restoreThreadCount;
 
     /** \brief Always restore sequentially from the requested segment until
      * the next already-restored segment or EOF, unless a new request is
@@ -276,6 +288,20 @@ protected:
     friend class vol_t;
     // .. and from asynchronous writer (declared and defined on cpp file)
     friend class SegmentWriter;
+
+    friend class RestoreThread;
+};
+
+// TODO get rid of smthread_t and use std::thread
+struct RestoreThread : smthread_t
+{
+    RestoreThread(RestoreMgr* mgr) : mgr(mgr) {};
+    RestoreMgr* mgr;
+
+    virtual void run()
+    {
+        mgr->restoreLoop();
+    }
 };
 
 /** \brief Bitmap data structure that controls the progress of restore
@@ -288,16 +314,36 @@ protected:
  */
 class RestoreBitmap {
 public:
-    RestoreBitmap(size_t size);
-    virtual ~RestoreBitmap();
 
-    size_t getSize() { return bits.size(); }
+    enum class State {
+        UNRESTORED = 0,
+        RESTORING = 1,
+        REPLAYED = 2,
+        RESTORED = 3
+    };
 
-    bool get(unsigned i);
-    void set(unsigned i);
+    RestoreBitmap(size_t size)
+        : states(size, State::UNRESTORED)
+    {
+    }
 
-    void serialize(char* buf, size_t from, size_t to);
-    void deserialize(char* buf, size_t from, size_t to);
+    ~RestoreBitmap()
+    {
+    }
+
+    size_t getSize() { return states.size(); }
+
+    bool attempt_restore(unsigned i);
+    void mark_restored(unsigned i);
+    void mark_replayed(unsigned i);
+
+    bool is_unrestored(unsigned i);
+    bool is_restoring(unsigned i);
+    bool is_replayed(unsigned i);
+    bool is_restored(unsigned i);
+
+    // void serialize(char* buf, size_t from, size_t to);
+    // void deserialize(char* buf, size_t from, size_t to);
 
     /** Get lowest false value and highest true value in order to compress
      * serialized format. Such compression is effective in a single-pass or
@@ -305,10 +351,10 @@ public:
      * run of ones in the beginning and a run of zeroes in the end of the
      * bitmap
      */
-    void getBoundaries(size_t& lowestFalse, size_t& highestTrue);
+    // void getBoundaries(size_t& lowestFalse, size_t& highestTrue);
 
 protected:
-    std::vector<bool> bits;
+    std::vector<State> states;
     srwlock_t mutex;
 };
 
@@ -369,7 +415,7 @@ inline PageID RestoreMgr::getPidForSegment(unsigned segment)
 inline bool RestoreMgr::isRestored(const PageID& pid)
 {
     if (!instantRestore) {
-        return false;
+        return all_pages_restored();
     }
 
     unsigned seg = getSegmentForPid(pid);
@@ -377,7 +423,7 @@ inline bool RestoreMgr::isRestored(const PageID& pid)
         return true;
     }
 
-    return bitmap->get(seg);
+    return bitmap->is_restored(seg);
 }
 
 #endif

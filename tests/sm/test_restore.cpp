@@ -163,12 +163,28 @@ rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
 {
     W_DO(populatePages(ssm, test_volume, 3 * SEGMENT_SIZE));
 
+    vol_t* volume = smlevel_0::vol;
+    W_DO(volume->mark_failed());
+
+    generic_page page;
+    W_DO(volume->read_page(1, &page));
+
+    W_DO(lookupPages(3 * SEGMENT_SIZE));
+
+    return RCOK;
+}
+
+rc_t multiThreadedRestoreTest(ss_m* ssm, test_volume_t* test_volume)
+{
+    W_DO(populatePages(ssm, test_volume, 16 * SEGMENT_SIZE));
 
     vol_t* volume = smlevel_0::vol;
     W_DO(volume->mark_failed());
 
     generic_page page;
     W_DO(volume->read_page(1, &page));
+
+    W_DO(lookupPages(16 * SEGMENT_SIZE));
 
     return RCOK;
 }
@@ -177,18 +193,31 @@ rc_t takeBackupTest(ss_m* ssm, test_volume_t* test_volume)
 {
     W_DO(populatePages(ssm, test_volume, 3 * SEGMENT_SIZE));
     smlevel_0::bf->get_cleaner()->wakeup(true);
-    archiveLog(ssm);
     vol_t* volume = smlevel_0::vol;
 
     string backupPath = string(test_env->vol_dir) + "/backup";
-    volume->take_backup(backupPath);
+    volume->take_backup(backupPath, true /* flushArchive */);
 
     verifyVolumesEqual(string(test_volume->_device_name), backupPath);
 
     return RCOK;
 }
 
-#define DEFAULT_TEST(test, function, option_reuse, option_singlepass) \
+rc_t takeBackupMultiThreadedTest(ss_m* ssm, test_volume_t* test_volume)
+{
+    W_DO(populatePages(ssm, test_volume, 16 * SEGMENT_SIZE));
+    smlevel_0::bf->get_cleaner()->wakeup(true);
+    vol_t* volume = smlevel_0::vol;
+
+    string backupPath = string(test_env->vol_dir) + "/backup";
+    volume->take_backup(backupPath, true /* flushArchive */);
+
+    verifyVolumesEqual(string(test_volume->_device_name), backupPath);
+
+    return RCOK;
+}
+
+#define DEFAULT_TEST(test, function, option_reuse, option_singlepass, option_threads) \
     TEST (test, function) { \
         test_env->empty_logdata_dir(); \
         options.set_bool_option("sm_archiving", true); \
@@ -196,13 +225,16 @@ rc_t takeBackupTest(ss_m* ssm, test_volume_t* test_volume)
         options.set_int_option("sm_restore_segsize", SEGMENT_SIZE); \
         options.set_bool_option("sm_restore_sched_singlepass", option_singlepass); \
         options.set_bool_option("sm_restore_reuse_buffer", option_reuse); \
+        options.set_int_option("sm_restore_threads", option_threads); \
         EXPECT_EQ(test_env->runBtreeTest(function, options), 0); \
     }
 
-DEFAULT_TEST(BackupLess, singlePageTest, false, false);
-DEFAULT_TEST(BackupLess, multiPageTest, false, false);
-DEFAULT_TEST(BackupTest, takeBackupTest, false, false);
-DEFAULT_TEST(RestoreTest, fullRestoreTest, true, true);
+DEFAULT_TEST(BackupLess, singlePageTest, false, false, 1);
+DEFAULT_TEST(BackupLess, multiPageTest, false, false, 1);
+DEFAULT_TEST(BackupTest, takeBackupTest, false, false, 1);
+DEFAULT_TEST(BackupTest, takeBackupMultiThreadedTest, false, false, 4);
+DEFAULT_TEST(RestoreTest, fullRestoreTest, true, true, 1);
+DEFAULT_TEST(RestoreTest, multiThreadedRestoreTest, true, true, 4);
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

@@ -191,7 +191,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
     }
 
     _restore_mgr->setFailureLSN(failureLSN);
-    _restore_mgr->fork();
+    _restore_mgr->start();
 
     return RCOK;
 }
@@ -204,24 +204,25 @@ void vol_t::chkpt_restore_progress(chkpt_restore_tab_t* tab)
     if (!_failed) { return; }
     w_assert0(_restore_mgr);
 
-    RestoreBitmap* bitmap = _restore_mgr->getBitmap();
-    size_t bitmapSize = bitmap->getSize();
-    size_t firstNotRestored = 0;
-    size_t lastRestored = 0;
-    bitmap->getBoundaries(firstNotRestored, lastRestored);
-    tab->firstNotRestored = firstNotRestored;
-    tab->bitmapSize = bitmapSize - firstNotRestored;
+    // TODO
+    // RestoreBitmap* bitmap = _restore_mgr->getBitmap();
+    // size_t bitmapSize = bitmap->getSize();
+    // size_t firstNotRestored = 0;
+    // size_t lastRestored = 0;
+    // bitmap->getBoundaries(firstNotRestored, lastRestored);
+    // tab->firstNotRestored = firstNotRestored;
+    // tab->bitmapSize = bitmapSize - firstNotRestored;
 
-    if (tab->bitmapSize > chkpt_restore_tab_t::maxSegments) {
-        W_FATAL_MSG(eINTERNAL,
-                << "RestoreBitmap of " << bitmapSize
-                << " does not fit in checkpoint");
-    }
+    // if (tab->bitmapSize > chkpt_restore_tab_t::maxSegments) {
+    //     W_FATAL_MSG(eINTERNAL,
+    //             << "RestoreBitmap of " << bitmapSize
+    //             << " does not fit in checkpoint");
+    // }
 
-    if (firstNotRestored < lastRestored) {
-        // "to" is exclusive boundary
-        bitmap->serialize(tab->bitmap, firstNotRestored, lastRestored + 1);
-    }
+    // if (firstNotRestored < lastRestored) {
+    //     // "to" is exclusive boundary
+    //     bitmap->serialize(tab->bitmap, firstNotRestored, lastRestored + 1);
+    // }
 }
 
 bool vol_t::check_restore_finished()
@@ -230,7 +231,8 @@ bool vol_t::check_restore_finished()
     {
         spinlock_read_critical_section cs(&_mutex);
         if (!_failed) { return true; }
-        if (!_restore_mgr->finished()) { return false; }
+        if (!_restore_mgr) { return true; }
+        if (!_restore_mgr->all_pages_restored()) { return false; }
     }
     // restore finished -- update status with write latch
     {
@@ -241,7 +243,6 @@ bool vol_t::check_restore_finished()
         // close restore manager
         if (_restore_mgr->try_shutdown()) {
             // join should be immediate, since thread is not running
-            _restore_mgr->join();
             delete _restore_mgr;
             _restore_mgr = NULL;
 
@@ -280,7 +281,7 @@ rc_t vol_t::dismount(bool abrupt)
         if (_failed) {
             // wait for ongoing restore to complete
             _restore_mgr->setSinglePass();
-            _restore_mgr->join();
+            _restore_mgr->shutdown();
             if (_backup_fd > 0) {
                 W_COERCE(me()->close(_backup_fd));
                 _backup_fd = -1;
@@ -625,8 +626,7 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
 
     // Maximum LSN which is guaranteed to be reflected in the backup
     // lsn_t backupLSN = ss_m::logArchiver->getDirectory()->getLastLSN();
-
-    DBG1(<< "Taking backup until LSN " << backupLSN);
+    // DBG1(<< "Taking backup until LSN " << backupLSN);
 
     // Instantiate special restore manager for taking backup
     RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
@@ -640,8 +640,8 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
         DBGTHRD(<< "Taking sharp backup until " << currLSN);
     }
 
-    restore.fork();
-    restore.join();
+    restore.start();
+    restore.shutdown();
     // TODO -- do we have to catch errors from restore thread?
 
     // Write volume header and metadata to new backup

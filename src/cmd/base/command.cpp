@@ -293,6 +293,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Use preemptive scheduling during restore")
     ("sm_restore_sched_singlepass", po::value<bool>(),
         "Use single-pass scheduling in restore")
+    ("sm_restore_threads", po::value<int>(),
+        "Number of restore threads to use")
     ("sm_restore_sched_ondemand", po::value<bool>(),
         "Support on-demand restore")
     ("sm_restore_sched_random", po::value<bool>(),

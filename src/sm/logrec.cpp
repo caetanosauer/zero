@@ -624,15 +624,15 @@ void chkpt_restore_tab_log::redo(fixable_page_h*)
     }
 
     // CS TODO
-    RestoreBitmap bitmap(vol->num_used_pages());
-    bitmap.deserialize(tab->bitmap, tab->firstNotRestored,
-            tab->firstNotRestored + tab->bitmapSize);
-    // Bitmap of RestoreMgr might have been initialized already
-    for (size_t i = tab->firstNotRestored; i < bitmap.getSize(); i++) {
-        if (bitmap.get(i)) {
-            vol->redo_segment_restore(i);
-        }
-    }
+    // RestoreBitmap bitmap(vol->num_used_pages());
+    // bitmap.deserialize(tab->bitmap, tab->firstNotRestored,
+    //         tab->firstNotRestored + tab->bitmapSize);
+    // // Bitmap of RestoreMgr might have been initialized already
+    // for (size_t i = tab->firstNotRestored; i < bitmap.getSize(); i++) {
+    //     if (bitmap.get(i)) {
+    //         vol->redo_segment_restore(i);
+    //     }
+    // }
 }
 
 add_backup_log::add_backup_log(const string& path, lsn_t backupLSN)
