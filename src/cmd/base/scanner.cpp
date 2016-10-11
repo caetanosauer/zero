@@ -250,12 +250,12 @@ void LogArchiveScanner::run()
 
         logrec_t* lr;
         while (rs->next(lr)) {
-            w_assert1(lr->pid() >= prevPid);
-            w_assert1(lr->pid() != prevPid ||
+            w_assert0(lr->pid() >= prevPid);
+            w_assert0(lr->pid() != prevPid ||
                     lr->page_prev_lsn() == lsn_t::null ||
                     lr->page_prev_lsn() == prevLSN);
-            w_assert1(lr->lsn_ck() >= runBegin);
-            w_assert1(lr->lsn_ck() < runEnd);
+            w_assert0(lr->lsn_ck() >= runBegin);
+            w_assert0(lr->lsn_ck() < runEnd);
 
             handle(lr);
 
@@ -302,8 +302,8 @@ void MergeScanner::run()
     PageID prevPid = 0;
 
     while (merger && merger->next(lr)) {
-        w_assert1(lr->pid() >= prevPid);
-        w_assert1(lr->pid() != prevPid ||
+        w_assert0(lr->pid() >= prevPid);
+        w_assert0(lr->pid() != prevPid ||
                 lr->page_prev_lsn() == lsn_t::null ||
                 lr->page_prev_lsn() == prevLSN);
 
