@@ -137,9 +137,9 @@ loganalysis_end    0000000 0.0 ();
 redo_done          0000000 0.0 ();
 undo_done          0000000 0.0 ();
 # Instant Restore log records
-restore_begin      1110000 0.0 ();
-restore_segment    1110000 0.0 (uint32_t segment);
-restore_end        1110000 0.0 ();
+restore_begin      1110001 0.0 ();
+restore_segment    1110001 0.0 (uint32_t segment);
+restore_end        1110001 0.0 ();
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################
