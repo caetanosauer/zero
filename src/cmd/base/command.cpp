@@ -15,6 +15,7 @@
 #include "dbscan.h"
 #include "addbackup.h"
 #include "xctlatency.h"
+#include "tracerestore.h"
 
 #include <boost/foreach.hpp>
 
@@ -55,6 +56,7 @@ void Command::init()
     REGISTER_COMMAND("loganalysis", LogAnalysis);
     REGISTER_COMMAND("kits", KitsCommand);
     REGISTER_COMMAND("propstats", PropStats);
+    REGISTER_COMMAND("tracerestore", RestoreTrace);
 }
 
 void Command::setupCommonOptions()
