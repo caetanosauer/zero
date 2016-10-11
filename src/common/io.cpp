@@ -785,21 +785,32 @@ sthread_t::set_bufsize(size_t size)
     return start;
 }
 
+sdisk_t* sthread_t::get_disk(int& fd)
+{
+    // CS: this method should fix problem with concurrent access to _disks
+    // (a new design would be better, but I'm trying to work around Shore's problems)
+    fd -= fd_base;
+
+    CRITICAL_SECTION(cs, protectFDs);
+
+    sdisk_t* disk = _disks[fd];
+    if (fd < 0 || fd >= (int)open_max || !disk) {
+        W_COERCE(RC(stBADFD));
+    }
+
+    return disk;
+}
 
 w_rc_t
 sthread_t::open(const char* path, int flags, int mode, int &ret_fd)
 {
-    w_rc_t    e;
-    sdisk_t    *dp;
-
     /* default return value */
     ret_fd = -1;
-
-    bool    open_local = true;
 
     CRITICAL_SECTION(cs, protectFDs);
 
     if (open_count >= open_max) {
+        // CS: I have no idea what the comment below means
         // This was originally done because when we used a separate
         // process for blocking i/o, we could
         // have many more open files than sthread_t::open_max.
@@ -808,45 +819,24 @@ sthread_t::open(const char* path, int flags, int mode, int &ret_fd)
         // TODO : We need to use os limit here, acquire the array once.
         // I suppose it's worth doing this dynamically for several reasons.
         // Not all threads do I/O, for one thing.
-        //
-        /* reallocate file table */
-        unsigned    new_max = open_max + 64;
-        std::vector<sdisk_t* > new_disks(new_max);
-        unsigned    disk;
-        for (disk = 0; disk < open_count; disk++)
-            new_disks[disk] = _disks[disk];
-        for (; disk < new_max; disk++)
-            new_disks[disk] = 0;
-        std::vector<sdisk_t*> tmp = _disks;
-        _disks = new_disks;
-        open_max = new_max;
+
+        open_max += 64;
+        _disks.resize(open_max, nullptr);
     }
 
-    /* XXX incredibly slow when #fds large */
-    unsigned    disk;
-    for (disk = 0; disk < open_max; disk++)
-        if (!_disks[disk])
-            break;
-    if (disk == open_max) {
-        return RC(stINTERNAL);    /* XXX or toomanyopen */
+    unsigned  i;
+    for (i = 0; i < open_max; i++) {
+        if (!_disks[i]) { break; }
     }
+    if (i == open_max) { return RC(stINTERNAL); }
 
-    /* XXX can allow sim. open by locking lower levels, put dummy
-        pointer in array, unlocking here, opening, etc */
+    sdisk_t* disk = new sdisk_unix_t(path);
+    w_assert0(disk);
+    W_DO(disk->open(path, flags, mode));
 
-    if (open_local) {
-        e = sdisk_unix_t::make(path, flags, mode, dp);
-    }
-
-
-    if (e.is_error()) {
-        return e;
-    }
-
-    _disks[disk] = dp;
+    _disks[i] = disk;
     open_count++;
-
-    ret_fd = fd_base + disk;
+    ret_fd = fd_base + i;
 
     return RCOK;
 }
@@ -861,30 +851,20 @@ sthread_t::open(const char* path, int flags, int mode, int &ret_fd)
 
 w_rc_t sthread_t::close(int fd)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
-        return RC(stBADFD);
-
-    w_rc_t    e;
+    sdisk_t* disk = get_disk(fd);
 
     // sync before close
-    e = _disks[fd]->sync();
-    if (e.is_error())
-        return e;
+    W_DO(disk->sync());
+    W_DO(disk->close());
 
-    e = _disks[fd]->close();
-    if (e.is_error())
-        return e;
-
-    sdisk_t    *togo;
     {
         CRITICAL_SECTION(cs, protectFDs);
-        togo = _disks[fd];
-        _disks[fd] = 0;
+        _disks[fd] = nullptr;
         open_count--;
     }
-    delete togo;
-    return e;
+
+    delete disk;
+    return RCOK;
 }
 
 /*
@@ -913,14 +893,12 @@ w_rc_t sthread_t::close(int fd)
 
 w_rc_t    sthread_t::read(int fd, void* buf, int n)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
-        return RC(stBADFD);
+    sdisk_t* disk = get_disk(fd);
 
     int    done = 0;
     w_rc_t    e;
 
-    e = _disks[fd]->read(buf, n, done);
+    e = disk->read(buf, n, done);
     if (!e.is_error() && done != n)
         e = RC(stSHORTIO);
 
@@ -930,14 +908,12 @@ w_rc_t    sthread_t::read(int fd, void* buf, int n)
 
 w_rc_t    sthread_t::write(int fd, const void* buf, int n)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
-        return RC(stBADFD);
+    sdisk_t* disk = get_disk(fd);
 
     int    done = 0;
     w_rc_t    e;
 
-    e = _disks[fd]->write(buf, n, done);
+    e = disk->write(buf, n, done);
     if (!e.is_error() && done != n)
         e = RC(stSHORTIO);
 
@@ -947,9 +923,7 @@ w_rc_t    sthread_t::write(int fd, const void* buf, int n)
 
 w_rc_t    sthread_t::readv(int fd, const iovec_t *iov, size_t iovcnt)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
-        return RC(stBADFD);
+    sdisk_t* disk = get_disk(fd);
 
     int    done = 0;
     int    total = 0;
@@ -957,7 +931,7 @@ w_rc_t    sthread_t::readv(int fd, const iovec_t *iov, size_t iovcnt)
 
     total = sdisk_t::vsize(iov, iovcnt);
 
-    e = _disks[fd]->readv(iov, iovcnt, done);
+    e = disk->readv(iov, iovcnt, done);
     if (!e.is_error() && done != total)
         e = RC(stSHORTIO);
 
@@ -967,9 +941,7 @@ w_rc_t    sthread_t::readv(int fd, const iovec_t *iov, size_t iovcnt)
 
 w_rc_t    sthread_t::writev(int fd, const iovec_t *iov, size_t iovcnt)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
-        return RC(stBADFD);
+    sdisk_t* disk = get_disk(fd);
 
     int    done = 0;
     int    total = 0;
@@ -977,7 +949,7 @@ w_rc_t    sthread_t::writev(int fd, const iovec_t *iov, size_t iovcnt)
 
     total = sdisk_t::vsize(iov, iovcnt);
 
-    e = _disks[fd]->writev(iov, iovcnt, done);
+    e = disk->writev(iov, iovcnt, done);
     if (!e.is_error() && done != total)
         e = RC(stSHORTIO);
 
@@ -987,15 +959,13 @@ w_rc_t    sthread_t::writev(int fd, const iovec_t *iov, size_t iovcnt)
 
 w_rc_t    sthread_t::pread(int fd, void *buf, int n, fileoff_t pos)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
-        return RC(stBADFD);
+    sdisk_t* disk = get_disk(fd);
 
     int    done = 0;
     w_rc_t    e;
 
     errno = 0;
-    e = _disks[fd]->pread(buf, n, pos, done);
+    e = disk->pread(buf, n, pos, done);
     if (!e.is_error() && done != n) {
         e = RC(stSHORTIO);
     }
@@ -1010,24 +980,20 @@ w_rc_t    sthread_t::pread(int fd, void *buf, int n, fileoff_t pos)
 w_rc_t sthread_t::pread_short(int fd, void *buf, int n, fileoff_t pos,
        int& done)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
-        return RC(stBADFD);
+    sdisk_t* disk = get_disk(fd);
 
-    return _disks[fd]->pread(buf, n, pos, done);
+    return disk->pread(buf, n, pos, done);
 }
 
 
 w_rc_t    sthread_t::pwrite(int fd, const void *buf, int n, fileoff_t pos)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
-        return RC(stBADFD);
+    sdisk_t* disk = get_disk(fd);
 
     int    done = 0;
     w_rc_t    e;
 
-    e = _disks[fd]->pwrite(buf, n, pos, done);
+    e = disk->pwrite(buf, n, pos, done);
     if (!e.is_error() && done != n)
         e = RC(stSHORTIO);
 
@@ -1037,50 +1003,26 @@ w_rc_t    sthread_t::pwrite(int fd, const void *buf, int n, fileoff_t pos)
 
 w_rc_t    sthread_t::fsync(int fd)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
-        return RC(stBADFD);
-
-    w_rc_t        e;
-    e = _disks[fd]->sync();
-
-    return e;
+    sdisk_t* disk = get_disk(fd);
+    return disk->sync();
 }
 
 w_rc_t    sthread_t::ftruncate(int fd, fileoff_t n)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
-        return RC(stBADFD);
-
-    w_rc_t        e;
-    e =  _disks[fd]->truncate(n);
-
-    return e;
+    sdisk_t* disk = get_disk(fd);
+    return  disk->truncate(n);
 }
 
 w_rc_t sthread_t::frename(int fd, const char* oldname, const char* newname)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
-        return RC(stBADFD);
-
-    w_rc_t    e;
-
-    e = _disks[fd]->rename(oldname, newname);
-
-    return e;
+    sdisk_t* disk = get_disk(fd);
+    return disk->rename(oldname, newname);
 }
 
 w_rc_t sthread_t::lseek(int fd, fileoff_t pos, int whence, fileoff_t& ret)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
-        return RC(stBADFD);
-
-    w_rc_t    e = _disks[fd]->seek(pos, whence, ret);
-
-    return e;
+    sdisk_t* disk = get_disk(fd);
+    return disk->seek(pos, whence, ret);
 }
 
 
@@ -1099,15 +1041,8 @@ w_rc_t sthread_t::lseek(int fd, fileoff_t offset, int whence)
 
 w_rc_t    sthread_t::fstat(int fd, filestat_t &st)
 {
-    fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
-        return RC(stBADFD);
-
-    w_rc_t    e;
-
-    e = _disks[fd]->stat(st);
-
-    return e;
+    sdisk_t* disk = get_disk(fd);
+    return disk->stat(st);
 }
 
 w_rc_t    sthread_t::fisraw(int fd, bool &isRaw)

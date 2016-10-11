@@ -52,14 +52,15 @@ class sdisk_unix_t : public sdisk_t {
 
     enum    { FD_NONE = -1 };
 
+public:
+
     // sdisk_unix_t() : _fd(FD_NONE) { }
-    sdisk_unix_t(const char *path) : _fd(FD_NONE) 
-    { 
+    sdisk_unix_t(const char *path) : _fd(FD_NONE)
+    {
         strncpy(&_path[0], path, 255);
         _path[255] = '0';
     }
 
-public:
     static    w_rc_t    make(const char *name,
                  int flags, int mode,
                  sdisk_t *&disk);

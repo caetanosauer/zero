@@ -843,6 +843,8 @@ private:
     /* XXX alignment probs in derived thread classes.  Sigh */
     // fill4                       _ex_fill;
 
+    static sdisk_t* get_disk(int& fd);
+
     /* I/O subsystem */
     static    std::vector<sdisk_t*> _disks;
     static    unsigned       open_max;
