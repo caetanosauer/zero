@@ -516,8 +516,9 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
             W_FATAL(fcINTERNAL);
         }
     }
+    startLSN = highestLSN;
 
-    // no runs found in archive log -- start from first available partition
+    // no runs found in archive log -- start from first available log file
     if (startLSN.hi() == 0 && smlevel_0::log) {
         int nextPartition = startLSN.hi();
 
