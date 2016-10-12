@@ -1049,15 +1049,32 @@ RawLockBackgroundThread::RawLockBackgroundThread(const sm_options& options,
     _dummy_lsn_xct = 1000;
     _lock_pool = lock_pool;
     _xct_pool = xct_pool;
-    _internal_milliseconds = options.get_int_option("sm_rawlock_gc_interval_ms", 1000);
-    _lockpool_segsize = options.get_int_option("sm_rawlock_lockpool_segsize", 1 << 13);
+
+    // CS TODO: options below were set in the old Zero tpcc.cpp
+            // // very short interval, large segments, for massive accesses.
+            // // back-of-envelope-calculation: ignore xct. it's all about RawLock.
+            // // sizeof(RawLock)=64 or something. 8 * 256 * 4096 * 64 = 512MB. tolerable.
+            // options.set_int_option("sm_rawlock_gc_interval_ms", 3);
+            // options.set_int_option("sm_rawlock_lockpool_initseg", 255);
+            // options.set_int_option("sm_rawlock_xctpool_initseg", 255);
+            // options.set_int_option("sm_rawlock_lockpool_segsize", 1 << 12);
+            // options.set_int_option("sm_rawlock_xctpool_segsize", 1 << 8);
+            // options.set_int_option("sm_rawlock_gc_generation_count", 5);
+            // options.set_int_option("sm_rawlock_gc_init_generation_count", 5);
+            // options.set_int_option("sm_rawlock_gc_free_segment_count", 50);
+            // options.set_int_option("sm_rawlock_gc_max_segment_count", 255);
+            // // meaning: a newly created generation has a lot of (255) segments.
+            // // as soon as remaining gets low, we recycle older ones (few generations).
+
+    _internal_milliseconds = options.get_int_option("sm_rawlock_gc_interval_ms", 3);
+    _lockpool_segsize = options.get_int_option("sm_rawlock_lockpool_segsize", 1 << 12);
     _xctpool_segsize = options.get_int_option("sm_rawlock_xctpool_segsize", 1 << 8);
     _generation_count = options.get_int_option("sm_rawlock_gc_generation_count", 5);
-    _init_generation_count = options.get_int_option("sm_rawlock_gc_init_generation_count", 0);
-    _lockpool_initseg = options.get_int_option("sm_rawlock_lockpool_initseg", 32);
-    _xctpool_initseg = options.get_int_option("sm_rawlock_xctpool_initseg", 128);
-    _free_segment_count = options.get_int_option("sm_rawlock_gc_free_segment_count", 20);
-    _max_segment_count = options.get_int_option("sm_rawlock_gc_max_segment_count", 200);
+    _init_generation_count = options.get_int_option("sm_rawlock_gc_init_generation_count", 5);
+    _lockpool_initseg = options.get_int_option("sm_rawlock_lockpool_initseg", 255);
+    _xctpool_initseg = options.get_int_option("sm_rawlock_xctpool_initseg", 255);
+    _free_segment_count = options.get_int_option("sm_rawlock_gc_free_segment_count", 50);
+    _max_segment_count = options.get_int_option("sm_rawlock_gc_max_segment_count", 255);
 
     DO_PTHREAD(::pthread_mutex_init(&_interval_mutex, NULL));
     DO_PTHREAD(::pthread_cond_init (&_interval_cond, NULL));
