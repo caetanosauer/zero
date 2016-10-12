@@ -742,7 +742,7 @@ void restore_segment_log::redo(fixable_page_h*)
     // volume must be mounted and failed
     w_assert0(volume && volume->is_failed());
 
-    uint32_t segment = *((uint32_t*) _data);
+    uint32_t segment = *((uint32_t*) data_ssx());
 
     volume->redo_segment_restore(segment);
 }
