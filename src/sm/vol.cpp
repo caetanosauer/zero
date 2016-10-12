@@ -280,7 +280,6 @@ rc_t vol_t::dismount(bool abrupt)
     if (!abrupt) {
         if (_failed) {
             // wait for ongoing restore to complete
-            _restore_mgr->setSinglePass();
             _restore_mgr->shutdown();
             if (_backup_fd > 0) {
                 W_COERCE(me()->close(_backup_fd));
@@ -632,7 +631,6 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
             this, useBackup, true /* takeBackup */);
 
-    restore.setSinglePass(true);
     restore.setInstant(false);
     if (flushArchive) {
         lsn_t currLSN = smlevel_0::log->durable_lsn();

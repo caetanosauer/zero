@@ -74,15 +74,6 @@ public:
      */
     bool waitUntilRestored(const PageID& pid, size_t timeout_in_ms = 0);
 
-    /** \brief Set single-pass policy on scheduler
-     *
-     * If restore has so far worked only on-demand, this method activates (or
-     * deactivates) the single-pass policy on the scheduler, which causes pages
-     * to be restored eagerly and in disk order -- concurrently with on-demand
-     * restore of accessed pages.
-     */
-    void setSinglePass(bool singlePass = true);
-
     /** \brief Set instant policy
      *
      * If true, access to segments will be enabled incrementally, as proposed
@@ -256,7 +247,7 @@ protected:
      * parallel with multiple threads. To that end, this method should receive
      * a page ID interval to be restored.
      */
-    void restoreLoop();
+    void restoreLoop(unsigned id);
 
     /** \brief Performs restore of a single segment; invoked from restoreLoop()
      *
@@ -295,12 +286,13 @@ protected:
 // TODO get rid of smthread_t and use std::thread
 struct RestoreThread : smthread_t
 {
-    RestoreThread(RestoreMgr* mgr) : mgr(mgr) {};
+    RestoreThread(RestoreMgr* mgr, unsigned id) : mgr(mgr), id(id) {};
     RestoreMgr* mgr;
+    unsigned id;
 
     virtual void run()
     {
-        mgr->restoreLoop();
+        mgr->restoreLoop(id);
     }
 };
 
@@ -372,12 +364,10 @@ public:
     virtual ~RestoreScheduler();
 
     void enqueue(const PageID& pid);
-    bool next(PageID& next, bool peek = false);
-    void setSinglePass(bool singlePass = true);
+    bool next(PageID& next, bool singlePass, bool peek = false);
     bool hasWaitingRequest();
 
     bool isOnDemand() { return onDemand; }
-    bool isSinglePass() { return trySinglePass; }
 
 protected:
     RestoreMgr* restore;
@@ -385,8 +375,6 @@ protected:
     srwlock_t mutex;
     std::queue<PageID> queue;
 
-    /// Perform single-pass restore while no requests are available
-    bool trySinglePass;
     /// Support on-demand scheduling (if false, trySinglePass must be true)
     bool onDemand;
 

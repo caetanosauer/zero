@@ -136,17 +136,15 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
     w_assert0(restore);
     firstNotRestored = PageID(0);
     lastUsedPid = restore->getLastUsedPid();
-    trySinglePass =
-        options.get_bool_option("sm_restore_sched_singlepass", true);
+    // trySinglePass =
+    //     options.get_bool_option("sm_restore_sched_singlepass", true);
     onDemand =
         options.get_bool_option("sm_restore_sched_ondemand", true);
-    // randomSched =
-    //     options.get_bool_option("sm_restore_sched_random", false);
 
-    if (!onDemand) {
-        // override single-pass option
-        trySinglePass = true;
-    }
+    // if (!onDemand) {
+    //     // override single-pass option
+    //     trySinglePass = true;
+    // }
 }
 
 RestoreScheduler::~RestoreScheduler()
@@ -164,19 +162,19 @@ bool RestoreScheduler::hasWaitingRequest()
     return onDemand && queue.size() > 0;
 }
 
-bool RestoreScheduler::next(PageID& next, bool peek)
+bool RestoreScheduler::next(PageID& next, bool singlePass, bool peek)
 {
     spinlock_write_critical_section cs(&mutex);
 
     next = firstNotRestored;
-    if (onDemand && queue.size() > 0) {
+    if (queue.size() > 0) {
         next = queue.front();
         if (!peek) {
             queue.pop();
             INC_TSTAT(restore_sched_queued);
         }
     }
-    else if (trySinglePass) {
+    else if (singlePass) {
         // if queue is empty, find the first not-yet-restored PID
         while (next <= lastUsedPid && restore->isRestored(next)) {
             // if next pid is already restored, then the whole segment is
@@ -184,35 +182,26 @@ bool RestoreScheduler::next(PageID& next, bool peek)
         }
         if (!peek) {
             firstNotRestored = next + restore->getSegmentSize();
+            INC_TSTAT(restore_sched_seq);
         }
-
-        if (next > lastUsedPid) { next = 0; }
-
-        if (!peek) { INC_TSTAT(restore_sched_seq); }
     }
     else {
-        w_assert0(onDemand);
-        return false;
+        // if not in singlePass mode, pick a random segment
+        std::default_random_engine gen;
+        std::uniform_int_distribution<unsigned> distr(firstNotRestored, lastUsedPid);
+        next = distr(gen);
     }
 
-    /*
-     * CS: there is no guarantee (from the scheduler) that next is indeed not
-     * restored yet, because we do not control the bitmap from here.  The only
-     * guarantee is that only one thread will be executing the restore loop (or
-     * that multiple threads will restore disjunct segment sets). In the
-     * current implementation, it turns out that the scheduler is only invoked
-     * from the restore loop, which means that a page returned by the scheduler
-     * is guaranteed to not be restored when is is picked up by the restore
-     * loop, but that may change in the future.
-     */
+    if (next > lastUsedPid) { return false; }
+
     return true;
 }
 
-void RestoreScheduler::setSinglePass(bool singlePass)
-{
-    spinlock_write_critical_section cs(&mutex);
-    trySinglePass = singlePass;
-}
+// void RestoreScheduler::setSinglePass(bool singlePass)
+// {
+//     spinlock_write_critical_section cs(&mutex);
+//     trySinglePass = singlePass;
+// }
 
 /** Asynchronous writer for restored segments
  *  CS: Placed here on cpp file because it isn't used anywhere else.
@@ -420,11 +409,6 @@ bool RestoreMgr::waitUntilRestored(const PageID& pid, size_t timeout_in_ms)
     return true;
 }
 
-void RestoreMgr::setSinglePass(bool singlePass)
-{
-    scheduler->setSinglePass(singlePass);
-}
-
 void RestoreMgr::setInstant(bool instant)
 {
     instantRestore = instant;
@@ -516,8 +500,7 @@ void RestoreMgr::restoreSegment(char* workspace,
                 // If segment already restored or someone is waiting in the
                 // scheduler, terminate earlier. We also don't have to replay
                 // pages created after the failure.
-                if (!scheduler->isSinglePass() || lrpid > lastUsedPid
-                        || (preemptive && scheduler->hasWaitingRequest()))
+                if (lrpid > lastUsedPid || (preemptive && scheduler->hasWaitingRequest()))
                 {
                     // we were preempted
                     merger->close();
@@ -589,15 +572,16 @@ void RestoreMgr::restoreSegment(char* workspace,
     INC_TSTAT(restore_invocations);
 }
 
-void RestoreMgr::restoreLoop()
+void RestoreMgr::restoreLoop(unsigned id)
 {
     LogArchiver::ArchiveScanner logScan(archive);
 
     stopwatch_t timer;
+    bool singlePass = (id == 0);
 
     while (numRestoredPages < lastUsedPid) {
         PageID requested;
-        if (!scheduler->next(requested)) {
+        if (!scheduler->next(requested, singlePass)) {
             // no page available for now
             usleep(2000); // 2 ms
             continue;
@@ -700,7 +684,7 @@ void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
     if (scheduler->isOnDemand()) {
         if (scheduler->hasWaitingRequest()) {
             PageID next;
-            if (scheduler->next(next, true /* peek */)) {
+            if (scheduler->next(next, true /* singlePass */, true /* peek */)) {
                 backup->prefetch(next);
             }
         } else {
@@ -787,9 +771,10 @@ void RestoreMgr::start()
     }
 
     // kick-off restore threads
-    for (size_t i = 0; i < restoreThreadCount; i++) {
+    w_assert0(restoreThreadCount > 0);
+    for (unsigned i = 0; i < restoreThreadCount; i++) {
         // restoreThreads.emplace_back(new std::thread {&RestoreMgr::restoreLoop, this});
-        RestoreThread* t = new RestoreThread {this};
+        RestoreThread* t = new RestoreThread {this, i};
         t->fork();
         restoreThreads.emplace_back(std::move(t));
     }
