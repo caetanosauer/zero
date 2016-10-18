@@ -164,9 +164,11 @@ bool RestoreScheduler::hasWaitingRequest()
 
 bool RestoreScheduler::next(PageID& next, bool singlePass, bool peek)
 {
+    static std::default_random_engine gen;
+    static std::uniform_int_distribution<unsigned> distr(0, 100);
+
     spinlock_write_critical_section cs(&mutex);
 
-    next = firstNotRestored;
     if (queue.size() > 0) {
         next = queue.front();
         if (!peek) {
@@ -175,6 +177,7 @@ bool RestoreScheduler::next(PageID& next, bool singlePass, bool peek)
         }
     }
     else if (singlePass) {
+        next = firstNotRestored;
         // if queue is empty, find the first not-yet-restored PID
         while (next <= lastUsedPid && restore->isRestored(next)) {
             // if next pid is already restored, then the whole segment is
@@ -186,10 +189,10 @@ bool RestoreScheduler::next(PageID& next, bool singlePass, bool peek)
         }
     }
     else {
-        // if not in singlePass mode, pick a random segment
-        std::default_random_engine gen;
-        std::uniform_int_distribution<unsigned> distr(firstNotRestored, lastUsedPid);
-        next = distr(gen);
+        // if not in singlePass mode, pick a random segment after firstNotRestored
+        INC_TSTAT(restore_sched_random);
+        unsigned rnd = distr(gen);
+        next = firstNotRestored + (rnd * ((lastUsedPid - firstNotRestored) / 100));
     }
 
     if (next > lastUsedPid) { return false; }
