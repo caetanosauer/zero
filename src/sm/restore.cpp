@@ -459,6 +459,7 @@ bool RestoreMgr::requestRestore(const PageID& pid, generic_page* addr)
 void RestoreMgr::restoreSegment(char* workspace,
         LogArchiver::ArchiveScanner::RunMerger* merger, PageID firstPage, unsigned thread_id)
 {
+    INC_TSTAT(restore_invocations);
     stopwatch_t timer;
 
     generic_page* page = (generic_page*) workspace;
@@ -506,6 +507,7 @@ void RestoreMgr::restoreSegment(char* workspace,
                 if (lrpid > lastUsedPid || (preemptive && scheduler->hasWaitingRequest()))
                 {
                     // we were preempted
+                    INC_TSTAT(restore_preempt_queue);
                     merger->close();
                     return;
                 }
@@ -513,6 +515,7 @@ void RestoreMgr::restoreSegment(char* workspace,
                 bool got_attempt = bitmap->attempt_restore(segment);
                 if (!got_attempt) {
                     // someone is already restoring the segment
+                    INC_TSTAT(restore_preempt_bitmap);
                     merger->close();
                     return;
                 }
