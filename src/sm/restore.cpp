@@ -298,9 +298,9 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     // Construct backup reader/buffer based on system options
     if (useBackup) {
         string backupImpl = options.get_string_option("sm_backup_kind",
-                BackupPrefetcher::IMPL_NAME);
+                BackupOnDemandReader::IMPL_NAME);
         if (backupImpl == BackupOnDemandReader::IMPL_NAME) {
-            backup = new BackupOnDemandReader(volume, segmentSize);
+            backup = new BackupOnDemandReader(volume, segmentSize, restoreThreadCount);
         }
         else if (backupImpl == BackupPrefetcher::IMPL_NAME) {
             int numSegments = options.get_int_option(
@@ -454,7 +454,7 @@ bool RestoreMgr::requestRestore(const PageID& pid, generic_page* addr)
 }
 
 void RestoreMgr::restoreSegment(char* workspace,
-        LogArchiver::ArchiveScanner::RunMerger* merger, PageID firstPage)
+        LogArchiver::ArchiveScanner::RunMerger* merger, PageID firstPage, unsigned thread_id)
 {
     stopwatch_t timer;
 
@@ -514,7 +514,7 @@ void RestoreMgr::restoreSegment(char* workspace,
                     return;
                 }
 
-                workspace = backup->fix(segment);
+                workspace = backup->fix(segment, thread_id);
                 ADD_TSTAT(restore_time_read, timer.time_us());
 
                 page = (generic_page*) workspace;
@@ -600,7 +600,7 @@ void RestoreMgr::restoreLoop(unsigned id)
 
         timer.reset();
 
-        char* workspace = backup->fix(segment);
+        char* workspace = backup->fix(segment, id);
         ADD_TSTAT(restore_time_read, timer.time_us());
 
         PageID startPID = firstPage;
@@ -627,7 +627,7 @@ void RestoreMgr::restoreLoop(unsigned id)
         DBG(<< "Restoring segment " << getSegmentForPid(firstPage) << " (pages "
                 << firstPage << " - " << firstPage + segmentSize << ")");
 
-        restoreSegment(workspace, merger, firstPage);
+        restoreSegment(workspace, merger, firstPage, id);
 
         delete merger;
     }
@@ -681,16 +681,16 @@ void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
     INC_TSTAT(restore_segment_count);
 
     // as we're done with one segment, prefetch the next
-    if (scheduler->isOnDemand()) {
-        if (scheduler->hasWaitingRequest()) {
-            PageID next;
-            if (scheduler->next(next, true /* singlePass */, true /* peek */)) {
-                backup->prefetch(next);
-            }
-        } else {
-            backup->prefetch(segment + 1);
-        }
-    }
+    // if (scheduler->isOnDemand()) {
+    //     if (scheduler->hasWaitingRequest()) {
+    //         PageID next;
+    //         if (scheduler->next(next, true /* singlePass */, true /* peek */)) {
+    //             backup->prefetch(next);
+    //         }
+    //     } else {
+    //         backup->prefetch(segment + 1);
+    //     }
+    // }
 }
 
 void RestoreMgr::writeSegment(char* workspace, unsigned segment, size_t count)

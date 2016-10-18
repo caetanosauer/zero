@@ -21,7 +21,7 @@ public:
      * buffer. Usage pattern is similar to accessing pages in a buffer pool,
      * hence the name "fix".
      */
-    virtual char* fix(unsigned segment) = 0;
+    virtual char* fix(unsigned segment, unsigned thread_id = 0) = 0;
 
     /** Signalizes that restore is done accessing a currently fixed segment.
      */
@@ -66,7 +66,7 @@ public:
     {
     }
 
-    virtual char* fix(unsigned)
+    virtual char* fix(unsigned, unsigned = 0)
     {
         memset(buffer, 0, segmentSize * sizeof(generic_page));
         return buffer;
@@ -86,13 +86,13 @@ private:
  */
 class BackupOnDemandReader : public BackupReader {
 public:
-    BackupOnDemandReader(vol_t* volume, size_t segmentSize);
+    BackupOnDemandReader(vol_t* volume, size_t segmentSize, size_t numThreads);
 
     virtual ~BackupOnDemandReader()
     {
     }
 
-    virtual char* fix(unsigned segment);
+    virtual char* fix(unsigned segment, unsigned thread_id);
 
     virtual void unfix(unsigned segment);
 
@@ -147,7 +147,7 @@ public:
      * Any value larger than zero pushes it to the front of the queue.
      */
     virtual void prefetch(unsigned segment, int priority = 0);
-    virtual char* fix(unsigned segment);
+    virtual char* fix(unsigned segment, unsigned thread_id = 0);
     virtual void unfix(unsigned segment);
 
     virtual void run();

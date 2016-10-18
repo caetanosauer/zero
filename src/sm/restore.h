@@ -256,7 +256,7 @@ protected:
      */
     void restoreSegment(char* workspace,
             LogArchiver::ArchiveScanner::RunMerger* merger,
-            PageID firstPage);
+            PageID firstPage, unsigned thread_id);
 
     /** \brief Concludes restore of a segment
      * Processes buffer pool requests when reuse is activated and calls

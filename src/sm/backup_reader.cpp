@@ -29,32 +29,33 @@ BackupReader::~BackupReader()
     // delete[] buffer;
 }
 
-BackupOnDemandReader::BackupOnDemandReader(vol_t* volume, size_t segmentSize)
-    : BackupReader(segmentSize * sizeof(generic_page)),
+BackupOnDemandReader::BackupOnDemandReader(vol_t* volume, size_t segmentSize, size_t numThreads)
+    : BackupReader(segmentSize * sizeof(generic_page) * numThreads),
       volume(volume), segmentSize(segmentSize)
 {
     w_assert1(volume);
     W_IFDEBUG1(fixedSegment = -1);
 }
 
-char* BackupOnDemandReader::fix(unsigned segment)
+char* BackupOnDemandReader::fix(unsigned segment, unsigned thread_id)
 {
     INC_TSTAT(restore_backup_reads);
-    w_assert1(fixedSegment < 0);
+    // w_assert1(fixedSegment < 0);
 
     // CS: TODO call getPidForSegment
     PageID offset = PageID(segment * segmentSize);
-    W_COERCE(volume->read_backup(offset, segmentSize, buffer));
+    char* buf = buffer + (thread_id * segmentSize * sizeof(generic_page));
+    W_COERCE(volume->read_backup(offset, segmentSize, buf));
 
-    W_IFDEBUG1(fixedSegment = segment);
+    // W_IFDEBUG1(fixedSegment = segment);
 
-    return buffer;
+    return buf;
 }
 
-void BackupOnDemandReader::unfix(unsigned segment)
+void BackupOnDemandReader::unfix(unsigned /* segment */)
 {
-    w_assert1(fixedSegment == (int) segment);
-    W_IFDEBUG1(fixedSegment = -1);
+    // w_assert1(fixedSegment == (int) segment);
+    // W_IFDEBUG1(fixedSegment = -1);
 }
 
 BackupPrefetcher::BackupPrefetcher(vol_t* volume, size_t numSegments,
@@ -112,7 +113,7 @@ void BackupPrefetcher::prefetch(unsigned segment, int priority)
     DBG(<< "Requested prefetch of " << segment);
 }
 
-char* BackupPrefetcher::fix(unsigned segment)
+char* BackupPrefetcher::fix(unsigned segment, unsigned /* thread_id */)
 {
     bool wait = false;
     bool statIncremented = false;
