@@ -314,7 +314,7 @@ void session::interact(std::shared_ptr<session> pThis, HandleKits &kits)
 
 
 HandleKits::HandleKits():
-kitsRunning(false)
+kitsExecuted(false)
 {
     kits = new KitsCommand();
     kits->setupOptions();
@@ -356,23 +356,22 @@ void HandleKits::runKits()
 {
     if (kits->running()) {
         kits->join();
-        kitsRunning = false;
+    }
+    if (kitsExecuted) {
         delete kits;
         kits = new KitsCommand();
         kits->setupOptions();
     }
+    kitsExecuted = true;
 
     int argc=9;
-    char* argv[9]={"zapps", "kits", "-b", "tpcb", "--duration", "90", "-t", "1", "--load"};
+    char* argv[9]={"zapps", "kits", "-b", "tpcc", "--duration", "90", "-t", "1", "--load"};
     po::store(po::parse_command_line(argc,argv,kits->getOptions()), vm);
     po::notify(vm);
     kits->setOptionValues(vm);
 
     kits->fork();
     t1 = new std::thread (counters, std::ref(countersJson), kits);
-    kitsRunning = true;
-    //kits.shoreEnv->gatherstats_sm();
-
 };
 
 string HandleKits::getStats()
@@ -421,7 +420,6 @@ string HandleKits::getCounters()
     agglog.join();
     string json = agglog.jsonReply();
     json[json.length() -2] = ',';
-    cout << json;
 
     std::string jsonStats;
     //strReturn = "{";
@@ -430,10 +428,13 @@ string HandleKits::getCounters()
         jsonStats += (countersJson[i]+ ", ");
         jsonStats[jsonStats.size()-4] = ']';
     }
-    jsonStats[jsonStats.length()-1] = ' ';
-    jsonStats[jsonStats.length()-2] = '}';
-
-    json +=jsonStats;
+    if (jsonStats.length()>1) {
+        jsonStats[jsonStats.length()-1] = ' ';
+        jsonStats[jsonStats.length()-2] = '}';
+        json +=jsonStats;
+    }
+    else
+        json[json.length()-2] = '}';
 
     return json;
 };

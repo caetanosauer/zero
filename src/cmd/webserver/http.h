@@ -19,7 +19,7 @@ class HandleKits
 private:
     KitsCommand *kits;
     std::thread *t1;
-    bool kitsRunning;
+    bool kitsExecuted;
     po::variables_map vm;
     std::vector<std::string> countersJson;
 
