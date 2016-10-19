@@ -19,6 +19,7 @@ add_subdirectory(base)
 add_subdirectory(restore)
 add_subdirectory(kits)
 add_subdirectory(loginspect)
+add_subdirectory(tpcc)
 
 add_executable(zapps main.cpp)
 

@@ -3,7 +3,7 @@
  */
 
 #include "tpcc.h"
-#include "../experiments_env.h"
+#include "experiments_env.h"
 #include "lock_core.h"
 #include <time.h>
 #include <utility>
@@ -18,7 +18,7 @@
 const uint16_t OUR_VOLUME_ID = 1;
 const uint32_t FIRST_STORE_ID = 1;
 
-namespace tpcc {    
+namespace tpcc {
     /**
      * All experiments accept --oprofile option.
      * To use it, you need to enable oprofile.
@@ -31,7 +31,7 @@ namespace tpcc {
      * sudo opcontrol --separate=kernel
      * sudo opcontrol --start-daemon # if you see an error, echo 0 > /proc/sys/kernel/nmi_watchdog
      * sudo opcontrol --reset
-     * 
+     *
      * When you run your program, make sure you run it as root.
      * eg) sudo ./okvl_cursor_reads --kvl --workers 6 --oprofile --log-folder /dev/shm/kimurhid/foster/log --data-device /dev/shm/kimurhid/foster/data
      * Notice that you need to specify log-folder and data-device in that case.
@@ -84,7 +84,7 @@ namespace tpcc {
         "Maximum data file size in MB.", (1 << 16));
 
     driver_thread_t::driver_thread_t ()
-            : vid (OUR_VOLUME_ID),
+            :
                 log_folder(getLogFolder()),
                 clog_folder(getCLogFolder()),
                 data_device(getDataDevice()),
@@ -126,9 +126,9 @@ namespace tpcc {
 #endif // HAVE_NUMA_H
         }
     }
- 
-    const lpid_t& driver_thread_t::get_root_pid ( stid_t stid ) {
-        std::map<snum_t, lpid_t>::const_iterator it = ROOT_PIDS.find ( stid.store );
+
+    const PageID& driver_thread_t::get_root_pid ( StoreID stid ) {
+        std::map<StoreID, PageID>::const_iterator it = ROOT_PIDS.find ( stid.store );
         w_assert0 ( it != ROOT_PIDS.end() );
         return it->second;
     }
@@ -152,17 +152,16 @@ namespace tpcc {
         sm_config_info_t config_info;
         W_DO ( ss_m::config_info ( config_info ) );
 
-        devid_t      devid;
         u_int        vol_cnt;
         W_DO ( ss_m::mount_dev ( data_device, vol_cnt, devid, vid ) );
 
         W_DO ( ss_m::begin_xct() );
         for ( uint stnum = FIRST_STORE_ID; stnum < STNUM_COUNT; ++stnum ) {
-            stid_t stid ( vid, stnum );
-            lpid_t root_pid;
+            StoreID stid = stnum;
+            PageID root_pid;
             W_DO ( ss_m::open_store_nolock ( stid, root_pid ) );
             w_assert0 ( ROOT_PIDS.find ( stid.store ) == ROOT_PIDS.end() );
-            ROOT_PIDS.insert ( std::pair<snum_t, lpid_t> ( stid.store, root_pid ) );
+            ROOT_PIDS.insert ( std::pair<StoreID, PageID> ( stid.store, root_pid ) );
             std::cout << "Existing stid=" << stid << ", root_pid=" << root_pid << std::endl;
         }
 
@@ -206,7 +205,7 @@ namespace tpcc {
             options.set_bool_option("sm_archiving", archiving);
             options.set_bool_option("sm_async_merging", async_merging);
             options.set_string_option("sm_archdir", archive_folder);
-            
+
 
             // very short interval, large segments, for massive accesses.
             // back-of-envelope-calculation: ignore xct. it's all about RawLock.
@@ -349,7 +348,7 @@ namespace tpcc {
     rc_t driver_thread_t::read_table ( uint stnum ) {
         std::cout << "fetching a table to bufferpool..." << std::endl;
         uint64_t count = 0;
-        W_DO(ss_m::touch_index(stid_t(OUR_VOLUME_ID, stnum), count));
+        W_DO(ss_m::touch_index(StoreID(OUR_VOLUME_ID, stnum), count));
         std::cout << "table-ID " << stnum << " has " << count << " pages" << std::endl;
         return RCOK;
     }
@@ -392,13 +391,13 @@ namespace tpcc {
         return return_value();
     }
 
-    rc_t driver_thread_t::create_table ( const char *name, stid_t &stid ) {
+    rc_t driver_thread_t::create_table ( const char *name, StoreID &stid ) {
         W_DO ( ss_m::begin_xct() );
         W_DO ( ss_m::create_index ( vid, stid ) );
-        lpid_t root_pid;
+        PageID root_pid;
         W_DO ( ss_m::open_store_nolock ( stid, root_pid ) );
         w_assert0 ( ROOT_PIDS.find ( stid.store ) == ROOT_PIDS.end() );
-        ROOT_PIDS.insert ( std::pair<snum_t, lpid_t> ( stid.store, root_pid ) );
+        ROOT_PIDS.insert ( std::pair<StoreID, PageID> ( stid.store, root_pid ) );
         if (verbose_level >= VERBOSE_STANDARD) {
             std::cout << name << " stid=" << stid << ", root_pid=" << root_pid << std::endl;
         }
@@ -406,14 +405,14 @@ namespace tpcc {
         return RCOK;
     }
 
-    rc_t driver_thread_t::create_table_expect_stnum(const char *name, stid_t &stid, snum_t expected_stnum) {
+    rc_t driver_thread_t::create_table_expect_stnum(const char *name, StoreID &stid, unsigned expected_stnum) {
         rc_t ret = create_table(name, stid);
         w_assert0(stid.store == expected_stnum);
         return ret;
     }
 
     template<class KEY, typename ID>
-    rc_t get_last_key(KEY &result, ID *id, snum_t stnum) {
+    rc_t get_last_key(KEY &result, ID *id, StoreID stnum) {
         W_DO ( ss_m::begin_xct() );
         bt_cursor_t cursor (get_our_volume_id(), stnum, false);
         W_DO(cursor.next());
@@ -454,7 +453,7 @@ namespace tpcc {
         std::cout << "Init: max_history_id=" << max_history_id << std::endl;
         return RCOK;
     }
-    
+
     void worker_thread_t::run() {
         // pin to numa node
         if (driver->is_pin_numa()) {
@@ -488,7 +487,7 @@ namespace tpcc {
 #endif // HAVE_NUMA_H
         }
     }
-    
+
     rc_t worker_thread_t::open_xct(smlevel_0::concurrency_t concurrency,
                     xct_t::elr_mode_t elr_mode) {
         w_assert1(current_xct == NULL);
@@ -590,9 +589,9 @@ namespace tpcc {
         // to make sure, fill out _all_ remaining part with NULL character.
         ::memset (name + ::strlen (name), 0, 16 - ::strlen (name) + 1);
     }
-    
-    stid_t get_stid(stnum_enum stnum) {
-        stid_t stid(get_our_volume_id(), stnum);
+
+    StoreID get_stid(stnum_enum stnum) {
+        StoreID stid(get_our_volume_id(), stnum);
         return stid;
     }
     uint32_t get_first_store_id() {

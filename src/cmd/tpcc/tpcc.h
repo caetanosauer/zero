@@ -12,8 +12,6 @@
 #include <iostream>
 
 #define SM_SOURCE
-#define SM_LEVEL 0
-#include "sm_int_1.h"
 
 #include "sm_vas.h"
 #include "btcursor.h"
@@ -29,7 +27,6 @@
 
 #include "tpcc_schema.h"
 #include "tpcc_rnd.h"
-#include <Lintel/ProgramOptions.hpp>
 
 namespace tpcc { /// Thread classes declaration BEGIN
     class driver_thread_t;
@@ -48,7 +45,7 @@ namespace tpcc { /// Thread classes declaration BEGIN
         VERBOSE_TRACE,
     };
     verbose_enum get_verbose_level();
-    
+
     /**
      * \brief Main thread class for TPCC experiments.
      * \details
@@ -65,7 +62,7 @@ namespace tpcc { /// Thread classes declaration BEGIN
         int fire_experiments();
 
         /** returns the root page ID of the given store. */
-        const lpid_t& get_root_pid ( stid_t stid );
+        const PageID& get_root_pid ( StoreID stid );
 
         uint32_t get_max_warehouse_id() const { return max_warehouse_id;}
         uint32_t get_max_district_id() const { return max_district_id;}
@@ -95,12 +92,12 @@ namespace tpcc { /// Thread classes declaration BEGIN
          * But, tpcc_load does override this to skip mounting.
          */
         virtual rc_t do_init();
-        
+
         /**
          * Override this if you want custom initialization for the master thread.
          */
         virtual rc_t do_more_init() {return RCOK;}
-        
+
         /**
          * \brief  Instantiate a worker thread object with the given ID.
          * \details
@@ -109,16 +106,14 @@ namespace tpcc { /// Thread classes declaration BEGIN
          */
         virtual worker_thread_t* new_worker_thread(int32_t worker_id) = 0;
 
-        rc_t create_table ( const char *name, stid_t &stid );
-        rc_t create_table_expect_stnum(const char *name, stid_t &stid, snum_t expected_stnum);
+        rc_t create_table ( const char *name, StoreID &stid );
+        rc_t create_table_expect_stnum(const char *name, StoreID &stid, unsigned expected_stnum);
 
         void empty_dir ( const char *folder_name );
-        
+
         /** pre-load the table into bufferpool by reading all pages. */
         rc_t read_table ( uint stnum );
 
-        lvid_t lvid;
-        vid_t vid;
         int retval;
 
         // properties set by program parameters
@@ -176,7 +171,7 @@ namespace tpcc { /// Thread classes declaration BEGIN
         rc_t init_max_customer_id();
         rc_t init_max_history_id();
 
-        std::map<snum_t, lpid_t> ROOT_PIDS;
+        std::map<StoreID, PageID> ROOT_PIDS;
     };
 
     const uint64_t TLR_RANDOM_SEED = 123456; // TODO this should be a program parameter
@@ -203,7 +198,7 @@ namespace tpcc { /// Thread classes declaration BEGIN
         uint32_t get_uniform_random_district_id();
         /** use this if you always want uniform random. */
         uint32_t get_uniform_random_warehouse_id();
-        
+
         protected:
         /** unique ID of this worker from 0 to #workers-1. */
         const uint32_t worker_id;
@@ -213,7 +208,7 @@ namespace tpcc { /// Thread classes declaration BEGIN
 
         /** the last result code this worker observed. */
         rc_t last_rc;
-        
+
         /** The transaction currently active in this thread. */
         xct_t* current_xct;
 
@@ -230,7 +225,7 @@ namespace tpcc { /// Thread classes declaration BEGIN
          * Override this if you want additional initialization for the worker thread.
          */
         virtual rc_t init_worker() { return RCOK; }
-        
+
         /**
          * You \b must override this to implement the actual transactions.
          */
@@ -259,7 +254,7 @@ namespace tpcc { /// Thread classes declaration BEGIN
         bool merging;
         lintel::Atomic<bool> active;
     public:
-        archiver_control_thread_t(int freq, bool merging) 
+        archiver_control_thread_t(int freq, bool merging)
             : freq(freq), merging(merging), active(true)
         {}
 
@@ -306,7 +301,7 @@ namespace tpcc { /// misc common functions BEGIN
     }
 
     std::string get_current_time_string();
-    
+
     /**
     * TPC-C Lastname Function.
     * @param[in] num  non-uniform random number
@@ -314,7 +309,7 @@ namespace tpcc { /// misc common functions BEGIN
     */
     void generate_lastname ( int32_t num, char *name );
 
-    stid_t get_stid(stnum_enum stnum);
+    StoreID get_stid(stnum_enum stnum);
     uint32_t get_first_store_id();
     uint32_t get_our_volume_id();
 
