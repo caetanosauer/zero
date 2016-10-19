@@ -54,7 +54,6 @@ public:
 	static void destroy(table_row_t* t) { t->~table_row_t(); }
 
 	static void reset(table_row_t* t) {
-	    assert (t->_ptable == ptable());
 	    t->reset();
 	}
 
