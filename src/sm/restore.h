@@ -364,7 +364,7 @@ public:
     virtual ~RestoreScheduler();
 
     void enqueue(const PageID& pid);
-    bool next(PageID& next, bool singlePass, bool peek = false);
+    bool next(PageID& next, unsigned thread_id, bool peek = false);
     bool hasWaitingRequest();
 
     bool isOnDemand() { return onDemand; }
@@ -385,6 +385,8 @@ protected:
      * This is just a guess to prune the search for the next not restored.
      */
     PageID firstNotRestored;
+    std::vector<PageID> firstNotRestoredPerThread;
+    unsigned segmentsPerThread;
 };
 
 inline unsigned RestoreMgr::getSegmentForPid(const PageID& pid)

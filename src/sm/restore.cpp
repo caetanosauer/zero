@@ -129,8 +129,7 @@ void RestoreBitmap::mark_restored(unsigned i)
 //     w_assert0(highestTrue < bits.size());
 // }
 
-RestoreScheduler::RestoreScheduler(const sm_options& options,
-        RestoreMgr* restore)
+RestoreScheduler::RestoreScheduler(const sm_options& options, RestoreMgr* restore)
     : restore(restore)
 {
     w_assert0(restore);
@@ -138,8 +137,13 @@ RestoreScheduler::RestoreScheduler(const sm_options& options,
     lastUsedPid = restore->getLastUsedPid();
     // trySinglePass =
     //     options.get_bool_option("sm_restore_sched_singlepass", true);
-    onDemand =
-        options.get_bool_option("sm_restore_sched_ondemand", true);
+    onDemand = options.get_bool_option("sm_restore_sched_ondemand", true);
+    unsigned threads = options.get_int_option("sm_restore_threads", 1);
+
+    segmentsPerThread = (lastUsedPid / restore->getSegmentSize()) / threads;
+    for (unsigned i = 0; i < threads; i++) {
+        firstNotRestoredPerThread.push_back(segmentsPerThread * i * restore->getSegmentSize());
+    }
 
     // if (!onDemand) {
     //     // override single-pass option
@@ -162,13 +166,44 @@ bool RestoreScheduler::hasWaitingRequest()
     return onDemand && queue.size() > 0;
 }
 
-bool RestoreScheduler::next(PageID& next, bool singlePass, bool peek)
+// bool RestoreScheduler::next(PageID& next, unsigned thread_id, bool peek)
+// {
+//     spinlock_write_critical_section cs(&mutex);
+
+//     // TODO ignoring queue for now
+//     // if (queue.size() > 0) {
+//     //     next = queue.front();
+//     //     if (!peek && is_mine(next)) {
+//     //         queue.pop();
+//     //         INC_TSTAT(restore_sched_queued);
+//     //     }
+//     // }
+
+//     next = firstNotRestoredPerThread[thread_id];
+//     // if queue is empty, find the first not-yet-restored PID
+//     while (next <= lastUsedPid && restore->isRestored(next)) {
+//         // if next pid is already restored, then the whole segment is
+//         next = next + restore->getSegmentSize();
+//     }
+//     if (!peek) {
+//         firstNotRestoredPerThread[thread_id] = next + restore->getSegmentSize();
+//         INC_TSTAT(restore_sched_seq);
+//     }
+
+//     if (next > lastUsedPid) { return false; }
+
+//     return true;
+// }
+
+// CS TODO: provide different implementations of scheduler
+bool RestoreScheduler::next(PageID& next, unsigned thread_id, bool peek)
 {
     static std::default_random_engine gen;
     static std::uniform_int_distribution<unsigned> distr(0, 100);
 
     spinlock_write_critical_section cs(&mutex);
 
+    bool singlePass = (thread_id == 0);
     if (queue.size() > 0) {
         next = queue.front();
         if (!peek) {
@@ -583,11 +618,10 @@ void RestoreMgr::restoreLoop(unsigned id)
     LogArchiver::ArchiveScanner logScan(archive);
 
     stopwatch_t timer;
-    bool singlePass = (id == 0);
 
     while (numRestoredPages < lastUsedPid) {
         PageID requested;
-        if (!scheduler->next(requested, singlePass)) {
+        if (!scheduler->next(requested, id)) {
             // no page available for now
             usleep(2000); // 2 ms
             continue;
