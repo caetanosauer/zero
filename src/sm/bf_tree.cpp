@@ -812,7 +812,7 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
     w_assert1(cb._pin_cnt > 0);
     cb.pin();
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
-    ++cb._ref_count;
+    cb.inc_ref_count();
     if (mode == LATCH_EX) { ++cb._ref_count_ex; }
     page = &(_buffer[idx]);
     return RCOK;
