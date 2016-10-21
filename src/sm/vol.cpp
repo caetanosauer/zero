@@ -43,12 +43,17 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
     bool truncate = options.get_bool_option("sm_format", false);
     _readonly = options.get_bool_option("sm_vol_readonly", false);
     _log_page_reads = options.get_bool_option("sm_vol_log_reads", false);
+    _use_o_sync = options.get_bool_option("sm_vol_o_sync", true);
     _use_o_direct = options.get_bool_option("sm_vol_o_direct", false);
 
     spinlock_write_critical_section cs(&_mutex);
 
     // CS TODO: do we need/want OPEN_SYNC?
-    int open_flags = smthread_t::OPEN_SYNC;
+    int open_flags = 0;
+    if(_use_o_sync) {
+        open_flags |= smthread_t::OPEN_SYNC;
+    }
+
     if(_use_o_direct) {
         open_flags |= smthread_t::OPEN_DIRECT;
     }
