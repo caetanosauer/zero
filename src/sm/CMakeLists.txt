@@ -59,7 +59,6 @@ set(sm_STAT_SRCS
 add_library(sm STATIC ${sm_STAT_SRCS})
 target_link_libraries(sm
     common
-    numa
     boost_program_options
     boost_system
     boost_filesystem
