@@ -10,6 +10,7 @@
 #include "backup_reader.h"
 
 #include <algorithm>
+#include <random>
 
 #include "stopwatch.h"
 

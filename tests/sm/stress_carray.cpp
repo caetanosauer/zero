@@ -1,4 +1,5 @@
 #include <sstream>
+#include <random>
 #include "stopwatch.h"
 #include "sm_options.h"
 #include "log_core.h"

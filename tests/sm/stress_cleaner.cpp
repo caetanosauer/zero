@@ -11,6 +11,7 @@
 #include "base/command.h"
 #include "btree_logrec.h"
 #include <chrono>
+#include <random>
 #include <thread>
 #include <functional>
 
