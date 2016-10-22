@@ -194,6 +194,9 @@ private:
      *  (128 bytes are enough since it contains only vid) */
     char _logrec_buf[128];
 
+    /** Wheter to open file with O_SYNC */
+    bool _use_o_sync;
+
     /** Whether to open file with O_DIRECT */
     bool _use_o_direct;
 
