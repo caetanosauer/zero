@@ -298,6 +298,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             if (check_rc.is_error())
             {
                 _add_free_block(idx);
+                // TODO: add a sleep or wait mechanism whenever fix fails
                 continue;
             }
 
