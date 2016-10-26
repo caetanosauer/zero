@@ -267,7 +267,6 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
     // CS TODO: get rid of this loop
     while (true)
     {
-        const uint32_t ONE_MICROSEC = 10000;
 #if W_DEBUG_LEVEL>0
         if (++retry_count % 10000 == 0) {
             DBGOUT1(<<"keep trying to fix.. " << pid << ". current retry count=" << retry_count);
@@ -299,7 +298,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             if (check_rc.is_error())
             {
                 _add_free_block(idx);
-                ::usleep(ONE_MICROSEC);
+                // TODO: add a sleep or wait mechanism whenever fix fails
                 continue;
             }
 
