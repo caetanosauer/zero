@@ -14,7 +14,7 @@
 sm_options basethread_t::_options;
 
 basethread_t::basethread_t()
-    : smthread_t(t_regular, "loginspect"), finished(false),
+    : smthread_t("loginspect"), finished(false),
     current_xct(NULL)
 {
     DO_PTHREAD(pthread_mutex_init(&running_mutex, NULL));

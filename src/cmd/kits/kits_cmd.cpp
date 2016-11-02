@@ -21,7 +21,7 @@ class CrashThread : public smthread_t
 {
 public:
     CrashThread(unsigned delay)
-        : smthread_t(t_regular, "CrashThread"),
+        : smthread_t("CrashThread"),
         delay(delay)
     {
     }
@@ -43,7 +43,7 @@ class FailureThread : public smthread_t
 {
 public:
     FailureThread(unsigned delay, bool* flag)
-        : smthread_t(t_regular, "FailureThread"),
+        : smthread_t("FailureThread"),
         delay(delay), flag(flag)
     {
     }

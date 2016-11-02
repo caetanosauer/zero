@@ -129,11 +129,10 @@ smthread_t::add_from_TL_stats(sm_stats_info_t &w) const
 smthread_t::smthread_t(
     st_proc_t* f,
     void* arg,
-    priority_t priority,
     const char* name,
     timeout_in_ms lockto,
     unsigned stack_size)
-: sthread_t(priority, name, stack_size),
+: sthread_t(name, stack_size),
   _proc(f),
   _arg(arg),
   _gen_log_warnings(true)
@@ -154,12 +153,11 @@ smthread_t::smthread_t(
 // Uses run() method instead of a method given as argument.
 // Does NOT acquire a fingerprint so it cannot acquire locks.
 smthread_t::smthread_t(
-    priority_t priority,
     const char* name,
     timeout_in_ms lockto,
     unsigned stack_size
     )
-: sthread_t(priority, name, stack_size),
+: sthread_t(name, stack_size),
   _proc(0),
   _arg(0),
   _gen_log_warnings(true)

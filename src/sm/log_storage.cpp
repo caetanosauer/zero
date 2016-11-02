@@ -39,7 +39,7 @@ class partition_recycler_t : public smthread_t
 {
 public:
     partition_recycler_t(log_storage* storage, bool chkpt_only = false)
-        : smthread_t(t_regular, "partition_recycler"), storage(storage),
+        : smthread_t("partition_recycler"), storage(storage),
         chkpt_only(chkpt_only), retire(false)
     {}
 

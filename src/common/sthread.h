@@ -270,14 +270,6 @@ public:
     };
     static const char *status_strings[];
 
-    enum priority_t {
-        t_time_critical = 1,
-        t_regular    = 0,
-        max_priority    = t_time_critical,
-        min_priority    = t_regular
-    };
-    static const char *priority_strings[];
-
     /* Default stack size for a thread */
     enum { default_stack = 64*1024 };
 
@@ -340,8 +332,6 @@ public:
     /* Recursion, etc stack depth estimator */
     bool             isStackFrameOK(size_t size = 0);
 
-    w_rc_t           set_priority(priority_t priority);
-    priority_t       priority() const;
     status_t         status() const;
 
 private:
@@ -429,7 +419,6 @@ public:
 
 protected:
     sthread_t(
-          priority_t    priority = t_regular,
           const char    *name = 0,
           unsigned        stack_size = default_stack);
 
@@ -460,7 +449,6 @@ private:
 
     sthread_core_t *            _core;        // registers, stack, etc
     volatile status_t           _status;    // thread status
-    priority_t                  _priority;     // thread priority
     w_error_codes           _rce;        // used in block/unblock
 
     w_link_t                    _link;        // protected by _wait_lock
@@ -505,14 +493,6 @@ protected:
     virtual void        run();
 };
 /**\endcond skip */
-
-
-/**\cond skip */
-inline sthread_t::priority_t
-sthread_t::priority() const
-{
-    return _priority;
-}
 
 inline sthread_t::status_t
 sthread_t::status() const

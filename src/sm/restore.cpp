@@ -830,7 +830,7 @@ void RestoreMgr::shutdown()
 }
 
 SegmentWriter::SegmentWriter(RestoreMgr* restore)
-    : smthread_t(t_regular, "SegmentWriter"),
+    : smthread_t("SegmentWriter"),
     shutdownFlag(false), restore(restore)
 {
     w_assert1(restore);

@@ -321,7 +321,6 @@ public:
      * be used in run() method.
      * @param[in] arg Stored in thread for client's convenience, may
      * be used in run() method.
-     * @param[in] priority Required, but not used in storage manager.
      * @param[in] name Optional thread name, used for debugging.
      * @param[in] lockto Timeout for lock waiting.  See timeout_in_ms.
      * @param[in] stack_size Best to use default.
@@ -329,20 +328,17 @@ public:
     NORET            smthread_t(
         st_proc_t*             f,
         void*                  arg,
-        priority_t             priority = t_regular,
         const char*            name = 0,
         timeout_in_ms          lockto = WAIT_FOREVER,
         unsigned               stack_size = default_stack);
 
     /**\brief Normal constructor for a storage manager client.
      * \details
-     * @param[in] priority Required, but not used in storage manager.
      * @param[in] name Optional thread name, used for debugging.
      * @param[in] lockto Timeout for lock waiting.  See timeout_in_ms.
      * @param[in] stack_size Best to use default.
      */
     NORET            smthread_t(
-        priority_t             priority = t_regular,
         const char*            name = 0,
         timeout_in_ms          lockto = WAIT_FOREVER,
         unsigned               stack_size = default_stack

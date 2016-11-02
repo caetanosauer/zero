@@ -297,7 +297,7 @@ w_rc_t sthread_t::shutdown()
  */
 
 sthread_main_t::sthread_main_t()
-: sthread_t(t_regular, "main_thread", 0)
+: sthread_t("main_thread", 0)
 {
     /*
     fprintf(stderr, "sthread_main_t constructed, this %p\n", this);
@@ -318,32 +318,6 @@ void sthread_main_t::run()
 }
 
 /**\endcond skip */
-
-/*
- *  sthread_t::set_priority(priority)
- *
- *  Sets the priority of current thread.  The thread must not
- *  be in the ready Q.
- */
-
-w_rc_t sthread_t::set_priority(priority_t priority)
-{
-    CRITICAL_SECTION(cs, _wait_lock);
-    _priority = priority;
-
-    // in this statement, <= is used to keep gcc -Wall quiet
-    if (_priority <= min_priority) _priority = min_priority;
-    if (_priority > max_priority) _priority = max_priority;
-
-    if (_status == t_ready)  {
-        cerr << "sthread_t::set_priority()  :- "
-            << "cannot change priority of ready thread" << endl;
-        W_FATAL(stINTERNAL);
-    }
-
-    return RCOK;
-}
-
 
 
 /*
@@ -451,13 +425,13 @@ w_rc_t    sthread_t::fork()
 
 
 /*
- *  sthread_t::sthread_t(priority, name)
+ *  sthread_t::sthread_t(name)
  *
  *  Create a thread.  Until it starts running, a created thread
  *  is just a memory object.
  */
 
-sthread_t::sthread_t(priority_t        pr,
+sthread_t::sthread_t(
              const char     *nm,
              unsigned        stack_size)
 : sthread_named_base_t(nm),
@@ -470,8 +444,7 @@ sthread_t::sthread_t(priority_t        pr,
   _terminated(false),
   _unblock_flag(false),
   _core(0),
-  _status(t_virgin),
-  _priority(pr)
+  _status(t_virgin)
 {
     if(!_start_terminate_lock || !_start_cond )
         W_FATAL(fcOUTOFMEMORY);
@@ -484,14 +457,6 @@ sthread_t::sthread_t(priority_t        pr,
         W_FATAL(fcOUTOFMEMORY);
     _core->sthread = (void *)this;  // not necessary, but might
                                     // be useful for debugging
-
-    /*
-     *  Set a valid priority level
-     */
-    if (_priority > max_priority)
-        _priority = max_priority;
-    else if (_priority <= min_priority)
-        _priority = min_priority;
 
     /*
      *  Initialize the core.
@@ -1109,13 +1074,6 @@ const char *sthread_t::status_strings[] = {
     "boot"
 };
 
-const char *sthread_t::priority_strings[]= {
-    "idle_time",
-    "fixed_low",
-    "regular",
-    "time_critical"
-};
-
 
 ostream& operator<<(ostream &o, const sthread_t &t)
 {
@@ -1140,7 +1098,6 @@ ostream &sthread_t::print(ostream &o) const
     << ", addr = " <<  (void *) this
     << ", core = " <<  (void *) _core << endl;
     o
-    << "priority = " << sthread_t::priority_strings[priority()]
     << ", status = " << sthread_t::status_strings[status()];
     o << endl;
 

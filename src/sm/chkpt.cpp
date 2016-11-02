@@ -834,7 +834,7 @@ void chkpt_t::deserialize_binary(ifstream& ifs)
 }
 
 chkpt_thread_t::chkpt_thread_t(int interval)
-    : smthread_t(t_time_critical, "chkpt", WAIT_NOT_USED),
+    : smthread_t("chkpt", WAIT_NOT_USED),
     _wakeup(false), _retire(false), _interval(interval)
 {
     DO_PTHREAD(pthread_mutex_init(&_awaken_lock, NULL));

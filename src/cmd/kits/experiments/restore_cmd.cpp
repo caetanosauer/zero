@@ -7,7 +7,7 @@ class FailureThread : public smthread_t
 {
 public:
     FailureThread(unsigned delay, bool evict, bool* flag)
-        : smthread_t(t_regular, "FailureThread"),
+        : smthread_t("FailureThread"),
         delay(delay), evict(evict), flag(flag)
     {
     }

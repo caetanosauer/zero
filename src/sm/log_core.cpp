@@ -95,7 +95,7 @@ class ticker_thread_t : public smthread_t
 {
 public:
     ticker_thread_t(bool msec = false)
-        : smthread_t(t_regular, "ticker"), msec(msec)
+        : smthread_t("ticker"), msec(msec)
     {
         interval_usec = 1000; // 1ms
         if (!msec) {
@@ -140,7 +140,7 @@ private:
 class fetch_buffer_loader_t : public smthread_t {
 public:
     fetch_buffer_loader_t(log_core* log)
-        : smthread_t(t_regular, "fetchbuf_loader"), log(log)
+        : smthread_t("fetchbuf_loader"), log(log)
     {
     }
 
@@ -160,7 +160,7 @@ class flush_daemon_thread_t : public smthread_t {
     log_core* _log;
 public:
     flush_daemon_thread_t(log_core* log) :
-         smthread_t(t_regular, "flush_daemon", WAIT_NOT_USED), _log(log) { }
+         smthread_t("flush_daemon", WAIT_NOT_USED), _log(log) { }
 
     virtual void run() { _log->flush_daemon(); }
 };

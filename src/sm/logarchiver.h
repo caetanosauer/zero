@@ -168,7 +168,7 @@ public:
         size_t getBlockSize() { return blockSize; }
 
         BaseThread(AsyncRingBuffer* buf, const char* tname)
-            : smthread_t(t_regular, tname),
+            : smthread_t(tname),
               buf(buf), currentFd(-1), pos(0)
         {
             blockSize = buf->getBlockSize();

@@ -343,7 +343,7 @@ void LogArchiver::WriterThread::run()
 LogArchiver::LogArchiver(
         ArchiveDirectory* d, LogConsumer* c, ArchiverHeap* h, BlockAssembly* b)
     :
-    smthread_t(t_regular, "LogArchiver"),
+    smthread_t("LogArchiver"),
     directory(d), consumer(c), heap(h), blkAssemb(b),
     shutdownFlag(false), control(&shutdownFlag), selfManaged(false),
     flushReqLSN(lsn_t::null)
@@ -352,7 +352,7 @@ LogArchiver::LogArchiver(
 }
 
 LogArchiver::LogArchiver(const sm_options& options)
-    : smthread_t(t_regular, "LogArchiver"),
+    : smthread_t("LogArchiver"),
     shutdownFlag(false), control(&shutdownFlag), selfManaged(true),
     flushReqLSN(lsn_t::null)
 {

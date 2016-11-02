@@ -51,7 +51,7 @@ class restart_thread_t : public smthread_t
 public:
 
     NORET restart_thread_t()
-        : smthread_t(t_regular, "restart", WAIT_NOT_USED)
+        : smthread_t("restart", WAIT_NOT_USED)
     {
         working = false;
     };
