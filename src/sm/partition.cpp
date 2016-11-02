@@ -64,7 +64,19 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_base.h"
 #include "logtype_gen.h"
 #include "log_storage.h"
+
+// files and stuff
+#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+// TODO proper exception mechanism
+#define CHECK_ERRNO(n) \
+    if (n == -1) { \
+        W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
+    }
 
 // needed for skip_log
 #include "logdef_gen.cpp"
@@ -90,9 +102,10 @@ rc_t partition_t::open_for_append()
 {
     w_assert3(!is_open_for_append());
 
-    int fd, flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_CREATE;
+    int fd, flags = O_RDWR | O_CREAT;
     string fname = _owner->make_log_name(_num);
-    W_DO(me()->open(fname.c_str(), flags, 0744, fd));
+    fd = ::open(fname.c_str(), flags, 0744 /*mode*/);
+    CHECK_ERRNO(fd);
     _fhdl_app = fd;
 
     return RCOK;
@@ -168,7 +181,8 @@ rc_t partition_t::flush(
            pread/pwrite (which doesn't change the file pointer).
          */
         fileoff_t where = file_offset;
-        W_DO(me()->lseek(_fhdl_app, where, sthread_t::SEEK_AT_SET));
+        auto ret = lseek(_fhdl_app, where, SEEK_SET);
+        CHECK_ERRNO(ret);
     } // end sync log
 
     { // Copy a skip record to the end of the buffer.
@@ -196,18 +210,17 @@ rc_t partition_t::flush(
             INC_TSTAT(log_long_flush);
         }
 
-        typedef sdisk_base_t::iovec_t iovec_t;
-
-        iovec_t iov[] = {
+        struct iovec iov[] = {
             // iovec_t expects void* not const void *
-            iovec_t((char*)buf+start1,                end1-start1),
+            { (char*)buf+start1,                end1-start1 },
             // iovec_t expects void* not const void *
-            iovec_t((char*)buf+start2,                end2-start2),
-            iovec_t(s,                        s->length()),
-            iovec_t(block_of_zeros(),         grand_total-total),
+            { (char*)buf+start2,                end2-start2},
+            { s,                        s->length()},
+            { block_of_zeros(),         grand_total-total},
         };
 
-        W_DO(me()->writev(_fhdl_app, iov, sizeof(iov)/sizeof(iovec_t)));
+        auto ret = ::writev(_fhdl_app, iov, 4);
+        CHECK_ERRNO(ret);
 
         ADD_TSTAT(log_bytes_written, grand_total);
     } // end copy skip record
@@ -262,7 +275,9 @@ rc_t partition_t::read(logrec_t *&rp, lsn_t &ll, lsn_t* prev_lsn)
 
         DBG5(<<"leftover=" << int(leftover) << " b=" << b);
 
-        W_DO(me()->pread(_fhdl_rd, (void *)(_readbuf + b), XFERSIZE, lower + b));
+        auto bytesRead = ::pread(_fhdl_rd, (void *)(_readbuf + b), XFERSIZE, lower + b);
+        CHECK_ERRNO(bytesRead);
+        if (bytesRead != XFERSIZE) { return RC(stSHORTIO); }
 
         b += XFERSIZE;
 
@@ -285,8 +300,10 @@ rc_t partition_t::read(logrec_t *&rp, lsn_t &ll, lsn_t* prev_lsn)
                         *prev_lsn = lsn_t::null;
                     }
                     else {
-                        W_COERCE(me()->pread(_fhdl_rd, (void*) prev_lsn, sizeof(lsn_t),
-                                    prev_offset));
+                        bytesRead = pread(_fhdl_rd, (void*) prev_lsn, sizeof(lsn_t),
+                                    prev_offset);
+                        CHECK_ERRNO(bytesRead);
+                        if (bytesRead != sizeof(lsn_t)) { return RC(stSHORTIO); }
                     }
                 }
             }
@@ -312,9 +329,9 @@ rc_t partition_t::open_for_read()
 
     if(_fhdl_rd == invalid_fhdl) {
         string fname = _owner->make_log_name(_num);
-        int fd, flags = smthread_t::OPEN_RDONLY;
-        W_DO(me()->open(fname.c_str(), flags, 0, fd));
-
+        int fd, flags = O_RDONLY;
+        fd = ::open(fname.c_str(), flags, 0 /*mode*/);
+        CHECK_ERRNO(fd);
         w_assert3(_fhdl_rd == invalid_fhdl);
         _fhdl_rd = fd;
     }
@@ -334,12 +351,8 @@ void partition_t::fsync_delayed(int fd)
     // or start-up
     INC_TSTAT(log_fsync_cnt);
 
-    w_rc_t e = me()->fsync(fd);
-    if (e.is_error()) {
-        cerr
-            << "cannot sync after skip block " << endl;
-        W_COERCE(e);
-    }
+    auto ret = ::fsync(fd);
+    CHECK_ERRNO(ret);
 
     if (_artificial_flush_delay > 0) {
         if (attempt_flush_delay==0) {
@@ -372,7 +385,8 @@ void partition_t::fsync_delayed(int fd)
 rc_t partition_t::close_for_append()
 {
     if (_fhdl_app != invalid_fhdl)  {
-        W_DO(me()->close(_fhdl_app));
+        auto ret = close(_fhdl_app);
+        CHECK_ERRNO(ret);
         _fhdl_app = invalid_fhdl;
     }
     return RCOK;
@@ -381,7 +395,8 @@ rc_t partition_t::close_for_append()
 rc_t partition_t::close_for_read()
 {
     if (_fhdl_rd != invalid_fhdl)  {
-        W_DO(me()->close(_fhdl_rd));
+        auto ret = close(_fhdl_rd);
+        CHECK_ERRNO(ret);
         _fhdl_rd = invalid_fhdl;
     }
     return RCOK;
@@ -402,11 +417,13 @@ rc_t partition_t::scan_for_size(bool must_be_skip)
     // start scanning backwards from end of file until first valid logrec
     // is found; then check for must_be_skip
     W_DO(open_for_read());
-    sthread_base_t::filestat_t statbuf;
-    W_DO(me()->fstat(_fhdl_rd, statbuf));
-    sm_diskaddr_t fsize = statbuf.st_size;
 
-    if (statbuf.st_size == 0) {
+    os_stat_t stat;
+    auto ret = ::fstat(_fhdl_rd, &stat);
+    CHECK_ERRNO(ret);
+    size_t fsize = stat.st_size;
+
+    if (fsize == 0) {
         _size = 0;
         return RCOK;
     }
@@ -416,7 +433,9 @@ rc_t partition_t::scan_for_size(bool must_be_skip)
     size_t bpos = fsize - XFERSIZE;
     int pos = 2*XFERSIZE - sizeof(lsn_t);
     // start reading just the last of 2 blocks, because the file may be just one block
-    W_DO(me()->pread(_fhdl_rd, buf + XFERSIZE, XFERSIZE, bpos));
+    auto bytesRead = ::pread(_fhdl_rd, buf + XFERSIZE, XFERSIZE, bpos);
+    CHECK_ERRNO(bytesRead);
+    if (bytesRead != XFERSIZE) { return RC(stSHORTIO); }
 
     lsn_t lsn;
     while (pos >= 0) {
@@ -426,7 +445,10 @@ rc_t partition_t::scan_for_size(bool must_be_skip)
             // position -- good chance we've found the last logrec. Read
             // record header to check validity
             baseLogHeader h;
-            W_DO(me()->pread(_fhdl_rd, &h, sizeof(baseLogHeader), lsn.lo()));
+            bytesRead = ::pread(_fhdl_rd, &h, sizeof(baseLogHeader), lsn.lo());
+            CHECK_ERRNO(bytesRead);
+            if (bytesRead != sizeof(baseLogHeader)) { return RC(stSHORTIO); }
+
             if (h.is_valid()) {
                 if (must_be_skip && h._type != logrec_t::t_skip) {
                     W_FATAL_MSG(eINTERNAL,
@@ -442,7 +464,9 @@ rc_t partition_t::scan_for_size(bool must_be_skip)
             // We've scanned last block and didn't find it -- read second
             // last block
             bpos -= XFERSIZE;
-            W_DO(me()->pread(_fhdl_rd, buf, XFERSIZE, bpos));
+            bytesRead = ::pread(_fhdl_rd, buf, XFERSIZE, bpos);
+            CHECK_ERRNO(bytesRead);
+            if (bytesRead != XFERSIZE) { return RC(stSHORTIO); }
         }
         pos--;
     }
