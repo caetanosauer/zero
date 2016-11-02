@@ -7,10 +7,8 @@
 #include "logcat.h"
 #include "verifylog.h"
 #include "truncatelog.h"
-#include "logstats.h"
 #include "propstats.h"
 #include "logpagestats.h"
-#include "dbinspect.h"
 #include "loganalysis.h"
 #include "dbscan.h"
 #include "addbackup.h"
@@ -50,9 +48,7 @@ void Command::init()
     REGISTER_COMMAND("addbackup", AddBackup);
     REGISTER_COMMAND("xctlatency", XctLatency);
     REGISTER_COMMAND("agglog", AggLog);
-    REGISTER_COMMAND("logstats", LogStats);
     REGISTER_COMMAND("logpagestats", LogPageStats);
-    REGISTER_COMMAND("dbinspect", DBInspect);
     REGISTER_COMMAND("loganalysis", LogAnalysis);
     REGISTER_COMMAND("kits", KitsCommand);
     REGISTER_COMMAND("propstats", PropStats);
