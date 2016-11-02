@@ -520,7 +520,7 @@ void restart_m::undo_pass()
                     //     use_concurrent_commit_restart(): no lock acquisition
                     //     use_concurrent_lock_restart(): locks acquired during Log Analysis phase
 
-                    me()->attach_xct(curr);
+                    smthread_t::attach_xct(curr);
                     W_COERCE( curr->abort() );
 
                     // Then destroy the loser transaction

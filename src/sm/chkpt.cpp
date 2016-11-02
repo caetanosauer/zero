@@ -92,7 +92,7 @@ struct RawLock;            // Lock information gathering
  *  Checkpoint thread.
  *
  *********************************************************************/
-class chkpt_thread_t : public smthread_t
+class chkpt_thread_t : public sthread_t
 {
 public:
     NORET                chkpt_thread_t(int interval);
@@ -834,11 +834,11 @@ void chkpt_t::deserialize_binary(ifstream& ifs)
 }
 
 chkpt_thread_t::chkpt_thread_t(int interval)
-    : smthread_t("chkpt", WAIT_NOT_USED),
-    _wakeup(false), _retire(false), _interval(interval)
+    : _wakeup(false), _retire(false), _interval(interval)
 {
     DO_PTHREAD(pthread_mutex_init(&_awaken_lock, NULL));
     DO_PTHREAD(pthread_cond_init(&_awaken_cond, NULL));
+    smthread_t::set_lock_timeout(WAIT_NOT_USED);
 }
 
 chkpt_thread_t::~chkpt_thread_t()

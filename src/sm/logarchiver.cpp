@@ -121,8 +121,7 @@ bool ArchiverControl::waitForActivation()
 LogArchiver::ReaderThread::ReaderThread(AsyncRingBuffer* readbuf,
         lsn_t startLSN)
     :
-      BaseThread(readbuf, "LogArchiver_ReaderThread"),
-      shutdownFlag(false), control(&shutdownFlag)
+      BaseThread(readbuf), shutdownFlag(false), control(&shutdownFlag)
 {
     // position initialized to startLSN
     pos = startLSN.lo();
@@ -343,7 +342,6 @@ void LogArchiver::WriterThread::run()
 LogArchiver::LogArchiver(
         ArchiveDirectory* d, LogConsumer* c, ArchiverHeap* h, BlockAssembly* b)
     :
-    smthread_t("LogArchiver"),
     directory(d), consumer(c), heap(h), blkAssemb(b),
     shutdownFlag(false), control(&shutdownFlag), selfManaged(false),
     flushReqLSN(lsn_t::null)
@@ -352,7 +350,7 @@ LogArchiver::LogArchiver(
 }
 
 LogArchiver::LogArchiver(const sm_options& options)
-    : smthread_t("LogArchiver"),
+    :
     shutdownFlag(false), control(&shutdownFlag), selfManaged(true),
     flushReqLSN(lsn_t::null)
 {

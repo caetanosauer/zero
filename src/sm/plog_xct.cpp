@@ -186,7 +186,7 @@ rc_t plog_xct_t::_abort()
     // CS: don't know why this isn't done in change_state (see xct_t::_abort)
     _core->_xct_aborting = false;
 
-    me()->detach_xct(this);        // no transaction for this thread
+    smthread_t::detach_xct(this);        // no transaction for this thread
     INC_TSTAT(abort_xct_cnt);
 
     return RCOK;
@@ -265,7 +265,7 @@ rc_t plog_xct_t::_commit_nochains(uint32_t flags, lsn_t* /* plastlsn */)
 
     INC_TSTAT(commit_xct_cnt);
 
-    me()->detach_xct(this);        // no transaction for this thread
+    smthread_t::detach_xct(this);        // no transaction for this thread
 
     return RCOK;
 }

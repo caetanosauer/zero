@@ -329,14 +329,11 @@ private:
          * \brief A pointer to the running sthread_t.
          * \ingroup TLS
          */
-        static __thread sthread_t* _TLSme(NULL);
+        static thread_local sthread_t* _TLSme(NULL);
         return _TLSme;
     }
 public:
-    // NOTE: this returns a POINTER
-    static sthread_t*    me() { return me_lval(); }
                          // for debugging:
-    pthread_t            myself(); // pthread_t associated with this
     static int           rand(); // returns an int in [0, 2**31)
     static double        drand(); // returns a double in [0.0, 1)
     static int           randn(int max); // returns an int in [0, max)

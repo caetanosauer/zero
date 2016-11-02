@@ -330,30 +330,6 @@ static holder_list_list_t holder_list_list;
 // It's not that this needs to be queue-based, but we want to avoid
 // pthreads API use directly as much as possible.
 static queue_based_block_lock_t    holder_list_list_lock;
-
-void latch_t::on_thread_init(sthread_t *who)
-{
-    CRITICAL_SECTION(cs, holder_list_list_lock);
-    holder_list_list.insert(std::make_pair(who,
-                &latch_holder_t::thread_local_holders));
-}
-
-void latch_t::on_thread_destroy(sthread_t *who)
-{
-    {
-       CRITICAL_SECTION(cs, holder_list_list_lock);
-       holder_list_list.erase(who);
-    }
-
-    w_assert3(!latch_holder_t::thread_local_holders);
-    latch_holder_t* freelist = latch_holder_t::thread_local_freelist;
-    while(freelist) {
-        latch_holder_t* node = freelist;
-        freelist = node->_next;
-        delete node;
-    }
-    latch_holder_t::thread_local_freelist = NULL;
-}
 /**\endcond skip */
 
 
@@ -583,7 +559,7 @@ void latch_holder_t::print(ostream &o) const
 {
     o << "Holder " << latch_t::latch_mode_str[int(_mode)]
         << " cnt=" << _count
-    << " threadid/" << ::hex << uint64_t(_threadid)
+    << " threadid/" << ::hex << _threadid
     << " latch:";
     if(_latch) {
         o  << *_latch << endl;
@@ -666,7 +642,7 @@ void print_all_latches()
         if(who) {
         cerr << "{ Thread id:" << ::dec << who->id
          << " @ sthread/" << ::hex << uint64_t(who)
-         << " @ pthread/" << ::hex << uint64_t(who->myself())
+         // << " @ pthread/" << ::hex << uint64_t(who->myself())
          << endl << "\t";
         } else {
         cerr << "{ empty }"

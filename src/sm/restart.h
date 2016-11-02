@@ -46,13 +46,13 @@
 // Child thread created by restart_m for concurrent recovery operation
 // It is to carry out the REDO and UNDO phases while the system is
 // opened for user transactions
-class restart_thread_t : public smthread_t
+class restart_thread_t : public sthread_t
 {
 public:
 
     NORET restart_thread_t()
-        : smthread_t("restart", WAIT_NOT_USED)
     {
+        smthread_t::set_lock_timeout(WAIT_NOT_USED);
         working = false;
     };
     NORET ~restart_thread_t()

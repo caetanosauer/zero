@@ -410,7 +410,7 @@ void btree_ghost_reserve_log::redo(fixable_page_h* page) {
 btree_norec_alloc_t::btree_norec_alloc_t(const btree_page_h &p,
         PageID new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high)
     : multi_page_log_t(new_page_id) {
-    w_assert1 (g_xct()->is_single_log_sys_xct());
+    w_assert1 (smthread_t::xct()->is_single_log_sys_xct());
     w_assert1 (new_page_id != p.btree_root());
     w_assert1 (p.latch_mode() != LATCH_NL);
 

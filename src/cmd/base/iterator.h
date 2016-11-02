@@ -9,7 +9,7 @@
 
 #include "ringbuffer.h"
 
-class PageIterator : public smthread_t
+class PageIterator : public sthread_t
 {
 public:
     static const size_t PAGE_SIZE;

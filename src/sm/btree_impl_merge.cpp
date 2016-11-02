@@ -129,7 +129,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(
             sys_xct_section_t& /*sxs*/)         // Handle to the current system transaction, page split is
                                             //performed inside of a system transaction
 {
-    w_assert1 (g_xct()->is_single_log_sys_xct());
+    w_assert1 (smthread_t::xct()->is_single_log_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
     w_assert1 (foster_p.latch_mode() == LATCH_EX);
     w_assert1 (page.get_foster() == foster_p.pid());
@@ -309,7 +309,7 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
 
 rc_t btree_impl::_ux_rebalance_foster_norec(btree_page_h &page,
             btree_page_h &foster_p, const w_keystr_t &mid_key) {
-    w_assert1 (g_xct()->is_single_log_sys_xct());
+    w_assert1 (smthread_t::xct()->is_single_log_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
     w_assert1 (foster_p.latch_mode() == LATCH_EX);
     w_assert1 (page.get_foster() == foster_p.pid());
@@ -491,7 +491,7 @@ void btree_impl::_ux_merge_foster_apply_parent(
     {
         // If doing full logging, the logging and record movements are outside
         // of single log system transaction
-        w_assert1 (g_xct()->is_single_log_sys_xct());
+        w_assert1 (smthread_t::xct()->is_single_log_sys_xct());
     }
 
     // like split, use scratch block to cleanly make a new page image

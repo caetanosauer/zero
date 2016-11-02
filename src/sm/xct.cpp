@@ -35,7 +35,7 @@
 
 const std::string xct_t::IMPL_NAME = "traditional";
 
-#define DBGX(arg) DBG(<<" th."<<me()->id << " " << "tid." << _tid  arg)
+#define DBGX(arg) DBG(<< "tid." << _tid  arg)
 
 // If we run into btree shrinking activity, we'll bump up the
 // fudge factor, b/c to undo a lot of btree removes (incremental
@@ -76,49 +76,49 @@ w_descend_list_t<xct_t, queue_based_lock_t, tid_t>
 bool xct_t::xlist_mutex_is_mine()
 {
      bool is =
-        me()->get_xlist_mutex_node()._held
+        smthread_t::get_xlist_mutex_node()._held
         &&
-        (me()->get_xlist_mutex_node()._held->
-            is_mine(&me()->get_xlist_mutex_node()));
+        (smthread_t::get_xlist_mutex_node()._held->
+            is_mine(&smthread_t::get_xlist_mutex_node()));
      return is;
 }
 void xct_t::assert_xlist_mutex_not_mine()
 {
     w_assert1(
-            (me()->get_xlist_mutex_node()._held == 0)
+            (smthread_t::get_xlist_mutex_node()._held == 0)
            ||
-           (me()->get_xlist_mutex_node()._held->
-               is_mine(&me()->get_xlist_mutex_node())==false));
+           (smthread_t::get_xlist_mutex_node()._held->
+               is_mine(&smthread_t::get_xlist_mutex_node())==false));
 }
 void xct_t::assert_xlist_mutex_is_mine()
 {
 #if W_DEBUG_LEVEL > 1
     bool res =
-     me()->get_xlist_mutex_node()._held
-        && (me()->get_xlist_mutex_node()._held->
-            is_mine(&me()->get_xlist_mutex_node()));
+     smthread_t::get_xlist_mutex_node()._held
+        && (smthread_t::get_xlist_mutex_node()._held->
+            is_mine(&smthread_t::get_xlist_mutex_node()));
     if(!res) {
         fprintf(stderr, "held: %p\n",
-             me()->get_xlist_mutex_node()._held );
-        if ( me()->get_xlist_mutex_node()._held  )
+             smthread_t::get_xlist_mutex_node()._held );
+        if ( smthread_t::get_xlist_mutex_node()._held  )
         {
         fprintf(stderr, "ismine: %d\n",
-            me()->get_xlist_mutex_node()._held->
-            is_mine(&me()->get_xlist_mutex_node()));
+            smthread_t::get_xlist_mutex_node()._held->
+            is_mine(&smthread_t::get_xlist_mutex_node()));
         }
         w_assert1(0);
     }
 #else
-     w_assert1(me()->get_xlist_mutex_node()._held
-        && (me()->get_xlist_mutex_node()._held->
-            is_mine(&me()->get_xlist_mutex_node())));
+     w_assert1(smthread_t::get_xlist_mutex_node()._held
+        && (smthread_t::get_xlist_mutex_node()._held->
+            is_mine(&smthread_t::get_xlist_mutex_node())));
 #endif
 }
 
 w_rc_t  xct_t::acquire_xlist_mutex()
 {
      assert_xlist_mutex_not_mine();
-     _xlist_mutex.acquire(&me()->get_xlist_mutex_node());
+     _xlist_mutex.acquire(&smthread_t::get_xlist_mutex_node());
      assert_xlist_mutex_is_mine();
      return RCOK;
 }
@@ -126,7 +126,7 @@ w_rc_t  xct_t::acquire_xlist_mutex()
 void  xct_t::release_xlist_mutex()
 {
      assert_xlist_mutex_is_mine();
-     _xlist_mutex.release(me()->get_xlist_mutex_node());
+     _xlist_mutex.release(smthread_t::get_xlist_mutex_node());
      assert_xlist_mutex_not_mine();
 }
 
@@ -325,7 +325,7 @@ xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
 
     if (timeout_c() == WAIT_SPECIFIED_BY_THREAD) {
         // override in this case
-        set_timeout(me()->lock_timeout());
+        set_timeout(smthread_t::lock_timeout());
     }
     w_assert9(timeout_c() >= 0 || timeout_c() == WAIT_FOREVER);
 
@@ -334,10 +334,10 @@ xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
     w_assert3(state() == xct_active);
 
     if (given_tid == tid_t::null) {
-        me()->attach_xct(this);
+        smthread_t::attach_xct(this);
     }
     else {
-        w_assert1(me()->xct() == 0);
+        w_assert1(smthread_t::xct() == 0);
     }
 
     w_assert3(state() == xct_active);
@@ -383,7 +383,7 @@ xct_t::~xct_t()
     if (shutdown_clean)  {
         // if this transaction is system transaction,
         // the thread might be still conveying another thread
-        w_assert1(is_sys_xct() || me()->xct() == 0);
+        w_assert1(is_sys_xct() || smthread_t::xct() == 0);
     }
 
     w_assert1(one_thread_attached());
@@ -397,7 +397,7 @@ xct_t::~xct_t()
         if (_log_buf_for_piggybacked_ssx) delete _log_buf_for_piggybacked_ssx;
 
         // clean up what's stored in the thread
-        me()->no_xct(this);
+        smthread_t::no_xct(this);
     }
 
     if(__saved_lockid_t)  {
@@ -491,7 +491,7 @@ xct_t::cleanup(bool /*dispose_prepared*/)
             release_xlist_mutex();
             switch(xd->state()) {
             case xct_active: {
-                    me()->attach_xct(xd);
+                                 smthread_t::attach_xct(xd);
                     int num = xd->attach_update_thread();
                     /*
                      *  We usually want to shutdown cleanly. For debugging
@@ -667,7 +667,7 @@ xct_t::commit(bool lazy,lsn_t* plastlsn)
 rc_t
 xct_t::commit_as_group_member()
 {
-    w_assert1(me()->xct() == this);
+    w_assert1(smthread_t::xct() == this);
     return _commit(t_normal|t_group);
 }
 
@@ -746,7 +746,7 @@ xct_t::stash(xct_log_t*&x)
 smlevel_0::switch_t
 xct_t::set_log_state(switch_t s)
 {
-    xct_log_t *mine = me()->xct_log();
+    xct_log_t *mine = smthread_t::xct_log();
 
     switch_t old = (mine->xct_log_is_off()? OFF: ON);
 
@@ -958,14 +958,14 @@ xct_t::attach_update_thread()
 {
     w_assert2(_core->_updating_operations >= 0);
     int res = _core->_updating_operations++ + 1;
-    me()->set_is_update_thread(true);
+    smthread_t::set_is_update_thread(true);
     return res;
 }
 
 void
 xct_t::detach_update_thread()
 {
-    me()->set_is_update_thread(false);
+    smthread_t::set_is_update_thread(false);
     _core->_updating_operations--;
     w_assert2(_core->_updating_operations >= 0);
 }
@@ -1171,7 +1171,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
 
     INC_TSTAT(commit_xct_cnt);
 
-    me()->detach_xct(this);        // no transaction for this thread
+    smthread_t::detach_xct(this);        // no transaction for this thread
 
     /*
      *  Xct is now committed
@@ -1200,7 +1200,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         // should already be out of compensated operation
         w_assert3( _in_compensated_op==0 );
 
-        me()->attach_xct(this);
+        smthread_t::attach_xct(this);
         INC_TSTAT(begin_xct_cnt);
         _core->_state = xct_chaining; // to allow us to change state back
         // to active: there's an assert about this where we don't
@@ -1484,7 +1484,7 @@ xct_t::_abort()
                                   // CS: why not???
     _xct_chain_len = 0;
 
-    me()->detach_xct(this);        // no transaction for this thread
+    smthread_t::detach_xct(this);        // no transaction for this thread
     INC_TSTAT(abort_xct_cnt);
     return RCOK;
 }
@@ -1528,7 +1528,7 @@ xct_t::dispose()
     // ClearAllStoresToFree();
     // ClearAllLoadStores();
     _core->_state = xct_ended; // unclean!
-    me()->detach_xct(this);
+    smthread_t::detach_xct(this);
     return RCOK;
 }
 
@@ -2103,7 +2103,6 @@ done:
 void
 xct_t::attach_thread()
 {
-    smthread_t *thr = g_me();
     CRITICAL_SECTION(xctstructure, *this);
 
     w_assert2(is_1thread_xct_mutex_mine());
@@ -2113,7 +2112,7 @@ xct_t::attach_thread()
     }
     w_assert2(_core->_threads_attached >=0);
     w_assert2(is_1thread_xct_mutex_mine());
-    thr->new_xct(this);
+    smthread_t::new_xct(this);
     w_assert2(is_1thread_xct_mutex_mine());
 }
 
@@ -2125,7 +2124,7 @@ xct_t::detach_thread()
     w_assert3(is_1thread_xct_mutex_mine());
     _core->_threads_attached--;
     w_assert2(_core->_threads_attached >=0);
-    me()->no_xct(this);
+    smthread_t::no_xct(this);
 }
 
 //
@@ -2178,7 +2177,7 @@ xct_t::one_thread_attached() const
 bool
 xct_t::is_1thread_xct_mutex_mine() const
 {
-  return _core->_1thread_xct.is_mine(&me()->get_1thread_xct_me());
+  return _core->_1thread_xct.is_mine(&smthread_t::get_1thread_xct_me());
 }
 
 // Should be used with CRITICAL_SECTION
@@ -2197,7 +2196,7 @@ xct_t::acquire_1thread_xct_mutex() const // default: true
     // the queue_based_lock_t implementation can tell if it was
     // free or held; the w_pthread_lock_t cannot,
     // and always returns false.
-    bool was_contended = _core->_1thread_xct.acquire(&me()->get_1thread_xct_me());
+    bool was_contended = _core->_1thread_xct.acquire(&smthread_t::get_1thread_xct_me());
     if(was_contended)
         INC_TSTAT(await_1thread_xct);
     DBGX(    << " acquireD xct mutex");
@@ -2209,7 +2208,7 @@ xct_t::release_1thread_xct_mutex() const
 {
     DBGX( << " release xct mutex");
     w_assert1(is_1thread_xct_mutex_mine());
-    _core->_1thread_xct.release(me()->get_1thread_xct_me());
+    _core->_1thread_xct.release(smthread_t::get_1thread_xct_me());
     DBGX(    << " releaseD xct mutex");
     w_assert1(!is_1thread_xct_mutex_mine());
 }
@@ -2225,7 +2224,7 @@ xct_t::dump_locks(ostream &out) const
 smlevel_0::switch_t
 xct_t::set_log_state(switch_t s, bool &)
 {
-    xct_log_t *mine = me()->xct_log();
+    xct_log_t *mine = smthread_t::xct_log();
     switch_t old = (mine->xct_log_is_off()? OFF: ON);
     if(s==OFF) mine->set_xct_log_off();
     else mine->set_xct_log_on();
@@ -2269,12 +2268,12 @@ xct_dependent_t::~xct_dependent_t()
 
 sys_xct_section_t::sys_xct_section_t(bool single_log_sys_xct)
 {
-    _original_xct_depth = me()->get_tcb_depth();
+    _original_xct_depth = smthread_t::get_tcb_depth();
     _error_on_start = ss_m::begin_sys_xct(single_log_sys_xct);
 }
 sys_xct_section_t::~sys_xct_section_t()
 {
-    size_t xct_depth = me()->get_tcb_depth();
+    size_t xct_depth = smthread_t::get_tcb_depth();
     if (xct_depth > _original_xct_depth) {
         W_COERCE(ss_m::abort_xct());
     }

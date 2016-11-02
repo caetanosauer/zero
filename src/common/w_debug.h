@@ -284,7 +284,8 @@ extern w_debug _w_debug;
 
 // #define DBG2(a,f,l) DBGPRINT(a,f,l) // used by smthread.h
 
-#define DBGTHRD(arg) DBG(<<" th."<<sthread_t::me()->id << " " arg)
+#include <thread>
+#define DBGTHRD(arg) DBG(<<" th."<< std::this_thread::get_id() << " " arg)
 
 /*<std-footer incl-file-exclusion='W_DEBUG_H'>  -- do not edit anything below this line -- */
 

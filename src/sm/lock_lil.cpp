@@ -31,7 +31,7 @@ w_rc_t lil_global_table_base::request_lock(lil_lock_modes_t mode)
         case LIL_X: ret =  _request_lock_X(observed_tag); break;
         default: w_assert1(false); //wtf?
     }
-    g_xct()->update_read_watermark(observed_tag);
+    smthread_t::xct()->update_read_watermark(observed_tag);
     return ret;
 }
 

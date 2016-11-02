@@ -275,7 +275,7 @@ rc_t vol_t::dismount(bool abrupt)
 
     DBG(<<" vol_t::dismount flush=" << flush);
 
-    INC_TSTAT(vol_cache_clears);
+    // INC_TSTAT(vol_cache_clears);
 
     w_assert1(_fd >= 0);
 

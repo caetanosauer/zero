@@ -107,7 +107,7 @@ void btree_page_h::accept_empty_child(lsn_t new_lsn, PageID new_page_id, const b
     // because we will be doing on-demand redo/undo during recovery,
     // therefore the system flag itself is not sufficient to indicate the type of the caller
     if (false == f_redo)
-        w_assert1(g_xct()->is_single_log_sys_xct());
+        w_assert1(smthread_t::xct()->is_single_log_sys_xct());
 
     w_assert1(new_lsn != lsn_t::null || !smlevel_0::logging_enabled);
 

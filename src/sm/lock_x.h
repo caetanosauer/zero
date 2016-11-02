@@ -135,21 +135,21 @@ public:
     void             set_tid(const tid_t &t) { _tid=t; }
 
     /// Each thread has a wait_map
-    atomic_thread_map_t const &get_wait_map() const { return _wait_map; }
-    void              clear_wait_map() {
-                            //_wait_map.lock_for_write();
-                            _wait_map.clear();
-                            //_wait_map.unlock_writer();
-                        }
-    void              refresh_wait_map(atomic_thread_map_t const &new_map) {
-        _wait_map.copy(new_map);
-    }
-    void              init_wait_map(smthread_t *thr) {
-        //_wait_map.lock_for_write();
-        _wait_map.copy(thr->get_fingerprint_map());
-        //_wait_map.unlock_writer();
-        DBGOUT5 (<< "initialized wait map!" << _wait_map);
-    }
+    // atomic_thread_map_t const &get_wait_map() const { return _wait_map; }
+    // void              clear_wait_map() {
+    //                         //_wait_map.lock_for_write();
+    //                         _wait_map.clear();
+    //                         //_wait_map.unlock_writer();
+    //                     }
+    // void              refresh_wait_map(atomic_thread_map_t const &new_map) {
+    //     _wait_map.copy(new_map);
+    // }
+    // void              init_wait_map(smthread_t *thr) {
+    //     //_wait_map.lock_for_write();
+    //     _wait_map.copy(thr->get_fingerprint_map());
+    //     //_wait_map.unlock_writer();
+    //     DBGOUT5 (<< "initialized wait map!" << _wait_map);
+    // }
 
     xct_lock_entry_t* link_to_new_request (lock_queue_t *queue, lock_queue_entry_t *entry);
     void remove_request (xct_lock_entry_t *entry);

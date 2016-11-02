@@ -68,7 +68,7 @@ w_rc_t bf_tree_m::_get_replacement_block()
         if (evicted_count > 0 || _freelist_len > 0) {
             return RCOK;
         }
-        g_me()->sleep(100);
+        ::usleep(100 * 1000);
         DBG3(<<"woke up. now there should be some page to evict. urgency=" << urgency);
         // debug_dump(std::cout);
     }

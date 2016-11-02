@@ -212,7 +212,7 @@ struct btree_foster_rebalance_norec_t : multi_page_log_t {
 
     btree_foster_rebalance_norec_t(const btree_page_h& p,
         const w_keystr_t& fence) : multi_page_log_t(p.get_foster()) {
-        w_assert1 (g_xct()->is_single_log_sys_xct());
+        w_assert1 (smthread_t::xct()->is_single_log_sys_xct());
         w_assert1 (p.latch_mode() == LATCH_EX);
         _fence_len = fence.get_length_as_keystr();
         fence.serialize_as_keystr(_data);

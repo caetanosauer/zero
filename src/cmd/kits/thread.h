@@ -153,7 +153,7 @@ struct thread_pool
  ***********************************************************************/
 
 #ifdef USE_SMTHREAD_AS_BASE
-class thread_t : public smthread_t
+class thread_t : public sthread_t
 #else
 class thread_t
 #endif

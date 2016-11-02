@@ -595,8 +595,8 @@ private:
 public:
     void                         acquire_1thread_xct_mutex() const; // serialize
     void                         release_1thread_xct_mutex() const; // concurrency ok
-    bool                         is_1thread_log_mutex_mine() const {
-                                    return me()->is_update_thread();
+    bool                         is_1thread_log_mutex_mine() {
+                                    return smthread_t::is_update_thread();
     }
 
 private:
@@ -605,14 +605,14 @@ private:
         // remove the 1thread log mutex altogether; given that,
         // we assert that there is one and only one update thread
         // and that thread is us.
-        w_assert0(me()->is_update_thread());
+        w_assert0(smthread_t::is_update_thread());
     }
     void                         release_1thread_log_mutex() {
         // This is a sanity check: we want to
         // remove the 1thread log mutex altogether; given that,
         // we assert that there is one and only one update thread
         // and that thread is us.
-        w_assert0(me()->is_update_thread());
+        w_assert0(smthread_t::is_update_thread());
     }
 private:
     bool                         is_1thread_xct_mutex_mine() const;
@@ -973,7 +973,7 @@ public:
 
 inline
 bool xct_t::is_log_on() const {
-    return (me()->xct_log()->xct_log_is_off() == false);
+    return (smthread_t::xct_log()->xct_log_is_off() == false);
 }
 /**\endcond skip */
 
@@ -1181,7 +1181,7 @@ xct_t::last_log() const
 inline bool
 g_xct_does_need_lock()
 {
-    xct_t* x = g_xct();
+    xct_t* x = xct();
     if (x == NULL)  return false;
     if (x->is_sys_xct()) return false; // system transaction never needs locks
     return x->get_query_concurrency() == smlevel_0::t_cc_keyrange;
@@ -1190,7 +1190,7 @@ g_xct_does_need_lock()
 inline bool
 g_xct_does_ex_lock_for_select()
 {
-    xct_t* x = g_xct();
+    xct_t* x = xct();
     return x && x->get_query_exlock_for_select();
 }
 

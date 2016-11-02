@@ -91,11 +91,11 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
         W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
     }
 
-class ticker_thread_t : public smthread_t
+class ticker_thread_t : public sthread_t
 {
 public:
     ticker_thread_t(bool msec = false)
-        : smthread_t("ticker"), msec(msec)
+        : msec(msec)
     {
         interval_usec = 1000; // 1ms
         if (!msec) {
@@ -137,10 +137,9 @@ private:
     char lrbuf[80];
 };
 
-class fetch_buffer_loader_t : public smthread_t {
+class fetch_buffer_loader_t : public sthread_t {
 public:
-    fetch_buffer_loader_t(log_core* log)
-        : smthread_t("fetchbuf_loader"), log(log)
+    fetch_buffer_loader_t(log_core* log) : log(log)
     {
     }
 
@@ -156,11 +155,14 @@ private:
 };
 
 
-class flush_daemon_thread_t : public smthread_t {
+class flush_daemon_thread_t : public sthread_t {
     log_core* _log;
 public:
     flush_daemon_thread_t(log_core* log) :
-         smthread_t("flush_daemon", WAIT_NOT_USED), _log(log) { }
+         _log(log)
+    {
+        smthread_t::set_lock_timeout(WAIT_NOT_USED);
+    }
 
     virtual void run() { _log->flush_daemon(); }
 };

@@ -264,8 +264,8 @@ w_rc_t    sthread_t::cold_startup()
     me_lval() = _main_thread = main;
     W_COERCE( main->fork() );
 
-    if (me() != main)
-        W_FATAL(stINTERNAL);
+    // if (me() != main)
+    //     W_FATAL(stINTERNAL);
 
     return RCOK;
 }
@@ -279,10 +279,10 @@ w_rc_t    sthread_t::cold_startup()
 
 w_rc_t sthread_t::shutdown()
 {
-    if (me() != _main_thread) {
-        cerr << "sthread_t::shutdown(): not main thread!" << endl;
-        return RC(stINTERNAL);
-    }
+    // if (me() != _main_thread) {
+    //     cerr << "sthread_t::shutdown(): not main thread!" << endl;
+    //     return RC(stINTERNAL);
+    // }
 
     return RCOK;
 }
@@ -629,7 +629,7 @@ void    sthread_t::__start(void *arg)
 void sthread_t::_start()
 {
     tls_tricks::tls_manager::thread_init();
-    w_assert1(me() == this);
+    // w_assert1(me() == this);
 
     // assertions: will call stackoverflowed() if !ok and will return false
     w_assert1(isStackFrameOK(0));
@@ -669,7 +669,7 @@ void sthread_t::_start()
 
     {
         /* do not save sigmask */
-        w_assert1(me() == this);
+        // w_assert1(me() == this);
 #ifdef STHREAD_CXX_EXCEPTION
         // NOTE: this is not tested in SHORE-MT; it is old code.
         // TODO: exception-handling.
@@ -699,7 +699,7 @@ void sthread_t::_start()
     /* Returned from run(). Current thread is ending. */
     {
         CRITICAL_SECTION(cs, _wait_lock);
-        w_assert3(me() == this);
+        // w_assert3(me() == this);
         _status = t_defunct;
         _link.detach();
     }
@@ -708,7 +708,7 @@ void sthread_t::_start()
         _class_link.detach();
     }
 
-    w_assert3(this == me());
+    // w_assert3(this == me());
 
     {
         w_assert1(_status == t_defunct);
@@ -760,7 +760,7 @@ sthread_t::_block(
     const void *        id)
 {
     w_error_codes rce = w_error_ok;
-    sthread_t* self = me();
+    sthread_t* self = me_lval();
     {
         CRITICAL_SECTION(cs, self->_wait_lock);
 
@@ -818,7 +818,7 @@ sthread_t::_block(
     /*
      *  Sanity checks
      */
-    sthread_t* self = me();
+    sthread_t* self = me_lval();
     w_assert1(timeout != WAIT_IMMEDIATE);   // not 0 timeout
 
 
@@ -944,7 +944,7 @@ sthread_t::_unblock(w_error_codes e)
  *********************************************************************/
 void sthread_t::yield()
 {
-    sthread_t* self = me();
+    sthread_t* self = me_lval();
     CRITICAL_SECTION(cs, self->_wait_lock);
     w_assert3(self->_status == t_running);
     self->_status = t_ready;
@@ -972,10 +972,10 @@ void sthread_t::dumpall(ostream &o)
     w_list_i<sthread_t, queue_based_lock_t> i(*_class_list);
 
     while (i.next())  {
-        o << "******* ";
-        if (me() == i.curr())
-            o << " --->ME<---- ";
-        o << endl;
+        // o << "******* ";
+        // if (me() == i.curr())
+        //     o << " --->ME<---- ";
+        // o << endl;
 
         i.curr()->_dump(o);
     }
@@ -1297,6 +1297,4 @@ sthread_init_t::~sthread_init_t()
         sthread_t::_class_list = 0;
     }
 }
-
-pthread_t sthread_t::myself() { return _core->pthread; }
 

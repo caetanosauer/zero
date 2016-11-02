@@ -226,7 +226,7 @@ ss_m::_construct_once()
 {
     stopwatch_t timer;
 
-    smthread_t::init_fingerprint_map();
+    // smthread_t::init_fingerprint_map();
 
     if (_instance_cnt++)  {
         cerr << "ss_m cannot be instantiated more than once" << endl;
@@ -333,7 +333,7 @@ ss_m::_construct_once()
 
     SSM = this;
 
-    me()->mark_pin_count();
+    smthread_t::mark_pin_count();
 
     do_prefetch = _options.get_bool_option("sm_prefetch", false);
 
@@ -403,7 +403,7 @@ ss_m::_destruct_once()
     // get rid of all non-prepared transactions
     // First... disassociate me from any tx
     if(xct()) {
-        me()->detach_xct(xct());
+        smthread_t::detach_xct(xct());
     }
 
     ERROUT(<< "Terminating recovery manager");
@@ -437,7 +437,7 @@ ss_m::_destruct_once()
         bf->get_cleaner()->wakeup(true);
         // CS TODO: two wakeups are necessary when using the async collector
         bf->get_cleaner()->wakeup(true);
-        me()->check_actual_pin_count(0);
+        smthread_t::check_actual_pin_count(0);
 
         // Force alloc and stnode pages
         lsn_t dur_lsn = smlevel_0::log->durable_lsn();
@@ -1033,7 +1033,7 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
 {
     // We don't care what, if any, xct is attached
     xct_t* x = xct();
-    if(x) me()->detach_xct(x);
+    if(x) smthread_t::detach_xct(x);
 
     DBG(<<"commit group " );
 
@@ -1064,11 +1064,11 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
          * Do a partial commit -- all but logging the
          * commit and freeing the locks.
          */
-        me()->attach_xct(x);
+        smthread_t::attach_xct(x);
         {
         W_DO( x->commit_as_group_member() );
         }
-        w_assert1(me()->xct() == NULL);
+        w_assert1(smthread_t::xct() == NULL);
 
         if(x->is_instrumented()) {
             // remove the stats, delete them
@@ -1089,10 +1089,10 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
          *  Free all locks for each transaction
          */
         x = list[i];
-        w_assert1(me()->xct() == NULL);
-        me()->attach_xct(x);
+        w_assert1(smthread_t::xct() == NULL);
+        smthread_t::attach_xct(x);
         W_DO(x->commit_free_locks());
-        me()->detach_xct(x);
+        smthread_t::detach_xct(x);
         delete x;
     }
     return RCOK;
@@ -1220,8 +1220,8 @@ ss_m::gather_xct_stats(sm_stats_info_t& _stats, bool reset)
         // into an xct, they aren't duplicated.
         // They are added to the global_stats before they are cleared, so
         // they don't get lost entirely.
-        me()->detach_xct(&x);
-        me()->attach_xct(&x);
+        smthread_t::detach_xct(&x);
+        smthread_t::attach_xct(&x);
 
         // Copy out the stats structure stored for this xct.
         _stats = x.const_stats_ref();

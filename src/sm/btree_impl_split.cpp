@@ -257,7 +257,7 @@ rc_t btree_impl::_sx_adopt_foster (btree_page_h &parent, btree_page_h &child) {
 rc_t btree_impl::_ux_adopt_foster_core (btree_page_h &parent, btree_page_h &child,
     const w_keystr_t &new_child_key)
 {
-    w_assert1 (g_xct()->is_single_log_sys_xct());
+    w_assert1 (smthread_t::xct()->is_single_log_sys_xct());
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.latch_mode() == LATCH_EX);
     w_assert1 (parent.is_node());

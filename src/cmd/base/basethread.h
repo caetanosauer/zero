@@ -12,7 +12,7 @@
 
 using namespace std;
 
-class basethread_t : public smthread_t {
+class basethread_t : public sthread_t {
 public:
     basethread_t();
 

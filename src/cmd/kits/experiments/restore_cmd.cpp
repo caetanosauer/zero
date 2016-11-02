@@ -3,12 +3,11 @@
 #include "shore_env.h"
 #include "vol.h"
 
-class FailureThread : public smthread_t
+class FailureThread : public sthread_t
 {
 public:
     FailureThread(unsigned delay, bool evict, bool* flag)
-        : smthread_t("FailureThread"),
-        delay(delay), evict(evict), flag(flag)
+        : delay(delay), evict(evict), flag(flag)
     {
     }
 

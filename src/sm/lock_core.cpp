@@ -229,7 +229,7 @@ void lock_core_m::release_lock(RawLock* lock, lsn_t commit_lsn) {
 
 
 void lock_core_m::release_duration(bool read_lock_only, lsn_t commit_lsn) {
-    xct_t* xd = g_xct();
+    xct_t* xd = smthread_t::xct();
     if (xd == NULL) {
         return;
     }

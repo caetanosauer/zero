@@ -146,7 +146,7 @@ struct ArchiverControl {
  *
  * \author Caetano Sauer
  */
-class LogArchiver : public smthread_t {
+class LogArchiver : public sthread_t {
     friend class ArchiveMerger;
 public:
     /** \brief Abstract class used by both reader and writer threads.
@@ -157,7 +157,7 @@ public:
      *
      * \author Caetano Sauer
      */
-    class BaseThread : public smthread_t {
+    class BaseThread : public sthread_t {
     protected:
         AsyncRingBuffer* buf;
         int currentFd;
@@ -167,9 +167,8 @@ public:
     public:
         size_t getBlockSize() { return blockSize; }
 
-        BaseThread(AsyncRingBuffer* buf, const char* tname)
-            : smthread_t(tname),
-              buf(buf), currentFd(-1), pos(0)
+        BaseThread(AsyncRingBuffer* buf)
+            : buf(buf), currentFd(-1), pos(0)
         {
             blockSize = buf->getBlockSize();
         }
@@ -418,7 +417,7 @@ public:
 
         WriterThread(AsyncRingBuffer* writebuf, ArchiveDirectory* directory)
             :
-              BaseThread(writebuf, "LogArchiver_WriterThread"),
+              BaseThread(writebuf),
               directory(directory), maxLSNInRun(lsn_t::null), currentRun(0)
         {
         }

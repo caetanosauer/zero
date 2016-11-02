@@ -173,8 +173,7 @@ struct check_compensated_op_nesting {
         if(_xd) {
             if( _depth != compensated_op_depth(_xd, _depth) ) {
                 fprintf(stderr,
-                    "th.%d check_compensated_op_nesting(%d,%s) depth was %d is %d\n",
-                    sthread_t::me()->id,
+                    "th.XXX check_compensated_op_nesting(%d,%s) depth was %d is %d\n",
                     _line, _file, _depth, compensated_op_depth(_xd, _depth));
             }
 

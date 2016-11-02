@@ -883,7 +883,7 @@ public:
      * \details
      * It is assumed that the currently running thread is an smthread_t.
      */
-    static void           attach_xct(xct_t *x) { me()->attach_xct(x); }
+    static void           attach_xct(xct_t *x) { smthread_t::attach_xct(x); }
 
     /**\brief Detach any attached from the currently-running smthread_t.
      *\ingroup SSMXCT
@@ -892,8 +892,8 @@ public:
      * This allow the running thread to attach a different
      * transaction and to perform work in its behalf.
      */
-    static void           detach_xct() { xct_t *x = me()->xct();
-                                        if(x) me()->detach_xct(x); }
+    static void           detach_xct() { xct_t *x = smthread_t::xct();
+                                        if(x) smthread_t::detach_xct(x); }
 
     /**\brief Get the transaction structure for a given a transaction id.
      *\ingroup SSMXCT

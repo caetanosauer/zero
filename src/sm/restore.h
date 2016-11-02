@@ -284,7 +284,7 @@ protected:
 };
 
 // TODO get rid of smthread_t and use std::thread
-struct RestoreThread : smthread_t
+struct RestoreThread : sthread_t
 {
     RestoreThread(RestoreMgr* mgr, unsigned id) : mgr(mgr), id(id) {};
     RestoreMgr* mgr;
