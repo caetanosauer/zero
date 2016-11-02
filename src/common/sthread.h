@@ -95,7 +95,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <w_list.h>
 #include <vector>
 #include "latches.h"
-#include <sthread_stats.h>
 
 class sthread_t;
 class smthread_t;
@@ -483,10 +482,6 @@ private:
     static stime_t        boot_time;
     static sthread_t*    _main_thread;
     static uint32_t        _next_id;    // unique id generator
-
-public:
-    // export so smthread can read it and so latch/srwlock can write it:
-    sthread_stats        SthreadStats;
 };
 
 extern ostream &operator<<(ostream &o, const sthread_t &t);

@@ -88,11 +88,15 @@ public:
     void clear() {
         memset((void *)this, '\0', sizeof(*this));
     }
+
+    static thread_local sthread_stats INSTANCE;
 };
 
 extern ostream &operator<<(ostream &, const sthread_stats &stats);
 
 
+#    define INC_STH_STATS(x) sthread_stats::INSTANCE.x++;
+#    define GET_STH_STATS(x) sthread_stats::INSTANCE.x
 
 /*<std-footer incl-file-exclusion='STHREAD_STATS_H'>  -- do not edit anything below this line -- */
 

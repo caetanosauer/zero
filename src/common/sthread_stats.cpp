@@ -61,3 +61,5 @@ ostream &operator <<(ostream &o, const sthread_stats &s)
 
     return o;
 }
+
+thread_local sthread_stats sthread_stats::INSTANCE;

@@ -110,13 +110,13 @@ smthread_t::add_from_TL_stats(sm_stats_info_t &w) const
     w += x;
 
     // pick these up from the sthread_t stats structure:
-    w.sm.rwlock_r_waits += this->SthreadStats.rwlock_r_wait;
-    w.sm.rwlock_w_waits += this->SthreadStats.rwlock_w_wait;
+    w.sm.rwlock_r_waits += sthread_stats::INSTANCE.rwlock_r_wait;
+    w.sm.rwlock_w_waits += sthread_stats::INSTANCE.rwlock_w_wait;
 
-    w.sm.need_latch_condl += this->SthreadStats.needs_latch_condl;
-    w.sm.latch_condl_nowaits += this->SthreadStats.latch_condl_nowait;
-    w.sm.need_latch_uncondl += this->SthreadStats.needs_latch_uncondl;
-    w.sm.latch_uncondl_nowaits += this->SthreadStats.latch_uncondl_nowait;
+    w.sm.need_latch_condl += sthread_stats::INSTANCE.needs_latch_condl;
+    w.sm.latch_condl_nowaits += sthread_stats::INSTANCE.latch_condl_nowait;
+    w.sm.need_latch_uncondl += sthread_stats::INSTANCE.needs_latch_uncondl;
+    w.sm.latch_uncondl_nowaits += sthread_stats::INSTANCE.latch_uncondl_nowait;
 }
 
 /*********************************************************************

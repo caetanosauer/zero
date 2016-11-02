@@ -110,8 +110,6 @@ int sthread_t::rand() { return tls_rng.rand(); }
 double sthread_t::drand() { return tls_rng.drand(); }
 int sthread_t::randn(int max) { return tls_rng.randn(max); }
 
-class sthread_stats SthreadStats;
-
 extern "C" void dumpthreads();
 extern "C" void threadstats();
 
@@ -1054,7 +1052,7 @@ static void print_time(ostream &o, const sinterval_t &real,
 
 void sthread_t::dump_stats(ostream &o)
 {
-    o << me()->SthreadStats;
+    o << sthread_stats::INSTANCE;
 
     /* To be moved somewhere else once I put some other infrastructure
        into place.  Live with it in the meantime, the output is really
@@ -1099,11 +1097,6 @@ void sthread_t::dump_stats(ostream &o)
     last_real = real;
 
     o << endl;
-}
-
-void sthread_t::reset_stats()
-{
-    me()->SthreadStats.clear();
 }
 
 

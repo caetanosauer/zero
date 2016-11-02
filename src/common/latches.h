@@ -6,9 +6,6 @@
 #include "AtomicCounter.hpp"
 #include "tatas.h"
 
-#    define INC_STH_STATS(x) sthread_t::me()->SthreadStats.x++;
-#    define GET_STH_STATS(x) sthread_t::me()->SthreadStats.x
-
 
 /**\brief Wrapper for pthread mutexes, with a queue-based lock API.
  *
