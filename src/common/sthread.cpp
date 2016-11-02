@@ -1379,8 +1379,6 @@ const smthread_t* sthread_t::dynamic_cast_to_const_smthread() const
 void dumpthreads()
 {
     sthread_t::dumpall("dumpthreads()", cerr);
-    sthread_t::dump_io(cerr);
-
 }
 
 void threadstats()

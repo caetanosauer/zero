@@ -502,13 +502,6 @@ ss_m::_destruct_once()
     }
     log = 0;
 
-     w_rc_t        e;
-     char        *unused;
-     e = smthread_t::set_bufsize(0, unused);
-     if (e.is_error())  {
-        cerr << "ss_m: Warning: set_bufsize(0):" << endl << e << endl;
-     }
-
      ERROUT(<< "SM shutdown complete!");
 }
 

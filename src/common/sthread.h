@@ -101,15 +101,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 class sthread_t;
 class smthread_t;
-
-
-#ifndef SDISK_H
-#include <sdisk.h>
-#endif
-
 class vtable_row_t;
 class vtable_t;
-
 struct sthread_core_t;
 
 extern "C" void         dumpthreads(); // for calling from debugger
@@ -123,6 +116,16 @@ public:
     typedef unsigned int w_thread_id_t; // TODO REMOVE
     typedef w_thread_id_t id_t;
 /**\endcond skip */
+
+// CS: copied from old sdisk.h (TODO: remove it)
+    /* Don't use off_t, cause we may want the system off_t */
+#if !defined(LARGEFILE_AWARE) && !defined(ARCH_LP64)
+    /* XXX if !LARGEFILE, should choose on per operating system
+       to pick the native size. */
+    typedef int32_t fileoff_t;
+#else
+    typedef int64_t fileoff_t;
+#endif
 
     /* XXX this is really something for the SM, not the threads package;
        only WAIT_IMMEDIATE should ever make it to the threads package. */
@@ -170,35 +173,6 @@ public:
      */
     typedef int32_t timeout_in_ms;
 
-/**\cond skip */
-
-    /* import sdisk base */
-    typedef sdisk_base_t::fileoff_t    fileoff_t;
-    typedef sdisk_base_t::filestat_t   filestat_t;
-    typedef sdisk_base_t::iovec_t      iovec_t;
-
-
-    /* XXX magic number */
-    enum { iovec_max = 8 };
-
-    enum {
-    OPEN_RDWR = sdisk_base_t::OPEN_RDWR,
-    OPEN_RDONLY = sdisk_base_t::OPEN_RDONLY,
-    OPEN_WRONLY = sdisk_base_t::OPEN_WRONLY,
-
-    OPEN_SYNC = sdisk_base_t::OPEN_SYNC,
-    OPEN_TRUNC = sdisk_base_t::OPEN_TRUNC,
-    OPEN_CREATE = sdisk_base_t::OPEN_CREATE,
-    OPEN_EXCL = sdisk_base_t::OPEN_EXCL,
-    OPEN_APPEND = sdisk_base_t::OPEN_APPEND,
-    OPEN_DIRECT = sdisk_base_t::OPEN_DIRECT
-    };
-    enum {
-    SEEK_AT_SET = sdisk_base_t::SEEK_AT_SET,
-    SEEK_AT_CUR = sdisk_base_t::SEEK_AT_CUR,
-    SEEK_AT_END = sdisk_base_t::SEEK_AT_END
-    };
-/**\endcond skip */
 };
 
 /**\cond skip */
@@ -695,52 +669,6 @@ public:
     static char*        set_bufsize(size_t size);
     static w_rc_t       set_bufsize(size_t size, char *&buf_start /* in/out*/,
                                     bool use_normal_if_huge_fails=false);
-
-    static w_rc_t        open(
-                            const char*            path,
-                            int                flags,
-                            int                mode,
-                            int&                fd);
-    static w_rc_t        close(int fd);
-    static w_rc_t        read(
-                            int                 fd,
-                            void*                 buf,
-                            int                 n);
-    static w_rc_t        write(
-                            int                 fd,
-                            const void*             buf,
-                            int                 n);
-    static w_rc_t        readv(
-                            int                 fd,
-                            const iovec_t*             iov,
-                            size_t                iovcnt);
-    static w_rc_t        writev(
-                            int                 fd,
-                            const iovec_t*                iov,
-                            size_t                 iovcnt);
-
-    static w_rc_t        pread(int fd, void *buf, int n, fileoff_t pos);
-    static w_rc_t        pread_short(int fd, void *buf, int n, fileoff_t pos,
-                            int& done);
-    static w_rc_t        pwrite(int fd, const void *buf, int n,
-                           fileoff_t pos);
-    static w_rc_t        lseek(
-                            int                fd,
-                            fileoff_t            offset,
-                            int                whence,
-                            fileoff_t&            ret);
-    /* returns an error if the seek doesn't match its destination */
-    static w_rc_t        lseek(
-                            int                fd,
-                            fileoff_t                offset,
-                            int                whence);
-    static w_rc_t        fsync(int fd);
-    static w_rc_t        ftruncate(int fd, fileoff_t sz);
-    static w_rc_t        frename(int fd, const char* o, const char* n);
-    static w_rc_t        fstat(int fd, filestat_t &sb);
-    static w_rc_t        fisraw(int fd, bool &raw);
-
-
     /*
      *  Misc
      */
@@ -842,13 +770,6 @@ private:
 
     /* XXX alignment probs in derived thread classes.  Sigh */
     // fill4                       _ex_fill;
-
-    static sdisk_t* get_disk(int& fd);
-
-    /* I/O subsystem */
-    static    std::vector<sdisk_t*> _disks;
-    static    unsigned       open_max;
-    static    unsigned       open_count;
 
     /* in-thread startup and shutdown */
     static void            __start(void *arg_thread);
