@@ -49,15 +49,16 @@ enum test_size_t {
 };
 
 void run_bf_test(w_rc_t (*func)(ss_m*, test_volume_t*),
-    test_size_t size, bool initially_enable_cleaners, bool enable_swizzling) {
+    test_size_t size, bool initially_enable_cleaners, bool enable_swizzling)
+{
+    size_t npages = (size == LARGE ? 10000 : (size == NORMAL ? 1024 : 256));
     // (some of) tests in this file needs REALLY big log.
     test_env->empty_logdata_dir();
     sm_options options;
     options.set_int_option("sm_logbufsize", 512 << 10);
     options.set_int_option("sm_logsize", 8192 << 10);
     options.set_int_option("sm_locktablesize", default_locktable_size);
-    options.set_int_option("sm_bufpoolsize", SM_PAGESIZE / 1024 *
-        (size == LARGE ? 10000 : (size == NORMAL ? 256 : 50)));
+    options.set_int_option("sm_bufpoolsize", (sizeof(generic_page) * npages) / 1048576);
     options.set_int_option("sm_num_page_writers", 1);
     options.set_int_option("sm_cleaner_interval_millisec_min",
         (size == LARGE ? 10000 : (size == NORMAL ? 1000 : 20)));

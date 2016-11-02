@@ -3,12 +3,15 @@
 #include <sstream>
 #include <fstream>
 
-#define private public
-
 #include "log_core.h"
+#include "sm_options.h"
+
+#define private public
 #include "logarchiver.h"
 #include "logfactory.h"
+#undef private
 
+sm_options options;
 btree_test_env* test_env;
 StoreID stid;
 PageID root_pid;
@@ -205,9 +208,12 @@ rc_t fullPipelineTest(ss_m* ssm, test_volume_t* test_vol)
     unsigned howManyToInsert = 1000;
     W_DO(populateBtree(ssm, test_vol, howManyToInsert));
 
+    options.set_bool_option("sm_archiving", true);
+    options.set_string_option("sm_archdir", test_env->archive_dir);
+
     LogArchiver::LogConsumer cons(lsn_t(1,0), BLOCK_SIZE);
     LogArchiver::ArchiverHeap heap(BLOCK_SIZE);
-    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE);
+    LogArchiver::ArchiveDirectory dir(options);
     LogArchiver::BlockAssembly assemb(&dir);
 
     LogArchiver la(&dir, &cons, &heap, &assemb);
@@ -235,9 +241,11 @@ rc_t fullPipelineTest(ss_m* ssm, test_volume_t* test_vol)
 
 rc_t runScannerTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
 {
+    options.set_bool_option("sm_archiving", true);
+    options.set_string_option("sm_archdir", test_env->archive_dir);
+
     // TODO: runScanner does not work with index because index blocks are read at the end
-    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE,
-            false /* createIndex */);
+    LogArchiver::ArchiveDirectory dir(options);
     EXPECT_EQ(NULL, dir.getIndex());
 
     unsigned total = 0;
@@ -278,8 +286,10 @@ rc_t runScannerTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
 
 rc_t runScannerWithIndex(ss_m*, test_volume_t*)
 {
-    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE,
-            true /* createIndex */);
+    options.set_bool_option("sm_archiving", true);
+    options.set_string_option("sm_archdir", test_env->archive_dir);
+
+    LogArchiver::ArchiveDirectory dir(options);
     EXPECT_TRUE(dir.getIndex());
 
     unsigned total = 0;
@@ -316,8 +326,10 @@ rc_t runScannerWithIndex(ss_m*, test_volume_t*)
 
 rc_t runMergerSeqTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
 {
-    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE,
-            false /* createIndex */);
+    options.set_bool_option("sm_archiving", true);
+    options.set_string_option("sm_archdir", test_env->archive_dir);
+
+    LogArchiver::ArchiveDirectory dir(options);
     EXPECT_EQ(NULL, dir.getIndex());
 
     unsigned total = 0;
@@ -346,12 +358,15 @@ rc_t runMergerSeqTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
 
 rc_t runMergerFullTest(ss_m* ssm, test_volume_t* test_vol)
 {
+    options.set_bool_option("sm_archiving", true);
+    options.set_string_option("sm_archdir", test_env->archive_dir);
+
     unsigned howManyToInsert = 2000;
     W_DO(populateBtree(ssm, test_vol, howManyToInsert));
 
     LogArchiver::LogConsumer cons(lsn_t(1,0), BLOCK_SIZE);
     LogArchiver::ArchiverHeap heap(BLOCK_SIZE);
-    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE, false);
+    LogArchiver::ArchiveDirectory dir(options);
     LogArchiver::BlockAssembly assemb(&dir);
 
     LogArchiver la(&dir, &cons, &heap, &assemb);
@@ -385,8 +400,10 @@ rc_t runMergerFullTest(ss_m* ssm, test_volume_t* test_vol)
 
 rc_t archIndexTestSingle(ss_m*, test_volume_t*)
 {
-    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE,
-            true /* createIndex */);
+    options.set_bool_option("sm_archiving", true);
+    options.set_string_option("sm_archdir", test_env->archive_dir);
+
+    LogArchiver::ArchiveDirectory dir(options);
     EXPECT_TRUE(dir.getIndex());
     size_t blockSize = dir.getBlockSize();
 
@@ -445,9 +462,11 @@ rc_t archIndexTestSingle(ss_m*, test_volume_t*)
 
 rc_t archIndexTestSerialization(ss_m*, test_volume_t*)
 {
+    options.set_bool_option("sm_archiving", true);
+    options.set_string_option("sm_archdir", test_env->archive_dir);
+
     // ============================== DIR 1 ==============================
-    LogArchiver::ArchiveDirectory dir1(test_env->archive_dir, BLOCK_SIZE,
-            true /* createIndex */);
+    LogArchiver::ArchiveDirectory dir1(options);
     EXPECT_TRUE(dir1.getIndex());
 
     unsigned total = 0;
@@ -456,8 +475,7 @@ rc_t archIndexTestSerialization(ss_m*, test_volume_t*)
 
 
     // ============================== DIR 2 ==============================
-    LogArchiver::ArchiveDirectory dir2(test_env->archive_dir, BLOCK_SIZE,
-            true /* createIndex */);
+    LogArchiver::ArchiveDirectory dir2(options);
     EXPECT_TRUE(dir2.getIndex());
     // ===================================================================
 

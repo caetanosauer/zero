@@ -2033,9 +2033,6 @@ xct_t::rollback(const lsn_t &save_pt)
 
             fixable_page_h page;
 
-            // CS TODO: ALL undo should be logical
-            w_assert0 (r.is_logical());
-
             r.undo(page.is_fixed() ? &page : 0);
 
             if(r.is_cpsn())

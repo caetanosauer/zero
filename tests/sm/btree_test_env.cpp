@@ -240,7 +240,9 @@ void testdriver_thread_t::run()
 
         // end of ssm scope
         // Clean up and shut down
-        vout << "\nShutting down SSM " << (_functor->_clean_shutdown ? "cleanly" : "simulating a crash") << "..." << endl;
+        vout << "\nShutting down SSM "
+            << (_functor->_clean_shutdown ? "cleanly" : "simulating a crash")
+            << "..." << endl;
         _env->_ssm = NULL;
     }
     vout << "Finished!" << endl;

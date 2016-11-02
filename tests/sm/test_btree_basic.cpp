@@ -371,10 +371,6 @@ w_rc_t insert_many(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->commit_xct());
     cout << "Inserted." << endl;
 
-    W_DO(ssm->begin_xct());
-    W_DO(ssm->print_index(stid));
-    W_DO(ssm->commit_xct());
-
     x_btree_scan_result s;
     W_DO(x_btree_scan(ssm, stid, s, test_env->get_use_locks()));
     EXPECT_EQ (200, s.rownum);
