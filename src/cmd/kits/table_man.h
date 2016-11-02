@@ -93,7 +93,7 @@
 
 #include "tls.h"
 #include "sm_vas.h"
-#include "srwlock.h"
+#include "latches.h"
 #include "btcursor.h"
 
 //#include "shore_msg.h"

@@ -1,63 +1,86 @@
-/* -*- mode:C++; c-basic-offset:4 -*-
-   Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
-                       Copyright (c) 2007-2009
-      Data Intensive Applications and Systems Labaratory (DIAS)
-               Ecole Polytechnique Federale de Lausanne
-   
-                         All Rights Reserved.
-   
-   Permission to use, copy, modify and distribute this software and
-   its documentation is hereby granted, provided that both the
-   copyright notice and this permission notice appear in all copies of
-   the software, derivative works or modified versions, and any
-   portions thereof, and that both notices appear in supporting
-   documentation.
-   
-   This code is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
-   DISCLAIM ANY LIABILITY OF ANY KIND FOR ANY DAMAGES WHATSOEVER
-   RESULTING FROM THE USE OF THIS SOFTWARE.
-*/
+#include "latches.h"
 
-// -*- mode:c++; c-basic-offset:4 -*-
-/*<std-header orig-src='shore'>
+#include "sthread.h"
 
- $Id: srwlock.cpp,v 1.7 2010/12/08 17:37:50 nhall Exp $
+occ_rwlock::occ_rwlock()
+    : _active_count(0)
+{
+    _write_lock._lock = _read_lock._lock = this;
+    DO_PTHREAD(pthread_mutex_init(&_read_write_mutex, NULL));
+    DO_PTHREAD(pthread_cond_init(&_read_cond, NULL));
+    DO_PTHREAD(pthread_cond_init(&_write_cond, NULL));
+}
 
-SHORE -- Scalable Heterogeneous Object REpository
+occ_rwlock::~occ_rwlock()
+{
+    DO_PTHREAD(pthread_mutex_destroy(&_read_write_mutex));
+    DO_PTHREAD(pthread_cond_destroy(&_read_cond));
+    DO_PTHREAD(pthread_cond_destroy(&_write_cond));
+    _write_lock._lock = _read_lock._lock = NULL;
+}
 
-Copyright (c) 1994-99 Computer Sciences Department, University of
-                      Wisconsin -- Madison
-All Rights Reserved.
+void occ_rwlock::release_read()
+{
+    lintel::atomic_thread_fence(lintel::memory_order_release);
+    w_assert1(READER <= (int) _active_count);
+    unsigned count = lintel::unsafe::atomic_fetch_sub(const_cast<unsigned*>(&_active_count), (unsigned)READER) - READER;
+    if(count == WRITER) {
+        // wake it up
+        CRITICAL_SECTION(cs, _read_write_mutex);
+        DO_PTHREAD(pthread_cond_signal(&_write_cond));
+    }
+}
 
-Permission to use, copy, modify and distribute this software and its
-documentation is hereby granted, provided that both the copyright
-notice and this permission notice appear in all copies of the
-software, derivative works or modified versions, and any portions
-thereof, and that both notices appear in supporting documentation.
+void occ_rwlock::acquire_read()
+{
+    unsigned count = lintel::unsafe::atomic_fetch_add(const_cast<unsigned*>(&_active_count), (unsigned)READER) + READER;
+    while(count & WRITER) {
+        // block
+        count = lintel::unsafe::atomic_fetch_sub(const_cast<unsigned*>(&_active_count), (unsigned)READER) - READER;
+        {
+            CRITICAL_SECTION(cs, _read_write_mutex);
 
-THE AUTHORS AND THE COMPUTER SCIENCES DEPARTMENT OF THE UNIVERSITY
-OF WISCONSIN - MADISON ALLOW FREE USE OF THIS SOFTWARE IN ITS
-"AS IS" CONDITION, AND THEY DISCLAIM ANY LIABILITY OF ANY KIND
-FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
+            // nasty race: we could have fooled a writer into sleeping...
+            if(count == WRITER) {
+                DO_PTHREAD(pthread_cond_signal(&_write_cond));
+            }
 
-This software was developed with support by the Advanced Research
-Project Agency, ARPA order number 018 (formerly 8230), monitored by
-the U.S. Army Research Laboratory under contract DAAB07-91-C-Q518.
-Further funding for this work was provided by DARPA through
-Rome Research Laboratory Contract No. F30602-97-2-0247.
+            while(*&_active_count & WRITER) {
+                DO_PTHREAD(pthread_cond_wait(&_read_cond, &_read_write_mutex));
+            }
+        }
+        count = lintel::unsafe::atomic_fetch_add(const_cast<unsigned*>(&_active_count), (unsigned)READER) - READER;
+    }
+    lintel::atomic_thread_fence(lintel::memory_order_acquire);
+}
 
-*/
+void occ_rwlock::release_write()
+{
+    w_assert9(_active_count & WRITER);
+    CRITICAL_SECTION(cs, _read_write_mutex);
+    lintel::unsafe::atomic_fetch_sub(const_cast<unsigned*>(&_active_count), (unsigned)WRITER);
+    DO_PTHREAD(pthread_cond_broadcast(&_read_cond));
+}
 
-#include "w_defines.h"
+void occ_rwlock::acquire_write()
+{
+    // only one writer allowed in at a time...
+    CRITICAL_SECTION(cs, _read_write_mutex);
+    while(*&_active_count & WRITER) {
+        DO_PTHREAD(pthread_cond_wait(&_read_cond, &_read_write_mutex));
+    }
 
-/*  -- do not edit anything above this line --   </std-header>*/
+    // any lurking writers are waiting on the cond var
+    unsigned count = lintel::unsafe::atomic_fetch_add(const_cast<unsigned*>(&_active_count), (unsigned)WRITER) + WRITER;
+    w_assert1(count & WRITER);
 
-#include <w.h>
-#include <w_debug.h>
-#include <sthread.h>
+    // drain readers
+    while(count != WRITER) {
+        DO_PTHREAD(pthread_cond_wait(&_write_cond, &_read_write_mutex));
+        count = *&_active_count;
+    }
+}
+
 
 /************************************************************************************
  * mcs_rwlock implementation; cheaper but problematic when we get os preemptions
@@ -65,7 +88,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 // CC mangles this as __1cKmcs_rwlockOspin_on_writer6M_v_
 // private
-int mcs_rwlock::_spin_on_writer() 
+int mcs_rwlock::_spin_on_writer()
 {
     int cnt=0;
     while(has_writer()) cnt=1;
@@ -74,14 +97,14 @@ int mcs_rwlock::_spin_on_writer()
 }
 // CC mangles this as __1cKmcs_rwlockPspin_on_readers6M_v_
 // private
-void mcs_rwlock::_spin_on_readers() 
+void mcs_rwlock::_spin_on_readers()
 {
     while(has_reader()) { };
     // callers do lintel::atomic_thread_fence(lintel::memory_order_acquire);
 }
 
 // private
-void mcs_rwlock::_add_when_writer_leaves(int delta) 
+void mcs_rwlock::_add_when_writer_leaves(int delta)
 {
     // we always have the parent lock to do this
     int cnt = _spin_on_writer();
@@ -92,10 +115,10 @@ void mcs_rwlock::_add_when_writer_leaves(int delta)
     }
 }
 
-bool mcs_rwlock::attempt_read() 
+bool mcs_rwlock::attempt_read()
 {
     unsigned int old_value = *&_holders;
-    if(old_value & WRITER || 
+    if(old_value & WRITER ||
        !lintel::unsafe::atomic_compare_exchange_strong(const_cast<unsigned int*>(&_holders), &old_value, old_value+READER))
         return false;
 
@@ -103,7 +126,7 @@ bool mcs_rwlock::attempt_read()
     return true;
 }
 
-void mcs_rwlock::acquire_read() 
+void mcs_rwlock::acquire_read()
 {
     /* attempt to CAS first. If no writers around, or no intervening
      * add'l readers, we're done
@@ -112,7 +135,7 @@ void mcs_rwlock::acquire_read()
         INC_STH_STATS(rwlock_r_wait);
         /* There seem to be writers around, or other readers intervened in our
          * attempt_read() above.
-         * Join the queue and wait for them to leave 
+         * Join the queue and wait for them to leave
          */
         {
             CRITICAL_SECTION(cs, (parent_lock*) this);
@@ -122,27 +145,27 @@ void mcs_rwlock::acquire_read()
     }
 }
 
-void mcs_rwlock::release_read() 
+void mcs_rwlock::release_read()
 {
     w_assert2(has_reader());
     lintel::atomic_thread_fence(lintel::memory_order_release); // flush protected modified data before releasing lock;
-    // update and complete any loads by others before I do this write 
+    // update and complete any loads by others before I do this write
     lintel::unsafe::atomic_fetch_sub(const_cast<unsigned*>(&_holders), READER);
 }
 
-bool mcs_rwlock::_attempt_write(unsigned int expected) 
+bool mcs_rwlock::_attempt_write(unsigned int expected)
 {
     /* succeeds iff we are the only reader (if expected==READER)
      * or if there are no readers or writers (if expected==0)
      *
      * How do we know if the only reader is us?
-     * A:  we rely on these facts: 
-     * this is called with expected==READER only from attempt_upgrade(), 
+     * A:  we rely on these facts:
+     * this is called with expected==READER only from attempt_upgrade(),
      *   which is called from latch only in the case
-     *   in which we hold the latch in LATCH_SH mode and 
+     *   in which we hold the latch in LATCH_SH mode and
      *   are requesting it in LATCH_EX mode.
      *
-     * If there is a writer waiting we have to get in line 
+     * If there is a writer waiting we have to get in line
      * like everyone else.
      * No need for a memfence because we already hold the latch
      */
@@ -167,16 +190,16 @@ bool mcs_rwlock::_attempt_write(unsigned int expected)
     return result;
 }
 
-bool mcs_rwlock::attempt_write() 
+bool mcs_rwlock::attempt_write()
 {
     if(!_attempt_write(0))
         return false;
-    
+
     // moved to end of _attempt_write() lintel::atomic_thread_fence(lintel::memory_order_acquire);
     return true;
 }
 
-void mcs_rwlock::acquire_write() 
+void mcs_rwlock::acquire_write()
 {
     /* always join the queue first.
      *
@@ -205,16 +228,17 @@ void mcs_rwlock::release_write() {
     *&_holders = 0;
 }
 
-bool mcs_rwlock::attempt_upgrade() 
+bool mcs_rwlock::attempt_upgrade()
 {
     w_assert1(has_reader());
     return _attempt_write(READER);
 }
 
-void mcs_rwlock::downgrade() 
+void mcs_rwlock::downgrade()
 {
     lintel::atomic_thread_fence(lintel::memory_order_release);
     w_assert1(*&_holders == WRITER);
     *&_holders = READER;
     lintel::atomic_thread_fence(lintel::memory_order_acquire);
 }
+

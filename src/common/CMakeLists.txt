@@ -5,8 +5,8 @@ set(common_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/sthread_core_pthread.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/worker_thread.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/srwlock.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/w_debug.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/latches.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/rand48.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/block_alloc.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/dynarray.cpp

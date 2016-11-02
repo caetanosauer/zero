@@ -25,7 +25,7 @@
 
 #include "log_storage.h"
 #include "log_core.h"
-#include "srwlock.h"
+#include "latches.h"
 
 // needed for skip_log (TODO fix this)
 #include "logdef_gen.cpp"

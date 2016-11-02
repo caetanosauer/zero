@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "generic_page.h"
-#include "srwlock.h"
+#include "latches.h"
 #include "w_defines.h"
 #include "sm_base.h"
 #include "alloc_page.h"

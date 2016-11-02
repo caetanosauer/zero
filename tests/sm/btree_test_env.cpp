@@ -23,7 +23,7 @@
 #include "sm_options.h"
 #include "xct.h"
 #include "sm_base.h"
-#include "srwlock.h"
+#include "latches.h"
 
 #include "../nullbuf.h"
 #if W_DEBUG_LEVEL <= 3
