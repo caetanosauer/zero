@@ -75,7 +75,7 @@ public:
 
     void list_backups(std::vector<string>& backups);
 
-    rc_t            sync();
+    void sync();
 
     /**
      *  Impose a fake IO penalty. Assume that each batch of pages requires
@@ -145,7 +145,7 @@ public:
 
 private:
     // variables read from volume header -- remain constant after mount
-    int              _unix_fd;
+    int              _fd;
 
     mutable srwlock_t _mutex;
 
@@ -203,7 +203,7 @@ private:
     rc_t dismount(bool abrupt = false);
 
     /** Open backup file descriptor for retore or taking new backup */
-    rc_t open_backup();
+    void open_backup();
 
     lsn_t get_dirty_page_emlsn(PageID pid) const;
     void delete_dirty_page(PageID pid);

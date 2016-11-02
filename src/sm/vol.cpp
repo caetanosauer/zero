@@ -10,7 +10,6 @@
 #define VOL_C
 
 #include "w_stream.h"
-#include <sys/types.h>
 #include <boost/concept_check.hpp>
 #include "sm_base.h"
 #include "stnode_page.h"
@@ -24,13 +23,24 @@
 #include "eventlog.h"
 #include "restart.h"
 
+// files and stuff
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 #include "sm.h"
 
 // Needed to get LSN of restore_begin log record
 #include "logdef_gen.cpp"
 
+// TODO proper exception mechanism
+#define CHECK_ERRNO(n) \
+    if (n == -1) { \
+        W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
+    }
+
 vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
-             : _unix_fd(-1),
+             : _fd(-1),
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
                _alloc_cache(NULL), _stnode_cache(NULL),
@@ -48,22 +58,15 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
 
     spinlock_write_critical_section cs(&_mutex);
 
-    // CS TODO: do we need/want OPEN_SYNC?
     int open_flags = 0;
-    if(_use_o_sync) {
-        open_flags |= smthread_t::OPEN_SYNC;
-    }
+    open_flags |= _readonly ? O_RDONLY : O_RDWR;
+    if (truncate) { open_flags |= O_TRUNC | O_CREAT; }
+    if(_use_o_sync) { open_flags |= O_SYNC; }
+    if(_use_o_direct) { open_flags |= O_DIRECT; }
 
-    if(_use_o_direct) {
-        open_flags |= smthread_t::OPEN_DIRECT;
-    }
-
-    open_flags |= _readonly ? smthread_t::OPEN_RDONLY : smthread_t::OPEN_RDWR;
-    if (truncate) {
-        open_flags |= smthread_t::OPEN_TRUNC | smthread_t::OPEN_CREATE;
-    }
-
-    W_COERCE(me()->open(dbfile.c_str(), open_flags, 0666, _unix_fd));
+    auto fd = open(dbfile.c_str(), open_flags, 0666 /*mode*/);
+    CHECK_ERRNO(fd);
+    _fd = fd;
 
     if (chkpt_info) {
         _dirty_pages = new buf_tab_t(chkpt_info->buf_tab);
@@ -81,17 +84,17 @@ vol_t::~vol_t()
         _stnode_cache = NULL;
     }
 
-    w_assert1(_unix_fd == -1);
+    w_assert1(_fd == -1);
     w_assert1(_backup_fd == -1);
     if (_restore_mgr) {
         delete _restore_mgr;
     }
 }
 
-rc_t vol_t::sync()
+void vol_t::sync()
 {
-    W_DO(me()->fsync(_unix_fd));
-    return RCOK;
+    auto ret = fsync(_fd);
+    CHECK_ERRNO(ret);
 }
 
 void vol_t::build_caches(bool truncate)
@@ -125,20 +128,18 @@ void vol_t::delete_dirty_page(PageID pid)
     }
 }
 
-rc_t vol_t::open_backup()
+void vol_t::open_backup()
 {
     // mutex held by caller -- no concurrent backup being added
     string backupFile = _backups.back();
     // Using direct I/O
-    int open_flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_SYNC;
-    if (_use_o_direct) {
-        open_flags |= smthread_t::OPEN_DIRECT;
-    }
-    W_DO(me()->open(backupFile.c_str(), open_flags, 0666, _backup_fd));
-    w_assert0(_backup_fd > 0);
-    _current_backup_lsn = _backup_lsns.back();
+    int open_flags = O_RDONLY | O_SYNC;
+    if (_use_o_direct) { open_flags |= O_DIRECT; }
 
-    return RCOK;
+    auto fd = open(backupFile.c_str(), open_flags, 0666 /*mode*/);
+    CHECK_ERRNO(fd);
+    _backup_fd = fd;
+    _current_backup_lsn = _backup_lsns.back();
 }
 
 lsn_t vol_t::get_backup_lsn()
@@ -169,7 +170,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
 
     // open backup file -- may already be open due to new backup being taken
     if (useBackup && _backup_fd < 0) {
-        W_DO(open_backup());
+        open_backup();
     }
 
     if (!ss_m::logArchiver) {
@@ -248,7 +249,8 @@ bool vol_t::check_restore_finished()
 
             // close backup file
             if (_backup_fd > 0) {
-                W_COERCE(me()->close(_backup_fd));
+                auto ret = close(_backup_fd);
+                CHECK_ERRNO(ret);
                 _backup_fd = -1;
                 _current_backup_lsn = lsn_t::null;
             }
@@ -275,14 +277,15 @@ rc_t vol_t::dismount(bool abrupt)
 
     INC_TSTAT(vol_cache_clears);
 
-    w_assert1(_unix_fd >= 0);
+    w_assert1(_fd >= 0);
 
     if (!abrupt) {
         if (_failed) {
             // wait for ongoing restore to complete
             _restore_mgr->shutdown();
             if (_backup_fd > 0) {
-                W_COERCE(me()->close(_backup_fd));
+                auto ret = close(_backup_fd);
+                CHECK_ERRNO(ret);
                 _backup_fd = -1;
                 _current_backup_lsn = lsn_t::null;
             }
@@ -294,8 +297,9 @@ rc_t vol_t::dismount(bool abrupt)
         DBG(<< "WARNING: Volume shutting down abruptly during restore!");
     }
 
-    W_DO(me()->close(_unix_fd));
-    _unix_fd = -1;
+    auto ret = close(_fd);
+    CHECK_ERRNO(ret);
+    _fd = -1;
 
     return RCOK;
 }
@@ -548,9 +552,8 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
     w_assert1(cnt > 0);
     size_t offset = size_t(first_page) * sizeof(generic_page);
     memset(buf, '\0', cnt * sizeof(generic_page));
-    int read_count = 0;
-    W_DO(me()->pread_short(_unix_fd, (char *) buf, cnt * sizeof(generic_page),
-                offset, read_count));
+    int read_count = pread(_fd, (char *) buf, cnt * sizeof(generic_page), offset);
+    CHECK_ERRNO(read_count);
 
     if (_log_page_reads) {
         sysevent::log_page_read(first_page, cnt);
@@ -574,9 +577,8 @@ rc_t vol_t::read_backup(PageID first, size_t count, void* buf)
     size_t offset = size_t(first) * sizeof(generic_page);
     memset(buf, 0, sizeof(generic_page) * count);
 
-    int read_count = 0;
-    W_DO(me()->pread_short(_backup_fd, (char *) buf, count * sizeof(generic_page),
-                offset, read_count));
+    int read_count = pread(_backup_fd, (char *) buf, count * sizeof(generic_page), offset);
+    CHECK_ERRNO(read_count);
 
     // Short I/O is still possible because backup is only taken until last used
     // page, i.e., the file may be smaller than the total quota.
@@ -608,15 +610,16 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
         }
 
         _backup_write_path = path;
-        int flags = smthread_t::OPEN_SYNC | smthread_t::OPEN_WRONLY
-            | smthread_t::OPEN_TRUNC | smthread_t::OPEN_CREATE;
-        W_DO(me()->open(path.c_str(), flags, 0666, _backup_write_fd));
+        int flags = O_SYNC | O_WRONLY | O_TRUNC | O_CREAT;
+        auto fd = open(path.c_str(), flags, 0666 /*mode*/);
+        CHECK_ERRNO(fd);
+        _backup_write_fd = fd;
 
         useBackup = _backups.size() > 0;
 
         if (useBackup && _backup_fd < 0) {
             // no ongoing restore -- we must open old backup ourselves
-            W_DO(open_backup());
+            open_backup();
         }
     }
 
@@ -653,7 +656,8 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     {
         // critical section to guarantee visibility of the fd update
         spinlock_write_critical_section cs(&_mutex);
-        W_DO(me()->close(_backup_write_fd));
+        auto ret = close(_backup_write_fd);
+        CHECK_ERRNO(ret);
         _backup_write_fd = -1;
     }
 
@@ -668,8 +672,8 @@ rc_t vol_t::write_backup(PageID first, size_t count, void* buf)
     w_assert1(count > 0);
     size_t offset = size_t(first) * sizeof(generic_page);
 
-    W_DO(me()->pwrite(_backup_write_fd, buf, sizeof(generic_page) * count,
-                offset));
+    auto ret = pwrite(_backup_write_fd, buf, sizeof(generic_page) * count, offset);
+    CHECK_ERRNO(ret);
 
     DBG(<< "Wrote out " << count << " pages into backup offset " << offset);
 
@@ -741,13 +745,12 @@ rc_t vol_t::write_many_pages(PageID first_page, const generic_page* const buf, i
     w_assert1(cnt > 0);
     size_t offset = size_t(first_page) * sizeof(generic_page);
 
-    smthread_t* t = me();
-
     long start = 0;
     if(_apply_fake_disk_latency) start = gethrtime();
 
     // do the actual write now
-    W_COERCE(t->pwrite(_unix_fd, buf, sizeof(generic_page)*cnt, offset));
+    auto ret = pwrite(_fd, buf, sizeof(generic_page)*cnt, offset);
+    CHECK_ERRNO(ret);
 
     fake_disk_latency(start);
     ADD_TSTAT(vol_blks_written, cnt);
