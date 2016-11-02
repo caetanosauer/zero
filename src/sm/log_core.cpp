@@ -77,7 +77,19 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <algorithm>
 #include <sstream>
 #include <w_strstream.h>
+
+// files and stuff
+#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+// TODO proper exception mechanism
+#define CHECK_ERRNO(n) \
+    if (n == -1) { \
+        W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
+    }
 
 typedef smlevel_0::fileoff_t fileoff_t;
 
@@ -1225,7 +1237,7 @@ rc_t log_core::load_fetch_buffers()
         int fd;
 
         string fname = _storage->make_log_name(p);
-        int flags = smthread_t::OPEN_RDONLY;
+        int flags = O_RDONLY;
 
         // get file size and whether it exists
         struct stat file_info;
@@ -1237,7 +1249,8 @@ rc_t log_core::load_fetch_buffers()
         // Allocate buffer space and open file
         char* buf = new char[file_info.st_size];
         _fetch_buffers[p - _fetch_buf_first] = buf;
-        W_DO(me()->open(fname.c_str(), flags, 0744, fd));
+        fd = ::open(fname.c_str(), flags, 0744);
+        CHECK_ERRNO(fd);
 
         // Main loop that loads chunks of 32MB in reverse sequential order
         size_t chunk = 32 * 1024 * 1024;
@@ -1246,7 +1259,9 @@ rc_t log_core::load_fetch_buffers()
             size_t read_size = offset >= 0 ? chunk : chunk + offset;
             if (offset < 0) { offset = 0; }
 
-            W_DO(me()->pread(fd, buf + offset, read_size, offset));
+            auto bytesRead = ::pread(fd, buf + offset, read_size, offset);
+            CHECK_ERRNO(bytesRead);
+            if (bytesRead != read_size) { return RC(stSHORTIO); }
 
             // CS TODO: use std::atomic
             _fetch_buf_begin = lsn_t(p, offset);
@@ -1256,7 +1271,8 @@ rc_t log_core::load_fetch_buffers()
             offset -= read_size;
         }
 
-        W_DO(me()->close(fd));
+        auto ret = ::close(fd);
+        CHECK_ERRNO(ret);
 
         // size_t pos = 0;
         // while (pos < file_info.st_size) {
