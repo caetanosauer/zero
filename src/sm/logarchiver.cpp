@@ -15,6 +15,18 @@
 
 #include "stopwatch.h"
 
+// files and stuff
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+// TODO proper exception mechanism
+#define CHECK_ERRNO(n) \
+    if (n == -1) { \
+        W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
+    }
+
 typedef mem_mgmt_t::slot_t slot_t;
 
 // definition of static members
@@ -134,7 +146,8 @@ void LogArchiver::ReaderThread::activate(lsn_t endLSN)
 rc_t LogArchiver::ReaderThread::openPartition()
 {
     if (currentFd != -1) {
-        W_DO(me()->close(currentFd));
+        auto ret = ::close(currentFd);
+        CHECK_ERRNO(ret);
     }
     currentFd = -1;
 
@@ -142,15 +155,16 @@ rc_t LogArchiver::ReaderThread::openPartition()
     int fd;
     string fname = smlevel_0::log->make_log_name(nextPartition);
 
-    int flags = smthread_t::OPEN_RDONLY;
-    W_COERCE(me()->open(fname.c_str(), flags, 0744, fd));
+    int flags = O_RDONLY;
+    fd = ::open(fname.c_str(), flags, 0744 /*mode*/);
+    CHECK_ERRNO(fd);
 
-    sthread_base_t::filestat_t statbuf;
-    W_DO(me()->fstat(fd, statbuf));
-    if (statbuf.st_size == 0) {
-        return RC(eEOF);
-    }
-    sm_diskaddr_t partSize = statbuf.st_size;
+    os_stat_t stat;
+    auto ret = ::fstat(fd, &stat);
+    CHECK_ERRNO(ret);
+    if (stat.st_size == 0) { return RC(eEOF); }
+    size_t partSize = stat.st_size;
+
     /*
      * The size of the file must be at least the offset of endLSN, otherwise
      * the given endLSN was incorrect. If this is not the partition of
@@ -232,10 +246,8 @@ void LogArchiver::ReaderThread::run()
 
             // Read only the portion which was ignored on the last round
             size_t blockPos = pos % blockSize;
-            int bytesRead = 0;
-            W_COERCE(me()->pread_short(
-                        currentFd, dest + blockPos, blockSize - blockPos,
-                        pos, bytesRead));
+            int bytesRead = ::pread(currentFd, dest + blockPos, blockSize - blockPos, pos);
+            CHECK_ERRNO(bytesRead);
 
             if (bytesRead == 0) {
                 // Reached EOF -- open new file and try again
@@ -243,8 +255,8 @@ void LogArchiver::ReaderThread::run()
                 W_COERCE(openPartition());
                 pos = 0;
                 blockPos = 0;
-                W_COERCE(me()->pread_short(
-                            currentFd, dest, blockSize, pos, bytesRead));
+                bytesRead = ::pread(currentFd, dest, blockSize, pos);
+                CHECK_ERRNO(bytesRead);
                 if (bytesRead == 0) {
                     W_FATAL_MSG(fcINTERNAL,
                         << "Error reading from partition "
@@ -455,9 +467,10 @@ lsn_t LogArchiver::ArchiveDirectory::parseLSN(const char* str, bool end)
 
 size_t LogArchiver::ArchiveDirectory::getFileSize(int fd)
 {
-    filestat_t fs;
-    W_COERCE(me()->fstat(fd, fs));
-    return fs.st_size;
+    os_stat_t stat;
+    auto ret = ::fstat(fd, &stat);
+    CHECK_ERRNO(ret);
+    return stat.st_size;
 }
 
 LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
@@ -639,12 +652,10 @@ rc_t LogArchiver::ArchiveDirectory::openNewRun()
         return RC(fcINTERNAL);
     }
 
-    int flags = smthread_t::OPEN_WRONLY | smthread_t::OPEN_SYNC
-        | smthread_t::OPEN_CREATE;
-    int fd;
-    // 0744 is the mode_t for the file permissions (like in chmod)
+    int flags = O_WRONLY | O_SYNC | O_CREAT;
     std::string fname = archdir + "/" + CURR_RUN_FILE;
-    W_DO(me()->open(fname.c_str(), flags, 0744, fd));
+    auto fd = ::open(fname.c_str(), flags, 0744 /*mode*/);
+    CHECK_ERRNO(fd);
     DBGTHRD(<< "Opened new output run");
 
     appendFd = fd;
@@ -669,7 +680,8 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
     if (appendFd >= 0) {
         if (appendPos == 0 && runEndLSN == lsn_t::null) {
             // nothing was appended -- just close file and return
-            W_DO(me()->close(appendFd));
+            auto ret = ::close(appendFd);
+            CHECK_ERRNO(ret);
             appendFd = -1;
             return RCOK;
         }
@@ -691,7 +703,8 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
             DBGTHRD(<< "Closing current output run: " << new_path.string());
         }
 
-        W_DO(me()->close(appendFd));
+        auto ret = ::close(appendFd);
+        CHECK_ERRNO(ret);
         appendFd = -1;
     }
 
@@ -709,8 +722,9 @@ rc_t LogArchiver::ArchiveDirectory::append(char* data, size_t length)
     memcpy(data + length, &SKIP_LOGREC, sizeof(baseLogHeader));
 
     INC_TSTAT(la_block_writes);
-    W_DO(me()->pwrite(appendFd, data, length + sizeof(baseLogHeader),
-                appendPos));
+    auto ret = ::pwrite(appendFd, data, length + sizeof(baseLogHeader),
+                appendPos);
+    CHECK_ERRNO(ret);
     appendPos += length;
     return RCOK;
 }
@@ -721,8 +735,9 @@ rc_t LogArchiver::ArchiveDirectory::openForScan(int& fd, lsn_t runBegin,
     fs::path fpath = make_run_path(runBegin, runEnd);
 
     // Using direct I/O
-    int flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_DIRECT;
-    W_DO(me()->open(fpath.string().c_str(), flags, 0744, fd));
+    int flags = O_RDONLY | O_DIRECT;
+    fd = ::open(fpath.string().c_str(), flags, 0744 /*mode*/);
+    CHECK_ERRNO(fd);
 
     return RCOK;
 }
@@ -748,9 +763,8 @@ rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
         actualReadSize = (1 + actualReadSize / IO_ALIGN) * IO_ALIGN;
     }
 
-    int howMuchRead = 0;
-    W_COERCE(me()->pread_short(
-                fd, buf, actualReadSize, actualOffset, howMuchRead));
+    int howMuchRead = ::pread(fd, buf, actualReadSize, actualOffset);
+    CHECK_ERRNO(howMuchRead);
     if (howMuchRead == 0) {
         // EOF is signalized by setting offset to zero
         offset = 0;
@@ -771,7 +785,8 @@ rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
 
 rc_t LogArchiver::ArchiveDirectory::closeScan(int& fd)
 {
-    W_DO(me()->close(fd));
+    auto ret = ::close(fd);
+    CHECK_ERRNO(ret);
     fd = -1;
     return RCOK;
 }
@@ -2123,7 +2138,8 @@ rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
         //     memcpy(writeBuffer + bpos, &run.lastPID, sizeof(PageID));
         // }
 
-        W_COERCE(me()->pwrite(fd, writeBuffer, blockSize, offset));
+        auto ret = ::pwrite(fd, writeBuffer, blockSize, offset);
+        CHECK_ERRNO(ret);
         offset += blockSize;
         i++;
     }
@@ -2137,8 +2153,9 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
     // Assumption: mutex is held by caller
     int fd;
     // Using direct I/O
-    int flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_DIRECT;
-    W_DO(me()->open(fname, flags, 0744, fd));
+    int flags = O_RDONLY | O_DIRECT;
+    fd = ::open(fname, flags, 0744);
+    CHECK_ERRNO(fd);
 
     run.firstLSN = ArchiveDirectory::parseLSN(fname, false /* end */);
     run.lastLSN = ArchiveDirectory::parseLSN(fname, true /* end */);
@@ -2152,7 +2169,10 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
     size_t lastOffset = 0;
 
     while (indexBlockCount > 0) {
-        W_COERCE(me()->pread(fd, readBuffer, blockSize, offset));
+        auto bytesRead = ::pread(fd, readBuffer, blockSize, offset);
+        CHECK_ERRNO(bytesRead);
+        if (bytesRead != blockSize) { return RC(stSHORTIO); }
+
         BlockHeader* h = (BlockHeader*) readBuffer;
 
         unsigned j = 0;
@@ -2176,7 +2196,8 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
         // }
     }
 
-    W_DO(me()->close(fd));
+    auto ret = ::close(fd);
+    CHECK_ERRNO(ret);
     return RCOK;
 }
 
@@ -2226,7 +2247,10 @@ rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
     char* buffer;
     int res = posix_memalign((void**) &buffer, IO_ALIGN, IO_ALIGN);
     w_assert0(res == 0);
-    W_DO(me()->pread(fd, buffer, IO_ALIGN, fsize - blockSize));
+
+    auto bytesRead = ::pread(fd, buffer, IO_ALIGN, fsize - blockSize);
+    CHECK_ERRNO(bytesRead);
+    if (bytesRead != IO_ALIGN) { return RC(stSHORTIO); }
 
     BlockHeader* header = (BlockHeader*) buffer;
     if (indexBlocks) {
