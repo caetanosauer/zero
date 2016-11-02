@@ -226,13 +226,6 @@ public:
         max_rec_len = max_uint4
     };
 
-    typedef sthread_base_t::fileoff_t fileoff_t;
-    /*
-     * Sizes-in-Kbytes for for things like volumes and devices.
-     * A KB is assumes to be 1024 bytes.
-     * Note: a different type was used for added type checking.
-     */
-    typedef sthread_t::fileoff_t smksize_t;
     typedef w_base_t::base_stat_t base_stat_t;
 
     /**\endcond skip */

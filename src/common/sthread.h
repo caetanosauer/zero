@@ -117,16 +117,6 @@ public:
     typedef w_thread_id_t id_t;
 /**\endcond skip */
 
-// CS: copied from old sdisk.h (TODO: remove it)
-    /* Don't use off_t, cause we may want the system off_t */
-#if !defined(LARGEFILE_AWARE) && !defined(ARCH_LP64)
-    /* XXX if !LARGEFILE, should choose on per operating system
-       to pick the native size. */
-    typedef int32_t fileoff_t;
-#else
-    typedef int64_t fileoff_t;
-#endif
-
     /* XXX this is really something for the SM, not the threads package;
        only WAIT_IMMEDIATE should ever make it to the threads package. */
 

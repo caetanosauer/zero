@@ -1188,7 +1188,7 @@ LogArchiver::ArchiveScanner::open(PageID startPID, PageID endPID,
 }
 
 LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
-        PageID f, PageID l, fileoff_t o, ArchiveDirectory* directory,
+        PageID f, PageID l, off_t o, ArchiveDirectory* directory,
         size_t readSize)
 : runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
     fd(-1), blockCount(0), readSize(readSize), directory(directory)
@@ -2085,7 +2085,7 @@ void LogArchiver::ArchiveIndex::newBlock(const vector<pair<PageID, size_t> >&
 }
 
 rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
-        fileoff_t offset)
+        off_t offset)
 {
     CRITICAL_SECTION(cs, mutex);
     w_assert1(offset % blockSize == 0);
@@ -2105,7 +2105,7 @@ rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
 }
 
 rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
-        fileoff_t offset)
+        off_t offset)
 {
     // Assumption: mutex is held by caller
 
@@ -2164,7 +2164,7 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
     size_t dataBlockCount = 0;
     W_DO(getBlockCounts(fd, &indexBlockCount, &dataBlockCount));
 
-    fileoff_t offset = dataBlockCount * blockSize;
+    off_t offset = dataBlockCount * blockSize;
     w_assert1(dataBlockCount == 0 || offset > 0);
     size_t lastOffset = 0;
 

@@ -180,7 +180,7 @@ rc_t partition_t::flush(
            can flush at a time and all other accesses to the file use
            pread/pwrite (which doesn't change the file pointer).
          */
-        fileoff_t where = file_offset;
+        off_t where = file_offset;
         auto ret = lseek(_fhdl_app, where, SEEK_SET);
         CHECK_ERRNO(ret);
     } // end sync log
@@ -249,11 +249,11 @@ rc_t partition_t::read(logrec_t *&rp, lsn_t &ll, lsn_t* prev_lsn)
 
     w_assert3(is_open_for_read());
 
-    fileoff_t pos = ll.lo();
-    fileoff_t lower = pos / XFERSIZE;
+    off_t pos = ll.lo();
+    off_t lower = pos / XFERSIZE;
 
     lower *= XFERSIZE;
-    fileoff_t off = pos - lower;
+    off_t off = pos - lower;
 
     DBG5(<<"seek to lsn " << ll
         << " index=" << _index << " fd=" << _fhdl_rd
@@ -269,7 +269,7 @@ rc_t partition_t::read(logrec_t *&rp, lsn_t &ll, lsn_t* prev_lsn)
 
     rp = (logrec_t *)(_readbuf + off);
 
-    fileoff_t leftover = 0;
+    off_t leftover = 0;
 
     while (first_time || leftover > 0) {
 

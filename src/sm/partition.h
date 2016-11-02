@@ -66,7 +66,6 @@ class log_storage; // forward
 
 class partition_t {
 public:
-    typedef smlevel_0::fileoff_t          fileoff_t;
     typedef smlevel_0::partition_number_t partition_number_t;
 
     enum { XFERSIZE = 8192 };

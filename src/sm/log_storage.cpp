@@ -30,7 +30,6 @@
 // needed for skip_log (TODO fix this)
 #include "logdef_gen.cpp"
 
-typedef smlevel_0::fileoff_t fileoff_t;
 const string log_storage::log_prefix = "log.";
 const string log_storage::log_regex = "log\\.[1-9][0-9]*";
 const string log_storage::chkpt_prefix = "chkpt_";
@@ -98,7 +97,7 @@ log_storage::log_storage(const sm_options& options)
         }
     }
 
-    fileoff_t psize = fileoff_t(options.get_int_option("sm_log_partition_size", 1024));
+    off_t psize = off_t(options.get_int_option("sm_log_partition_size", 1024));
     // option given in MB -> convert to B
     psize = psize * 1024 * 1024;
     // round to next multiple of the log buffer segment size

@@ -238,7 +238,7 @@ public:
         void newBlock(PageID firstPID);
         void newBlock(const vector<pair<PageID, size_t> >& buckets);
 
-        rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
+        rc_t finishRun(lsn_t first, lsn_t last, int fd, off_t);
         void probe(std::vector<ProbeResult>& probes,
                 PageID startPID, PageID endPID, lsn_t startLSN);
 
@@ -303,7 +303,7 @@ public:
         // binary search
         size_t findEntry(RunInfo* run, PageID pid,
                 int from = -1, int to = -1);
-        rc_t serializeRunInfo(RunInfo&, int fd, fileoff_t);
+        rc_t serializeRunInfo(RunInfo&, int fd, off_t);
         rc_t deserializeRunInfo(RunInfo&, const char* fname);
 
     };
@@ -368,7 +368,7 @@ public:
         lsn_t lastLSN;
         int appendFd;
         int mergeFd;
-        fileoff_t appendPos;
+        off_t appendPos;
         size_t blockSize;
 
         fs::path archpath;
@@ -545,7 +545,7 @@ public:
             ArchiveDirectory* directory;
             LogScanner* scanner;
 
-            RunScanner(lsn_t b, lsn_t e, PageID f, PageID l, fileoff_t o,
+            RunScanner(lsn_t b, lsn_t e, PageID f, PageID l, off_t o,
                     ArchiveDirectory* directory, size_t readSize = 0);
             ~RunScanner();
 

@@ -91,8 +91,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
         W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
     }
 
-typedef smlevel_0::fileoff_t fileoff_t;
-
 class ticker_thread_t : public smthread_t
 {
 public:

@@ -937,7 +937,7 @@ public:
      * be used in conjunction with xct_reserve_log_space to
      * pre-allocate the needed amount of log space before retrying.
      */
-    static smlevel_0::fileoff_t        xct_log_space_needed();
+    static off_t        xct_log_space_needed();
 
     /**\brief Require the specified amount of log space to be
      * available for this transaction before continuing.
@@ -951,7 +951,7 @@ public:
      * run out of space, because that tends to free up log space and
      * avoids wasting work).
      */
-    static rc_t            xct_reserve_log_space(fileoff_t amt);
+    static rc_t            xct_reserve_log_space(off_t amt);
 
 
     /**\brief Collect transaction information in a virtual table.
