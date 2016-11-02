@@ -309,6 +309,9 @@ class smthread_t : public sthread_t {
     short              _fingerprint[FINGER_BITS]; // dreadlocks
     atomic_thread_map_t  _fingerprint_map; // map containing only fingerprint
 
+    // CS: unused for now, but didn't want to ignore all constructors that pass a name
+    std::string _name;
+
 public:
     const atomic_thread_map_t&  get_fingerprint_map() const
                             {   return _fingerprint_map; }

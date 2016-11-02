@@ -132,7 +132,7 @@ smthread_t::smthread_t(
     const char* name,
     timeout_in_ms lockto,
     unsigned stack_size)
-: sthread_t(name, stack_size),
+: sthread_t(stack_size),
   _proc(f),
   _arg(arg),
   _gen_log_warnings(true)
@@ -147,6 +147,8 @@ smthread_t::smthread_t(
 
     lock_timeout(lockto);
     if(lockto > WAIT_NOT_USED) _initialize_fingerprint();
+
+    if (name) { _name = std::string(name); }
 }
 
 // Used by internal sm threads, e.g., bf_prefetch_thread.
@@ -157,7 +159,7 @@ smthread_t::smthread_t(
     timeout_in_ms lockto,
     unsigned stack_size
     )
-: sthread_t(name, stack_size),
+: sthread_t(stack_size),
   _proc(0),
   _arg(0),
   _gen_log_warnings(true)
@@ -171,6 +173,8 @@ smthread_t::smthread_t(
     user =(void *) &smthread_init;
     lock_timeout(lockto);
     if(lockto > WAIT_NOT_USED) _initialize_fingerprint();
+
+    if (name) { _name = std::string(name); }
 }
 
 void smthread_t::_initialize_fingerprint()

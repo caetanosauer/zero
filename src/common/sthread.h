@@ -162,56 +162,6 @@ public:
 
 };
 
-/**\cond skip */
-class sthread_name_t {
-public:
-    enum { NAME_ARRAY = 64 };
-
-    char        _name[NAME_ARRAY];
-
-    sthread_name_t();
-    ~sthread_name_t();
-
-    void rename(const char *n1, const char *n2=0, const char *n3=0);
-};
-
-class sthread_named_base_t: public sthread_base_t
-{
-public:
-    NORET            sthread_named_base_t(
-    const char*            n1 = 0,
-    const char*            n2 = 0,
-    const char*            n3 = 0);
-    NORET            ~sthread_named_base_t();
-
-    void            rename(
-    const char*            n1,
-    const char*            n2 = 0,
-    const char*            n3 = 0);
-
-    const char*            name() const;
-    void                   unname();
-
-private:
-    sthread_name_t        _name;
-};
-
-inline NORET
-sthread_named_base_t::sthread_named_base_t(
-    const char*        n1,
-    const char*        n2,
-    const char*        n3)
-{
-    rename(n1, n2, n3);
-
-}
-
-inline const char*
-sthread_named_base_t::name() const
-{
-    return _name._name;
-}
-
 class sthread_main_t;
 
 /**\endcond skip */
@@ -248,7 +198,7 @@ typedef w_list_t<sthread_t, queue_based_lock_t>        sthread_list_t;
  *  This class is a fairly thin layer over pthreads.  Client threads
  *  may use pthread synchronization primitives.
  */
-class sthread_t : public sthread_named_base_t
+class sthread_t : public sthread_base_t
 {
     friend class sthread_init_t;
     friend class sthread_main_t;
@@ -418,9 +368,7 @@ public:
     virtual const smthread_t*  dynamic_cast_to_const_smthread() const;
 
 protected:
-    sthread_t(
-          const char    *name = 0,
-          unsigned        stack_size = default_stack);
+    sthread_t(unsigned        stack_size = default_stack);
 
     virtual void        before_run() { }
     virtual void        run() = 0;

@@ -297,7 +297,7 @@ w_rc_t sthread_t::shutdown()
  */
 
 sthread_main_t::sthread_main_t()
-: sthread_t("main_thread", 0)
+: sthread_t(0)
 {
     /*
     fprintf(stderr, "sthread_main_t constructed, this %p\n", this);
@@ -432,9 +432,8 @@ w_rc_t    sthread_t::fork()
  */
 
 sthread_t::sthread_t(
-             const char     *nm,
              unsigned        stack_size)
-: sthread_named_base_t(nm),
+:
   user(0),
   id(_next_id++), // make it match the gdb threads #. Origin 1
   _start_terminate_lock(new pthread_mutex_t),
@@ -512,7 +511,7 @@ sthread_t::~sthread_t()
                   );
 
     if (_link.member_of()) {
-        cerr << "sthread_t(" << (long)this << ") " << name()
+        cerr << "sthread_t(" << (long)this << ") "
             << " destroying a thread on a list!" << endl;
     }
     }
@@ -685,7 +684,7 @@ void sthread_t::_start()
         }
         catch (...) {
             cerr << endl
-                 << "sthread_t(id = " << id << "  name = " << name()
+                 << "sthread_t(id = " << id
                  << "): run() threw an exception."
                  << endl
                  << endl;
@@ -1090,10 +1089,6 @@ ostream &sthread_t::print(ostream &o) const
 {
     o << "thread id = " << id ;
 
-    if (name()) {
-        o << ", name = " << name() ? name() : "anonymous";
-    };
-
     o
     << ", addr = " <<  (void *) this
     << ", core = " <<  (void *) _core << endl;
@@ -1150,79 +1145,6 @@ void print_timeout(ostream& o, const sthread_base_t::timeout_in_ms timeout)
     o << "UNKNOWN_TIMEOUT_VALUE(" << timeout << ")";
     }
 }
-
-/**\cond skip */
-
-sthread_name_t::sthread_name_t()
-{
-    memset(_name, '\0', sizeof(_name));
-}
-
-sthread_name_t::~sthread_name_t()
-{
-}
-
-void
-sthread_name_t::rename(
-    // can't have n2 or n3 without n1
-    // can have n1,0,n3 or n1,n2,0
-    const char*        n1,
-    const char*        n2,
-    const char*        n3)
-{
-    const int sz = sizeof(_name) - 1;
-    size_t len = 0;
-    _name[0] = '\0';
-    if (n1)  {
-#if W_DEBUG_LEVEL > 2
-        len = strlen(n1);
-        if(n2) len += strlen(n2);
-        if(n3) len += strlen(n3);
-        len++;
-        if(len>sizeof(_name)) {
-            cerr << "WARNING-- name too long for sthread_named_t: "
-                << n1 << n2 << n3;
-        }
-#endif
-
-        // only copy as much as will fit
-        strncpy(_name, n1, sz);
-        len = strlen(_name);
-        if (n2 && (int)len < sz)  {
-            strncat(_name, n2, sz - len);
-            len = strlen(_name);
-            if (n3 && (int)len < sz)
-                strncat(_name, n3, sz - len);
-        }
-
-        _name[sz] = '\0';
-    }
-
-}
-
-void
-sthread_named_base_t::unname()
-{
-    rename(0,0,0);
-}
-
-void
-sthread_named_base_t::rename(
-    // can't have n2 or n3 without n1
-    // can have n1,0,n3 or n1,n2,0
-    const char*        n1,
-    const char*        n2,
-    const char*        n3)
-{
-    _name.rename(n1,n2,n3);
-}
-
-sthread_named_base_t::~sthread_named_base_t()
-{
-    unname();
-}
-
-/**\endcond skip */
 
 /**\cond skip */
 
