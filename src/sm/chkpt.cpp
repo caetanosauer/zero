@@ -74,6 +74,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 struct RawLock;            // Lock information gathering
 #include "restart.h"
 #include "vol.h"
+#include "thread_wrapper.h"
 #include <algorithm>
 
 #include "stopwatch.h"
@@ -92,11 +93,11 @@ struct RawLock;            // Lock information gathering
  *  Checkpoint thread.
  *
  *********************************************************************/
-class chkpt_thread_t : public sthread_t
+class chkpt_thread_t : public thread_wrapper_t
 {
 public:
-    NORET                chkpt_thread_t(int interval);
-    NORET                ~chkpt_thread_t();
+    chkpt_thread_t(int interval);
+    virtual ~chkpt_thread_t();
 
     virtual void        run();
     void                retire();
@@ -838,7 +839,7 @@ chkpt_thread_t::chkpt_thread_t(int interval)
 {
     DO_PTHREAD(pthread_mutex_init(&_awaken_lock, NULL));
     DO_PTHREAD(pthread_cond_init(&_awaken_cond, NULL));
-    smthread_t::set_lock_timeout(WAIT_NOT_USED);
+    smthread_t::set_lock_timeout(sthread_t::WAIT_NOT_USED);
 }
 
 chkpt_thread_t::~chkpt_thread_t()
