@@ -850,7 +850,6 @@ void chkpt_thread_t::run()
 {
     while(!_retire)
     {
-        w_assert1(ss_m::chkpt);
         DO_PTHREAD(pthread_mutex_lock(&_awaken_lock));
 
         if (_interval >= 0) {
@@ -871,8 +870,10 @@ void chkpt_thread_t::run()
         if (_retire) { break; }
         if (!_wakeup) { continue; }
 
-        ss_m::chkpt->take();
-        ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
+        if (ss_m::chkpt) {
+            ss_m::chkpt->take();
+            ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
+        }
     }
 }
 
