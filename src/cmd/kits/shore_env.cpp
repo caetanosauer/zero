@@ -119,11 +119,9 @@ ShoreEnv::ShoreEnv(po::variables_map& vm)
       // _logger(NULL)
 {
     optionValues = vm;
-    _popts = new sm_options();
 
     pthread_mutex_init(&_scaling_mutex, NULL);
     pthread_mutex_init(&_queried_mutex, NULL);
-    optionValues= vm;
 
 
     string physical = optionValues["db-config-design"].as<string>();
@@ -778,7 +776,7 @@ int ShoreEnv::configure_sm()
     TRACE( TRACE_DEBUG, "Configuring Shore...\n");
 
     upd_worker_cnt();
-    Command::setSMOptions(*_popts, optionValues);
+    Command::setSMOptions(_popts, optionValues);
 
     // If we reached this point the sm is configured correctly
     return (0);
@@ -807,7 +805,7 @@ int ShoreEnv::start_sm()
     TRACE( TRACE_DEBUG, "Starting Shore...\n");
 
     if (_initialized == false) {
-        _pssm = new ss_m(*_popts);
+        _pssm = new ss_m(_popts);
         // _logger = new kits_logger_t(_pssm);
     }
     else {

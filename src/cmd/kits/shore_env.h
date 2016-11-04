@@ -372,7 +372,7 @@ protected:
     pthread_mutex_t    _vol_mutex; // volume mutex
 
     // Configuration variables
-    guard<sm_options> _popts;
+    sm_options _popts;
 
     // Processor info
     uint _max_cpu_count;    // hard limit
@@ -466,7 +466,7 @@ public:
     ShoreEnv(po::variables_map& vm);
     virtual ~ShoreEnv();
 
-    sm_options& get_opts() { return *_popts; }
+    sm_options& get_opts() { return _popts; }
     po::variables_map& get_optionValues(){ return optionValues; };
     // DB INTERFACE
 
