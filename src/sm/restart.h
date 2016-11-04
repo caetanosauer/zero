@@ -52,7 +52,7 @@ public:
 
     NORET restart_thread_t()
     {
-        smthread_t::set_lock_timeout(WAIT_NOT_USED);
+        smthread_t::set_lock_timeout(WAIT_FOREVER);
         working = false;
     };
     NORET ~restart_thread_t()
