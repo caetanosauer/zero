@@ -77,24 +77,51 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #endif
 #include <w_bitvector.h>
 
-/**\enum special_timeout_in_ms_t
+
+/**\enum timeout_t
  * \brief Special values for timeout_in_ms.
- * \details
- * - WAIT_FOREVER : no timeout
- * - WAIT_IMMEDIATE : do not block
- * - WAIT_SPECIFIED_BY_XCT : use the per-transaction custom timeout value
- * - WAIT_SPECIFIED_BY_THREAD : use the per-smthread custom timeout value
  *
- * To set the smthread_t's timeout, use smthread_t::lock_timeout.
+ * \details sthreads package recognizes 2 WAIT_* values:
+ * == WAIT_IMMEDIATE
+ * and != WAIT_IMMEDIATE.
+ *
+ * If it's not WAIT_IMMEDIATE, it's assumed to be
+ * a positive integer (milliseconds) used for the
+ * select timeout.
+ * WAIT_IMMEDIATE: no wait
+ * WAIT_FOREVER:   may block indefinitely
+ * The user of the thread (e.g., sm) had better
+ * convert timeout that are negative values (WAIT_* below)
+ * to something >= 0 before calling block().
+ *
+ * All other WAIT_* values other than WAIT_IMMEDIATE
+ * are handled by sm layer:
+ * WAIT_SPECIFIED_BY_THREAD: pick up a timeout_in_ms from the smthread.
+ * WAIT_SPECIFIED_BY_XCT: pick up a timeout_in_ms from the transaction.
+ * Anything else: not legitimate.
+ *
+ * \sa timeout_in_ms
  */
-enum special_timeout_in_ms_t {
-    WAIT_FOREVER = sthread_t::WAIT_FOREVER,
-    WAIT_IMMEDIATE = sthread_t::WAIT_IMMEDIATE,
-    WAIT_SPECIFIED_BY_XCT = sthread_t::WAIT_SPECIFIED_BY_XCT,
-    WAIT_SPECIFIED_BY_THREAD = sthread_t::WAIT_SPECIFIED_BY_THREAD
+enum timeout_t {
+    WAIT_IMMEDIATE     = 0,
+    WAIT_FOREVER     = -1,
+    WAIT_SPECIFIED_BY_THREAD     = -4, // used by lock manager
+    WAIT_SPECIFIED_BY_XCT = -5, // used by lock manager
+    // CS: I guess the NOT_USED value is only for threads that never acquire
+    // any locks? And neither latches?
+    WAIT_NOT_USED = -6 // indicates last negative number used by sthreads
 };
 
-typedef sthread_t::timeout_in_ms timeout_in_ms;
+/**\typedef int32_t time_ut_in_ms;
+ * \brief Timeout in milliseconds if > 0
+ * \details
+ * sthread_t blocking methods take a timeout in milliseconds.
+ * If the value is < 0, then it's expected to be a member of the
+ * enumeration type timeout_t.
+ *
+ * \sa timeout_t
+ */
+typedef int32_t timeout_in_ms;
 
 class xct_t;
 class xct_log_t;
