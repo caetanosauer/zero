@@ -294,57 +294,31 @@ smthread_t::add_from_TL_stats(sm_stats_info_t &w)
 
 /*********************************************************************
  *
- *  smthread_t::join()
- *
- *  invoke sthread_t::join if it's safe to do so
- *
- *********************************************************************/
-w_rc_t
-smthread_t::join(timeout_in_ms timeout)
-{
-    w_rc_t rc = this->sthread_t::join(timeout);
-
-    if(tcb().xct != NULL) {
-        return RC(eINTRANS);
-    }
-    if(tcb().pin_count != 0)
-    {
-        return RC(ePINACTIVE);
-    }
-    if( tcb()._xct_log != NULL ) {
-        fprintf(stderr, "non-null _xct_log on join\n");
-        return RC(eINTRANS);
-    }
-
-    return rc;
-}
-/*********************************************************************
- *
  *  smthread_t::~smthread_t()
  *
  *  Destroy smthread. Thread is already defunct the object is
  *  destroyed.
  *
  *********************************************************************/
-smthread_t::~smthread_t()
-{
-    if(lock_timeout() > WAIT_NOT_USED) {
-        // _uninitialize_fingerprint();
-    }
+// smthread_t::~smthread_t()
+// {
+//     if(lock_timeout() > WAIT_NOT_USED) {
+//         // _uninitialize_fingerprint();
+//     }
 
-    // revoke transaction objects
-    w_assert2( get_tcb_depth() == 1); // otherwise some transaction is running!
-    tcb_t*& t = tcb_ptr();
-    while (t) {
-        // this should be the empty tcb_t as dummy!
-        w_assert2( t->xct == NULL);
-        w_assert2( t->pin_count == 0);
-        w_assert2( t->_xct_log == 0 );
-        tcb_t* old = t;
-        tcb_ptr() = t = t->_outer;
-        delete old;
-    }
-}
+//     // revoke transaction objects
+//     w_assert2( get_tcb_depth() == 1); // otherwise some transaction is running!
+//     tcb_t*& t = tcb_ptr();
+//     while (t) {
+//         // this should be the empty tcb_t as dummy!
+//         w_assert2( t->xct == NULL);
+//         w_assert2( t->pin_count == 0);
+//         w_assert2( t->_xct_log == 0 );
+//         tcb_t* old = t;
+//         tcb_ptr() = t = t->_outer;
+//         delete old;
+//     }
+// }
 
 // There's something to be said for having the smthread_unblock
 // unblock only those threads that blocked with smthread_block.
@@ -352,44 +326,56 @@ smthread_t::~smthread_t()
 // It's possible that a thread that blocked this way will be awakened
 // by another force such as timeout, but we need to be sure that we don't
 // try here to unblock a thread that didn't block via smthread_block
-w_error_codes  smthread_t::_smthread_block(
-      timeout_in_ms timeout,
-      const char * const W_IFDEBUG9(blockname))
-{
-    _waiting = true;
-    // rval is set by the unblocker
-    w_error_codes rval = sthread_t::block(timeout);
-    _waiting = false;
-    return rval;
-}
+// w_error_codes  smthread_t::_smthread_block(
+//       timeout_in_ms timeout,
+//       const char * const W_IFDEBUG9(blockname))
+// {
+//     _waiting = true;
+//     // rval is set by the unblocker
+//     w_error_codes rval = sthread_t::block(timeout);
+//     _waiting = false;
+//     return rval;
+// }
 
-w_rc_t    smthread_t::_smthread_unblock(w_error_codes e)
-{
-    // We should never be unblocking ourselves.
-    // w_assert1(me() != this);
+// w_rc_t    smthread_t::_smthread_unblock(w_error_codes e)
+// {
+//     // We should never be unblocking ourselves.
+//     // w_assert1(me() != this);
 
-    // tried to unblock the wrong thread
-    if(!_waiting) {
-        return RC(eNOTBLOCKED);
-    }
+//     // tried to unblock the wrong thread
+//     if(!_waiting) {
+//         return RC(eNOTBLOCKED);
+//     }
 
-    return  this->sthread_t::unblock(e); // should return RCOK to the caller
-}
+//     return  this->sthread_t::unblock(e); // should return RCOK to the caller
+// }
 
 /* thread-compatability block() and unblock.  Use the per-smthread _block
    as the synchronization primitive. */
-w_error_codes   smthread_t::smthread_block(timeout_in_ms timeout,
-      const char * const caller,
-      const void *)
-{
-    return _smthread_block(timeout, caller);
-}
+// w_error_codes   smthread_t::smthread_block(timeout_in_ms timeout,
+//       const char * const caller,
+//       const void *)
+// {
+//     return _smthread_block(timeout, caller);
+// }
 
-w_rc_t   smthread_t::smthread_unblock(w_error_codes e)
-{
-    return _smthread_unblock(e);
-}
+// w_rc_t   smthread_t::smthread_unblock(w_error_codes e)
+// {
+//     return _smthread_unblock(e);
+// }
 
+// timeout given in ms
+void smthread_t::timeout_to_timespec(int timeout, struct timespec &when)
+{
+    w_assert1(timeout != WAIT_IMMEDIATE);
+    w_assert1(timeout != sthread_t::WAIT_FOREVER);
+    if(timeout > 0) {
+        ::clock_gettime(CLOCK_REALTIME, &when);
+        when.tv_nsec += (uint64_t) timeout * 1000000;
+        when.tv_sec += when.tv_nsec / 1000000000;
+        when.tv_nsec = when.tv_nsec % 1000000000;
+    }
+}
 
 // CS TODO: methods in sthread_t directly -- left this here because this latch_t
 // stuff might be needed
@@ -422,7 +408,8 @@ smthread_t::for_each_smthread(SmthreadFunc& f)
 {
 
     SelectSmthreadsFunc g(f);
-    for_each_thread(g);
+    // CS TODO: we need to implement a new TSTAT mechanism!
+    // for_each_thread(g);
 }
 
 
@@ -555,7 +542,7 @@ void
 smthread_t::_dump(ostream &o) const
 {
     sthread_t *t = (sthread_t *)this;
-    t->sthread_t::_dump(o);
+    // t->sthread_t::_dump(o);
 
     o << "smthread_t: " << (char *)(is_in_sm()?"in sm ":"") << endl;
     o << "transactions in this thread (from bottom):" << endl;
@@ -592,5 +579,6 @@ void
 DumpBlockedThreads(ostream& o)
 {
     PrintBlockedThread f(o);
-    sthread_t::for_each_thread(f);
+    // CS TODO
+    // sthread_t::for_each_thread(f);
 }

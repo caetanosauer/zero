@@ -35,7 +35,7 @@ const string log_storage::log_regex = "log\\.[1-9][0-9]*";
 const string log_storage::chkpt_prefix = "chkpt_";
 const string log_storage::chkpt_regex = "chkpt_[1-9][0-9]*\\.[0-9][0-9]*";
 
-class partition_recycler_t : public sthread_t
+class partition_recycler_t : public thread_wrapper_t
 {
 public:
     partition_recycler_t(log_storage* storage, bool chkpt_only = false)

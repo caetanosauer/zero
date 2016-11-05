@@ -1,8 +1,6 @@
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR})
 
 set(common_SRCS
-  ${CMAKE_CURRENT_SOURCE_DIR}/sthread.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/sthread_core_pthread.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/worker_thread.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/w_debug.cpp

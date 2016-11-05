@@ -5,7 +5,6 @@
 #include "basics.h"
 #include "w_debug.h"
 #include "vec_t.h"
-#include "sthread.h"
 #include "smthread.h"
 #include "sm_base.h"
 
@@ -87,7 +86,7 @@ private:
 
     bool wait(pthread_cond_t*);
 
-    void increment(int& p, bool& parity) { 
+    void increment(int& p, bool& parity) {
         p = (p + 1) % blockCount;
         if (p == 0) {
             parity = !parity;
@@ -99,7 +98,7 @@ private:
 inline bool AsyncRingBuffer::wait(pthread_cond_t* cond)
 {
     struct timespec timeout;
-    sthread_t::timeout_to_timespec(100, timeout); // 100ms
+    smthread_t::timeout_to_timespec(100, timeout); // 100ms
     // caller must have locked mutex!
     int code = pthread_cond_timedwait(cond, &mutex, &timeout);
     if (code == ETIMEDOUT) {

@@ -100,7 +100,7 @@ void restart_m::log_analysis()
                             it != chkpt.xct_tab.end(); ++it)
     {
         xct_t* xd = new xct_t(NULL,               // stats
-                        WAIT_SPECIFIED_BY_THREAD, // default timeout value
+                        smthread_t::WAIT_SPECIFIED_BY_THREAD, // default timeout value
                         false,                    // sys_xct
                         false,                    // single_log_sys_xct
                         it->first,
@@ -120,7 +120,7 @@ void restart_m::log_analysis()
             RawLock* entry;
             W_COERCE(smlevel_0::lm->lock(jt->lock_hash, jt->lock_mode,
                         false /*check*/, false /*wait*/, true /*acquire*/,
-                        xd, WAIT_SPECIFIED_BY_XCT, &entry));
+                        xd, smthread_t::WAIT_SPECIFIED_BY_XCT, &entry));
         }
     }
 
@@ -436,7 +436,7 @@ void restart_m::undo_pass()
         // on_demand UNDO
         try
         {
-            w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
+            w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, smthread_t::WAIT_FOREVER);
             if (latch_rc.is_error())
             {
                     // If mixed mode, it is possible and valid if failed to acquire

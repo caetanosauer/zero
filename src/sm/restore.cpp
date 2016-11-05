@@ -245,7 +245,7 @@ bool RestoreScheduler::next(PageID& next, unsigned thread_id, bool peek)
 /** Asynchronous writer for restored segments
  *  CS: Placed here on cpp file because it isn't used anywhere else.
  */
-class SegmentWriter : public smthread_t {
+class SegmentWriter : public thread_wrapper_t {
 public:
     SegmentWriter(RestoreMgr* restore);
     virtual ~SegmentWriter();
@@ -431,7 +431,7 @@ bool RestoreMgr::waitUntilRestored(const PageID& pid, size_t timeout_in_ms)
     struct timespec timeout;
     while (!isRestored(pid)) {
         if (timeout_in_ms > 0) {
-            sthread_t::timeout_to_timespec(timeout_in_ms, timeout);
+            smthread_t::timeout_to_timespec(timeout_in_ms, timeout);
             int code = pthread_cond_timedwait(&restoreCond, &restoreCondMutex,
                     &timeout);
             if (code == ETIMEDOUT) {
@@ -862,7 +862,7 @@ void SegmentWriter::run()
 
         while(requests.size() == 0) {
             struct timespec timeout;
-            sthread_t::timeout_to_timespec(100, timeout); // 100ms
+            smthread_t::timeout_to_timespec(100, timeout); // 100ms
             int code = pthread_cond_timedwait(&requestCond, &requestMutex,
                     &timeout);
             if (code == ETIMEDOUT) {

@@ -5,6 +5,7 @@
 
 #define SM_SOURCE
 
+#include "thread_wrapper.h"
 #include "sm_base.h"
 
 #include "w_heap.h"
@@ -146,7 +147,7 @@ struct ArchiverControl {
  *
  * \author Caetano Sauer
  */
-class LogArchiver : public sthread_t {
+class LogArchiver : public thread_wrapper_t {
     friend class ArchiveMerger;
 public:
     /** \brief Abstract class used by both reader and writer threads.
@@ -157,7 +158,7 @@ public:
      *
      * \author Caetano Sauer
      */
-    class BaseThread : public sthread_t {
+    class BaseThread : public thread_wrapper_t {
     protected:
         AsyncRingBuffer* buf;
         int currentFd;

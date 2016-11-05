@@ -36,8 +36,6 @@ void basethread_t::after_run()
 
 void basethread_t::start_base()
 {
-    sthread_t::initialize_sthreads_package();
-    // smthread_t::init_fingerprint_map();
 }
 
 void basethread_t::start_buffer()
@@ -129,7 +127,7 @@ void basethread_t::print_stats()
 void basethread_t::begin_xct()
 {
     assert(current_xct == NULL);
-    timeout_in_ms timeout = WAIT_SPECIFIED_BY_THREAD;
+    timeout_in_ms timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD;
     current_xct = new xct_t(NULL, timeout, false, false, false);
     smlevel_0::log->get_oldest_lsn_tracker()
         ->enter(reinterpret_cast<uintptr_t>(current_xct),

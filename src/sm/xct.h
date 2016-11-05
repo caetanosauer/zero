@@ -290,7 +290,7 @@ public:
 public:
     NORET                       xct_t(
             sm_stats_info_t*    stats = NULL,
-            timeout_in_ms       timeout = WAIT_SPECIFIED_BY_THREAD,
+            timeout_in_ms       timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD,
             bool                sys_xct = false,
             bool                single_log_sys_xct = false,
             const tid_t&        tid = tid_t::null,

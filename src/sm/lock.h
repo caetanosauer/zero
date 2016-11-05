@@ -33,8 +33,6 @@ public:
     NORET                        lock_m(const sm_options &options);
     NORET                        ~lock_m();
 
-    int                          collect(vtable_t&, bool names_too);
-
     /**
     * \brief Unsafely check that the lock table is empty for debugging
     *  and assertions at shutdown, when MT-safety shouldn't be an issue.
@@ -77,12 +75,12 @@ public:
     rc_t lock(uint32_t hash, const okvl_mode &m,
             bool check, bool wait, bool acquire,
             xct_t* = NULL,
-            timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT,
+            timeout_in_ms timeout = smthread_t::WAIT_SPECIFIED_BY_XCT,
             RawLock** out = NULL);
 
     /** @copydoc RawLockQueue::retry_acquire() */
     rc_t                        retry_lock(RawLock** lock, bool check_only,
-                                           timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT);
+                                           timeout_in_ms timeout = smthread_t::WAIT_SPECIFIED_BY_XCT);
 
     /**
      * Take an intent lock on the given store.

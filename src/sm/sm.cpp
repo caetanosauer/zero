@@ -155,8 +155,6 @@ ss_m::ss_m(const sm_options &options)
 {
     _options = options;
 
-    sthread_t::initialize_sthreads_package();
-
     // Start the store during ss_m constructor if caller is asking for it
     bool started = startup();
     // If error encountered, raise fatal error if it was not raised already

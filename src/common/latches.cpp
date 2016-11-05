@@ -1,7 +1,5 @@
 #include "latches.h"
 
-#include "sthread.h"
-
 occ_rwlock::occ_rwlock()
     : _active_count(0)
 {

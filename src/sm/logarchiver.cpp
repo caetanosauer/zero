@@ -103,7 +103,7 @@ bool ArchiverControl::waitForActivation()
     listening = true;
     while(!activated) {
         struct timespec timeout;
-        sthread_t::timeout_to_timespec(100, timeout); // 100ms
+        smthread_t::timeout_to_timespec(100, timeout); // 100ms
         int code = pthread_cond_timedwait(&activateCond, &mutex, &timeout);
         if (code == ETIMEDOUT) {
             //DBGTHRD(<< "Wait timed out -- try again");

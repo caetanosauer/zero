@@ -62,7 +62,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #include <vector>
-#include "sthread.h"
 #include "basics.h"
 #include <w_debug.h>
 #include <cstddef>

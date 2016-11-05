@@ -72,45 +72,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #ifndef SM_BASE_H
 #include <sm_base.h>
 #endif
-#ifndef STHREAD_H
-#include <sthread.h>
-#endif
 #include <w_bitvector.h>
 
-
-/**\enum timeout_t
- * \brief Special values for timeout_in_ms.
- *
- * \details sthreads package recognizes 2 WAIT_* values:
- * == WAIT_IMMEDIATE
- * and != WAIT_IMMEDIATE.
- *
- * If it's not WAIT_IMMEDIATE, it's assumed to be
- * a positive integer (milliseconds) used for the
- * select timeout.
- * WAIT_IMMEDIATE: no wait
- * WAIT_FOREVER:   may block indefinitely
- * The user of the thread (e.g., sm) had better
- * convert timeout that are negative values (WAIT_* below)
- * to something >= 0 before calling block().
- *
- * All other WAIT_* values other than WAIT_IMMEDIATE
- * are handled by sm layer:
- * WAIT_SPECIFIED_BY_THREAD: pick up a timeout_in_ms from the smthread.
- * WAIT_SPECIFIED_BY_XCT: pick up a timeout_in_ms from the transaction.
- * Anything else: not legitimate.
- *
- * \sa timeout_in_ms
- */
-enum timeout_t {
-    WAIT_IMMEDIATE     = 0,
-    WAIT_FOREVER     = -1,
-    WAIT_SPECIFIED_BY_THREAD     = -4, // used by lock manager
-    WAIT_SPECIFIED_BY_XCT = -5, // used by lock manager
-    // CS: I guess the NOT_USED value is only for threads that never acquire
-    // any locks? And neither latches?
-    WAIT_NOT_USED = -6 // indicates last negative number used by sthreads
-};
+// CS TODO get rid of this (move random numbe gen. to kits)
+#include "rand48.h"
+#include "tls.h" // for rand()
+static __thread rand48 tls_rng = RAND48_INITIALIZER;
 
 /**\typedef int32_t time_ut_in_ms;
  * \brief Timeout in milliseconds if > 0
@@ -250,7 +217,7 @@ class sm_stats_info_t; // forward
  * awaits permission (a pthread condition variable)
  * to continue (signalled by smthread_t::fork).
  */
-class smthread_t : public sthread_t {
+class smthread_t {
     friend class smthread_init_t;
     struct tcb_t {
         xct_t*   xct;
@@ -314,6 +281,41 @@ class smthread_t : public sthread_t {
         ~tcb_t() { destroy_TL_stats(); }
     };
 
+public:
+    /**\enum timeout_t
+     * \brief Special values for timeout_in_ms.
+     *
+     * \details sthreads package recognizes 2 WAIT_* values:
+     * == WAIT_IMMEDIATE
+     * and != WAIT_IMMEDIATE.
+     *
+     * If it's not WAIT_IMMEDIATE, it's assumed to be
+     * a positive integer (milliseconds) used for the
+     * select timeout.
+     * WAIT_IMMEDIATE: no wait
+     * WAIT_FOREVER:   may block indefinitely
+     * The user of the thread (e.g., sm) had better
+     * convert timeout that are negative values (WAIT_* below)
+     * to something >= 0 before calling block().
+     *
+     * All other WAIT_* values other than WAIT_IMMEDIATE
+     * are handled by sm layer:
+     * WAIT_SPECIFIED_BY_THREAD: pick up a timeout_in_ms from the smthread.
+     * WAIT_SPECIFIED_BY_XCT: pick up a timeout_in_ms from the transaction.
+     * Anything else: not legitimate.
+     *
+     * \sa timeout_in_ms
+     */
+    enum timeout_t {
+        WAIT_IMMEDIATE     = 0,
+        WAIT_FOREVER     = -1,
+        WAIT_SPECIFIED_BY_THREAD     = -4, // used by lock manager
+        WAIT_SPECIFIED_BY_XCT = -5, // used by lock manager
+        // CS: I guess the NOT_USED value is only for threads that never acquire
+        // any locks? And neither latches?
+        WAIT_NOT_USED = -6 // indicates last negative number used by sthreads
+    };
+
 
     // bool               _try_initialize_fingerprint(); // true: failure false: ok
     // void               _initialize_fingerprint();
@@ -324,23 +326,9 @@ class smthread_t : public sthread_t {
 public:
     // const atomic_thread_map_t&  get_fingerprint_map() const
     //                         {   return _fingerprint_map; }
+    static void timeout_to_timespec(int timeout_ms, struct timespec &when);
 
 public:
-
-    // This is helpful for debugging and besides, it returns a w_rc_t
-    // so there is an opportunity to check for things like
-    // no xcts attached, etc. and deliver this info to the client.
-
-    /**\brief  Returns when this thread ends.
-     * @param[in] timeout Not used.
-     * \details
-     * Errors:
-     * -ePINACTIVE: if the thread ended while holding a pinned record.
-     * -eINTRANS: if the thread ended while attached to a transaction.
-     */
-    w_rc_t               join(timeout_in_ms timeout = WAIT_FOREVER);
-
-    NORET                ~smthread_t();
 
     /**\cond skip */
     /* public for debugging */
@@ -489,16 +477,16 @@ public:
        Otherwise, ordinarly pthreads sychronization variables
        are used.
     */
-    w_error_codes smthread_block(timeout_in_ms WAIT_FOREVER,
-                      const char * const caller = 0,
-                      const void * id = 0);
-    w_rc_t            smthread_unblock(w_error_codes e);
+    // w_error_codes smthread_block(timeout_in_ms WAIT_FOREVER,
+    //                   const char * const caller = 0,
+    //                   const void * id = 0);
+    // w_rc_t            smthread_unblock(w_error_codes e);
 
-    int sampling;
-private:
-    w_error_codes _smthread_block( timeout_in_ms WAIT_FOREVER,
-                              const char * const why =0);
-    w_rc_t           _smthread_unblock(w_error_codes e);
+    // int sampling;
+// private:
+    // w_error_codes _smthread_block( timeout_in_ms WAIT_FOREVER,
+    //                           const char * const why =0);
+    // w_rc_t           _smthread_unblock(w_error_codes e);
 
 public:
     /**\brief  TLS variables Exported to sm.
@@ -540,6 +528,9 @@ private:
 public:
     /** Tells how many transactions are nested. */
     static inline size_t get_tcb_depth() { return tcb()._depth; }
+
+    // CS: copied from sthread_t, used by kits tpcc (TODO: get rid of it)
+    static int rand() { return tls_rng.rand(); } // returns an int in [0, 2**31)
 };
 
 inline xct_t* xct()

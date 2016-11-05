@@ -1,6 +1,7 @@
 #ifndef BACKUP_READER_H
 #define BACKUP_READER_H
 
+#include "thread_wrapper.h"
 #include "sm_base.h"
 #include "generic_page.h"
 
@@ -137,7 +138,7 @@ public:
  *
  * \author Caetano Sauer
  */
-class BackupPrefetcher : public smthread_t, public BackupReader {
+class BackupPrefetcher : public thread_wrapper_t, public BackupReader {
 public:
     BackupPrefetcher(vol_t* volume, size_t numSegments, size_t segmentSize);
     virtual ~BackupPrefetcher();

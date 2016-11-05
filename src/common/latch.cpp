@@ -60,7 +60,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #include "w.h"
-#include "sthread.h"
 #include "latch.h"
 #include "w_debug.h"
 
@@ -323,22 +322,22 @@ public:
 // For debugging purposes, let's string together all the thread_local
 // lists so that we can print all the latches and their
 // holders.   smthread_t calls on_thread_init and on_thread_destroy.
-#include <map>
-typedef std::map<sthread_t*, latch_holder_t**> holder_list_list_t;
-static holder_list_list_t holder_list_list;
+// #include <map>
+// typedef std::map<sthread_t*, latch_holder_t**> holder_list_list_t;
+// static holder_list_list_t holder_list_list;
 
 // It's not that this needs to be queue-based, but we want to avoid
 // pthreads API use directly as much as possible.
-static queue_based_block_lock_t    holder_list_list_lock;
+// static queue_based_block_lock_t    holder_list_list_lock;
 /**\endcond skip */
 
 
 w_rc_t
-latch_t::latch_acquire(latch_mode_t mode, sthread_t::timeout_in_ms timeout)
+latch_t::latch_acquire(latch_mode_t mode, int timeout_in_ms)
 {
     w_assert1(mode != LATCH_NL);
     holder_search me(this);
-    return _acquire(mode, timeout, me.value());
+    return _acquire(mode, timeout_in_ms, me.value());
 }
 
 w_rc_t
@@ -356,7 +355,7 @@ latch_t::upgrade_if_not_block(bool& would_block)
         return RCOK;
     }
 
-    w_rc_t rc = _acquire(LATCH_EX, sthread_base_t::WAIT_IMMEDIATE, me.value());
+    w_rc_t rc = _acquire(LATCH_EX, smthread_t::WAIT_IMMEDIATE, me.value());
     if(rc.is_error()) {
         // it never should have tried to block
         w_assert3(rc.err_num() != stTIMEOUT);
@@ -383,7 +382,7 @@ int latch_t::latch_release()
 }
 
 w_rc_t latch_t::_acquire(latch_mode_t new_mode,
-    sthread_t::timeout_in_ms timeout,
+    int timeout,
     latch_holder_t* me)
 {
     DBGTHRD( << "want to acquire in mode "
@@ -457,7 +456,7 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
         INC_STH_STATS(latch_uncondl_nowait);
 #endif
     } else {
-        if(timeout == sthread_base_t::WAIT_IMMEDIATE) {
+        if(timeout == smthread_t::WAIT_IMMEDIATE) {
             INC_STH_STATS(needs_latch_condl);
             bool success = (new_mode == LATCH_SH)?
                 _lock.attempt_read() : _lock.attempt_write();
@@ -616,60 +615,60 @@ void print_my_latches()
     holders_print all(latch_holder_t::thread_local_holders);
 }
 
-void print_all_latches()
-{
-// Don't protect: this is for use in a debugger.
-// It's absolutely dangerous to use in a running
-// storage manager, since these lists will be
-// munged frequently.
-    int count=0;
-    {
-        holder_list_list_t::iterator  iter;
-        for(iter= holder_list_list.begin();
-             iter != holder_list_list.end();
-             iter ++) count++;
-    }
-    holder_list_list_t::iterator  iter;
-    cerr << "ALL " << count << " LATCHES {" << endl;
-    for(iter= holder_list_list.begin();
-         iter != holder_list_list.end(); iter ++)
-    {
-        DBG(<<"");
-        sthread_t* who = iter->first;
-        DBG(<<" who " << (void *)(who));
-        latch_holder_t **whoslist = iter->second;
-        DBG(<<" whoslist " << (void *)(whoslist));
-        if(who) {
-        cerr << "{ Thread id:" << ::dec << who->id
-         << " @ sthread/" << ::hex << uint64_t(who)
-         // << " @ pthread/" << ::hex << uint64_t(who->myself())
-         << endl << "\t";
-        } else {
-        cerr << "{ empty }"
-         << endl << "\t";
-        }
-        DBG(<<"");
-        holders_print whose(*whoslist);
-        cerr <<  "} " << endl << flush;
-    }
-    cerr <<  "}" << endl << flush ;
-}
+// void print_all_latches()
+// {
+// // Don't protect: this is for use in a debugger.
+// // It's absolutely dangerous to use in a running
+// // storage manager, since these lists will be
+// // munged frequently.
+//     int count=0;
+//     {
+//         holder_list_list_t::iterator  iter;
+//         for(iter= holder_list_list.begin();
+//              iter != holder_list_list.end();
+//              iter ++) count++;
+//     }
+//     holder_list_list_t::iterator  iter;
+//     cerr << "ALL " << count << " LATCHES {" << endl;
+//     for(iter= holder_list_list.begin();
+//          iter != holder_list_list.end(); iter ++)
+//     {
+//         DBG(<<"");
+//         sthread_t* who = iter->first;
+//         DBG(<<" who " << (void *)(who));
+//         latch_holder_t **whoslist = iter->second;
+//         DBG(<<" whoslist " << (void *)(whoslist));
+//         if(who) {
+//         cerr << "{ Thread id:" << ::dec << who->id
+//          << " @ sthread/" << ::hex << uint64_t(who)
+//          // << " @ pthread/" << ::hex << uint64_t(who->myself())
+//          << endl << "\t";
+//         } else {
+//         cerr << "{ empty }"
+//          << endl << "\t";
+//         }
+//         DBG(<<"");
+//         holders_print whose(*whoslist);
+//         cerr <<  "} " << endl << flush;
+//     }
+//     cerr <<  "}" << endl << flush ;
+// }
 
 
-void print_latch_holders(latch_t* latch)
-{
-    holder_list_list_t::iterator  iter;
-    for(iter = holder_list_list.begin();
-         iter != holder_list_list.end(); ++iter)
-    {
-        latch_holder_t **whoslist = iter->second;
-        holder_list holders(*iter->second);
-        holder_list::iterator it=holders.begin();
-        for(; it!=holders.end() && it->_latch;  ++it)
-        {
-            if (it->_latch == latch) {
-                (*whoslist)->print(cout);
-            }
-        }
-    }
-}
+// void print_latch_holders(latch_t* latch)
+// {
+//     holder_list_list_t::iterator  iter;
+//     for(iter = holder_list_list.begin();
+//          iter != holder_list_list.end(); ++iter)
+//     {
+//         latch_holder_t **whoslist = iter->second;
+//         holder_list holders(*iter->second);
+//         holder_list::iterator it=holders.begin();
+//         for(; it!=holders.end() && it->_latch;  ++it)
+//         {
+//             if (it->_latch == latch) {
+//                 (*whoslist)->print(cout);
+//             }
+//         }
+//     }
+// }

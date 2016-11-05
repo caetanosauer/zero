@@ -37,6 +37,7 @@
 #include "w_defines.h"
 #include "w_heap.h"
 
+#include "thread_wrapper.h"
 #include "sm_base.h"
 #include "chkpt.h"
 #include "lock.h"               // Lock re-acquisition
@@ -46,16 +47,16 @@
 // Child thread created by restart_m for concurrent recovery operation
 // It is to carry out the REDO and UNDO phases while the system is
 // opened for user transactions
-class restart_thread_t : public sthread_t
+class restart_thread_t : public thread_wrapper_t
 {
 public:
 
-    NORET restart_thread_t()
+    restart_thread_t()
     {
-        smthread_t::set_lock_timeout(WAIT_FOREVER);
+        smthread_t::set_lock_timeout(smthread_t::WAIT_FOREVER);
         working = false;
     };
-    NORET ~restart_thread_t()
+    ~restart_thread_t()
     {
     };
 
@@ -69,7 +70,7 @@ private:
 
 private:
     // disabled
-    NORET restart_thread_t(const restart_thread_t&);
+    restart_thread_t(const restart_thread_t&);
     restart_thread_t& operator=(const restart_thread_t&);
 };
 

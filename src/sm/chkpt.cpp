@@ -839,7 +839,7 @@ chkpt_thread_t::chkpt_thread_t(int interval)
 {
     DO_PTHREAD(pthread_mutex_init(&_awaken_lock, NULL));
     DO_PTHREAD(pthread_cond_init(&_awaken_cond, NULL));
-    smthread_t::set_lock_timeout(sthread_t::WAIT_NOT_USED);
+    smthread_t::set_lock_timeout(smthread_t::WAIT_NOT_USED);
 }
 
 chkpt_thread_t::~chkpt_thread_t()
@@ -854,7 +854,7 @@ void chkpt_thread_t::run()
 
         if (_interval >= 0) {
             struct timespec timeout;
-            sthread_t::timeout_to_timespec(_interval * 1000, timeout); // in ms
+            smthread_t::timeout_to_timespec(_interval * 1000, timeout); // in ms
             int code = pthread_cond_timedwait(&_awaken_cond, &_awaken_lock, &timeout);
             if (code == ETIMEDOUT) {
                 _wakeup = true;

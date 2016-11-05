@@ -62,10 +62,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
+#include "smthread.h"
+#include "latches.h"
 #include <list>
 #include <thread>
-
-#include "sthread.h"
 
 /**
  * \enum latch_mode_t
@@ -163,8 +163,7 @@ public:
     /// Acquire the latch in given mode. \sa  timeout_t.
     w_rc_t                  latch_acquire(
                                 latch_mode_t             m,
-                                sthread_t::timeout_in_ms timeout =
-                                      sthread_base_t::WAIT_FOREVER);
+                                int timeout = smthread_t::WAIT_FOREVER);
     /**\brief Upgrade from SH to EX if it can be done w/o blocking.
      * \details Returns bool indicating if it would have blocked, in which
      * case the upgrade did not occur. If it didn't have to block, the
@@ -217,7 +216,7 @@ public:
 private:
     // found, iterator
     w_rc_t                _acquire(latch_mode_t m,
-                                 sthread_t::timeout_in_ms,
+                                 int timeout_in_ms,
                                  latch_holder_t* me);
 	// return #times this thread holds the latch after this release
     int                   _release(latch_holder_t* me);

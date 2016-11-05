@@ -149,7 +149,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
 
         // Step 1: latch page in EX mode and check if eligible for eviction
         latch_rc = cb.latch().latch_acquire(LATCH_EX,
-               sthread_t::WAIT_IMMEDIATE);
+               smthread_t::WAIT_IMMEDIATE);
         if (latch_rc.is_error()) {
             idx++;
             DBG3(<< "Eviction failed on latch for " << idx);
@@ -211,7 +211,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         bf_tree_cb_t& parent_cb = get_cb(parent_idx);
         // latch_rc = parent_cb.latch().latch_acquire(LATCH_SH,
         latch_rc = parent_cb.latch().latch_acquire(LATCH_EX,
-                sthread_t::WAIT_IMMEDIATE);
+                smthread_t::WAIT_IMMEDIATE);
         if (latch_rc.is_error()) {
             // just give up. If we try to latch it unconditionally, we may
             // deadlock, because other threads are also waiting on the eviction

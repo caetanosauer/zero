@@ -18,7 +18,7 @@ void worker_thread_t::wakeup(bool wait)
 {
     unsigned long this_round = 0;
     {
-        unique_lock<mutex> lck(cond_mutex);
+        std::unique_lock<std::mutex> lck(cond_mutex);
 
         if (wait) {
             // Capture current round number before wakeup
@@ -39,7 +39,7 @@ void worker_thread_t::wakeup(bool wait)
 
 void worker_thread_t::wait_for_round(unsigned long round)
 {
-    unique_lock<mutex> lck(cond_mutex);
+    std::unique_lock<std::mutex> lck(cond_mutex);
 
     if (round == 0) { round = rounds_completed + 1; }
 
@@ -61,13 +61,13 @@ void worker_thread_t::stop()
 void worker_thread_t::run()
 {
     auto predicate = [this] { return wakeup_requested; };
-    auto timeout = chrono::milliseconds(interval_msec);
+    auto timeout = std::chrono::milliseconds(interval_msec);
 
     while (true) {
         if (stop_requested) { break; }
 
         {
-            unique_lock<mutex> lck(cond_mutex);
+            std::unique_lock<std::mutex> lck(cond_mutex);
             if (interval_msec < 0) {
                 // Only activate upon recieving a wakeup signal
                 wakeup_condvar.wait(lck, predicate);
@@ -87,7 +87,7 @@ void worker_thread_t::run()
 
         {
             // Notify waiting threads that we are done with this round
-            lock_guard<mutex> lck(cond_mutex);
+            std::lock_guard<std::mutex> lck(cond_mutex);
             rounds_completed++;
             worker_busy = false;
             done_condvar.notify_all();

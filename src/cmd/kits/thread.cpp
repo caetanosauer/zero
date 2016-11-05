@@ -464,17 +464,17 @@ static void setup_thread(thread_args* args)
  *
  *********************************************************************/
 
-void wait_for_sthread_clients(sthread_t** threads, int num_thread_ids)
-{
-    // wait for client threads to receive error message
-    for (int i = 0; i < num_thread_ids; i++) {
-        // join should not really fail unless we are doing
-        // something seriously wrong...
-        threads[i]->join();
+// void wait_for_sthread_clients(sthread_t** threads, int num_thread_ids)
+// {
+//     // wait for client threads to receive error message
+//     for (int i = 0; i < num_thread_ids; i++) {
+//         // join should not really fail unless we are doing
+//         // something seriously wrong...
+//         threads[i]->join();
 
-        //int join_ret = pthread_join(thread_ids[i], NULL);
-        //assert(join_ret == 0);
-    }
-}
+//         //int join_ret = pthread_join(thread_ids[i], NULL);
+//         //assert(join_ret == 0);
+//     }
+// }
 
 #endif /** USE_SMTHREAD_AS_BASE */

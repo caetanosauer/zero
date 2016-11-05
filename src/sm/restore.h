@@ -3,6 +3,7 @@
 #ifndef RESTORE_H
 #define RESTORE_H
 
+#include "thread_wrapper.h"
 #include "sm_base.h"
 #include "logarchiver.h"
 
@@ -284,7 +285,7 @@ protected:
 };
 
 // TODO get rid of smthread_t and use std::thread
-struct RestoreThread : sthread_t
+struct RestoreThread : thread_wrapper_t
 {
     RestoreThread(RestoreMgr* mgr, unsigned id) : mgr(mgr), id(id) {};
     RestoreMgr* mgr;

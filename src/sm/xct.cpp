@@ -323,11 +323,11 @@ xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
         W_FATAL(eOUTOFMEMORY);
     }
 
-    if (timeout_c() == WAIT_SPECIFIED_BY_THREAD) {
+    if (timeout_c() == smthread_t::WAIT_SPECIFIED_BY_THREAD) {
         // override in this case
         set_timeout(smthread_t::lock_timeout());
     }
-    w_assert9(timeout_c() >= 0 || timeout_c() == WAIT_FOREVER);
+    w_assert9(timeout_c() >= 0 || timeout_c() == smthread_t::WAIT_FOREVER);
 
     put_in_order();
 
@@ -416,7 +416,7 @@ xct_t::~xct_t()
     // if (LATCH_NL != latch().mode())
     // {
     //     // Someone is accessing this txn, wait until it finished
-    //     w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
+    //     w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, smthread_t::WAIT_FOREVER);
 
     //     // Now we can delete the core, no one can acquire latch on this txn after this point
     //     // since transaction is being destroyed
@@ -429,37 +429,6 @@ xct_t::~xct_t()
     //     }
     // }
 }
-
-#if W_DEBUG_LEVEL > 2
-/* debugger-callable */
-extern "C" void dumpXct(const xct_t *x) { if(x) { cout << *x <<endl;} }
-
-/* help for debugger-callable dumpThreadById() below */
-class PrintSmthreadById : public SmthreadFunc
-{
-    public:
-        PrintSmthreadById(ostream& out, int i ) : o(out), _i(0) {
-                _i = sthread_base_t::id_t(i);
-        };
-        void operator()(const smthread_t& smthread);
-    private:
-        ostream&        o;
-        sthread_base_t::id_t                 _i;
-};
-void PrintSmthreadById::operator()(const smthread_t& smthread)
-{
-    if (smthread.id == _i)  {
-        o << "--------------------" << "\n" << smthread;
-    }
-}
-
-/* debugger-callable */
-extern "C" void
-dumpThreadById(int i) {
-    PrintSmthreadById f(cout, i);
-    smthread_t::for_each_smthread(f);
-}
-#endif
 
 /*
  * Clean up existing transactions at ssm shutdown.
@@ -845,8 +814,8 @@ operator<<(ostream& o, const xct_t& x)
 
     o << "\n" << " state=" << x.state() << " num_threads=" << x._core->_threads_attached << "\n" << "   ";
 
-    o << " defaultTimeout=";
-    print_timeout(o, x.timeout_c());
+    // o << " defaultTimeout=";
+    // print_timeout(o, x.timeout_c());
     o << " first_lsn=" << x._first_lsn << " last_lsn=" << x._last_lsn << "\n" << "   ";
 
     o << " in_compensated_op=" << x._in_compensated_op << " anchor=" << x._anchor;
@@ -891,7 +860,7 @@ xct_t::change_state(state_t new_state)
     w_assert1(one_thread_attached());
 
     // Acquire a write latch, the traditional read latch is used by checkpoint
-    w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
+    w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, smthread_t::WAIT_FOREVER);
     if (latch_rc.is_error())
     {
         // Unable to the read acquire latch, cannot continue, raise an internal error

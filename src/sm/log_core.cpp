@@ -61,6 +61,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define LOG_CORE_C
 
+#include "thread_wrapper.h"
 #include "sm_options.h"
 #include "sm_base.h"
 #include "logtype_gen.h"
@@ -91,7 +92,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
         W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
     }
 
-class ticker_thread_t : public sthread_t
+class ticker_thread_t : public thread_wrapper_t
 {
 public:
     ticker_thread_t(bool msec = false)
@@ -137,7 +138,8 @@ private:
     char lrbuf[80];
 };
 
-class fetch_buffer_loader_t : public sthread_t {
+class fetch_buffer_loader_t : public thread_wrapper_t
+{
 public:
     fetch_buffer_loader_t(log_core* log) : log(log)
     {
@@ -155,17 +157,24 @@ private:
 };
 
 
-class flush_daemon_thread_t : public sthread_t {
+class flush_daemon_thread_t : public thread_wrapper_t
+{
     log_core* _log;
 public:
     flush_daemon_thread_t(log_core* log) :
          _log(log)
     {
-        smthread_t::set_lock_timeout(WAIT_NOT_USED);
+        smthread_t::set_lock_timeout(smthread_t::WAIT_NOT_USED);
     }
 
     virtual void run() { _log->flush_daemon(); }
 };
+
+void log_core::start_flush_daemon()
+{
+    _flush_daemon_running = true;
+    _flush_daemon->fork();
+}
 
 /*********************************************************************
  *

@@ -77,13 +77,13 @@ timeout_in_ms lock_m::_convert_timeout(timeout_in_ms timeout, xct_t* xd) {
     w_assert1(NULL != xd);
 
     switch (timeout) {
-        case WAIT_SPECIFIED_BY_XCT:
+        case smthread_t::WAIT_SPECIFIED_BY_XCT:
             timeout = xd->timeout_c();
             break;
             // DROP THROUGH to WAIT_SPECIFIED_BY_THREAD ...
             // (whose default is WAIT_FOREVER)
 
-        case WAIT_SPECIFIED_BY_THREAD:
+        case smthread_t::WAIT_SPECIFIED_BY_THREAD:
             timeout = smthread_t::lock_timeout();
             break;
 
@@ -91,7 +91,7 @@ timeout_in_ms lock_m::_convert_timeout(timeout_in_ms timeout, xct_t* xd) {
             break;
     }
 
-    w_assert9(timeout >= 0 || timeout == WAIT_FOREVER);
+    w_assert9(timeout >= 0 || timeout == smthread_t::WAIT_FOREVER);
     return timeout;
 }
 

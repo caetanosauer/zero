@@ -57,8 +57,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#include "sthread.h"
-
 #ifndef W_BASE_H
 /* NB: DO NOT make this include w.h -- not yet */
 #include <w_base.h>

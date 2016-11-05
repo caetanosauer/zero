@@ -641,7 +641,7 @@ public:
      * \sa timeout_in_ms
      */
     static rc_t           begin_xct(
-        timeout_in_ms            timeout = WAIT_SPECIFIED_BY_THREAD);
+        timeout_in_ms            timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Begin an instrumented transaction.
      *\ingroup SSMXCT
@@ -667,7 +667,7 @@ public:
      */
     static rc_t           begin_xct(
         sm_stats_info_t*         stats,  // allocated by caller
-        timeout_in_ms            timeout = WAIT_SPECIFIED_BY_THREAD);
+        timeout_in_ms            timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Begin a transaction and return the transaction id.
      *\ingroup SSMXCT
@@ -685,7 +685,7 @@ public:
      */
     static rc_t           begin_xct(
         tid_t&                   tid,
-        timeout_in_ms            timeout = WAIT_SPECIFIED_BY_THREAD);
+        timeout_in_ms            timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**
      * \brief Being a new system transaction which might be a nested transaction.
@@ -702,7 +702,7 @@ public:
     static rc_t           begin_sys_xct(
         bool single_log_sys_xct = false,
         sm_stats_info_t*         stats = NULL,
-        timeout_in_ms            timeout = WAIT_SPECIFIED_BY_THREAD);
+        timeout_in_ms            timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Commit a transaction.
      *\ingroup SSMXCT
@@ -954,51 +954,51 @@ public:
     static rc_t            xct_reserve_log_space(off_t amt);
 
 
-    /**\brief Collect transaction information in a virtual table.
-     * \ingroup SSMVTABLE
-     * \details
-     * @param[out] v  The virtual table to populate.
-     * @param[in] names_too  If true, make the
-     *            first row of the table a list of the attribute names.
-     *
-     * All attribute values will be strings.
-     * The virtual table v can be printed with its output operator
-     * operator\<\< for ostreams.
-     *
-     * \attention Not atomic. Can yield stale data.
-     */
-    static rc_t            xct_collect(vtable_t&v, bool names_too=true);
+    // /**\brief Collect transaction information in a virtual table.
+    //  * \ingroup SSMVTABLE
+    //  * \details
+    //  * @param[out] v  The virtual table to populate.
+    //  * @param[in] names_too  If true, make the
+    //  *            first row of the table a list of the attribute names.
+    //  *
+    //  * All attribute values will be strings.
+    //  * The virtual table v can be printed with its output operator
+    //  * operator\<\< for ostreams.
+    //  *
+    //  * \attention Not atomic. Can yield stale data.
+    //  */
+    // static rc_t            xct_collect(vtable_t&v, bool names_too=true);
 
-    /**\brief Collect lock table information in a virtual table.
-     * \ingroup SSMVTABLE
-     * \details
-     * @param[out] v  The virtual table to populate.
-     * @param[in] names_too  If true, make the
-     *            first row of the table a list of the attribute names.
-     *
-     * All attribute values will be strings.
-     * The virtual table v can be printed with its output operator
-     * operator<< for ostreams.
-     *
-     * \attention Not atomic. Can yield stale data.
-     * Cannot be used in a multi-threaded-transaction context.
-     */
-    static rc_t            lock_collect(vtable_t&v, bool names_too=true);
+    // /**\brief Collect lock table information in a virtual table.
+    //  * \ingroup SSMVTABLE
+    //  * \details
+    //  * @param[out] v  The virtual table to populate.
+    //  * @param[in] names_too  If true, make the
+    //  *            first row of the table a list of the attribute names.
+    //  *
+    //  * All attribute values will be strings.
+    //  * The virtual table v can be printed with its output operator
+    //  * operator<< for ostreams.
+    //  *
+    //  * \attention Not atomic. Can yield stale data.
+    //  * Cannot be used in a multi-threaded-transaction context.
+    //  */
+    // static rc_t            lock_collect(vtable_t&v, bool names_too=true);
 
-    /**\brief Collect thread information in a virtual table.
-     * \ingroup SSMVTABLE
-     * \details
-     * @param[out] v  The virtual table to populate.
-     * @param[in] names_too  If true, make the
-     *            first row of the table a list of the attribute names.
-     *
-     * All attribute values will be strings.
-     * The virtual table v can be printed with its output operator
-     * operator<< for ostreams.
-     *
-     * \attention Not thread-safe. Can yield stale data.
-     */
-    static rc_t            thread_collect(vtable_t&v, bool names_too=true);
+    // /**\brief Collect thread information in a virtual table.
+    //  * \ingroup SSMVTABLE
+    //  * \details
+    //  * @param[out] v  The virtual table to populate.
+    //  * @param[in] names_too  If true, make the
+    //  *            first row of the table a list of the attribute names.
+    //  *
+    //  * All attribute values will be strings.
+    //  * The virtual table v can be printed with its output operator
+    //  * operator<< for ostreams.
+    //  *
+    //  * \attention Not thread-safe. Can yield stale data.
+    //  */
+    // static rc_t            thread_collect(vtable_t&v, bool names_too=true);
 
     /**\brief Take a checkpoint.
      * \ingroup SSMAPIDEBUG
@@ -1358,7 +1358,7 @@ public:
         const lockid_t&         n,
         const okvl_mode&           m,
         bool                    check_only = false,
-        timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
+        timeout_in_ms           timeout = smthread_t::WAIT_SPECIFIED_BY_XCT
     );
 
     static rc_t            activate_archiver();

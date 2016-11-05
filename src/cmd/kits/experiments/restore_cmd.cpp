@@ -1,9 +1,10 @@
 #include "restore_cmd.h"
 
+#include "thread_wrapper.h"
 #include "shore_env.h"
 #include "vol.h"
 
-class FailureThread : public sthread_t
+class FailureThread : public thread_wrapper_t
 {
 public:
     FailureThread(unsigned delay, bool evict, bool* flag)
