@@ -163,7 +163,7 @@ public:
     /// Acquire the latch in given mode. \sa  timeout_t.
     w_rc_t                  latch_acquire(
                                 latch_mode_t             m,
-                                int timeout = smthread_t::WAIT_FOREVER);
+                                int timeout = timeout_t::WAIT_FOREVER);
     /**\brief Upgrade from SH to EX if it can be done w/o blocking.
      * \details Returns bool indicating if it would have blocked, in which
      * case the upgrade did not occur. If it didn't have to block, the

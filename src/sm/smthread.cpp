@@ -327,7 +327,7 @@ smthread_t::add_from_TL_stats(sm_stats_info_t &w)
 // by another force such as timeout, but we need to be sure that we don't
 // try here to unblock a thread that didn't block via smthread_block
 // w_error_codes  smthread_t::_smthread_block(
-//       timeout_in_ms timeout,
+//       int timeout,
 //       const char * const W_IFDEBUG9(blockname))
 // {
 //     _waiting = true;
@@ -352,7 +352,7 @@ smthread_t::add_from_TL_stats(sm_stats_info_t &w)
 
 /* thread-compatability block() and unblock.  Use the per-smthread _block
    as the synchronization primitive. */
-// w_error_codes   smthread_t::smthread_block(timeout_in_ms timeout,
+// w_error_codes   smthread_t::smthread_block(int timeout,
 //       const char * const caller,
 //       const void *)
 // {
@@ -367,8 +367,8 @@ smthread_t::add_from_TL_stats(sm_stats_info_t &w)
 // timeout given in ms
 void smthread_t::timeout_to_timespec(int timeout, struct timespec &when)
 {
-    w_assert1(timeout != WAIT_IMMEDIATE);
-    w_assert1(timeout != sthread_t::WAIT_FOREVER);
+    w_assert1(timeout != timeout_t::WAIT_IMMEDIATE);
+    w_assert1(timeout != timeout_t::WAIT_FOREVER);
     if(timeout > 0) {
         ::clock_gettime(CLOCK_REALTIME, &when);
         when.tv_nsec += (uint64_t) timeout * 1000000;
@@ -389,28 +389,28 @@ void smthread_t::timeout_to_timespec(int timeout, struct timespec &when)
 // }
 
 
-class SelectSmthreadsFunc : public ThreadFunc
-{
-    public:
-    SelectSmthreadsFunc(SmthreadFunc& func) : f(func) {};
-    void operator()(const sthread_t& thread) {
-        if (const smthread_t* smthread = thread.dynamic_cast_to_const_smthread())
-        {
-            f(*smthread);
-        }
-    }
-    private:
-    SmthreadFunc&    f;
-};
+// class SelectSmthreadsFunc : public ThreadFunc
+// {
+//     public:
+//     SelectSmthreadsFunc(SmthreadFunc& func) : f(func) {};
+//     void operator()(const sthread_t& thread) {
+//         if (const smthread_t* smthread = thread.dynamic_cast_to_const_smthread())
+//         {
+//             f(*smthread);
+//         }
+//     }
+//     private:
+//     SmthreadFunc&    f;
+// };
 
-void
-smthread_t::for_each_smthread(SmthreadFunc& f)
-{
+// void
+// smthread_t::for_each_smthread(SmthreadFunc& f)
+// {
 
-    SelectSmthreadsFunc g(f);
-    // CS TODO: we need to implement a new TSTAT mechanism!
-    // for_each_thread(g);
-}
+//     SelectSmthreadsFunc g(f);
+//     // CS TODO: we need to implement a new TSTAT mechanism!
+//     // for_each_thread(g);
+// }
 
 
 void
@@ -538,47 +538,47 @@ smthread_t::no_xct(xct_t *x)
     }
 }
 
-void
-smthread_t::_dump(ostream &o) const
-{
-    sthread_t *t = (sthread_t *)this;
-    // t->sthread_t::_dump(o);
+// void
+// smthread_t::_dump(ostream &o) const
+// {
+//     sthread_t *t = (sthread_t *)this;
+//     // t->sthread_t::_dump(o);
 
-    o << "smthread_t: " << (char *)(is_in_sm()?"in sm ":"") << endl;
-    o << "transactions in this thread (from bottom):" << endl;
-    for (tcb_t* tcb = tcb_ptr(); tcb != NULL; tcb = tcb->_outer) {
-        o << "xct ";
-        if (tcb->xct) {
-            o << tcb->xct->tid() << (tcb->xct->is_sys_xct() ? "(sys_xct)" : "(usr_xct)");
-        } else {
-            o << "<NULL xct>";
-        }
-        o << endl;
-    }
-}
+//     o << "smthread_t: " << (char *)(is_in_sm()?"in sm ":"") << endl;
+//     o << "transactions in this thread (from bottom):" << endl;
+//     for (tcb_t* tcb = tcb_ptr(); tcb != NULL; tcb = tcb->_outer) {
+//         o << "xct ";
+//         if (tcb->xct) {
+//             o << tcb->xct->tid() << (tcb->xct->is_sys_xct() ? "(sys_xct)" : "(usr_xct)");
+//         } else {
+//             o << "<NULL xct>";
+//         }
+//         o << endl;
+//     }
+// }
 
 
 
-class PrintBlockedThread : public ThreadFunc
-{
-    public:
-                        PrintBlockedThread(ostream& o) : out(o) {};
-                        ~PrintBlockedThread() {};
-        void                operator()(const sthread_t& thread)
-                        {
-                            if (thread.status() == sthread_t::t_blocked)  {
-                                out << "*******" << endl;
-                                thread._dump(out);
-                            }
-                        };
-    private:
-        ostream&        out;
-};
+// class PrintBlockedThread : public ThreadFunc
+// {
+//     public:
+//                         PrintBlockedThread(ostream& o) : out(o) {};
+//                         ~PrintBlockedThread() {};
+//         void                operator()(const sthread_t& thread)
+//                         {
+//                             if (thread.status() == sthread_t::t_blocked)  {
+//                                 out << "*******" << endl;
+//                                 thread._dump(out);
+//                             }
+//                         };
+//     private:
+//         ostream&        out;
+// };
 
-void
-DumpBlockedThreads(ostream& o)
-{
-    PrintBlockedThread f(o);
-    // CS TODO
-    // sthread_t::for_each_thread(f);
-}
+// void
+// DumpBlockedThreads(ostream& o)
+// {
+//     PrintBlockedThread f(o);
+//     // CS TODO
+//     // sthread_t::for_each_thread(f);
+// }

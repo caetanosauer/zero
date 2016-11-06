@@ -127,7 +127,7 @@ void basethread_t::print_stats()
 void basethread_t::begin_xct()
 {
     assert(current_xct == NULL);
-    timeout_in_ms timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD;
+    int timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD;
     current_xct = new xct_t(NULL, timeout, false, false, false);
     smlevel_0::log->get_oldest_lsn_tracker()
         ->enter(reinterpret_cast<uintptr_t>(current_xct),

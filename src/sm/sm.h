@@ -611,7 +611,7 @@ private:
     // Used for cosntructing xct object depending on chosen implementation
     static xct_t* _new_xct(
             sm_stats_info_t* stats,
-            timeout_in_ms timeout,
+            int timeout,
             bool sys_xct,
             bool single_log_sys_xct = false);
 
@@ -638,10 +638,10 @@ public:
      * will use the timeout given.
      * The default timeout is the one associated with this thread.
      *
-     * \sa timeout_in_ms
+     * \sa int
      */
     static rc_t           begin_xct(
-        timeout_in_ms            timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD);
+        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Begin an instrumented transaction.
      *\ingroup SSMXCT
@@ -663,11 +663,11 @@ public:
      * will use the timeout given.
      * The default timeout is the one associated with this thread.
      *
-     * \sa timeout_in_ms
+     * \sa int
      */
     static rc_t           begin_xct(
         sm_stats_info_t*         stats,  // allocated by caller
-        timeout_in_ms            timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD);
+        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Begin a transaction and return the transaction id.
      *\ingroup SSMXCT
@@ -681,11 +681,11 @@ public:
      * will use the timeout given.
      * The default timeout is the one associated with this thread.
      *
-     * \sa timeout_in_ms
+     * \sa int
      */
     static rc_t           begin_xct(
         tid_t&                   tid,
-        timeout_in_ms            timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD);
+        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**
      * \brief Being a new system transaction which might be a nested transaction.
@@ -702,7 +702,7 @@ public:
     static rc_t           begin_sys_xct(
         bool single_log_sys_xct = false,
         sm_stats_info_t*         stats = NULL,
-        timeout_in_ms            timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD);
+        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Commit a transaction.
      *\ingroup SSMXCT
@@ -1352,13 +1352,13 @@ public:
      * lockid_t.
      * @param[in]  m  Desired lock mode.  Values: EX, SH.
      * @param[in]  check_only  if true, the lock goes away right after grant. default false.
-     * @param[in]  timeout  Milliseconds willing to block.  See timeout_in_ms.
+     * @param[in]  timeout  Milliseconds willing to block.  See int.
      */
     static rc_t            lock(
         const lockid_t&         n,
         const okvl_mode&           m,
         bool                    check_only = false,
-        timeout_in_ms           timeout = smthread_t::WAIT_SPECIFIED_BY_XCT
+        int           timeout = timeout_t::WAIT_SPECIFIED_BY_XCT
     );
 
     static rc_t            activate_archiver();
@@ -1385,7 +1385,7 @@ private:
     static rc_t         _begin_xct(
         sm_stats_info_t*      stats,  // allocated by caller
         tid_t&                tid,
-        timeout_in_ms         timeout,
+        int         timeout,
         bool sys_xct = false,
         bool single_log_sys_xct = false);
 

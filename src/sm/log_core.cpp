@@ -164,7 +164,7 @@ public:
     flush_daemon_thread_t(log_core* log) :
          _log(log)
     {
-        smthread_t::set_lock_timeout(smthread_t::WAIT_NOT_USED);
+        smthread_t::set_lock_timeout(timeout_t::WAIT_NOT_USED);
     }
 
     virtual void run() { _log->flush_daemon(); }

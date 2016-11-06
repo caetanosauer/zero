@@ -244,7 +244,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         bf_tree_cb_t &cb = get_cb(idx);
 
         W_DO(cb.latch().latch_acquire(mode,
-                    conditional ? smthread_t::WAIT_IMMEDIATE : smthread_t::WAIT_FOREVER));
+                    conditional ? timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
 
         w_assert1(_is_active_idx(idx));
         w_assert1(cb._swizzled);
@@ -298,7 +298,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             // STEP 2) Acquire EX latch before hash table insert, to make sure
             // nobody will access this page until we're done
             w_rc_t check_rc = cb.latch().latch_acquire(LATCH_EX,
-                    smthread_t::WAIT_IMMEDIATE);
+                    timeout_t::WAIT_IMMEDIATE);
             if (check_rc.is_error())
             {
                 _add_free_block(idx);
@@ -366,7 +366,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             // meaning the actual page is in buffer pool already
 
             W_DO(cb.latch().latch_acquire(mode, conditional ?
-                        smthread_t::WAIT_IMMEDIATE : smthread_t::WAIT_FOREVER));
+                        timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
 
             if (cb._pin_cnt < 0 || cb._pid != pid) {
                 // Page was evicted between hash table probe and latching
@@ -811,7 +811,7 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
                                        idx, latch_mode_t mode, bool conditional) {
     bf_tree_cb_t &cb = get_cb(idx);
     W_DO(cb.latch().latch_acquire(mode, conditional ?
-                smthread_t::WAIT_IMMEDIATE : smthread_t::WAIT_FOREVER));
+                timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
     w_assert1(cb._pin_cnt > 0);
     cb.pin();
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
@@ -862,7 +862,7 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
     else {
         // Pointer to root page was swizzled -- direct access to CB
         W_DO(get_cb(idx).latch().latch_acquire(
-                    mode, conditional ? smthread_t::WAIT_IMMEDIATE : smthread_t::WAIT_FOREVER));
+                    mode, conditional ? timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
         page = &(_buffer[idx]);
         get_cb(idx).pin();
     }

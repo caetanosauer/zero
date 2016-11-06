@@ -16,6 +16,7 @@
 #include "vol.h"
 #include "log_core.h"
 #include "sm_options.h"
+#include "gethrtime.h"
 
 #include "alloc_cache.h"
 #include "restore.h"

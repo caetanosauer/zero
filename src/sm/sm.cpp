@@ -550,14 +550,14 @@ void ss_m::set_shutdown_flag(bool clean)
 rc_t
 ss_m::begin_xct(
         sm_stats_info_t*             _stats, // allocated by caller
-        timeout_in_ms timeout)
+        int timeout)
 {
     tid_t tid;
     W_DO(_begin_xct(_stats, tid, timeout));
     return RCOK;
 }
 rc_t
-ss_m::begin_xct(timeout_in_ms timeout)
+ss_m::begin_xct(int timeout)
 {
     tid_t tid;
     W_DO(_begin_xct(0, tid, timeout));
@@ -568,14 +568,14 @@ ss_m::begin_xct(timeout_in_ms timeout)
  *  ss_m::begin_xct() - for Markos' tests                       *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::begin_xct(tid_t& tid, timeout_in_ms timeout)
+ss_m::begin_xct(tid_t& tid, int timeout)
 {
     W_DO(_begin_xct(0, tid, timeout));
     return RCOK;
 }
 
 rc_t ss_m::begin_sys_xct(bool single_log_sys_xct,
-    sm_stats_info_t *stats, timeout_in_ms timeout)
+    sm_stats_info_t *stats, int timeout)
 {
     tid_t tid;
     W_DO (_begin_xct(stats, tid, timeout, true, single_log_sys_xct));
@@ -904,14 +904,14 @@ lil_global_table* ss_m::get_lil_global_table() {
 }
 
 rc_t ss_m::lock(const lockid_t& n, const okvl_mode& m,
-           bool check_only, timeout_in_ms timeout)
+           bool check_only, int timeout)
 {
     W_DO( lm->lock(n.hash(), m, true, true, !check_only, NULL, timeout) );
     return RCOK;
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::_begin_xct(sm_stats_info_t *_stats, timeout_in_ms timeout) *
+ *  ss_m::_begin_xct(sm_stats_info_t *_stats, int timeout) *
  *
  * @param[in] _stats  If called by begin_xct without a _stats, then _stats is NULL here.
  *                    If not null, the transaction is instrumented.
@@ -920,7 +920,7 @@ rc_t ss_m::lock(const lockid_t& n, const okvl_mode& m,
  *                    commit_xct, abort_xct, prepare_xct, or chain_xct.
  *--------------------------------------------------------------*/
 rc_t
-ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, bool sys_xct,
+ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, int timeout, bool sys_xct,
     bool single_log_sys_xct)
 {
     w_assert1(!single_log_sys_xct || sys_xct); // SSX is always system-transaction
@@ -971,7 +971,7 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
 
 xct_t* ss_m::_new_xct(
         sm_stats_info_t* stats,
-        timeout_in_ms timeout,
+        int timeout,
         bool sys_xct,
         bool single_log_sys_xct)
 {
@@ -1310,7 +1310,8 @@ ss_m::gather_stats(sm_stats_info_t& _stats)
 
     //Gather all the threads' statistics into the copy given by
     //the client.
-    smthread_t::for_each_smthread(F);
+    // CS TODO: new thread stats mechanism!
+    // smthread_t::for_each_smthread(F);
     // F.compute();
 
     // Now add in the global stats.

@@ -170,7 +170,7 @@ void lock_core_m::deallocate_xct(RawXct* xct) {
 w_error_codes lock_core_m::acquire_lock(RawXct* xct, uint32_t hash, const okvl_mode& mode,
                 bool check, bool wait, bool acquire, int32_t timeout, RawLock** out)
 {
-    w_assert1(timeout >= 0 || timeout == smthread_t::WAIT_FOREVER);
+    w_assert1(timeout >= 0 || timeout == timeout_t::WAIT_FOREVER);
     uint32_t idx = _table_bucket(hash);
     while (true) {
         w_error_codes er = _htab[idx].acquire(xct, hash, mode, timeout,
@@ -184,7 +184,7 @@ w_error_codes lock_core_m::acquire_lock(RawXct* xct, uint32_t hash, const okvl_m
         //                         caller should retry using retry_acquire
         //   w_error_ok - acquired lock, return to caller
 
-        if (er == eDEADLOCK && !xct->has_locks() && wait && timeout == smthread_t::WAIT_FOREVER) {
+        if (er == eDEADLOCK && !xct->has_locks() && wait && timeout == timeout_t::WAIT_FOREVER) {
             // this was a failed lock aquisition, so it didn't get the new lock.
             // the transaction doesn't have any other lock, and waiting unconditionally.
             // this means we can forever retry without risking anything!
@@ -196,7 +196,7 @@ w_error_codes lock_core_m::acquire_lock(RawXct* xct, uint32_t hash, const okvl_m
 }
 
 w_error_codes lock_core_m::retry_acquire(RawLock** lock, bool acquire, int32_t timeout) {
-    w_assert1(timeout >= 0 || timeout == smthread_t::WAIT_FOREVER);
+    w_assert1(timeout >= 0 || timeout == timeout_t::WAIT_FOREVER);
     uint32_t hash = (*lock)->hash;
     uint32_t idx = _table_bucket(hash);
     const okvl_mode& mode = (*lock)->mode;
@@ -211,10 +211,10 @@ w_error_codes lock_core_m::retry_acquire(RawLock** lock, bool acquire, int32_t t
         //                         caller should retry using retry_acquire
         //   w_error_ok - acquired lock, return to caller
         w_error_codes er = _htab[idx].retry_acquire(lock, true, acquire, timeout);
-        if (er == eDEADLOCK && !xct->has_locks() && timeout == smthread_t::WAIT_FOREVER) {
+        if (er == eDEADLOCK && !xct->has_locks() && timeout == timeout_t::WAIT_FOREVER) {
             // same as above, but now the lock was removed. we have to switch to acquire_lock.
             w_assert1(*lock == NULL);
-            return acquire_lock(xct, hash, mode, true, true, acquire, smthread_t::WAIT_FOREVER, lock);
+            return acquire_lock(xct, hash, mode, true, true, acquire, timeout_t::WAIT_FOREVER, lock);
         }
         return er;
     }

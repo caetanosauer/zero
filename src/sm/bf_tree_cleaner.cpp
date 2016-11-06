@@ -180,7 +180,7 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
 
     // CS TODO: policy option: wait for latch or just attempt conditionally
-    rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, smthread_t::WAIT_IMMEDIATE);
+    rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, timeout_t::WAIT_IMMEDIATE);
     if (latch_rc.is_error()) {
         // Could not latch page in SH mode -- just skip it
         return false;

@@ -221,7 +221,7 @@ DECLARE_TLS(lil_lock_info_ptr, agent_lil_lock_info);
 DEFINE_SM_ALLOC(xct_t);
 DEFINE_SM_ALLOC(xct_t::xct_core);
 
-xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
+xct_t::xct_core::xct_core(tid_t const &t, state_t s, int timeout)
     :
     _tid(t),
     _timeout(timeout),
@@ -256,7 +256,7 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
  *  and the xct record is inserted into _xlist.
  *
  *********************************************************************/
-xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
+xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
            bool single_log_sys_xct, const tid_t& given_tid, const lsn_t& last_lsn,
            const lsn_t& undo_nxt, bool loser_xct
             )
@@ -323,11 +323,11 @@ xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
         W_FATAL(eOUTOFMEMORY);
     }
 
-    if (timeout_c() == smthread_t::WAIT_SPECIFIED_BY_THREAD) {
+    if (timeout_c() == timeout_t::WAIT_SPECIFIED_BY_THREAD) {
         // override in this case
         set_timeout(smthread_t::lock_timeout());
     }
-    w_assert9(timeout_c() >= 0 || timeout_c() == smthread_t::WAIT_FOREVER);
+    w_assert9(timeout_c() >= 0 || timeout_c() == timeout_t::WAIT_FOREVER);
 
     put_in_order();
 
@@ -416,7 +416,7 @@ xct_t::~xct_t()
     // if (LATCH_NL != latch().mode())
     // {
     //     // Someone is accessing this txn, wait until it finished
-    //     w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, smthread_t::WAIT_FOREVER);
+    //     w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, timeout_t::WAIT_FOREVER);
 
     //     // Now we can delete the core, no one can acquire latch on this txn after this point
     //     // since transaction is being destroyed
@@ -560,7 +560,7 @@ RawXct* xct_t::raw_lock_xct() const {
     return _core->_raw_lock_xct;
 }
 
-timeout_in_ms
+int
 xct_t::timeout_c() const {
     return _core->_timeout;
 }
@@ -795,7 +795,7 @@ xct_t::dump(ostream &out)
 }
 
 void
-xct_t::set_timeout(timeout_in_ms t)
+xct_t::set_timeout(int t)
 {
     _core->_timeout = t;
 }
@@ -860,7 +860,7 @@ xct_t::change_state(state_t new_state)
     w_assert1(one_thread_attached());
 
     // Acquire a write latch, the traditional read latch is used by checkpoint
-    w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, smthread_t::WAIT_FOREVER);
+    w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, timeout_t::WAIT_FOREVER);
     if (latch_rc.is_error())
     {
         // Unable to the read acquire latch, cannot continue, raise an internal error

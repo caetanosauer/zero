@@ -17,7 +17,7 @@ public:
 
     plog_xct_t(
         sm_stats_info_t*             stats = NULL,
-        timeout_in_ms                timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD,
+        int                timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD,
         bool                         sys_xct = false,
         bool                         single_log_sys_xct = false,
         const lsn_t&                 last_lsn = lsn_t::null,

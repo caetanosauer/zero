@@ -539,7 +539,7 @@ private:
 // Thread that fetches pages into the buffer for warming up.
 // Instead of reading a contiguous chunk, it iterates over all
 // B-trees so that higher levels are loaded first.
-class WarmupThread : public smthread_t {
+class WarmupThread : public thread_wrapper_t {
 public:
     WarmupThread() {};
     virtual ~WarmupThread() {}

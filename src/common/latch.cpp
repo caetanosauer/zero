@@ -355,7 +355,7 @@ latch_t::upgrade_if_not_block(bool& would_block)
         return RCOK;
     }
 
-    w_rc_t rc = _acquire(LATCH_EX, smthread_t::WAIT_IMMEDIATE, me.value());
+    w_rc_t rc = _acquire(LATCH_EX, timeout_t::WAIT_IMMEDIATE, me.value());
     if(rc.is_error()) {
         // it never should have tried to block
         w_assert3(rc.err_num() != stTIMEOUT);
@@ -456,7 +456,7 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
         INC_STH_STATS(latch_uncondl_nowait);
 #endif
     } else {
-        if(timeout == smthread_t::WAIT_IMMEDIATE) {
+        if(timeout == timeout_t::WAIT_IMMEDIATE) {
             INC_STH_STATS(needs_latch_condl);
             bool success = (new_mode == LATCH_SH)?
                 _lock.attempt_read() : _lock.attempt_write();

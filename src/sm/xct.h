@@ -221,12 +221,12 @@ public:
      */
     struct xct_core
     {
-        xct_core(tid_t const &t, state_t s, timeout_in_ms timeout);
+        xct_core(tid_t const &t, state_t s, int timeout);
         ~xct_core();
 
         //-- from xct.h ----------------------------------------------------
         tid_t                  _tid;
-        timeout_in_ms          _timeout; // default timeout value for lock reqs
+        int          _timeout; // default timeout value for lock reqs
         bool                   _warn_on;
         xct_lock_info_t*       _lock_info;
         lil_private_table*     _lil_lock_info;
@@ -290,7 +290,7 @@ public:
 public:
     NORET                       xct_t(
             sm_stats_info_t*    stats = NULL,
-            timeout_in_ms       timeout = smthread_t::WAIT_SPECIFIED_BY_THREAD,
+            int       timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD,
             bool                sys_xct = false,
             bool                single_log_sys_xct = false,
             const tid_t&        tid = tid_t::null,
@@ -305,9 +305,9 @@ public:
     friend ostream&             operator<<(ostream&, const xct_t&);
 
     state_t                     state() const;
-    void                        set_timeout(timeout_in_ms t) ;
+    void                        set_timeout(int t) ;
 
-    timeout_in_ms               timeout_c() const;
+    int               timeout_c() const;
 
     /*
      * basic tx commands:
@@ -689,7 +689,7 @@ private:
     /////////////////////////////////////////////////////////////////
     // non-const because it acquires mutex:
     // removed, now that the lock mgrs use the const,INLINE-d form
-    // timeout_in_ms        timeout();
+    // int        timeout();
 
     static void                 xct_stats(
                                     u_long&             begins,

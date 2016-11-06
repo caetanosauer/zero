@@ -82,7 +82,7 @@ btree_impl::_ux_lock_key(
     // the current transaction already held other locks, it is not safe to retry (will cause
     // further deadlocks) therefore caller must abort the current transaction
     rc_t lock_rc = lm->lock(lid.hash(), lock_mode, true /*check */, false /* wait */,
-            !check_only /* acquire */, smthread_t::xct(),smthread_t::WAIT_IMMEDIATE, &entry);
+            !check_only /* acquire */, smthread_t::xct(),timeout_t::WAIT_IMMEDIATE, &entry);
 
     if (!lock_rc.is_error()) {
         // lucky! we got it immediately. just return.

@@ -53,7 +53,7 @@ public:
 
     restart_thread_t()
     {
-        smthread_t::set_lock_timeout(smthread_t::WAIT_FOREVER);
+        smthread_t::set_lock_timeout(timeout_t::WAIT_FOREVER);
         working = false;
     };
     ~restart_thread_t()

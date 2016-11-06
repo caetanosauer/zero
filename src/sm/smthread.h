@@ -74,21 +74,13 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #endif
 #include <w_bitvector.h>
 
+#include "timeout.h"
+#include "latches.h"
+
 // CS TODO get rid of this (move random numbe gen. to kits)
 #include "rand48.h"
 #include "tls.h" // for rand()
 static __thread rand48 tls_rng = RAND48_INITIALIZER;
-
-/**\typedef int32_t time_ut_in_ms;
- * \brief Timeout in milliseconds if > 0
- * \details
- * sthread_t blocking methods take a timeout in milliseconds.
- * If the value is < 0, then it's expected to be a member of the
- * enumeration type timeout_t.
- *
- * \sa timeout_t
- */
-typedef int32_t timeout_in_ms;
 
 class xct_t;
 class xct_log_t;
@@ -223,7 +215,7 @@ class smthread_t {
         xct_t*   xct;
         int      pin_count;      // number of rsrc_m pins
         int      prev_pin_count; // previous # of rsrc_m pins
-        timeout_in_ms lock_timeout;    // timeout to use for lock acquisitions
+        int lock_timeout;    // timeout to use for lock acquisitions
         bool    _in_sm;      // thread is in sm ss_m:: function
         bool    _is_update_thread;// thread is in update function
 
@@ -262,7 +254,7 @@ class smthread_t {
             xct(0),
             pin_count(0),
             prev_pin_count(0),
-            lock_timeout(WAIT_FOREVER), // default for a thread
+            lock_timeout(timeout_t::WAIT_FOREVER), // default for a thread
             _in_sm(false),
             _is_update_thread(false),
             _depth(outer == NULL ? 1 : outer->_depth + 1),
@@ -282,40 +274,6 @@ class smthread_t {
     };
 
 public:
-    /**\enum timeout_t
-     * \brief Special values for timeout_in_ms.
-     *
-     * \details sthreads package recognizes 2 WAIT_* values:
-     * == WAIT_IMMEDIATE
-     * and != WAIT_IMMEDIATE.
-     *
-     * If it's not WAIT_IMMEDIATE, it's assumed to be
-     * a positive integer (milliseconds) used for the
-     * select timeout.
-     * WAIT_IMMEDIATE: no wait
-     * WAIT_FOREVER:   may block indefinitely
-     * The user of the thread (e.g., sm) had better
-     * convert timeout that are negative values (WAIT_* below)
-     * to something >= 0 before calling block().
-     *
-     * All other WAIT_* values other than WAIT_IMMEDIATE
-     * are handled by sm layer:
-     * WAIT_SPECIFIED_BY_THREAD: pick up a timeout_in_ms from the smthread.
-     * WAIT_SPECIFIED_BY_XCT: pick up a timeout_in_ms from the transaction.
-     * Anything else: not legitimate.
-     *
-     * \sa timeout_in_ms
-     */
-    enum timeout_t {
-        WAIT_IMMEDIATE     = 0,
-        WAIT_FOREVER     = -1,
-        WAIT_SPECIFIED_BY_THREAD     = -4, // used by lock manager
-        WAIT_SPECIFIED_BY_XCT = -5, // used by lock manager
-        // CS: I guess the NOT_USED value is only for threads that never acquire
-        // any locks? And neither latches?
-        WAIT_NOT_USED = -6 // indicates last negative number used by sthreads
-    };
-
 
     // bool               _try_initialize_fingerprint(); // true: failure false: ok
     // void               _initialize_fingerprint();
@@ -374,7 +332,7 @@ public:
 
     /// get lock_timeout value
     static inline
-    timeout_in_ms        lock_timeout() {
+    int        lock_timeout() {
                     return tcb().lock_timeout;
                 }
     /**\brief Set lock_timeout value
@@ -396,7 +354,7 @@ public:
      * value given at ss_m::begin_xct.
      */
     static inline
-    void             set_lock_timeout(timeout_in_ms i) {
+    void             set_lock_timeout(int i) {
                     tcb().lock_timeout = i;
                 }
 
@@ -477,14 +435,14 @@ public:
        Otherwise, ordinarly pthreads sychronization variables
        are used.
     */
-    // w_error_codes smthread_block(timeout_in_ms WAIT_FOREVER,
+    // w_error_codes smthread_block(int WAIT_FOREVER,
     //                   const char * const caller = 0,
     //                   const void * id = 0);
     // w_rc_t            smthread_unblock(w_error_codes e);
 
     // int sampling;
 // private:
-    // w_error_codes _smthread_block( timeout_in_ms WAIT_FOREVER,
+    // w_error_codes _smthread_block( int WAIT_FOREVER,
     //                           const char * const why =0);
     // w_rc_t           _smthread_unblock(w_error_codes e);
 

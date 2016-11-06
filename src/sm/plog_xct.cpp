@@ -16,7 +16,7 @@ DEFINE_SM_ALLOC(plog_xct_t);
 
 plog_xct_t::plog_xct_t(
     sm_stats_info_t*             stats,  // allocated by caller
-    timeout_in_ms                timeout,
+    int                timeout,
     bool                         sys_xct,
     bool                         single_log_sys_xct,
     const lsn_t&                 last_lsn,

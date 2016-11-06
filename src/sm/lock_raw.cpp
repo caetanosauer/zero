@@ -670,7 +670,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                             // Acquire latch before checking the loser status
                             try
                             {
-                                w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, smthread_t::WAIT_SPECIFIED_BY_XCT);
+                                w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, timeout_t::WAIT_SPECIFIED_BY_XCT);
                                 if (latch_rc.is_error())
                                 {
                                     // Failed to acquire latch on the transaction
