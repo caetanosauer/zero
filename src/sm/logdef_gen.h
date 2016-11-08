@@ -51,7 +51,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_comment;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_comment;
@@ -76,7 +76,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_logical, header._type = t_compensate;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_logical, header._type = t_compensate;
@@ -101,7 +101,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_skip;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_skip;
@@ -126,7 +126,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_chkpt_begin;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_chkpt_begin;
@@ -151,7 +151,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_chkpt_bf_tab;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_chkpt_bf_tab;
@@ -176,7 +176,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_chkpt_xct_tab;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_chkpt_xct_tab;
@@ -201,7 +201,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_chkpt_xct_lock;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_chkpt_xct_lock;
@@ -226,7 +226,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo, header._type = t_chkpt_restore_tab;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo, header._type = t_chkpt_restore_tab;
@@ -251,7 +251,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo, header._type = t_chkpt_backup_tab;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo, header._type = t_chkpt_backup_tab;
@@ -276,7 +276,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_chkpt_end;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_chkpt_end;
@@ -301,7 +301,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_add_backup;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_add_backup;
@@ -326,7 +326,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_xct_abort;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_xct_abort;
@@ -351,7 +351,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_xct_freeing_space;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_xct_freeing_space;
@@ -376,7 +376,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_xct_end;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_xct_end;
@@ -401,7 +401,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_xct_end_group;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_xct_end_group;
@@ -426,7 +426,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_xct_latency_dump;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_xct_latency_dump;
@@ -451,7 +451,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_alloc_page;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_alloc_page;
@@ -476,7 +476,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_dealloc_page;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_dealloc_page;
@@ -501,7 +501,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_create_store;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_create_store;
@@ -526,7 +526,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_append_extent;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_append_extent;
@@ -551,7 +551,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_loganalysis_begin;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_loganalysis_begin;
@@ -576,7 +576,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_loganalysis_end;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_loganalysis_end;
@@ -601,7 +601,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_redo_done;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_redo_done;
@@ -626,7 +626,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_undo_done;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_undo_done;
@@ -651,7 +651,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_logical|t_single_sys_xct, header._type = t_restore_begin;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_logical|t_single_sys_xct, header._type = t_restore_begin;
@@ -676,7 +676,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_logical|t_single_sys_xct, header._type = t_restore_segment;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_logical|t_single_sys_xct, header._type = t_restore_segment;
@@ -701,7 +701,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_logical|t_single_sys_xct, header._type = t_restore_end;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_logical|t_single_sys_xct, header._type = t_restore_end;
@@ -726,7 +726,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_undo, header._type = t_page_set_to_be_deleted;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_undo, header._type = t_page_set_to_be_deleted;
@@ -751,7 +751,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_undo, header._type = t_page_img_format;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_undo, header._type = t_page_img_format;
@@ -776,7 +776,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_page_evict;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_page_evict;
@@ -801,7 +801,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_norec_alloc;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_norec_alloc;
@@ -826,7 +826,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_insert;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_insert;
@@ -851,7 +851,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_insert_nonghost;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_insert_nonghost;
@@ -876,7 +876,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_update;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_update;
@@ -901,7 +901,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_overwrite;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_overwrite;
@@ -926,7 +926,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_ghost_mark;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_ghost_mark;
@@ -951,7 +951,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_btree_ghost_reclaim;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_btree_ghost_reclaim;
@@ -976,7 +976,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_btree_ghost_reserve;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_btree_ghost_reserve;
@@ -1001,7 +1001,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_adopt;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_adopt;
@@ -1026,7 +1026,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_merge;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_merge;
@@ -1051,7 +1051,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_rebalance;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_rebalance;
@@ -1076,7 +1076,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_rebalance_norec;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_rebalance_norec;
@@ -1101,7 +1101,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_deadopt;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_deadopt;
@@ -1126,7 +1126,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_split;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_split;
@@ -1151,7 +1151,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_btree_compress_page;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = 0|t_redo|t_single_sys_xct, header._type = t_btree_compress_page;
@@ -1176,7 +1176,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_tick_sec;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_tick_sec;
@@ -1201,7 +1201,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_tick_msec;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_tick_msec;
@@ -1226,7 +1226,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_benchmark_start;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_benchmark_start;
@@ -1251,7 +1251,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_page_write;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_page_write;
@@ -1276,7 +1276,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     }
     void fill(const generic_page_h& p, int l) {
       header._cat = t_status, header._type = t_page_read;
-      logrec_t::fill(p, l);
+      logrec_t::fill(p.pid(), p.store(), p.tag(), l);
     }
     void fill(PageID pid, uint16_t tag, int l) {
       header._cat = t_status, header._type = t_page_read;
@@ -1289,5 +1289,208 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 
     };
+
+/**
+ * This is a special way of logging the creation of a new page.
+ * New page creation is usually a page split, so the new page has many
+ * records in it. To simplify and to avoid many log entries in that case,
+ * we log ALL bytes from the beginning to the end of slot vector,
+ * and from the record_head8 to the end of page.
+ * We can assume totally defragmented page image because this is page creation.
+ * We don't need UNDO (again, this is page creation!), REDO is just two memcpy().
+ */
+struct page_img_format_t {
+    size_t      beginning_bytes;
+    size_t      ending_bytes;
+    char        data[logrec_t::max_data_sz - 2 * sizeof(size_t)];
+    int size()        { return 2 * sizeof(size_t) + beginning_bytes + ending_bytes; }
+    page_img_format_t (const btree_page_h& page);
+
+    void apply(fixable_page_h* p);
+};
+
+struct chkpt_bf_tab_t {
+    struct brec_t {
+    PageID    pid;      // +8 -> 8
+    /*
+     *  CS: store is required to mark as in-doubt on buffer pool.
+     *  Perhaps we can remove the store number from buffer control blocks
+     *  (bf_tree_cb_t), provided that they are not required. (TODO)
+     */
+    lsn_t    rec_lsn;   // +8 -> 16, this is the minimum (earliest) LSN
+    lsn_t    page_lsn;  // +8 -> 24, this is the latest (page) LSN
+    };
+
+    // max is set to make chkpt_bf_tab_t fit in logrec_t::data_sz
+    enum { max = (logrec_t::max_data_sz - 2 * sizeof(uint32_t)) / sizeof(brec_t) };
+    uint32_t              count;
+    fill4              filler;
+    brec_t             brec[max];
+
+    NORET            chkpt_bf_tab_t(
+    int                 cnt,
+    const PageID*             p,
+    const lsn_t*             l,
+    const lsn_t*             pl);
+
+    int                size() const;
+};
+
+struct prepare_stores_to_free_t
+{
+    enum { max = (logrec_t::max_data_sz - sizeof(uint32_t)) / sizeof(StoreID) };
+    uint32_t            num;
+    StoreID            stids[max];
+
+    prepare_stores_to_free_t(uint32_t theNum, const StoreID* theStids)
+    : num(theNum)
+    {
+        w_assert3(theNum <= max);
+        for (uint32_t i = 0; i < num; i++)
+        stids[i] = theStids[i];
+    };
+
+    int size() const  { return sizeof(uint32_t) + num * sizeof(StoreID); };
+};
+
+struct chkpt_xct_tab_t {
+    struct xrec_t {
+    tid_t                 tid;
+    lsn_t                last_lsn;
+    lsn_t                first_lsn;
+    smlevel_0::xct_state_t        state;
+    };
+
+    // max is set to make chkpt_xct_tab_t fit in logrec_t::data_sz
+    enum {     max = ((logrec_t::max_data_sz - sizeof(tid_t) -
+            2 * sizeof(uint32_t)) / sizeof(xrec_t))
+    };
+    tid_t            youngest;    // maximum tid in session
+    uint32_t            count;
+    fill4            filler;
+    xrec_t             xrec[max];
+
+    NORET            chkpt_xct_tab_t(
+    const tid_t&             youngest,
+    int                 count,
+    const tid_t*             tid,
+    const smlevel_0::xct_state_t* state,
+    const lsn_t*             last_lsn,
+    const lsn_t*             first_lsn);
+    int             size() const;
+};
+
+struct chkpt_xct_lock_t {
+    struct lockrec_t {
+    okvl_mode            lock_mode;
+    uint32_t             lock_hash;
+    };
+
+    // max is set to make chkpt_xct_lock_t fit in logrec_t::data_sz
+    enum {     max = ((logrec_t::max_data_sz - sizeof(tid_t) -
+            2 * sizeof(uint32_t)) / sizeof(lockrec_t))
+    };
+
+    tid_t            tid;    // owning transaction tid
+    uint32_t         count;
+    fill4            filler;
+    lockrec_t        xrec[max];
+
+    NORET            chkpt_xct_lock_t(
+    const tid_t&        tid,
+    int                 count,
+    const okvl_mode*    lock_mode,
+    const uint32_t*     lock_hash);
+    int             size() const;
+};
+
+struct chkpt_backup_tab_t
+{
+    uint32_t count;
+    uint32_t data_size;
+    char     data[logrec_t::max_data_sz];
+
+    enum {
+        max = (logrec_t::max_data_sz - 2 * sizeof(uint32_t))
+                / (smlevel_0::max_devname)
+    };
+
+    chkpt_backup_tab_t(
+        const std::vector<string>& paths);
+
+    chkpt_backup_tab_t(int cnt, const string* paths);
+
+    int size() const {
+        return data_size + sizeof(uint32_t) * 2;
+    }
+
+    void read(std::vector<string>& paths);
+};
+
+struct chkpt_restore_tab_t
+{
+    enum {
+        maxBitmapSize = logrec_t::max_data_sz - 2*sizeof(PageID)
+            - sizeof(uint32_t),
+        // one segment for each bit in the bitmap
+        maxSegments = maxBitmapSize * 8
+    };
+
+    PageID firstNotRestored;
+    uint32_t bitmapSize;
+    char bitmap[maxBitmapSize];
+
+    chkpt_restore_tab_t()
+        : firstNotRestored(0), bitmapSize(0)
+    {}
+
+    size_t length()
+    {
+        return sizeof(PageID)
+            + sizeof(uint32_t)
+            + bitmapSize;
+    }
+};
+
+struct xct_list_t {
+    struct xrec_t {
+        tid_t                 tid;
+    };
+
+    // max is set to make chkpt_xct_tab_t fit in logrec_t::data_sz
+    enum {     max = ((logrec_t::max_data_sz - sizeof(tid_t) -
+            2 * sizeof(uint32_t)) / sizeof(xrec_t))
+    };
+    uint32_t            count;
+    fill4              filler;
+    xrec_t             xrec[max];
+
+    NORET             xct_list_t(const xct_t* list[], int count);
+    int               size() const;
+};
+
+inline int
+chkpt_bf_tab_t::size() const
+{
+    return (char*) &brec[count] - (char*) this;
+}
+
+inline int
+chkpt_xct_tab_t::size() const
+{
+    return (char*) &xrec[count] - (char*) this;
+}
+
+inline int
+chkpt_xct_lock_t::size() const
+{
+    return (char*) &xrec[count] - (char*) this;
+}
+
+inline int
+xct_list_t::size() const
+{
+    return (char*) &xrec[count] - (char*) this;
+}
 
 #endif
