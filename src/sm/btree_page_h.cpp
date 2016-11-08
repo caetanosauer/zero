@@ -158,6 +158,10 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
                                                                    // for page merge
                                 const bool        ghost)           // Should the fence key record be a ghost
 {
+    // CS TODO "full logging" is not supported anymore -- clean it up
+    // (better to clean it up after merge is re-implemented)
+    w_assert0(!full_logging);
+
     // Note that the method receives a copy, not reference, of pid/lsn here.
     // pid might point to a part of this page itself!
     // Initialize the whole image of the destination page page as an empty page.
@@ -189,39 +193,39 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
         cvec_t v;
         rc_t rc;
         _pack_node_record(v, stolen_key, stolen_pid0_emlsn.data());
-        if ((true == full_logging) && (false == log_src_1))
-        {
-            // Need to log for src2, this is for page merge and non-leaf pages only
-            // Log deletion from source(steal_src2), and insertion into target (page())
-            // This is the low fence key from source(steal_src2) before the merge
-            // which become a regular record in the merged page (page())
+        // if ((true == full_logging) && (false == log_src_1))
+        // {
+        //     // Need to log for src2, this is for page merge and non-leaf pages only
+        //     // Log deletion from source(steal_src2), and insertion into target (page())
+        //     // This is the low fence key from source(steal_src2) before the merge
+        //     // which become a regular record in the merged page (page())
 
-            // Log the insertion into destination first
-            w_keystr_t keystr;   // Used for insertion log record if full logging
-            // For logging purpose, it is the whole key, including prefix and PMNK
-            cvec_t  whole_key(steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length());
-            if (true == keystr.copy_from_vec(whole_key))
-            {
-                vec_t el;
-                cvec_t empty_key;
-                _pack_node_record(el, empty_key, stolen_pid0_emlsn.data());
-                rc = log_btree_insert_nonghost(*this, keystr, el, true /*is_sys_txn*/);   // key: original key including prefix
-                                                                                         // el: non-key portion only
-            }
-            else
-            {
-                W_FATAL_MSG(fcOUTOFMEMORY, << "Failed to generate log_btree_insert_nonghost log record due to OOM");
-            }
+        //     // Log the insertion into destination first
+        //     w_keystr_t keystr;   // Used for insertion log record if full logging
+        //     // For logging purpose, it is the whole key, including prefix and PMNK
+        //     cvec_t  whole_key(steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length());
+        //     if (true == keystr.copy_from_vec(whole_key))
+        //     {
+        //         vec_t el;
+        //         cvec_t empty_key;
+        //         _pack_node_record(el, empty_key, stolen_pid0_emlsn.data());
+        //         rc = log_btree_insert_nonghost(*this, keystr, el, true /*is_sys_txn*/);   // key: original key including prefix
+        //                                                                                  // el: non-key portion only
+        //     }
+        //     else
+        //     {
+        //         W_FATAL_MSG(fcOUTOFMEMORY, << "Failed to generate log_btree_insert_nonghost log record due to OOM");
+        //     }
 
-            // Now log the deletion from source next
-            vector<slotid_t> slots;
-            slots.push_back(0);  // Low fence key is in slot 0
-            rc = log_btree_ghost_mark(*steal_src2, slots, true /*is_sys_txn*/);
-            if (rc.is_error())
-            {
-                W_FATAL_MSG(fcINTERNAL, << "Failed to generate log_btree_ghost_mark log record during a full logging system transaction");
-            }
-        }
+        //     // Now log the deletion from source next
+        //     vector<slotid_t> slots;
+        //     slots.push_back(0);  // Low fence key is in slot 0
+        //     rc = log_btree_ghost_mark(*steal_src2, slots, true /*is_sys_txn*/);
+        //     if (rc.is_error())
+        //     {
+        //         W_FATAL_MSG(fcINTERNAL, << "Failed to generate log_btree_ghost_mark log record during a full logging system transaction");
+        //     }
+        // }
         // Now the actual movement
         if (!page()->insert_item(nrecs()+1, false /*ghost*/, poormkey, stolen_pid0, v)) {
             w_assert0(false);
