@@ -34,7 +34,33 @@
 
 #include "allocator.h"
 
-const std::string xct_t::IMPL_NAME = "traditional";
+// Template specializations for sm_tls_allocator
+DECLARE_TLS(block_pool<xct_t>, xct_pool);
+DECLARE_TLS(block_pool<xct_t::xct_core>, xct_core_pool);
+
+template<>
+xct_t* sm_tls_allocator::allocate<xct_t>(size_t)
+{
+    return (xct_t*) xct_pool->acquire();
+}
+
+template<>
+void sm_tls_allocator::release(xct_t* p, size_t)
+{
+    xct_pool->release(p);
+}
+
+template<>
+xct_t::xct_core* sm_tls_allocator::allocate<xct_t::xct_core>(size_t)
+{
+    return (xct_t::xct_core*) xct_core_pool->acquire();
+}
+
+template<>
+void sm_tls_allocator::release(xct_t::xct_core* p, size_t)
+{
+    xct_core_pool->release(p);
+}
 
 #define DBGX(arg) DBG(<< "tid." << _tid  arg)
 
@@ -1713,14 +1739,12 @@ xct_t::anchor(bool grabit)
 void
 xct_t::compensate_undo(const lsn_t& lsn)
 {
-#ifndef USE_ATOMIC_COMMIT
     DBGX(    << " compensate_undo (" << lsn << ") -- state=" << state());
 
     w_assert3(_in_compensated_op);
     // w_assert9(state() == xct_aborting); it's active if in sm::rollback_work
 
     _compensate(lsn, _last_log?_last_log->is_undoable_clr() : false);
-#endif
 }
 
 /*********************************************************************
@@ -1842,13 +1866,6 @@ xct_t::_compensate(const lsn_t& lsn, bool undoable)
 rc_t
 xct_t::rollback(const lsn_t &save_pt)
 {
-#ifdef USE_ATOMIC_COMMIT
-    cerr
-    << "Rollback to a save point not yet supported in atomic commit protocol"
-    << endl;
-    return RC(eNOABORT);
-#endif
-
     DBGTHRD(<< "xct_t::rollback to " << save_pt);
     // W_DO(check_one_thread_attached()); // now checked in prologue
     // w_assert1(one_thread_attached());

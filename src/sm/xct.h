@@ -84,6 +84,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <AtomicCounter.hpp>
 #include "w_key.h"
 #include "lsn.h"
+#include "allocator.h"
 
 #include "latch.h"
 
@@ -261,9 +262,6 @@ public:
 
 protected:
     xct_core* _core;
-
-public:
-    static const std::string IMPL_NAME;
 
 protected:
     enum commit_t { t_normal = 0, t_lazy = 1, t_chain = 2, t_group = 4 };

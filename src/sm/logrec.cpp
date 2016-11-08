@@ -14,7 +14,6 @@
 #include "sm_base.h"
 #include "vec_t.h"
 #include "alloc_cache.h"
-#include "allocator.h"
 #include "vol.h"
 #include "restore.h"
 #include "log_spr.h"
@@ -24,6 +23,20 @@
 typedef        ios::fmtflags        ios_fmtflags;
 
 #include <new>
+
+#include "allocator.h"
+DECLARE_TLS(block_pool<logrec_t>, logrec_pool);
+template<>
+logrec_t* sm_tls_allocator::allocate(size_t)
+{
+    return (logrec_t*) logrec_pool->acquire();
+}
+
+template<>
+void sm_tls_allocator::release(logrec_t* p, size_t)
+{
+    logrec_pool->release(p);
+}
 
 DEFINE_SM_ALLOC(logrec_t);
 

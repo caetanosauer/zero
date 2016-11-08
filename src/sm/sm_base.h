@@ -300,7 +300,6 @@ public:
     static lock_m* lm;
 
     static log_core* log;
-    static log_core* clog;
     static LogArchiver* logArchiver;
 
     static int    dcommit_timeout; // to convey option to coordinator,
@@ -391,14 +390,6 @@ public:
                         xct_freeing_space = 0x6,
                         xct_ended = 0x7
     };
-
-    // xct implementation
-    enum xct_impl_t {
-        XCT_TRADITIONAL = 0,
-        XCT_PLOG = 1
-    };
-
-    static xct_impl_t xct_impl;
 
     // Checkpoint manager
     static chkpt_m*    chkpt;

@@ -5,10 +5,6 @@ ENABLE_TESTING()
 add_library(btree_test_env STATIC ${CMAKE_CURRENT_SOURCE_DIR}/btree_test_env.cpp)
 target_link_libraries(btree_test_env gtest common sm)
 
-# CS: think of better solution -- see comment at the bottom (TODO)
-# add_library(btree_test_env_plog STATIC ${CMAKE_CURRENT_SOURCE_DIR}/btree_test_env.cpp)
-# target_link_libraries(btree_test_env_plog gtest common fc sthread sm_plog)
-
 add_library(logfactory STATIC ${CMAKE_CURRENT_SOURCE_DIR}/logfactory.cpp ${CMAKE_CURRENT_SOURCE_DIR}/stats.cpp)
 target_link_libraries(logfactory btree_test_env)
 
@@ -63,6 +59,3 @@ SET(cmd_LIBS zapps_base loginspect kits restore sm)
 X_ADD_TESTCASE(stress_carray sm)
 X_ADD_TESTCASE(stress_cleaner "${cmd_LIBS}")
 X_ADD_TESTCASE(stress_btree "${cmd_LIBS}")
-
-# CS: this makes sm_plog be compiled even if EXCLUDE_FROM_ALL is set (TODO fix it)
-# X_ADD_TESTCASE(test_plog btree_test_env_plog)

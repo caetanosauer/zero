@@ -70,6 +70,7 @@ class fixable_page_h;
 #include "lsn.h"
 #include "tid_t.h"
 #include "generic_page.h" // logrec size == 3 * page size
+#include "allocator.h"
 
 #include <boost/static_assert.hpp>
 

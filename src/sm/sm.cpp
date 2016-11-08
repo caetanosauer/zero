@@ -78,7 +78,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "alloc_cache.h"
 
 #include "allocator.h"
-#include "plog_xct.h"
 #include "log_core.h"
 #include "eventlog.h"
 
@@ -117,7 +116,6 @@ BackupManager* smlevel_0::bk = 0;
 vol_t* smlevel_0::vol = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_core* smlevel_0::log = 0;
-log_core* smlevel_0::clog = 0;
 LogArchiver* smlevel_0::logArchiver = 0;
 
 lock_m* smlevel_0::lm = 0;
@@ -131,13 +129,6 @@ restart_m* smlevel_0::recovery = 0;
 btree_m* smlevel_0::bt = 0;
 
 ss_m* smlevel_top::SSM = 0;
-
-smlevel_0::xct_impl_t smlevel_0::xct_impl
-#ifndef USE_ATOMIC_COMMIT
-    = smlevel_0::XCT_TRADITIONAL;
-#else
-    = smlevel_0::XCT_PLOG;
-#endif
 
 /*
  *  Class ss_m code
@@ -254,19 +245,9 @@ ss_m::_construct_once()
     /*
      *  Level 1
      */
-#ifndef USE_ATOMIC_COMMIT // otherwise, log and clog will point to the same log object
     log = new log_core(_options);
     ERROUT(<< "[" << timer.time_ms() << "] Initializing log manager (part 2)");
     W_COERCE(log->init());
-#else
-    /*
-     * Centralized log used for atomic commit protocol (by Caetano).
-     * See comments in plog.h
-     */
-    clog = new log_core(_options);
-    log = clog;
-    w_assert0(log);
-#endif
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing log archiver");
 
@@ -467,14 +448,6 @@ ss_m::_destruct_once()
     bt->destruct_once();
     delete bt; bt = 0; // btree manager
     delete lm; lm = 0;
-
-#ifndef USE_ATOMIC_COMMIT // otherwise clog and log point to the same object
-    if(clog) {
-        clog->shutdown(); // log joins any subsidiary threads
-    }
-#endif
-    clog = 0;
-
 
     ERROUT(<< "Terminating buffer manager");
     bf->shutdown();
@@ -975,12 +948,7 @@ xct_t* ss_m::_new_xct(
         bool sys_xct,
         bool single_log_sys_xct)
 {
-    switch (xct_impl) {
-    case XCT_PLOG:
-        return new plog_xct_t(stats, timeout, sys_xct, single_log_sys_xct);
-    default:
-        return new xct_t(stats, timeout, sys_xct, single_log_sys_xct, false);
-    }
+    return new xct_t(stats, timeout, sys_xct, single_log_sys_xct, false);
 }
 
 /*--------------------------------------------------------------*

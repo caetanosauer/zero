@@ -2,6 +2,9 @@
 #define ALLOCATOR_H
 
 #include "w_defines.h"
+#include <stdexcept>
+#include "tls.h"
+#include "block_alloc.h"
 
 class xct_t;
 class plog_xct_t;

@@ -2,7 +2,7 @@
 set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.cpp
-    #${CMAKE_CURRENT_SOURCE_DIR}/allocator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/allocator.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backup_reader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.cpp
@@ -42,8 +42,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/page_cleaner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/page_cleaner_decoupled.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/partition.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/plog.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/plog_xct.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/restart.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/restore.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm.cpp
@@ -63,17 +61,6 @@ target_link_libraries(sm
     boost_filesystem
     boost_regex
     )
-
-# CS: target that uses plog_xct, i.e., atomic commit protocol
-add_library(sm_plog STATIC ${sm_STAT_SRCS})
-target_link_libraries(sm_plog fc sthread common numa)
-get_target_property (SM_PLOG_COMPILEDEF sm_plog COMPILE_DEFINITIONS)
-#set(SM_PLOG_COMPILEDEF "SIMULATE_NO_SWIZZLING;USE_ATOMIC_COMMIT")
-set(SM_PLOG_COMPILEDEF "USE_ATOMIC_COMMIT")
-set_target_properties (sm_plog PROPERTIES
-    COMPILE_DEFINITIONS "${SM_PLOG_COMPILEDEF}"
-    EXCLUDE_FROM_ALL  ON
-)
 
 # generate a library that performs swizzling but no pin_cnt increments/decrements
 add_library(sm_swizzling_nopincntincdec STATIC ${sm_STAT_SRCS})
