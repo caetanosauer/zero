@@ -24,8 +24,7 @@ public:
                             && xd && xd->is_log_on();
         if (!should_log)  { return RCOK; }
 
-        logrec_t* logrec;
-        W_DO(xd->get_logbuf(logrec));
+        logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec {args...};
 
         // If it's a log for piggy-backed SSX, we call log->insert without updating _last_log
@@ -41,7 +40,11 @@ public:
 
         lsn_t lsn;
         W_DO(ss_m::log->insert(*logrec, &lsn));
-        W_DO(xd->give_logbuf(logrec, lsn));
+
+        if (!logrec->is_single_sys_xct()) {
+            logrec->fill_xct_attr(xd->tid(), lsn);
+        }
+        W_DO(xd->update_last_logrec(logrec, lsn));
 
         return RCOK;
     }
@@ -54,8 +57,7 @@ public:
                             && xd && xd->is_log_on();
         if (!should_log)  { return RCOK; }
 
-        logrec_t* logrec;
-        W_DO(xd->get_logbuf(logrec));
+        logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec {p, args...};
 
         // set page LSN chain
@@ -75,7 +77,11 @@ public:
 
         lsn_t lsn;
         W_DO(ss_m::log->insert(*logrec, &lsn));
-        W_DO(xd->give_logbuf(logrec, lsn));
+
+        if (!logrec->is_single_sys_xct()) {
+            logrec->fill_xct_attr(xd->tid(), lsn);
+        }
+        W_DO(xd->update_last_logrec(logrec, lsn));
         _update_page_lsns(&p, lsn);
 
         return RCOK;
@@ -89,8 +95,7 @@ public:
                             && xd && xd->is_log_on();
         if (!should_log)  { return RCOK; }
 
-        logrec_t* logrec;
-        W_DO(xd->get_logbuf(logrec));
+        logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec {p, p2, args...};
 
         // set page LSN chain
@@ -117,7 +122,11 @@ public:
 
         lsn_t lsn;
         W_DO(ss_m::log->insert(*logrec, &lsn));
-        W_DO(xd->give_logbuf(logrec, lsn));
+
+        if (!logrec->is_single_sys_xct()) {
+            logrec->fill_xct_attr(xd->tid(), lsn);
+        }
+        W_DO(xd->update_last_logrec(logrec, lsn));
         _update_page_lsns(&p, lsn);
         _update_page_lsns(&p2, lsn);
 
@@ -127,6 +136,14 @@ public:
     static void _update_page_lsns(const fixable_page_h* page, lsn_t new_lsn)
     {
         const_cast<fixable_page_h*>(page)->update_page_lsn(new_lsn);
+    }
+
+    static logrec_t* _get_logbuf(xct_t* xd)
+    {
+        if (xd->is_piggy_backed_single_log_sys_xct()) {
+            return smthread_t::get_logbuf2();
+        }
+        return smthread_t::get_logbuf();
     }
 };
 

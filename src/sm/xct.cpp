@@ -311,10 +311,10 @@ xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
     _read_watermark(lsn_t::null),
     _elr_mode (elr_none),
     _dependent_list(W_LIST_ARG(xct_dependent_t, _link), &_core->_1thread_xct),
-    _last_log(0),
+    // _last_log(0),
 #if CHECK_NESTING_VARIABLES
 #endif
-    _log_buf(0),
+    // _log_buf(0),
     _rolling_back(false),
     _in_compensated_op(0)
 #if W_DEBUG_LEVEL > 2
@@ -338,17 +338,17 @@ xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
     else
         _loser_xct = loser_false; // Not a loser transaction
 
-    _log_buf = new logrec_t; // deleted when xct goes away
-    _log_buf_for_piggybacked_ssx = new logrec_t;
+    // _log_buf = new logrec_t; // deleted when xct goes away
+    // _log_buf_for_piggybacked_ssx = new logrec_t;
 
-#ifdef ZERO_INIT
-    memset(_log_buf, '\0', sizeof(logrec_t));
-    memset(_log_buf_for_piggybacked_ssx, '\0', sizeof(logrec_t));
-#endif
+// #ifdef ZERO_INIT
+//     memset(_log_buf, '\0', sizeof(logrec_t));
+//     memset(_log_buf_for_piggybacked_ssx, '\0', sizeof(logrec_t));
+// #endif
 
-    if (!_log_buf || !_log_buf_for_piggybacked_ssx)  {
-        W_FATAL(eOUTOFMEMORY);
-    }
+    // if (!_log_buf || !_log_buf_for_piggybacked_ssx)  {
+    //     W_FATAL(eOUTOFMEMORY);
+    // }
 
     if (timeout_c() == timeout_t::WAIT_SPECIFIED_BY_THREAD) {
         // override in this case
@@ -420,8 +420,8 @@ xct_t::~xct_t()
 
         while (_dependent_list.pop()) ;
 
-        if (_log_buf) delete _log_buf;
-        if (_log_buf_for_piggybacked_ssx) delete _log_buf_for_piggybacked_ssx;
+        // if (_log_buf) delete _log_buf;
+        // if (_log_buf_for_piggybacked_ssx) delete _log_buf_for_piggybacked_ssx;
 
         // clean up what's stored in the thread
         smthread_t::no_xct(this);
@@ -1191,7 +1191,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         // is responsible to flush if it's read-only. (if read-write, it anyway flushes)
         _core->_xct_ended = 0;
         w_assert1(_core->_xct_aborting == false);
-        _last_log = 0;
+        // _last_log = 0;
 
         // should already be out of compensated operation
         w_assert3( _in_compensated_op==0 );
@@ -1548,48 +1548,29 @@ xct_t::_sync_logbuf(bool block, bool signal)
     return RCOK;
 }
 
-rc_t
-xct_t::get_logbuf(logrec_t*& ret)
+// rc_t xct_t::get_logbuf(logrec_t*& ret)
+// {
+//     // then , use tentative log buffer.
+//     // CS: system transactions should also go through log reservation,
+//     // since they are consuming space which user transactions think
+//     // is available for rollback. This is probably a bug.
+//     if (is_piggy_backed_single_log_sys_xct()) {
+//         ret = _log_buf_for_piggybacked_ssx;
+//         return RCOK;
+//     }
+
+
+//     // Instead of flushing here, we'll flush at the end of give_logbuf()
+//     // and assert here that we've got nothing buffered:
+//     w_assert1(!_last_log);
+//     ret = _last_log = _log_buf;
+
+//     return RCOK;
+// }
+
+rc_t xct_t::update_last_logrec(logrec_t* l, lsn_t lsn)
 {
-    // then , use tentative log buffer.
-    // CS: system transactions should also go through log reservation,
-    // since they are consuming space which user transactions think
-    // is available for rollback. This is probably a bug.
-    if (is_piggy_backed_single_log_sys_xct()) {
-        ret = _log_buf_for_piggybacked_ssx;
-        return RCOK;
-    }
-
-    INC_TSTAT(get_logbuf);
-
-    // Instead of flushing here, we'll flush at the end of give_logbuf()
-    // and assert here that we've got nothing buffered:
-    w_assert1(!_last_log);
-    ret = _last_log = _log_buf;
-
-    return RCOK;
-}
-
-rc_t
-xct_t::give_logbuf(logrec_t* l, lsn_t lsn)
-{
-
-    DBGX(<<"_last_log contains: "   << *l );
-
-    // ALREADY PROTECTED from get_logbuf() call
-
-    w_assert1(l == _last_log);
-    if (is_piggy_backed_single_log_sys_xct()) {
-        w_assert1(l == _log_buf_for_piggybacked_ssx);
-    }
-
-    // Fill in the _xid_prev field of the log rec if this record hasn't
-    // already been compensated.
-    if (!l->is_single_sys_xct()) { // single-log sys xct doesn't have xid/xid_prev
-        l->fill_xct_attr(tid(), _last_lsn);
-    }
-
-    _last_log = 0;
+    // _last_log = 0;
     _last_lsn = lsn;
 
     LOGREC_ACCOUNT(*l, !consuming); // see logrec.h
@@ -1647,16 +1628,16 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
         // Now see if this last item was supposed to be
         // compensated:
         if(and_compensate && (_anchor != lsn_t::null)) {
-           if(_last_log) {
-               if ( _last_log->is_cpsn()) {
-                    DBGX(<<"already compensated");
-                    w_assert3(_anchor == _last_log->undo_nxt());
-               } else {
-                   DBGX(<<"SETTING anchor:" << _anchor);
-                   w_assert3(_anchor <= _last_lsn);
-                   _last_log->set_clr(_anchor);
-               }
-           } else {
+           // if(_last_log) {
+           //     if ( _last_log->is_cpsn()) {
+           //          DBGX(<<"already compensated");
+           //          w_assert3(_anchor == _last_log->undo_nxt());
+           //     } else {
+           //         DBGX(<<"SETTING anchor:" << _anchor);
+           //         w_assert3(_anchor <= _last_lsn);
+           //         _last_log->set_clr(_anchor);
+           //     }
+           // } else {
                DBGX(<<"no _last_log:" << _anchor);
                /* Can we update the log record in the log buffer ? */
                if( log &&
@@ -1674,7 +1655,7 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
                    W_COERCE(Logger::log<compensate_log>(_anchor));
                    INC_TSTAT(compensate_records);
                }
-            }
+            // }
         }
 
         _anchor = lsn_t::null;
@@ -1744,7 +1725,8 @@ xct_t::compensate_undo(const lsn_t& lsn)
     w_assert3(_in_compensated_op);
     // w_assert9(state() == xct_aborting); it's active if in sm::rollback_work
 
-    _compensate(lsn, _last_log?_last_log->is_undoable_clr() : false);
+    // _compensate(lsn, _last_log?_last_log->is_undoable_clr() : false);
+    _compensate(lsn, false);
 }
 
 /*********************************************************************
@@ -1801,26 +1783,26 @@ xct_t::_compensate(const lsn_t& lsn, bool undoable)
     DBGX(    << "_compensate(" << lsn << ") -- state=" << state());
 
     bool done = false;
-    if ( _last_log ) {
-        // We still have the log record here, and
-        // we can compensate it.
-        // NOTE: we used to use this a lot but now the only
-        // time this is possible (due to the fact that we flush
-        // right at insert) is when the logging code is hand-written,
-        // rather than Perl-generated.
+    // if ( _last_log ) {
+    //     // We still have the log record here, and
+    //     // we can compensate it.
+    //     // NOTE: we used to use this a lot but now the only
+    //     // time this is possible (due to the fact that we flush
+    //     // right at insert) is when the logging code is hand-written,
+    //     // rather than Perl-generated.
 
-        /*
-         * lsn is got from anchor(), and anchor() returns _last_lsn.
-         * _last_lsn is the lsn of the last log record
-         * inserted into the log, and, since
-         * this log record hasn't been inserted yet, this
-         * function can't make a log record compensate to itself.
-         */
-        w_assert3(lsn <= _last_lsn);
-        _last_log->set_clr(lsn);
-        INC_TSTAT(compensate_in_xct);
-        done = true;
-    } else {
+    //     /*
+    //      * lsn is got from anchor(), and anchor() returns _last_lsn.
+    //      * _last_lsn is the lsn of the last log record
+    //      * inserted into the log, and, since
+    //      * this log record hasn't been inserted yet, this
+    //      * function can't make a log record compensate to itself.
+    //      */
+    //     w_assert3(lsn <= _last_lsn);
+    //     _last_log->set_clr(lsn);
+    //     INC_TSTAT(compensate_in_xct);
+    //     done = true;
+    // } else {
         /*
         // Log record has already been inserted into the buffer.
         // Perhaps we can update the log record in the log buffer.
@@ -1838,7 +1820,7 @@ xct_t::_compensate(const lsn_t& lsn, bool undoable)
                 done = true;
             }
         }
-    }
+    // }
 
     if( !done && (lsn < _last_lsn) ) {
         /*

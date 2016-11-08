@@ -76,6 +76,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "timeout.h"
 #include "latches.h"
+#include "logrec.h"
 
 // CS TODO get rid of this (move random numbe gen. to kits)
 #include "rand48.h"
@@ -212,6 +213,10 @@ class sm_stats_info_t; // forward
 class smthread_t {
     friend class smthread_init_t;
     struct tcb_t {
+        // CS: moved out of xct_t
+        logrec_t _logbuf;
+        logrec_t _logbuf2; // for "piggy-backed" SSX
+
         xct_t*   xct;
         int      pin_count;      // number of rsrc_m pins
         int      prev_pin_count; // previous # of rsrc_m pins
@@ -357,6 +362,16 @@ public:
     void             set_lock_timeout(int i) {
                     tcb().lock_timeout = i;
                 }
+
+    static logrec_t* get_logbuf()
+    {
+        return &tcb()._logbuf;
+    }
+
+    static logrec_t* get_logbuf2()
+    {
+        return &tcb()._logbuf2;
+    }
 
     /// return xct this thread is running
     static inline xct_t* xct() { return tcb().xct; }
