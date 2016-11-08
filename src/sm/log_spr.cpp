@@ -6,12 +6,12 @@
 
 #define SM_SOURCE
 #include "sm_base.h"
-#include "logdef_gen.cpp"
 
 #include "log_core.h"
 #include "restart.h"
 #include "log_spr.h"
 #include "logrec.h"
+#include "logdef_gen.h"
 
 page_evict_log::page_evict_log (const btree_page_h& p,
                                 general_recordid_t child_slot, lsn_t child_lsn) {

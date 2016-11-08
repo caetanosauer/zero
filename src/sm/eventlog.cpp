@@ -1,8 +1,6 @@
 #include "eventlog.h"
 #include "log_core.h"
 
-#include "logdef_gen.cpp"
-
 boost::gregorian::date sysevent_timer::epoch
     = boost::gregorian::date(2015,1,1);
 

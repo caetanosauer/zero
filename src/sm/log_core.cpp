@@ -64,7 +64,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "thread_wrapper.h"
 #include "sm_options.h"
 #include "sm_base.h"
-#include "logtype_gen.h"
 #include "logrec.h"
 #include "log_core.h"
 #include "log_carray.h"

@@ -65,9 +65,12 @@ class rangeset_t;
 struct multi_page_log_t;
 class RestoreBitmap;
 
-#include "logfunc_gen.h"
 #include "xct.h"
 #include "w_okvl.h"
+
+// CS TODO: temporary includes
+#include "logtype_gen.h"
+#include "logfunc_gen.h"
 
 #include <boost/static_assert.hpp>
 
@@ -148,7 +151,60 @@ public:
     friend class sysevent;
     friend class baseLogHeader;
 
-#include "logtype_gen.h"
+    enum kind_t {
+	t_comment = 0,
+	t_compensate = 1,
+	t_skip = 2,
+	t_chkpt_begin = 3,
+	t_chkpt_bf_tab = 4,
+	t_chkpt_xct_tab = 5,
+	t_chkpt_xct_lock = 6,
+	t_chkpt_restore_tab = 7,
+	t_chkpt_backup_tab = 8,
+	t_chkpt_end = 9,
+	t_add_backup = 10,
+	t_xct_abort = 11,
+	t_xct_freeing_space = 12,
+	t_xct_end = 13,
+	t_xct_end_group = 14,
+	t_xct_latency_dump = 15,
+	t_alloc_page = 16,
+	t_dealloc_page = 17,
+	t_create_store = 18,
+	t_append_extent = 19,
+	t_loganalysis_begin = 20,
+	t_loganalysis_end = 21,
+	t_redo_done = 22,
+	t_undo_done = 23,
+	t_restore_begin = 24,
+	t_restore_segment = 25,
+	t_restore_end = 26,
+	t_page_set_to_be_deleted = 27,
+	t_page_img_format = 28,
+	t_page_evict = 29,
+	t_btree_norec_alloc = 30,
+	t_btree_insert = 31,
+	t_btree_insert_nonghost = 32,
+	t_btree_update = 33,
+	t_btree_overwrite = 34,
+	t_btree_ghost_mark = 35,
+	t_btree_ghost_reclaim = 36,
+	t_btree_ghost_reserve = 37,
+	t_btree_foster_adopt = 38,
+	t_btree_foster_merge = 39,
+	t_btree_foster_rebalance = 40,
+	t_btree_foster_rebalance_norec = 41,
+	t_btree_foster_deadopt = 42,
+	t_btree_split = 43,
+	t_btree_compress_page = 44,
+	t_tick_sec = 45,
+	t_tick_msec = 46,
+	t_benchmark_start = 47,
+	t_page_write = 48,
+	t_page_read = 49,
+	t_max_logrec = 50
+    };
+
     void             fill(
                             const PageID  pid,
                             StoreID         store,

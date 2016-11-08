@@ -27,8 +27,7 @@
 #include "log_core.h"
 #include "latches.h"
 
-// needed for skip_log (TODO fix this)
-#include "logdef_gen.cpp"
+#include "logdef_gen.h"
 
 const string log_storage::log_prefix = "log.";
 const string log_storage::log_regex = "log\\.[1-9][0-9]*";

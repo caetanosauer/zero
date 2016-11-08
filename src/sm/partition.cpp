@@ -62,8 +62,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define PARTITION_C
 
 #include "sm_base.h"
-#include "logtype_gen.h"
 #include "log_storage.h"
+#include "logdef_gen.h"
 
 // files and stuff
 #include <sys/types.h>
@@ -77,9 +77,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     if (n == -1) { \
         W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
     }
-
-// needed for skip_log
-#include "logdef_gen.cpp"
 
 partition_t::partition_t(log_storage *owner, partition_number_t num)
     : _num(num), _owner(owner), _size(-1),

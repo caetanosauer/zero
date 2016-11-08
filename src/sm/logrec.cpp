@@ -12,7 +12,6 @@
 #include "eventlog.h"
 
 #include "sm_base.h"
-#include "logdef_gen.cpp"
 #include "vec_t.h"
 #include "alloc_cache.h"
 #include "allocator.h"
@@ -828,7 +827,6 @@ void page_img_format_log::redo(fixable_page_h* page) {
  *  Pretty print a log record to ostream.
  *
  *********************************************************************/
-#include "logtype_gen.h"
 ostream&
 operator<<(ostream& o, const logrec_t& l)
 {
@@ -852,50 +850,50 @@ operator<<(ostream& o, const logrec_t& l)
     }
 
     switch(l.type()) {
-        case t_chkpt_xct_tab:
+        case logrec_t::t_chkpt_xct_tab:
             {
                 chkpt_xct_tab_t* dp = (chkpt_xct_tab_t*) l.data();
                 o << " xct_count: " << dp->count;
                 break;
             }
-        case t_chkpt_bf_tab:
+        case logrec_t::t_chkpt_bf_tab:
             {
                 chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) l.data();
                 o << " dirty_page_count: " << dp->count;
                 break;
             }
-        case t_comment :
+        case logrec_t::t_comment :
             {
                 o << (const char *)l._data;
                 break;
             }
-        case t_page_evict:
+        case logrec_t::t_page_evict:
             {
                 page_evict_t* pev = (page_evict_t*) l._data;
                 o << " slot: " << pev->_child_slot << " emlsn: "
                     << pev->_child_lsn;
                 break;
             }
-        case t_alloc_page:
-        case t_dealloc_page:
+        case logrec_t::t_alloc_page:
+        case logrec_t::t_dealloc_page:
             {
                 o << " page: " << *((PageID*) (l.data_ssx()));
                 break;
             }
-        case t_create_store:
+        case logrec_t::t_create_store:
             {
                 o << " stid: " <<  *((StoreID*) l.data_ssx());
                 o << " root_pid: " << *((PageID*) (l.data_ssx() + sizeof(StoreID)));
                 break;
             }
-        case t_page_write:
+        case logrec_t::t_page_write:
             {
                 PageID first = *((PageID*) (l.data()));
                 PageID last = first + *((uint32_t*) (l.data() + sizeof(PageID) + sizeof(lsn_t))) - 1;
                 o << " pids: " << first << "-" << last;
                 break;
             }
-        case t_restore_segment:
+        case logrec_t::t_restore_segment:
             {
                 o << " segment: " << *((uint32_t*) l.data_ssx());
                 break;
@@ -1006,7 +1004,7 @@ public:
 static logrec_accounting_impl_t dummy;
 void logrec_accounting_impl_t::reinit()
 {
-    for(int i=0; i < t_max_logrec; i++) {
+    for(int i=0; i < logrec_t::t_max_logrec; i++) {
         bytes_written_fwd[i] =
         bytes_written_bwd[i] =
         bytes_written_bwd_cxt[i] =
@@ -1051,7 +1049,7 @@ void logrec_accounting_impl_t::account(logrec_t &l, bool fwd)
             // else it's something like a compensate  or xct_end
             // and we'll chalk it up to t_xct_abort, which
             // is not undoable.
-            tcxt = t_xct_abort;
+            tcxt = logrec_t::t_xct_abort;
         }
     }
     if(fwd) {
@@ -1093,7 +1091,7 @@ void logrec_accounting_t::print_account_and_clear()
 void logrec_accounting_impl_t::print_account_and_clear()
 {
     uint64_t anyb=0;
-    for(int i=0; i < t_max_logrec; i++) {
+    for(int i=0; i < logrec_t::t_max_logrec; i++) {
         anyb += insertions_bwd[i];
     }
     if(!anyb) {
@@ -1122,7 +1120,7 @@ void logrec_accounting_impl_t::print_account_and_clear()
     fprintf(stdout, "%s", out);
     uint64_t btf=0, btb=0, btc=0;
     uint64_t itf=0, itb=0, itc=0;
-    for(int i=0; i < t_max_logrec; i++) {
+    for(int i=0; i < logrec_t::t_max_logrec; i++) {
         btf += bytes_written_fwd[i];
         btb += bytes_written_bwd[i];
         btc += bytes_written_bwd_cxt[i];

@@ -15,7 +15,6 @@
 #define SM_SOURCE
 #define LOGREC_C
 #include "sm_base.h"
-#include "logdef_gen.cpp"
 #include "btree_page_h.h"
 #include "btree_impl.h"
 #include "lock.h"
@@ -24,6 +23,9 @@
 #include "tls.h"
 #include "block_alloc.h"
 #include "restart.h"
+
+#include "logdef_gen.h"
+
 
 /**
  * Page buffers used while Single-Page-Recovery as scratch space.

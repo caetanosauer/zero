@@ -8,6 +8,7 @@
 
 #include "sm_base.h"
 #include "logrec.h"
+#include "logdef_gen.h"
 
 class sysevent_timer {
 public:

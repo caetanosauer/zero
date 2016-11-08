@@ -42,7 +42,6 @@ const string LogArchiver::ArchiveDirectory::current_regex = "current_run|current
 // but none of this is actually standardized or portable
 const size_t LogArchiver::IO_ALIGN = 512;
 
-#include "logdef_gen.cpp"
 baseLogHeader SKIP_LOGREC;
 
 typedef LogArchiver::ArchiveIndex::ProbeResult ProbeResult;

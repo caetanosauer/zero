@@ -8,7 +8,6 @@
 
 #include <boost/random.hpp>
 #include <vector>
-#include "logtype_gen.h"
 
 class Stats {
 public:
@@ -22,10 +21,10 @@ public:
 
 protected:
     Stats(unsigned _lengthDim);
-    
+
     /* probType[i] = probability of type i */
     vector<float> probType;
-    
+
     /* probLengthIndex[i][j] = probability of length with index j for type i */
     vector<vector<float> > probLengthIndex;
 

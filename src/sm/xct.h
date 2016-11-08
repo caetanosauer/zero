@@ -83,6 +83,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <set>
 #include <AtomicCounter.hpp>
 #include "w_key.h"
+#include "lsn.h"
 
 #include "latch.h"
 

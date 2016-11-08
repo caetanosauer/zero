@@ -9,7 +9,6 @@
 #include "sm_base.h"
 #include "sm_base.h"
 #include "logrec.h"
-#include "logdef_gen.cpp"
 
 btree_test_env *test_env;
 

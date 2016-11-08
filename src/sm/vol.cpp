@@ -31,9 +31,6 @@
 
 #include "sm.h"
 
-// Needed to get LSN of restore_begin log record
-#include "logdef_gen.cpp"
-
 // TODO proper exception mechanism
 #define CHECK_ERRNO(n) \
     if (n == -1) { \

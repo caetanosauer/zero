@@ -1,10 +1,6 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
- */
 
-/*<std-header orig-src='shore'>
-
- $Id: logstub.cpp,v 1.20 2010/08/23 14:28:18 nhall Exp $
+<std-header orig-src='shore' genfile='true'>
 
 SHORE -- Scalable Heterogeneous Object REpository
 
@@ -30,19 +26,3 @@ Further funding for this work was provided by DARPA through
 Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 */
-
-#include "w_defines.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
-
-#define SM_SOURCE
-#define LOGSTUB_C
-#include "sm_base.h"
-#include <new>
-#include "w_key.h"
-#include "logtype_gen.h"
-#include "logdef_gen.cpp"
-#include "logstub_gen.cpp"
-
-extern double logfudge_factors[t_max_logrec];
-#include "logfudge_gen.cpp"

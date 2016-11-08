@@ -84,7 +84,6 @@ private:
 
     class fake_logrec_t {
     public:
-        #include "logtype_gen.h"
         enum {
             max_sz = 3 * sizeof(generic_page),
             hdr_non_ssx_sz = sizeof(baseLogHeader) + sizeof(xidChainLogHeader),

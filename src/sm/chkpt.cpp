@@ -79,6 +79,8 @@ struct RawLock;            // Lock information gathering
 
 #include "stopwatch.h"
 
+#include "logdef_gen.h"
+
 #define LOG_INSERT(constructor_call, rlsn)            \
     do {                                              \
         new (logrec) constructor_call;                \
