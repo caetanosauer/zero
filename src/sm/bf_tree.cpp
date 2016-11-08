@@ -31,7 +31,7 @@
 #include "btree_page_h.h"
 #include "log_core.h"
 #include "xct.h"
-#include <logfunc_gen.h>
+#include "xct_logger.h"
 
 #include "restart.h"
 
@@ -725,7 +725,7 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
     sys_xct_section_t sxs (true); // this transaction will output only one log!
     W_DO(sxs.check_error_on_start());
     w_assert1(parent.is_latched());
-    W_DO(log_page_evict(parent, child_slotid, child_emlsn));
+    W_DO(Logger::log<page_evict_log>(parent, child_slotid, child_emlsn));
     parent.set_emlsn_general(child_slotid, child_emlsn);
     W_DO (sxs.end_sys_xct (RCOK));
     return RCOK;

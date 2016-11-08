@@ -19,6 +19,7 @@
 #include "xct.h"
 #include "bf_tree.h"
 #include "restart.h"
+#include "xct_logger.h"
 
 rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page)
 {
@@ -182,7 +183,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(
 
     DBGOUT3( << "Generate foster_rebalance log record, fence:: " << mid_key << ", high: " << high_key
              << ", chain: " << chain_high_key << ", record data length: " << len);
-    W_DO(log_btree_foster_rebalance(foster_p /*page, destination*/, page /*page2, source*/,
+    W_DO(Logger::log<btree_foster_rebalance_log>(foster_p /*page, destination*/, page /*page2, source*/,
                                      mid_key /* fence*/, new_pid0, new_pid0_emlsn,
                                      high_key /*high*/, chain_high_key /*chain_high*/,
                                      prefix_length, move_count, len /*user record data length*/,
@@ -320,7 +321,7 @@ rc_t btree_impl::_ux_rebalance_foster_norec(btree_page_h &page,
     }
     w_assert1(compared < 0); // because foster parent should be giving, not receiving.
 
-    W_DO(log_btree_foster_rebalance_norec(page, foster_p, mid_key));
+    W_DO(Logger::log<btree_foster_rebalance_norec_log>(page, foster_p, mid_key));
 
     w_keystr_t chain_high;
     foster_p.copy_chain_fence_high_key(chain_high);
@@ -465,7 +466,7 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page,      // In/Out: desti
     const int16_t prefix_length = page.calculate_prefix_length(page.get_prefix_length(),
                                                           low_key /*low fence*/, high_key /*high fence*/);
 
-    ret = log_btree_foster_merge (page /*destination*/, foster_p /*source*/,
+    ret = Logger::log<btree_foster_merge_log> (page /*destination*/, foster_p /*source*/,
                                   high_key /*high*/, chain_high_key/*chain_high*/,
                                   foster_p.get_foster() /* foster pid*/,
                                   foster_p.get_foster_emlsn() /* foster emlsn*/,
@@ -618,7 +619,7 @@ rc_t btree_impl::_ux_deadopt_foster_core(btree_page_h &real_parent, slotid_t fos
     }
     w_assert1(low_key.compare(high_key) < 0);
 
-    W_DO(log_btree_foster_deadopt(real_parent, foster_parent, foster_child_id,
+    W_DO(Logger::log<btree_foster_deadopt_log>(real_parent, foster_parent, foster_child_id,
                                   foster_child_emlsn, foster_parent_slot, low_key, high_key));
 
     _ux_deadopt_foster_apply_real_parent (real_parent, foster_child_id, foster_parent_slot);

@@ -1,5 +1,6 @@
 #include "addbackup.h"
 
+#include "xct_logger.h"
 #include "log_core.h"
 #include "logarchiver.h"
 
@@ -31,7 +32,7 @@ void AddBackup::run()
     ss >> backupLSN;
 
     sys_xct_section_t ssx(true);
-    W_COERCE(log_add_backup(backupPath, backupLSN));
+    W_COERCE(Logger::log<add_backup_log>(backupPath, backupLSN));
     W_COERCE(ssx.end_sys_xct(RCOK));
 
     W_COERCE(log->flush_all());

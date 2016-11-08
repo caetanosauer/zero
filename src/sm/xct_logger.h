@@ -1,6 +1,9 @@
 #ifndef XCT_LOGGER_H
 #define XCT_LOGGER_H
 
+#include "btree_page_h.h"
+#include "logdef_gen.h"
+
 class XctLogger
 {
 public:
@@ -59,5 +62,9 @@ public:
         return RCOK;
     }
 };
+
+// CS TODO this is a temporary alias -- at some point the SM should have its
+// own generic Logger template argument
+using Logger = XctLogger;
 
 #endif

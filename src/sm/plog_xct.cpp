@@ -7,6 +7,7 @@
 #include "allocator.h"
 #include "log_carray.h"
 #include "log_core.h"
+#include "xct_logger.h"
 
 #include "AtomicCounter.hpp" // for CAS
 
@@ -214,7 +215,7 @@ rc_t plog_xct_t::_commit_nochains(uint32_t flags, lsn_t* /* plastlsn */)
         // add commit log record (if required)
         bool individual = ! (flags & xct_t::t_group);
         if(individual && !is_single_log_sys_xct()) {
-            W_COERCE(log_xct_end());
+            W_COERCE(Logger::log<xct_end_log>());
         }
 
         plog_t::iter_t* iter = plog.iterate_forwards(); // acquires plog latch

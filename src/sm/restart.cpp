@@ -69,6 +69,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm.h"                 // Check system shutdown status
 #include "stopwatch.h"
 #include "eventlog.h"
+#include "xct_logger.h"
 
 #include <fcntl.h>              // Performance reporting
 #include <unistd.h>
@@ -406,7 +407,7 @@ void restart_m::undo_pass()
 
     w_ostrstream s;
     s << "restart concurrent undo_txn_pass";
-    (void) log_comment(s.c_str());
+    (void) Logger::log<comment_log>(s.c_str());
 
     // Loop through the transaction table and look for loser txn
     // Do not lock the transaction table when looping through entries

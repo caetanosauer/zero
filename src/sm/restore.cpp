@@ -8,6 +8,7 @@
 #include "vol.h"
 #include "sm_options.h"
 #include "backup_reader.h"
+#include "xct_logger.h"
 
 #include <algorithm>
 #include <random>
@@ -407,7 +408,7 @@ bool RestoreMgr::try_shutdown()
     backup->finish();
 
     sys_xct_section_t ssx(true);
-    log_restore_end();
+    Logger::log<restore_end_log>();
     ssx.end_sys_xct(RCOK);
 
     return true;
@@ -767,7 +768,7 @@ void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        log_restore_segment(segment);
+        Logger::log<restore_segment_log>(segment);
         smlevel_0::log->flush(smlevel_0::log->curr_lsn());
         ssx.end_sys_xct(RCOK);
     }

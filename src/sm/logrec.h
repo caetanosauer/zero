@@ -67,10 +67,10 @@ class RestoreBitmap;
 
 #include "xct.h"
 #include "w_okvl.h"
+#include "btree_page_h.h"
 
 // CS TODO: temporary includes
 #include "logtype_gen.h"
-#include "logfunc_gen.h"
 
 #include <boost/static_assert.hpp>
 
