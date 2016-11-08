@@ -147,7 +147,7 @@ struct xidChainLogHeader
  */
 class logrec_t {
 public:
-    friend rc_t xct_t::give_logbuf(logrec_t*, const fixable_page_h *, const fixable_page_h *);
+    friend class XctLogger;
     friend class sysevent;
     friend class baseLogHeader;
 

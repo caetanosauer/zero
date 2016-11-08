@@ -405,10 +405,6 @@ void restart_m::undo_pass()
         return;
     }
 
-    w_ostrstream s;
-    s << "restart concurrent undo_txn_pass";
-    (void) Logger::log<comment_log>(s.c_str());
-
     // Loop through the transaction table and look for loser txn
     // Do not lock the transaction table when looping through entries
     // in transaction table

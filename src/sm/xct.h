@@ -396,9 +396,6 @@ public:
     void                         log_warn_resume();
     bool                         log_warn_is_on() const;
 
-protected:
-    void _update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn);
-
 public:
     // used in sm.cpp
     rc_t                        add_dependent(xct_dependent_t* dependent);
@@ -410,32 +407,9 @@ public:
     //
     bool                        is_log_on() const;
 
-    /**
-    * \brief Flush the logbuf and return it in "ret" for use.
-    * \details Caller must call give_logbuf(ret) to free it after use.
-    *  Leaves the xct's log mutex acquired.
-    *
-    *  This and give_logbuf() are used in the log_stub.i functions
-    *  and ONLY there.  THE ERROR RETURN (running out of log space)
-    *  IS PREDICATED ON THAT -- in that it's expected that in the case of
-    *  a normal  return (no error), give_logbuf will be called, but in
-    *  the error case (out of log space), it will not, and so we must
-    *  release the mutex in get_logbuf error cases.
-    * @param[out] ret the acquired log buffer
-    */
     virtual rc_t                        get_logbuf(logrec_t* &ret);
 
-    /**
-     * \brief Returns the log buffer acquired by get_logbuf().
-     * \details
-     * This method receives 0 to 2 pages that were updated by the logged operation,
-     * making the pages dirty and updating the LSN.
-     * @param[in] l log buffer to return
-     * @param[in] p the main page the log updated
-     * @param[in] p2 the second page the log updated
-     */
-    virtual rc_t                        give_logbuf(logrec_t* l,
-        const fixable_page_h *p = NULL, const fixable_page_h *p2 = NULL);
+    virtual rc_t                        give_logbuf(logrec_t* l, lsn_t lsn);
 
     //
     //        Used by I/O layer
@@ -697,7 +671,6 @@ private:
                                     u_long&             aborts,
                                     bool                 reset);
 
-    w_rc_t                     _flush_logbuf();
     w_rc_t                     _sync_logbuf(bool block=true, bool signal=true);
     void                       _teardown(bool is_chaining);
 

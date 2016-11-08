@@ -1,8 +1,10 @@
 #ifndef XCT_LOGGER_H
 #define XCT_LOGGER_H
 
+#include "sm.h"
 #include "btree_page_h.h"
 #include "logdef_gen.h"
+#include "log_core.h"
 
 class XctLogger
 {
@@ -20,12 +22,26 @@ public:
         xct_t* xd = smthread_t::xct();
         bool should_log = smlevel_0::log && smlevel_0::logging_enabled
                             && xd && xd->is_log_on();
-        if (should_log)  {
-            logrec_t* logrec;
-            W_DO(xd->get_logbuf(logrec));
-            new (logrec) Logrec {args...};
-            W_DO(xd->give_logbuf(logrec));
+        if (!should_log)  { return RCOK; }
+
+        logrec_t* logrec;
+        W_DO(xd->get_logbuf(logrec));
+        new (logrec) Logrec {args...};
+
+        // If it's a log for piggy-backed SSX, we call log->insert without updating _last_log
+        // because this is a single log independent from other logs in outer transaction.
+        if (xd->is_piggy_backed_single_log_sys_xct()) {
+            w_assert1(logrec->is_single_sys_xct());
+            lsn_t lsn;
+            W_DO( ss_m::log->insert(*logrec, &lsn) );
+            w_assert1(lsn != lsn_t::null);
+            DBGOUT3(<< " SSX logged: " << logrec->type() << "\n new_lsn= " << lsn);
+            return RCOK;
         }
+
+        lsn_t lsn;
+        W_DO(ss_m::log->insert(*logrec, &lsn));
+        W_DO(xd->give_logbuf(logrec, lsn));
 
         return RCOK;
     }
@@ -36,12 +52,31 @@ public:
         xct_t* xd = smthread_t::xct();
         bool should_log = smlevel_0::log && smlevel_0::logging_enabled
                             && xd && xd->is_log_on();
-        if (should_log)  {
-            logrec_t* logrec;
-            W_DO(xd->get_logbuf(logrec));
-            new (logrec) Logrec {p, args...};
-            W_DO(xd->give_logbuf(logrec, &p));
+        if (!should_log)  { return RCOK; }
+
+        logrec_t* logrec;
+        W_DO(xd->get_logbuf(logrec));
+        new (logrec) Logrec {p, args...};
+
+        // set page LSN chain
+        logrec->set_page_prev_lsn(p.get_page_lsn());
+
+        // If it's a log for piggy-backed SSX, we call log->insert without updating _last_log
+        // because this is a single log independent from other logs in outer transaction.
+        if (xd->is_piggy_backed_single_log_sys_xct()) {
+            w_assert1(logrec->is_single_sys_xct());
+            lsn_t lsn;
+            W_DO( ss_m::log->insert(*logrec, &lsn) );
+            w_assert1(lsn != lsn_t::null);
+            _update_page_lsns(&p, lsn);
+            DBGOUT3(<< " SSX logged: " << logrec->type() << "\n new_lsn= " << lsn);
+            return RCOK;
         }
+
+        lsn_t lsn;
+        W_DO(ss_m::log->insert(*logrec, &lsn));
+        W_DO(xd->give_logbuf(logrec, lsn));
+        _update_page_lsns(&p, lsn);
 
         return RCOK;
     }
@@ -52,14 +87,46 @@ public:
         xct_t* xd = smthread_t::xct();
         bool should_log = smlevel_0::log && smlevel_0::logging_enabled
                             && xd && xd->is_log_on();
-        if (should_log)  {
-            logrec_t* logrec;
-            W_DO(xd->get_logbuf(logrec));
-            new (logrec) Logrec {p, p2, args...};
-            W_DO(xd->give_logbuf(logrec, &p, &p2));
+        if (!should_log)  { return RCOK; }
+
+        logrec_t* logrec;
+        W_DO(xd->get_logbuf(logrec));
+        new (logrec) Logrec {p, p2, args...};
+
+        // set page LSN chain
+        logrec->set_page_prev_lsn(p.get_page_lsn());
+        // For multi-page log, also set LSN chain with a branch.
+        w_assert1(logrec->is_multi_page());
+        w_assert1(logrec->is_single_sys_xct());
+        multi_page_log_t *multi = logrec->data_ssx_multi();
+        w_assert1(multi->_page2_pid != 0);
+        multi->_page2_prv = p2.get_page_lsn();
+
+        // If it's a log for piggy-backed SSX, we call log->insert without updating _last_log
+        // because this is a single log independent from other logs in outer transaction.
+        if (xd->is_piggy_backed_single_log_sys_xct()) {
+            w_assert1(logrec->is_single_sys_xct());
+            lsn_t lsn;
+            W_DO( ss_m::log->insert(*logrec, &lsn) );
+            w_assert1(lsn != lsn_t::null);
+            _update_page_lsns(&p, lsn);
+            _update_page_lsns(&p2, lsn);
+            DBGOUT3(<< " SSX logged: " << logrec->type() << "\n new_lsn= " << lsn);
+            return RCOK;
         }
 
+        lsn_t lsn;
+        W_DO(ss_m::log->insert(*logrec, &lsn));
+        W_DO(xd->give_logbuf(logrec, lsn));
+        _update_page_lsns(&p, lsn);
+        _update_page_lsns(&p2, lsn);
+
         return RCOK;
+    }
+
+    static void _update_page_lsns(const fixable_page_h* page, lsn_t new_lsn)
+    {
+        const_cast<fixable_page_h*>(page)->update_page_lsn(new_lsn);
     }
 };
 

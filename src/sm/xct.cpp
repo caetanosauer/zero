@@ -1504,59 +1504,6 @@ xct_t::dispose()
 
 /*********************************************************************
  *
- *  xct_t::_flush_logbuf()
- *
- *  Write the log record buffered and update lsn pointers.
- *
- *********************************************************************/
-w_rc_t
-xct_t::_flush_logbuf()
-{
-    if (_last_log)  {
-
-        DBGX ( << " xct_t::_flush_logbuf " << _last_lsn
-                << " _last_log rec type is " << _last_log->type());
-        // Fill in the _xid_prev field of the log rec if this record hasn't
-        // already been compensated.
-        if (!_last_log->is_single_sys_xct()) { // single-log sys xct doesn't have xid/xid_prev
-            _last_log->fill_xct_attr(tid(), _last_lsn);
-        }
-
-        //
-        // debugging prints a * if this record was written
-        // during rollback
-        //
-        DBGX( << " "
-                << ((char *)(state()==xct_aborting)?"RB":"FW")
-                << " approx lsn:" << log->curr_lsn()
-                << " rec:" << *_last_log
-                << " size:" << _last_log->length()
-                << " xid_prevlsn:" << (_last_log->is_single_sys_xct() ? lsn_t::null : _last_log->xid_prev() )
-                );
-
-        if(log) {
-            logrec_t* l = _last_log;
-            _last_log = 0;
-            W_DO(log->insert(*l, &_last_lsn));
-
-            LOGREC_ACCOUNT(*l, !consuming); // see logrec.h
-
-            // log insert effectively set_lsn to the lsn of the *next* byte of
-            // the log.
-            if ( ! _first_lsn.valid())  _first_lsn = _last_lsn;
-
-            if (!l->is_single_sys_xct()) {
-                _undo_nxt = ( l->is_undoable_clr() ? _last_lsn :
-                           l->is_cpsn() ? l->undo_nxt() : _last_lsn);
-            }
-        } // log non-null
-    }
-
-    return RCOK;
-}
-
-/*********************************************************************
- *
  *  xct_t::_sync_logbuf()
  *
  *  Force log entries up to the most recently written to disk.
@@ -1597,78 +1544,40 @@ xct_t::get_logbuf(logrec_t*& ret)
     return RCOK;
 }
 
-void xct_t::_update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) {
-    if (page != NULL) {
-        // CS TODO: BUG! latch must always be EX for per-page log chain consistency
-        if (page->latch_mode() == LATCH_EX) {
-            const_cast<fixable_page_h*>(page)->update_page_lsn(new_lsn);
-        } else {
-            // CS TODO: this does not work! Fix eviction and get rid of this!
-            w_assert0(false);
-            // In some log type (so far only log_page_evict), we might update LSN only with
-            // SH latch. In that case, we might have a race to update the LSN.
-            // We should leave a larger value of LSN in that case.
-            // DBGOUT3(<<"Update LSN without EX latch. Atomic CAS to deal with races");
-            // const lsndata_t new_lsn_data = new_lsn.data();
-            // lsndata_t *addr = reinterpret_cast<lsndata_t*>(&page->get_generic_page()->lsn);
-            // lsndata_t cas_tmp = *addr;
-            // while (!lintel::unsafe::atomic_compare_exchange_strong<lsndata_t>(
-            //     addr, &cas_tmp, new_lsn_data)) {
-            //     if (lsn_t(cas_tmp) > new_lsn) {
-            //         DBGOUT1(<<"Someone else has already set a larger LSN. ");
-            //         break;
-            //     }
-            // }
-            // w_assert1(page->get_page_lsn() >= new_lsn);
-        }
-    }
-}
-
 rc_t
-xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h *page2)
+xct_t::give_logbuf(logrec_t* l, lsn_t lsn)
 {
-    // set page LSN chain
-    if (page != NULL) {
-        l->set_page_prev_lsn(page->get_page_lsn());
-        if (page2 != NULL) {
-            // For multi-page log, also set LSN chain with a branch.
-            w_assert1(l->is_multi_page());
-            w_assert1(l->is_single_sys_xct());
-            multi_page_log_t *multi = l->data_ssx_multi();
-            w_assert1(multi->_page2_pid != 0);
-            multi->_page2_prv = page2->get_page_lsn();
-        }
-    }
-    // If it's a log for piggy-backed SSX, we call log->insert without updating _last_log
-    // because this is a single log independent from other logs in outer transaction.
-    if (is_piggy_backed_single_log_sys_xct()) {
-        w_assert1(l->is_single_sys_xct());
-        w_assert1(l == _log_buf_for_piggybacked_ssx);
-        lsn_t lsn;
-        W_DO( log->insert(*l, &lsn) );
-        w_assert1(lsn != lsn_t::null);
-        // Mark dirty flags for both pages
-        _update_page_lsns(page, lsn);
-        _update_page_lsns(page2, lsn);
-        DBGOUT3(<< " SSX logged: " << l->type() << "\n new_lsn= " << lsn);
-        return RCOK;
-    }
 
     DBGX(<<"_last_log contains: "   << *l );
 
     // ALREADY PROTECTED from get_logbuf() call
 
     w_assert1(l == _last_log);
-
-    rc_t rc = _flush_logbuf();
-                      // stuffs tid, _last_lsn into our record,
-                      // then inserts it into the log, getting _last_lsn
-    if(!rc.is_error()) {
-        _update_page_lsns(page, _last_lsn);
-        _update_page_lsns(page2, _last_lsn);
+    if (is_piggy_backed_single_log_sys_xct()) {
+        w_assert1(l == _log_buf_for_piggybacked_ssx);
     }
 
-    return rc;
+    // Fill in the _xid_prev field of the log rec if this record hasn't
+    // already been compensated.
+    if (!l->is_single_sys_xct()) { // single-log sys xct doesn't have xid/xid_prev
+        l->fill_xct_attr(tid(), _last_lsn);
+    }
+
+    _last_log = 0;
+    _last_lsn = lsn;
+
+    LOGREC_ACCOUNT(*l, !consuming); // see logrec.h
+
+    // log insert effectively set_lsn to the lsn of the *next* byte of
+    // the log.
+    if ( ! _first_lsn.valid())  _first_lsn = _last_lsn;
+
+    if (!l->is_single_sys_xct()) {
+        _undo_nxt = ( l->is_undoable_clr() ? _last_lsn :
+                l->is_cpsn() ? l->undo_nxt() : _last_lsn);
+    }
+
+    return RCOK;
 }
 
 /*********************************************************************
