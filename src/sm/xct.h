@@ -422,9 +422,8 @@ public:
     *  the error case (out of log space), it will not, and so we must
     *  release the mutex in get_logbuf error cases.
     * @param[out] ret the acquired log buffer
-    * @param[in] t bytes to reserve
     */
-    virtual rc_t                        get_logbuf(logrec_t* &ret, int t);
+    virtual rc_t                        get_logbuf(logrec_t* &ret);
 
     /**
      * \brief Returns the log buffer acquired by get_logbuf().

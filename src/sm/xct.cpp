@@ -1575,7 +1575,7 @@ xct_t::_sync_logbuf(bool block, bool signal)
 }
 
 rc_t
-xct_t::get_logbuf(logrec_t*& ret, int)
+xct_t::get_logbuf(logrec_t*& ret)
 {
     // then , use tentative log buffer.
     // CS: system transactions should also go through log reservation,
