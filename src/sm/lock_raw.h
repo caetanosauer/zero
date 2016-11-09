@@ -96,15 +96,6 @@
 #include "lsn.h"
 
 /**
- * We found that pure spinning is much faster than mutex sleep/wake-up as in [JUNG13].
- * As far as we don't over-subscribe workers, this has no disadvantages.
- * Pure spinning means we don't have to do anything in lock release, we don't have to do
- * keep any of mutexes, so much faster.
- * \ingroup RAWLOCK
- */
-#define PURE_SPIN_RAWLOCK
-
-/**
  * \brief Invokes "mfence", which is sfence + lfence.
  * \ingroup RAWLOCK
  * \details

@@ -317,9 +317,6 @@ public:
 
     static ErrLog* errlog;
 
-    // TODO: allocator flag should be specified by cmake
-#define USE_TLS_ALLOCATOR
-
 #ifdef USE_TLS_ALLOCATOR
     static sm_tls_allocator allocator;
 #else
