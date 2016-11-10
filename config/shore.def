@@ -68,5 +68,3 @@
  * \ingroup RAWLOCK
  */
 #define PURE_SPIN_RAWLOCK
-
-#define USE_TLS_ALLOCATOR
