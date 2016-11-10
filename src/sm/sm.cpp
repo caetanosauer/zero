@@ -87,11 +87,7 @@ bool         smlevel_0::shutdown_clean = false;
 bool         smlevel_0::shutting_down = false;
 
 
-#ifdef USE_TLS_ALLOCATOR
-    sm_tls_allocator smlevel_0::allocator;
-#else
-    sm_naive_allocator smlevel_0::allocator;
-#endif
+sm_tls_allocator smlevel_0::allocator;
 
 memalign_allocator<char, smlevel_0::IO_ALIGN> smlevel_0::aligned_allocator;
 

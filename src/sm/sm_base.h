@@ -317,14 +317,7 @@ public:
 
     static ErrLog* errlog;
 
-    // TODO: allocator flag should be specified by cmake
-#define USE_TLS_ALLOCATOR
-
-#ifdef USE_TLS_ALLOCATOR
     static sm_tls_allocator allocator;
-#else
-    static sm_naive_allocator allocator;
-#endif
 
     static constexpr size_t IO_ALIGN = 512;
     static memalign_allocator<char, IO_ALIGN> aligned_allocator;

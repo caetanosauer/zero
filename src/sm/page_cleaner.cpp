@@ -40,10 +40,17 @@ void page_cleaner_base::flush_workspace(size_t from, size_t to)
         // Assertion below may fail for decoupled cleaner, and it's OK
         // w_assert1(i == from || _workspace[i].pid == _workspace[i - 1].pid + 1);
 
+        rc_t rc = cb.latch().latch_acquire(LATCH_EX, sthread_t::WAIT_IMMEDIATE);
+        if (rc.is_error()) {
+            continue;   // Could not latch page in EX mode -- just skip it
+        }
+
         cb.pin();
         if (cb._pid == _workspace[i].pid && cb.get_clean_lsn() < _clean_lsn) {
             cb.set_clean_lsn(_clean_lsn);
         }
         cb.unpin();
+
+        cb.latch().latch_release();
     }
 }
