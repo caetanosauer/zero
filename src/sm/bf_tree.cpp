@@ -91,7 +91,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     // fill the block-0 with garbages
     ::memset (&_buffer[0], 0x27, sizeof(generic_page));
 
-#ifdef BP_ALTERNATE_CB_LATCH
     // this allocation scheme is sensible only for control block and latch sizes of 64B (cacheline size)
     BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) == 64);
     BOOST_STATIC_ASSERT(sizeof(latch_t) == 64);
@@ -119,18 +118,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
             get_cb(i)._latch_offset = sizeof(bf_tree_cb_t); // place the latch after the control block
         }
     }
-#else
-    if (::posix_memalign(&buf, sizeof(bf_tree_cb_t),
-                sizeof(bf_tree_cb_t) * ((uint64_t) nbufpages)) != 0)
-    {
-        ERROUT (<< "failed to reserve " << nbufpages
-                << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
-        W_FATAL(eOUTOFMEMORY);
-    }
-    _control_blocks = reinterpret_cast<bf_tree_cb_t*>(buf);
-    w_assert0(_control_blocks != NULL);
-    ::memset (_control_blocks, 0, sizeof(bf_tree_cb_t) * nbufpages);
-#endif
 
     // initially, all blocks are free
     _freelist = new bf_idx[nbufpages];
@@ -165,11 +152,8 @@ void bf_tree_m::shutdown()
 bf_tree_m::~bf_tree_m()
 {
     if (_control_blocks != NULL) {
-#ifdef BP_ALTERNATE_CB_LATCH
         char* buf = reinterpret_cast<char*>(_control_blocks) - sizeof(bf_tree_cb_t);
-#else
-        char* buf = reinterpret_cast<char*>(_control_blocks);
-#endif
+
         // note we use free(), not delete[], which corresponds to posix_memalign
         ::free (buf);
         _control_blocks = NULL;
@@ -748,13 +732,9 @@ void bf_tree_m::_delete_block(bf_idx idx) {
 }
 
 bf_tree_cb_t* bf_tree_m::get_cbp(bf_idx idx) const {
-#ifdef BP_ALTERNATE_CB_LATCH
     bf_idx real_idx;
     real_idx = (idx << 1) + (idx & 0x1); // more efficient version of: real_idx = (idx % 2) ? idx*2+1 : idx*2
     return &_control_blocks[real_idx];
-#else
-    return &_control_blocks[idx];
-#endif
 }
 
 bf_tree_cb_t& bf_tree_m::get_cb(bf_idx idx) const {
@@ -763,11 +743,7 @@ bf_tree_cb_t& bf_tree_m::get_cb(bf_idx idx) const {
 
 bf_idx bf_tree_m::get_idx(const bf_tree_cb_t* cb) const {
     bf_idx real_idx = cb - _control_blocks;
-#ifdef BP_ALTERNATE_CB_LATCH
     return real_idx / 2;
-#else
-    return real_idx;
-#endif
 }
 
 bf_tree_cb_t* bf_tree_m::get_cb(const generic_page *page) {
