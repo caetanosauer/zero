@@ -41,42 +41,11 @@ enum evict_urgency_t {
 /** a swizzled pointer (page ID) has this bit ON. */
 const uint32_t SWIZZLED_PID_BIT = 0x80000000;
 
-// A flag whether the bufferpool maintains replacement priority per page.
-#define BP_MAINTAIN_REPLACEMENT_PRIORITY
-
-// A flag whether the bufferpool can evict pages of btree inner nodes
-#define BP_CAN_EVICT_INNER_NODE
-
-// A flag whether the bufferpool maintains a per-frame counter that tracks how many
-// swizzled pointers are in each frame. This counter is a conservative hint rather than
-// an accurate counter as the bufferpool does not track removals of pointers from a page
-// which can happen during merges.
-#define BP_TRACK_SWIZZLED_PTR_CNT
-
-/**
- * When unswizzling is triggered, _about_ this number of frames will be unswizzled at once.
- * The smaller this number, the more frequent you need to trigger unswizzling.
- */
-const uint32_t UNSWIZZLE_BATCH_SIZE = 1000;
-
 /**
 * When eviction is triggered, _about_ this number of frames will be evicted at once.
 * Given as a ratio of the buffer size (currently 1%)
 */
 const float EVICT_BATCH_RATIO = 0.01;
-
-/**
-* We don't go through frames for each evict/unswizzle try.
-*/
-const uint16_t EVICT_MAX_ROUNDS = 20;
-
-class bf_eviction_thread_t : public smthread_t
-{
-public:
-    bf_eviction_thread_t();
-
-    virtual void run();
-};
 
 /**
  * \Brief The new buffer manager that exploits the tree structure of indexes.
@@ -100,7 +69,6 @@ class bf_tree_m {
     friend class test_bf_fixed; // for testcases
     friend class bf_tree_cleaner; // for page cleaning
     friend class bf_tree_cleaner_slave_thread_t; // for page cleaning
-    friend class bf_eviction_thread_t;
     friend class WarmupThread;
     friend class page_cleaner_decoupled;
 
