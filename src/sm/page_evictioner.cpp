@@ -4,7 +4,7 @@
 #include "bf_hashtable.cpp"
 #include "generic_page.h"
 
-page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_options& _options)
+page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_options& options)
     :
     worker_thread_t(_options.get_int_option("sm_evictioner_interval_millisec", 1000)),
     _bufferpool(bufferpool)
