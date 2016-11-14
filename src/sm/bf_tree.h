@@ -272,26 +272,6 @@ public:
      */
     bool has_swizzled_child(bf_idx node_idx);
 
-
-    /**
-     * New eviction algorithm. Sweeps the buffer pool sequentially (like
-     * clock), simply evicting every leaf page for which:
-     * 1) An EX latch can be acquired conditionally
-     * 2) A parent pointer is available and up-to-date
-     * 3) The parent can be latched in SH mode conditionally
-     * 4) The pin count is zero
-     *
-     * This is not as good as clock or LRU in terms of hit ratio, but unlike
-     * the previous hierarchical algorithm, it is thread-safe. It is also
-     * single-threaded, i.e., only one thread evicts at a time.
-     */
-    w_rc_t evict_blocks(
-        uint32_t &evicted_count,
-        uint32_t &unswizzled_count,
-        // evict_urgency_t urgency = EVICT_NORMAL,
-        uint32_t preferred_count = 0);
-
-
     size_t get_size() { return _block_cnt; }
 
     page_cleaner_base* get_cleaner();
