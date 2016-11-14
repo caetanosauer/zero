@@ -14,6 +14,7 @@
 #include "bf_tree_cb.h"
 #include <iosfwd>
 #include "page_cleaner.h"
+#include "page_evictioner.h"
 
 class sm_options;
 class lsn_t;
@@ -21,6 +22,7 @@ struct bf_tree_cb_t; // include bf_tree_cb.h in implementation codes
 
 class test_bf_tree;
 class test_bf_fixed;
+class page_evictioner_base;
 class bf_tree_cleaner;
 class bf_tree_cleaner_slave_thread_t;
 class btree_page_h;
@@ -293,6 +295,7 @@ public:
     size_t get_size() { return _block_cnt; }
 
     page_cleaner_base* get_cleaner();
+    page_evictioner_base* get_evictioner();
 
     /**
      * Tries to unswizzle the given child page from the parent page.  If, for
@@ -442,6 +445,9 @@ private:
 
     /** the dirty page cleaner. */
     page_cleaner_base*   _cleaner;
+
+    /** worker thread responsible for evicting pages. */
+    page_evictioner_base* _evictioner;
 
     /** whether to swizzle non-root pages. */
     bool                 _enable_swizzling;

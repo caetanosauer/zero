@@ -142,6 +142,13 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
 void bf_tree_m::shutdown()
 {
+    // evictioner calls cleaner, so it must be destroyed before!
+    if(_evictioner) {
+        _evictioner->stop();
+        delete _evictioner;
+        _evictioner = NULL;
+    }
+
     if (_cleaner) {
         _cleaner->stop();
         delete _cleaner;
@@ -199,6 +206,21 @@ page_cleaner_base* bf_tree_m::get_cleaner()
     return _cleaner;
 }
 
+page_evictioner_base* bf_tree_m::get_evictioner()
+{
+    if (!ss_m::vol || !ss_m::vol->caches_ready()) {
+        // No volume manager initialized -- no point in starting evictioner
+        return nullptr;
+    }
+
+    if (!_evictioner) {
+        _evictioner = new page_evictioner_base(this, ss_m::get_options());
+        _evictioner->fork();
+    }
+
+    return _evictioner;
+}
+
 ///////////////////////////////////   Initialization and Release END ///////////////////////////////////
 
 bf_idx bf_tree_m::lookup(PageID pid) const
@@ -236,6 +258,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
         cb.pin();
         cb.inc_ref_count();
+        if(_evictioner) _evictioner->ref(idx);
         if (mode == LATCH_EX) {
             cb.inc_ref_count_ex();
         }
@@ -362,6 +385,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             w_assert1(_is_active_idx(idx));
             cb.pin();
             cb.inc_ref_count();
+            if(_evictioner) _evictioner->ref(idx);
             if (mode == LATCH_EX) {
                 cb.inc_ref_count_ex();
             }
@@ -792,6 +816,7 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
     cb.pin();
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
     cb.inc_ref_count();
+    if(_evictioner) _evictioner->ref(idx);
     if (mode == LATCH_EX) { ++cb._ref_count_ex; }
     page = &(_buffer[idx]);
     return RCOK;
