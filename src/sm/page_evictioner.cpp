@@ -135,8 +135,7 @@ void page_evictioner_base::do_work()
             idx++;
             continue;
         }
-        w_assert1(parent_cb.latch().held_by_me());
-        w_assert1(parent_cb.latch().mode() == LATCH_EX);
+        w_assert1(parent_cb.latch().is_mine());
 
         // Parent may have been evicted if it is a foster parent of a leaf node.
         // In that case, parent_cb._used will be false
@@ -177,8 +176,7 @@ void page_evictioner_base::do_work()
                     << ", OldEMLSN=" << old << " NewEMLSN=" << 
                     _bufferpool->_buffer[idx].lsn);
 
-            w_assert1(parent_cb.latch().held_by_me());
-            w_assert1(parent_cb.latch().mode() == LATCH_EX);
+            w_assert1(parent_cb.latch().is_mine());
 
             W_COERCE(_bufferpool->_sx_update_child_emlsn(parent_h, child_slotid,
                                                 _bufferpool->_buffer[idx].lsn));
