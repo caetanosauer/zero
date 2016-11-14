@@ -24,7 +24,6 @@ class test_bf_tree;
 class test_bf_fixed;
 class page_evictioner_base;
 class bf_tree_cleaner;
-class bf_tree_cleaner_slave_thread_t;
 class btree_page_h;
 struct EvictionContext;
 
@@ -69,9 +68,8 @@ const float EVICT_BATCH_RATIO = 0.01;
 class bf_tree_m {
     friend class test_bf_tree; // for testcases
     friend class test_bf_fixed; // for testcases
-    friend class page_evictioner_base;
     friend class bf_tree_cleaner; // for page cleaning
-    friend class bf_tree_cleaner_slave_thread_t; // for page cleaning
+    friend class page_evictioner_base;  // for page evictioning
     friend class WarmupThread;
     friend class page_cleaner_decoupled;
 

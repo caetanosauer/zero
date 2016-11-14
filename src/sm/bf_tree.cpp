@@ -256,7 +256,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         w_assert1(cb._swizzled);
         w_assert1(cb._pid == _buffer[idx].pid);
 
-        cb.pin();
+        cb.pin(); //LL: if calling pin, latch should be in EX mode always, no?
         cb.inc_ref_count();
         if(_evictioner) _evictioner->ref(idx);
         if (mode == LATCH_EX) {
