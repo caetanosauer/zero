@@ -10,6 +10,7 @@ page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_optio
     _bufferpool(bufferpool)
 {
     _swizziling_enabled = _options.get_bool_option("sm_bufferpool_swizzle", false);
+    _current_frame = 0;
 }
 
 page_evictioner_base::~page_evictioner_base()
