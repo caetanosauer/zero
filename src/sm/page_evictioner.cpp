@@ -38,7 +38,7 @@ void page_evictioner_base::do_work()
          */
 
          if (idx == _bufferpool->_block_cnt) {
-             idx = 0;
+             idx = 1;	// idx 0 is never used
          }
 
          if (idx == _current_frame - 1) {
