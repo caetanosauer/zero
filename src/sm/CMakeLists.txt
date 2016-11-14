@@ -40,6 +40,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logrec.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logstub.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/page_evictioner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/page_cleaner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/page_cleaner_decoupled.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/partition.cpp
