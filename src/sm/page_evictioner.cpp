@@ -19,7 +19,7 @@ page_evictioner_base::~page_evictioner_base()
 
 void page_evictioner_base::do_work()
 {
-	uint32_t preferred_count = EVICT_BATCH_RATIO * _bufferpool->_block_cnt + 1;
+    uint32_t preferred_count = EVICT_BATCH_RATIO * _bufferpool->_block_cnt + 1;
 
     while(_bufferpool->_freelist_len < preferred_count) // TODO: increment _freelist_len atomically
     {

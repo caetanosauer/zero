@@ -64,4 +64,4 @@ private:
 	virtual void do_work ();
 };
 
-#endif 
+#endif
