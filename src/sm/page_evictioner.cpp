@@ -19,42 +19,86 @@ page_evictioner_base::~page_evictioner_base()
 
 void page_evictioner_base::do_work()
 {
-    uint32_t preferred_count = EVICT_BATCH_RATIO * _bufferpool->_block_cnt + 1;
-    
-    uint32_t evicted_count = 0;
-    unsigned rounds = 0;
-    unsigned nonleaf_count = 0;
-    unsigned dirty_count = 0;
+	uint32_t preferred_count = EVICT_BATCH_RATIO * _bufferpool->_block_cnt + 1;
 
-    bf_idx idx = _current_frame;
     while(_bufferpool->_freelist_len < preferred_count) // TODO: increment _freelist_len atomically
     {
-        /*
-         * CS: strategy is to try acquiring an EX latch imediately. If it works,
-         * page is not that busy, so we can evict it. But only evict leaf pages.
-         * This is like a random policy that only evicts uncontented pages. It is
-         * not as effective as LRU or CLOCK, but it is better than RANDOM, simple
-         * to implement and, most importantly, does not have concurrency bugs!
+        bf_idx victim = pick_victim();
+
+        if(victim == 0) {
+            /* idx 0 is never used, so this means pick_victim() exited without
+             * finding a victim. This might happen when the page_evictioner is
+             * shutting down, for example. */
+            notify_all();
+            return;
+        }
+
+        w_assert1(victim != 0);
+
+        bf_tree_cb_t& cb = _bufferpool->get_cb(victim);
+        w_assert1(cb.latch().is_mine());
+
+        if(unswizzle_and_update_emlsn(victim) == false) {
+            /* We were not able to unswizzle/update parent, therefore we cannot
+             * proceed with this victim. We just jump to the next iteration and
+             * hope for better luck next time. */
+            cb.latch().latch_release();
+            continue;
+        }
+
+        // remove it from hashtable.
+        PageID pid = _bufferpool->_buffer[victim].pid;
+        w_assert1(cb._pin_cnt < 0 || pid == cb._pid);
+
+        bool removed = _bufferpool->_hashtable->remove(pid);
+        w_assert1(removed);
+
+        DBG2(<< "EVICTED " << victim << " pid " << pid
+                                 << " log-tail " << smlevel_0::log->curr_lsn());
+        cb.clear_except_latch();
+        //-1 indicates page was evicted(i.e., it's invalid and can be read into)
+        cb._pin_cnt = -1;
+
+        _bufferpool->_add_free_block(victim);
+
+        cb.latch().latch_release();
+
+        INC_TSTAT(bf_evict);
+
+        /* Rather than waiting for all the pages to be evicted, we notify
+         * waiting threads every time a page is evicted. One of them is going to
+         * be able to re-use the freed slot, the others will go back to waiting.
          */
+        notify_one();
+    }
+}
 
-         if (idx == _bufferpool->_block_cnt) {
-             idx = 1;	// idx 0 is never used
-         }
+void page_evictioner_base::ref(bf_idx idx) {}
 
-         if (idx == _current_frame - 1) {
-             // Wake up and wait for cleaner
-             _bufferpool->get_cleaner()->wakeup(true);
-             if (rounds > 0 && evicted_count == 0) {
-                 DBG(<< "Eviction stuck! Nonleafs: " << nonleaf_count
-                         << " dirty: " << dirty_count);
-                 nonleaf_count = dirty_count = 0;
-                 rounds++;
-             }
-             else if (evicted_count > 0) {
-                 // best-effort approach: sorry, we evicted as many as we could
-                 return;
-             }
-         }
+bf_idx page_evictioner_base::pick_victim()
+{
+    /*
+     * CS: strategy is to try acquiring an EX latch imediately. If it works,
+     * page is not that busy, so we can evict it. But only evict leaf pages.
+     * This is like a random policy that only evicts uncontented pages. It is
+     * not as effective as LRU or CLOCK, but it is better than RANDOM, simple
+     * to implement and, most importantly, does not have concurrency bugs!
+     */
+
+     bf_idx idx = _current_frame;
+     while(true) {
+
+        if(should_exit()) return 0; // in bf_tree.h, 0 is never used, means null
+
+        if(idx == _bufferpool->_block_cnt) {
+            idx = 1;
+        }
+
+        if (idx == _current_frame - 1) {
+            // We iterate over all pages and no victim was found.
+            // Wake up cleaner and wait here.
+            _bufferpool->get_cleaner()->wakeup(true);
+        }
 
         // CS TODO -- why do we latch CB manually instead of simply fixing
         // the page??
@@ -69,7 +113,7 @@ void page_evictioner_base::do_work()
             DBG3(<< "Eviction failed on latch for " << idx);
             continue;
         }
-        w_assert1(cb.latch().held_by_me())
+        w_assert1(cb.latch().is_mine())
 
         // now we hold an EX latch -- check if leaf and not dirty
         btree_page_h p;
@@ -79,8 +123,6 @@ void page_evictioner_base::do_work()
         {
             cb.latch().latch_release();
             DBG5(<< "Eviction failed on flags for " << idx);
-            if (!p.is_leaf()) { nonleaf_count++; }
-            if (cb.is_dirty()) { dirty_count++; }
             idx++;
             continue;
         }
@@ -97,123 +139,90 @@ void page_evictioner_base::do_work()
         }
         w_assert1(_bufferpool->_is_active_idx(idx));
 
-        // Step 2: latch parent in SH mode
-        generic_page *page = &_bufferpool->_buffer[idx];
-        PageID pid = page->pid;
-        w_assert1(cb._pin_cnt < 0 || pid == cb._pid);
+        // If we got here, we passed all tests and have a victim!
+        _current_frame = idx +1;
+        return idx;
+    }
+}
 
-        bf_idx_pair idx_pair;
-        bool found = _bufferpool->_hashtable->lookup(pid, idx_pair);
-        bf_idx parent_idx = idx_pair.second;
-        w_assert1(!found || idx == idx_pair.first);
+bool page_evictioner_base::unswizzle_and_update_emlsn(bf_idx idx)
+{
+    bf_tree_cb_t& cb = _bufferpool->get_cb(idx);
+    w_assert1(cb.latch().is_mine());
 
-        // Index zero is never used, so it means invalid pointer
-        // (see bf_tree_m constructor)
-        if (!found || parent_idx == 0) {
-            cb.latch().latch_release();
-            DBG3(<< "Eviction failed on parent idx for " << idx);
-            idx++;
-            continue;
-        }
+    //==========================================================================
+    // STEP 1: Look for parent.
+    //==========================================================================
+    PageID pid = _bufferpool->_buffer[idx].pid;
+    bf_idx_pair idx_pair;
+    bool found = _bufferpool->_hashtable->lookup(pid, idx_pair);
 
-        // parent is latched in SH mode, OK because it just overwrites an emlsn
-        // CS TODO: bugfix -- latch must be acquired in EX mode because we will
-        // generate a log record, which will update the PageLSN and set the
-        // previous-page pointer based on the old value. This means that all
-        // operations that update the PageLSN must be serialized: thus the EX
-        // mode is required.
-        bf_tree_cb_t& parent_cb = _bufferpool->get_cb(parent_idx);
-        // latch_rc = parent_cb.latch().latch_acquire(LATCH_SH,
-        latch_rc = parent_cb.latch().latch_acquire(LATCH_EX,
-                sthread_t::WAIT_IMMEDIATE);
-        if (latch_rc.is_error()) {
-            // just give up. If we try to latch it unconditionally, we may
-            // deadlock, because other threads are also waiting on the eviction
-            // mutex
-            cb.latch().latch_release();
-            DBG3(<< "Eviction failed on parent latch for " << idx);
-            idx++;
-            continue;
-        }
-        w_assert1(parent_cb.latch().is_mine());
+    bf_idx parent_idx = idx_pair.second;
+    w_assert1(!found || idx == idx_pair.first);
 
-        // Parent may have been evicted if it is a foster parent of a leaf node.
-        // In that case, parent_cb._used will be false
-
-        // Step 3: look for emlsn slot on parent (must be found because parent
-        // pointer is kept consistent at all times)
-        w_assert1(_bufferpool->_is_active_idx(parent_idx));
-        generic_page *parent = &_bufferpool->_buffer[parent_idx];
-        btree_page_h parent_h;
-        parent_h.fix_nonbufferpool_page(parent);
-
-        general_recordid_t child_slotid;
-        bool is_swizzled = cb._swizzled;
-        if (is_swizzled) {
-            // Search for swizzled address
-            PageID swizzled_pid = idx | SWIZZLED_PID_BIT;
-            child_slotid = _bufferpool->find_page_id_slot(parent, swizzled_pid);
-        }
-        else {
-            child_slotid = _bufferpool->find_page_id_slot(parent, pid);
-        }
-        w_assert1 (child_slotid != GeneralRecordIds::INVALID);
-
-        // Unswizzle pointer on parent before evicting
-        if (is_swizzled) {
-            bool ret = _bufferpool->unswizzle(parent, child_slotid);
-            w_assert0(ret);
-            w_assert1(!cb._swizzled);
-        }
-
-        // Step 4: Page will be evicted -- update EMLSN on parent
-        lsn_t old = parent_h.get_emlsn_general(child_slotid);
-        _bufferpool->_buffer[idx].lsn = cb.get_page_lsn();
-        if (old < _bufferpool->_buffer[idx].lsn) {
-            DBG3(<< "Updated EMLSN on page " << parent_h.pid()
-                    << " slot=" << child_slotid
-                    << " (child pid=" << pid << ")"
-                    << ", OldEMLSN=" << old << " NewEMLSN=" << 
-                    _bufferpool->_buffer[idx].lsn);
-
-            w_assert1(parent_cb.latch().is_mine());
-
-            W_COERCE(_bufferpool->_sx_update_child_emlsn(parent_h, child_slotid,
-                                                _bufferpool->_buffer[idx].lsn));
-            
-            w_assert1(parent_h.get_emlsn_general(child_slotid) 
-                        ==
-                        _bufferpool->_buffer[idx].lsn);
-        }
-
-        // eviction finally suceeded
-
-        // remove it from hashtable.
-        bool removed = _bufferpool->_hashtable->remove(pid);
-        w_assert1(removed);
-
-        DBG2(<< "EVICTED " << idx << " pid " << pid
-                << " log-tail " << smlevel_0::log->curr_lsn());
-        cb.clear_except_latch();
-        //-1 indicates page was evicted(i.e., it's invalid and can be read into)
-        cb._pin_cnt = -1;
-
-        _bufferpool->_add_free_block(idx);
-        idx++;
-        evicted_count++;
-
-        parent_cb.latch().latch_release();
-        cb.latch().latch_release();
-
-        INC_TSTAT(bf_evict);
-
-        /* Rather than waiting for all the pages to be evicted, we 
-        * notify waiting threads every time a page is evicted. One of
-        * them is going to be able to re-use the freed slot, the others
-        * will go back to waiting. */
-        notify_one();
+    // Index zero is never used, so it means invalid pointer
+    if (!found || parent_idx == 0) {
+        return false;
     }
 
-    _current_frame = idx;
-    return;
-} 
+    bf_tree_cb_t& parent_cb = _bufferpool->get_cb(parent_idx);
+    rc_t r = parent_cb.latch().latch_acquire(LATCH_EX, sthread_t::WAIT_IMMEDIATE);
+    if (r.is_error()) {
+        /* Just give up. If we try to latch it unconditionally, we may deadlock,
+         * because other threads are also waiting on the eviction mutex. */
+        return false;
+    }
+    w_assert1(parent_cb.latch().is_mine());
+
+    /* Look for emlsn slot on parent (must be found because parent pointer is
+     * kept consistent at all times). */
+    w_assert1(_bufferpool->_is_active_idx(parent_idx));
+    generic_page *parent = &_bufferpool->_buffer[parent_idx];
+    btree_page_h parent_h;
+    parent_h.fix_nonbufferpool_page(parent);
+
+    general_recordid_t child_slotid;
+    if (_swizziling_enabled && cb._swizzled) {
+        // Search for swizzled address
+        PageID swizzled_pid = idx | SWIZZLED_PID_BIT;
+        child_slotid = _bufferpool->find_page_id_slot(parent, swizzled_pid);
+    }
+    else {
+        child_slotid = _bufferpool->find_page_id_slot(parent, pid);
+    }
+    w_assert1 (child_slotid != GeneralRecordIds::INVALID);
+
+    //==========================================================================
+    // STEP 2: Unswizzle pointer on parent before evicting.
+    //==========================================================================
+    if (_swizziling_enabled && cb._swizzled) {
+        bool ret = _bufferpool->unswizzle(parent, child_slotid);
+        w_assert0(ret);
+        w_assert1(!cb._swizzled);
+    }
+
+    //==========================================================================
+    // STEP 3: Page will be evicted -- update EMLSN on parent.
+    //==========================================================================
+    lsn_t old = parent_h.get_emlsn_general(child_slotid);
+    _bufferpool->_buffer[idx].lsn = cb.get_page_lsn();
+    if (old < _bufferpool->_buffer[idx].lsn) {
+        DBG3(<< "Updated EMLSN on page " << parent_h.pid()
+                << " slot=" << child_slotid
+                << " (child pid=" << pid << ")"
+                << ", OldEMLSN=" << old << " NewEMLSN=" <<
+                _bufferpool->_buffer[idx].lsn);
+
+        w_assert1(parent_cb.latch().is_mine());
+
+        _bufferpool->_sx_update_child_emlsn(parent_h, child_slotid,
+                                            _bufferpool->_buffer[idx].lsn);
+
+        w_assert1(parent_h.get_emlsn_general(child_slotid)
+                    ==
+                    _bufferpool->_buffer[idx].lsn);
+    }
+
+    parent_cb.latch().latch_release();
+    return true;
+}
