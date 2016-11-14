@@ -51,6 +51,15 @@ void worker_thread_t::wait_for_round(unsigned long round)
     done_condvar.wait(lck, predicate);
 }
 
+void worker_thread_t::wait_for_notify()
+{
+    /* We have a timeout of 10ms. This is pretty high, but it is issued only to
+     * avoid starvation in case the notify() signal is lost. In most cases we
+     * should be awaken by the notify() call, not by the timeout. */
+    unique_lock<mutex> lck(cond_mutex);
+    done_condvar.wait_for(lck, std::chrono::milliseconds(10));
+}
+
 void worker_thread_t::stop()
 {
     stop_requested = true;
@@ -95,3 +104,12 @@ void worker_thread_t::run()
     }
 }
 
+void worker_thread_t::notify_one()
+{
+    done_condvar.notify_one();
+}
+
+void worker_thread_t::notify_all()
+{
+    done_condvar.notify_all();
+}

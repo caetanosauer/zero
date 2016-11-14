@@ -34,6 +34,18 @@ public:
      */
     void wait_for_round(unsigned long round = 0);
 
+    /**
+     * Wait until the worker thread sends a notify (no predicate required).
+     * This is useful in cases where we have many threads waiting and the
+     * worker_thread executes a certain work in batches. In these cases, we
+     * might want to wakeup the waiting threads gradually, not all of them at
+     * once when the whole batch processing is done.
+     * There might be spurious wake-up calls, and, since no predicate is
+     * provided, it is up to the caller of the method to ensure that a certain
+     * condition is met. USE WITH CAUTION!
+     */
+    void wait_for_notify();
+
     unsigned long get_rounds_completed() const { return rounds_completed; };
     bool is_busy() const { return worker_busy; }
 
@@ -49,6 +61,13 @@ protected:
      * waiting for a complete do_work round
      */
     bool should_exit() const { return stop_requested; }
+
+    /**
+     * These methods can be called from inside the do_work() implementation to
+     * wake up threads waiting at wait_for_notify().
+     */
+    void notify_one();
+    void notify_all();
 
 private:
     virtual void run();
