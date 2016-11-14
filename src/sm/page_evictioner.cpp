@@ -6,10 +6,10 @@
 
 page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_options& options)
     :
-    worker_thread_t(_options.get_int_option("sm_evictioner_interval_millisec", 1000)),
+    worker_thread_t(options.get_int_option("sm_evictioner_interval_millisec", 1000)),
     _bufferpool(bufferpool)
 {
-    _swizziling_enabled = _options.get_bool_option("sm_bufferpool_swizzle", false);
+    _swizziling_enabled = options.get_bool_option("sm_bufferpool_swizzle", false);
     _current_frame = 0;
 }
 

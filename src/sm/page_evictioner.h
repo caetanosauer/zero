@@ -15,7 +15,7 @@ class generic_page;
 
 class page_evictioner_base : public worker_thread_t {
 public:
-	page_evictioner_base(bf_tree_m* bufferpool, const sm_options& _options);
+	page_evictioner_base(bf_tree_m* bufferpool, const sm_options& options);
     virtual ~page_evictioner_base();
 
     /**
