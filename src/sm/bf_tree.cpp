@@ -214,7 +214,18 @@ page_evictioner_base* bf_tree_m::get_evictioner()
     }
 
     if (!_evictioner) {
-        _evictioner = new page_evictioner_base(this, ss_m::get_options());
+        std::string s = ss_m::get_options().get_string_option("sm_evict_policy", "latched");
+        if(s == "gclock") {
+            _evictioner = new page_evictioner_gclock(this, ss_m::get_options());
+        }
+        else if(s == "latched") {
+            _evictioner = new page_evictioner_base(this, ss_m::get_options());
+        }
+        else {
+            std::cerr << "Invalid buffer policy." << std::endl;
+            W_FATAL(eCRASH);
+        }
+
         _evictioner->fork();
     }
 

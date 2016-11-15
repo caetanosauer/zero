@@ -64,4 +64,20 @@ private:
 	virtual void do_work ();
 };
 
+class page_evictioner_gclock : public page_evictioner_base {
+public:
+    page_evictioner_gclock(bf_tree_m* bufferpool, const sm_options& options);
+    virtual ~page_evictioner_gclock();
+
+    virtual void            ref(bf_idx idx);
+
+protected:
+    virtual bf_idx          pick_victim();
+
+private:
+    uint16_t            _k;
+    uint16_t*           _counts;
+    bf_idx              _current_frame;
+};
+
 #endif

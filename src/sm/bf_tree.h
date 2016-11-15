@@ -72,6 +72,7 @@ class bf_tree_m {
     friend class page_evictioner_base;  // for page evictioning
     friend class WarmupThread;
     friend class page_cleaner_decoupled;
+    friend class page_evictioner_gclock;
 
 public:
     /** constructs the buffer pool. */
