@@ -66,7 +66,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "chkpt.h"
 #include "btree_logrec.h"       // Lock re-acquisition
 #include "bf_tree.h"
-#include "xct_dependent.h"
 #include <new>
 #include "sm.h"
 #include "lock_raw.h"      // Lock information gathering

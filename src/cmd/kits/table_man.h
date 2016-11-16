@@ -105,10 +105,6 @@
 #include "row.h"
 #include "row_cache.h"
 
-#include "util/zero_proxy.h"
-
-
-
 /* ---------------------------------------------------------------
  *
  * @class: table_man_t

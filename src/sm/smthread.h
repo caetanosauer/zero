@@ -232,12 +232,6 @@ class smthread_t {
         queue_based_lock_t::ext_qnode _me1;
         queue_based_lock_t::ext_qnode _me2;
         queue_based_lock_t::ext_qnode _me3;
-
-        /**\var queue_based_lock_t::ext_qnode _1thread_xct_me;
-         * \brief Queue node for holding mutex to serialize access to xct
-         * structure.  Used in xct_impl.cpp
-         */
-        queue_based_lock_t::ext_qnode _1thread_xct_me;
         /**\var static __thread queue_based_lock_t::ext_qnode _xlist_mutex_node;
          * \brief Queue node for holding mutex to serialize
          * access transaction list. Used in xct.cpp
@@ -267,7 +261,6 @@ class smthread_t {
             QUEUE_EXT_QNODE_INITIALIZE(_me1);
             QUEUE_EXT_QNODE_INITIALIZE(_me2);
             QUEUE_EXT_QNODE_INITIALIZE(_me3);
-            QUEUE_EXT_QNODE_INITIALIZE(_1thread_xct_me);
             QUEUE_EXT_QNODE_INITIALIZE(_xlist_mutex_node);
 
             create_TL_stats();
@@ -462,8 +455,6 @@ public:
     static queue_based_lock_t::ext_qnode& get_me1() { return tcb()._me1; }
     static queue_based_lock_t::ext_qnode& get_xlist_mutex_node() {
                                                return tcb()._xlist_mutex_node;}
-    static queue_based_lock_t::ext_qnode& get_1thread_xct_me() {
-                                               return tcb()._1thread_xct_me;}
 private:
     /* sm-specific block / unblock implementation */
     bool            _waiting;

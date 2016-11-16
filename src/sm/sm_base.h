@@ -524,7 +524,6 @@ ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state);
 #    include <btree.h>
 
 #    include <btcursor.h>
-#    include <xct_dependent.h>
 
 #    include <lock.h>
 #    include <logrec.h>

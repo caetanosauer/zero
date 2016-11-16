@@ -88,7 +88,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "latch.h"
 
-class xct_dependent_t;
 struct okvl_mode;
 struct RawXct;
 class lockid_t; // forward
@@ -214,11 +213,6 @@ public:
 
         /** RAW-style lock manager's shadow transaction object. Garbage collected. */
         RawXct*                _raw_lock_xct;
-
-        // the 1thread_xct mutex is used to ensure that only one thread
-        // is using the xct structure on behalf of a transaction
-        // TBD whether this should be a spin- or block- lock:
-        queue_based_lock_t     _1thread_xct;
 
         // Count of number of threads are doing update operations.
         // Used by start_crit and stop_crit.
@@ -374,13 +368,7 @@ public:
     bool                         log_warn_is_on() const;
 
 public:
-    // used in sm.cpp
-    rc_t                        add_dependent(xct_dependent_t* dependent);
-    rc_t                        remove_dependent(xct_dependent_t* dependent);
-    bool                        find_dependent(xct_dependent_t* dependent);
-
     //        logging functions
-
     rc_t                        update_last_logrec(logrec_t* l, lsn_t lsn);
 
     //
@@ -525,32 +513,6 @@ private:
     // Latch object mainly for checkpoint to access information in txn object
     latch_t                      _latch;
 
-public:
-    void                         acquire_1thread_xct_mutex() const; // serialize
-    void                         release_1thread_xct_mutex() const; // concurrency ok
-    bool                         is_1thread_log_mutex_mine() {
-                                    return smthread_t::is_update_thread();
-    }
-
-private:
-    void                         acquire_1thread_log_mutex() {
-        // This is a sanity check: we want to
-        // remove the 1thread log mutex altogether; given that,
-        // we assert that there is one and only one update thread
-        // and that thread is us.
-        w_assert0(smthread_t::is_update_thread());
-    }
-    void                         release_1thread_log_mutex() {
-        // This is a sanity check: we want to
-        // remove the 1thread log mutex altogether; given that,
-        // we assert that there is one and only one update thread
-        // and that thread is us.
-        w_assert0(smthread_t::is_update_thread());
-    }
-private:
-    bool                         is_1thread_xct_mutex_mine() const;
-    void                         assert_1thread_xct_mutex_free()const;
-
 protected:
     rc_t                _abort();
     rc_t                _commit(uint32_t flags,
@@ -661,14 +623,6 @@ public:
     };
 
 protected: // all data members protected
-    // the 1thread_xct mutex is used to ensure that only one thread
-    // is using the xct structure on behalf of a transaction
-    // It protects a number of things, including the xct_dependents list
-
-    // the 1thread_log mutex is used to ensure that only one thread
-    // is logging on behalf of this xct
-    mutable queue_based_lock_t   _1thread_log;
-
     lsn_t                        _first_lsn;
     lsn_t                        _last_lsn;
     lsn_t                        _undo_nxt;
@@ -685,10 +639,6 @@ protected: // all data members protected
     lsn_t                        _read_watermark;
 
     elr_mode_t                   _elr_mode;
-
-    // list of dependents: protected by _1thread_xct
-    // FRJ: this will become per-stream and not need the mutex any more
-    w_list_t<xct_dependent_t,queue_based_lock_t>    _dependent_list;
 
     // timestamp for calculating latency
     std::chrono::high_resolution_clock::time_point _begin_tstamp;

@@ -14,7 +14,6 @@
 
 #include "lock.h"
 #include <sm_base.h>
-#include "xct_dependent.h"
 #include "xct.h"
 #include "lock_x.h"
 #include "lock_lil.h"
@@ -78,10 +77,6 @@ debugflags(const char *a)
    _w_debug.setflags(a);
 }
 #endif /* W_TRACE */
-
-SPECIALIZE_CS(xct_t, int _dummy, (_dummy=0),
-            _mutex->acquire_1thread_xct_mutex(),
-            _mutex->release_1thread_xct_mutex());
 
 int auto_rollback_t::_count = 0;
 
@@ -309,7 +304,6 @@ xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
     _undo_nxt(undo_nxt),
     _read_watermark(lsn_t::null),
     _elr_mode (elr_none),
-    _dependent_list(W_LIST_ARG(xct_dependent_t, _link), &_core->_1thread_xct),
     // _last_log(0),
 #if CHECK_NESTING_VARIABLES
 #endif
@@ -413,18 +407,8 @@ xct_t::~xct_t()
     }
 
     w_assert1(one_thread_attached());
-    {
-        CRITICAL_SECTION(xctstructure, *this);
-        // w_assert1(is_1thread_xct_mutex_mine());
-
-        while (_dependent_list.pop()) ;
-
-        // if (_log_buf) delete _log_buf;
-        // if (_log_buf_for_piggybacked_ssx) delete _log_buf_for_piggybacked_ssx;
-
-        // clean up what's stored in the thread
-        smthread_t::no_xct(this);
-    }
+    // clean up what's stored in the thread
+    smthread_t::no_xct(this);
 
     if(__saved_lockid_t)  {
         delete[] __saved_lockid_t;
@@ -797,8 +781,7 @@ xct_t::_teardown(bool is_chaining) {
  *
  *  xct_t::change_state(new_state)
  *
- *  Change the status of the transaction to new_state. All
- *  dependents are informed of the change.
+ *  Change the status of the transaction to new_state.
  *
  *********************************************************************/
 void
@@ -817,9 +800,6 @@ xct_t::change_state(state_t new_state)
         return;
     }
 
-    CRITICAL_SECTION(xctstructure, *this);
-    w_assert1(is_1thread_xct_mutex_mine());
-
     w_assert2(_core->_state != new_state);
     w_assert2((new_state > _core->_state) ||
             (_core->_state == xct_chaining && new_state == xct_active));
@@ -835,12 +815,6 @@ xct_t::change_state(state_t new_state)
         case xct_freeing_space: break;
         case xct_ended: break; // arg see comments and logic in xct_t::_abort
         default: _core->_xct_aborting = false; break;
-    }
-
-    w_list_i<xct_dependent_t,queue_based_lock_t> i(_dependent_list);
-    xct_dependent_t* d;
-    while ((d = i.next()))  {
-        d->xct_state_changed(old_state, new_state);
     }
 
     // Release the write latch
@@ -892,62 +866,6 @@ xct_t::update_threads() const
     return _core->_updating_operations;
 }
 
-/*********************************************************************
- *
- *  xct_t::add_dependent(d)
- *  xct_t::remove_dependent(d)
- *
- *  Add a dependent to the dependent list of the transaction.
- *
- *********************************************************************/
-rc_t
-xct_t::add_dependent(xct_dependent_t* dependent)
-{
-    CRITICAL_SECTION(xctstructure, *this);
-    w_assert9(dependent->_link.member_of() == 0);
-
-    w_assert1(is_1thread_xct_mutex_mine());
-    _dependent_list.push(dependent);
-    dependent->xct_state_changed(_core->_state, _core->_state);
-    return RCOK;
-}
-rc_t
-xct_t::remove_dependent(xct_dependent_t* dependent)
-{
-    CRITICAL_SECTION(xctstructure, *this);
-    w_assert9(dependent->_link.member_of() != 0);
-
-    w_assert1(is_1thread_xct_mutex_mine());
-    dependent->_link.detach(); // is protected
-    return RCOK;
-}
-
-/*********************************************************************
- *
- *  xct_t::find_dependent(d)
- *
- *  Return true iff a given dependent(ptr) is in the transaction's
- *  list.   This must cleanly return false (rather than crashing)
- *  if d is a garbage pointer, so it cannot dereference d
- *
- *  **** Used by value-added servers. ****
- *
- *********************************************************************/
-bool
-xct_t::find_dependent(xct_dependent_t* ptr)
-{
-    xct_dependent_t        *d;
-    CRITICAL_SECTION(xctstructure, *this);
-    w_assert1(is_1thread_xct_mutex_mine());
-    w_list_i<xct_dependent_t,queue_based_lock_t>    iter(_dependent_list);
-    while((d=iter.next())) {
-        if(d == ptr) {
-            return true;
-        }
-    }
-    return false;
-}
-
 rc_t
 xct_t::_pre_commit(uint32_t flags)
 {
@@ -987,7 +905,8 @@ xct_t::_pre_commit(uint32_t flags)
         // Have to re-check since in the meantime another thread might
         // have attached. Of course, that's always the case... we
         // can't avoid such server errors.
-        W_DO(check_one_thread_attached());
+        // W_DO(check_one_thread_attached());
+        w_assert0(one_thread_attached());
 
         // OLD: don't allow a chkpt to occur between changing the
         // state and writing the log record,
@@ -1439,7 +1358,8 @@ xct_t::dispose()
     delete __stats;
     __stats = 0;
 
-    W_DO(check_one_thread_attached());
+    // W_DO(check_one_thread_attached());
+    w_assert0(one_thread_attached());
     W_COERCE( commit_free_locks());
     // ClearAllStoresToFree();
     // ClearAllLoadStores();
@@ -1530,8 +1450,6 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
     DBGX(
             << " RELEASE ANCHOR "
             << " in compensated op==" << _in_compensated_op
-            << " holds xct_mutex_1=="
-            /*<< (const char *)(_1thread_xct.is_mine()? "true" : "false"*)*/
     );
 
     w_assert3(_in_compensated_op>0);
@@ -1586,8 +1504,6 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
 
     DBGX(
         << " out compensated op=" << _in_compensated_op
-        << " holds xct_mutex_1=="
-        /*        << (const char *)(_1thread_xct.is_mine()? "true" : "false")*/
     );
 }
 
@@ -1662,8 +1578,6 @@ void
 xct_t::compensate(const lsn_t& lsn, bool undoable ADD_LOG_COMMENT_SIG)
 {
     DBGX(    << " compensate(" << lsn << ") -- state=" << state());
-
-    // acquire_1thread_mutex(); should already be mine
 
     _compensate(lsn, undoable);
 
@@ -1902,26 +1816,10 @@ done:
 void
 xct_t::detach_thread()
 {
-    CRITICAL_SECTION(xctstructure, *this);
-    w_assert3(is_1thread_xct_mutex_mine());
     _core->_threads_attached--;
     w_assert2(_core->_threads_attached >=0);
-    smthread_t::no_xct(this);
 }
 
-//
-// one_thread_attached() does not acquire the 1thread mutex; it
-// just checks that the vas isn't calling certain methods
-// when other threads are still working on behalf of the same xct.
-// It doesn't protect the vas from trying calling, say, commit and
-// later attaching another thread while the commit is going on.
-// --- Can't protect a vas from itself in all cases.
-rc_t
-xct_t::check_one_thread_attached() const
-{
-    if(one_thread_attached()) return RCOK;
-    return RC(eTWOTHREAD);
-}
 
 bool
 xct_t::one_thread_attached() const
@@ -1956,80 +1854,12 @@ xct_t::one_thread_attached() const
     return true;
 }
 
-bool
-xct_t::is_1thread_xct_mutex_mine() const
-{
-  return _core->_1thread_xct.is_mine(&smthread_t::get_1thread_xct_me());
-}
-
-// Should be used with CRITICAL_SECTION
-void
-xct_t::acquire_1thread_xct_mutex() const // default: true
-{
-    w_assert1( ! is_1thread_xct_mutex_mine()) ;
-    // We can already own the 1thread log mutx, if we're
-    // in a top-level action or in the io_m.
-    DBGX( << " acquire xct mutex");
-    if(is_1thread_xct_mutex_mine()) {
-        w_assert0(0); // we should not already own this.
-        DBGX(<< "already mine");
-        return;
-    }
-    // the queue_based_lock_t implementation can tell if it was
-    // free or held; the w_pthread_lock_t cannot,
-    // and always returns false.
-    bool was_contended = _core->_1thread_xct.acquire(&smthread_t::get_1thread_xct_me());
-    if(was_contended)
-        INC_TSTAT(await_1thread_xct);
-    DBGX(    << " acquireD xct mutex");
-    w_assert2(is_1thread_xct_mutex_mine());
-}
-
-void
-xct_t::release_1thread_xct_mutex() const
-{
-    DBGX( << " release xct mutex");
-    w_assert1(is_1thread_xct_mutex_mine());
-    _core->_1thread_xct.release(smthread_t::get_1thread_xct_me());
-    DBGX(    << " releaseD xct mutex");
-    w_assert1(!is_1thread_xct_mutex_mine());
-}
-
 ostream &
 xct_t::dump_locks(ostream &out) const
 {
     raw_lock_xct()->dump_lockinfo(out);
     return out;
 }
-
-xct_dependent_t::xct_dependent_t(xct_t* xd) : _xd(xd), _registered(false)
-{
-}
-
-void
-xct_dependent_t::register_me() {
-    // it's possible that there is no active xct when this
-    // function is called, so be prepared for null
-    xct_t* xd = _xd;
-    if (xd) {
-        W_COERCE( xd->add_dependent(this) );
-    }
-    _registered = true;
-}
-
-xct_dependent_t::~xct_dependent_t()
-{
-    w_assert2(_registered);
-    // it's possible that there is no active xct the constructor
-    // was called, so be prepared for null
-    if (_link.member_of() != NULL) {
-        w_assert1(_xd);
-        // Have to remove it under protection of the 1thread_xct_mutex
-        W_COERCE(_xd->remove_dependent(this));
-    }
-}
-/**\endcond skip */
-
 
 sys_xct_section_t::sys_xct_section_t(bool single_log_sys_xct)
 {

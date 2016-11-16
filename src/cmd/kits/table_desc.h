@@ -104,8 +104,8 @@
 #include "index_desc.h"
 #include "row.h"
 
-#include "util/zero_proxy.h"
-
+// Shore -> Zero compatibility
+typedef okvl_mode::element_lock_mode lock_mode_t;
 
 #define DECLARE_TABLE_SCHEMA(tablename)         \
     class tablename : public table_desc_t {     \

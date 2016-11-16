@@ -919,8 +919,6 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, int timeout, bool sys_xct,
             tid = x->tid();
             return RCOK;
         }
-        // system transaction doesn't need synchronization with create_vol etc
-        // TODO might need to reconsider. but really needs this change now
         x = _new_xct(_stats, timeout, sys_xct, single_log_sys_xct);
     } else {
         spinlock_read_critical_section cs(&_begin_xct_mutex);
