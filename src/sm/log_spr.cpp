@@ -13,18 +13,6 @@
 #include "logrec.h"
 #include "logdef_gen.h"
 
-page_evict_log::page_evict_log (const btree_page_h& p,
-                                general_recordid_t child_slot, lsn_t child_lsn) {
-    new (data_ssx()) page_evict_t(child_lsn, child_slot);
-    fill(p, sizeof(page_evict_t));
-}
-
-void page_evict_log::redo(fixable_page_h* page) {
-    borrowed_btree_page_h bp(page);
-    page_evict_t *dp = (page_evict_t*) data_ssx();
-    bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
-}
-
 // CS TODO: why isnt this in restart.cpp??
 void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn)
 {

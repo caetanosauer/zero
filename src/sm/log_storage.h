@@ -66,6 +66,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <mutex>
 #include <condition_variable>
 
+#include "logdef_gen.h"
+
 typedef    smlevel_0::partition_number_t partition_number_t;
 typedef std::map<partition_number_t, shared_ptr<partition_t>> partition_map_t;
 
@@ -73,7 +75,6 @@ typedef std::map<partition_number_t, shared_ptr<partition_t>> partition_map_t;
 #include <boost/filesystem.hpp>
 namespace fs = boost::filesystem;
 
-class skip_log;
 class partition_recycler_t;
 
 class log_storage {

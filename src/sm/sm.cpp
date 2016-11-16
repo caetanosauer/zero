@@ -76,6 +76,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "bf_tree.h"
 #include "stopwatch.h"
 #include "alloc_cache.h"
+#include "btree_page.h"
 
 #include "allocator.h"
 #include "log_core.h"

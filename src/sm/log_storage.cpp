@@ -75,8 +75,6 @@ public:
  * from the various prime methods of the old log_core.
  */
 log_storage::log_storage(const sm_options& options)
-    :
-        _skip_log(new skip_log)
 {
     std::string logdir = options.get_string_option("sm_logdir", "log");
     if (logdir.empty()) {
@@ -169,6 +167,10 @@ log_storage::log_storage(const sm_options& options)
     if (_checkpoints.size() > 0) {
         std::sort(_checkpoints.begin(), _checkpoints.end());
     }
+
+    // CS TODO: log record refactoring
+    _skip_log = new skip_log;
+    _skip_log->construct();
 }
 
 log_storage::~log_storage()

@@ -65,7 +65,6 @@ class rangeset_t;
 struct multi_page_log_t;
 class RestoreBitmap;
 class xct_t;
-class fixable_page_h;
 
 #include "lsn.h"
 #include "tid_t.h"
@@ -147,7 +146,7 @@ struct xidChainLogHeader
  */
 class logrec_t {
 public:
-    friend class XctLogger;
+    template <class T> friend class XctLogger;
     friend class sysevent;
     friend class baseLogHeader;
 
@@ -226,8 +225,11 @@ public:
     bool             valid_header(const lsn_t & lsn_ck = lsn_t::null) const;
     smsize_t         header_size() const;
 
-    void             redo(fixable_page_h*);
-    void             undo(fixable_page_h*);
+    template <class PagePtr>
+    void             redo(PagePtr);
+
+    template <class PagePtr>
+    void             undo(PagePtr);
 
     void fill(PageID pid, uint16_t tag, smsize_t length)
     {

@@ -59,7 +59,8 @@ void sysevent::log_page_write(PageID shpid, lsn_t lsn, uint32_t count)
 
 void sysevent::log_alloc_page(PageID pid, lsn_t& prev_page_lsn)
 {
-    logrec_t* lr = new alloc_page_log(pid);
+    alloc_page_log* lr = new alloc_page_log();
+    lr->construct(pid);
     lr->set_page_prev_lsn(prev_page_lsn);
     W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
     delete lr;
@@ -67,7 +68,8 @@ void sysevent::log_alloc_page(PageID pid, lsn_t& prev_page_lsn)
 
 void sysevent::log_dealloc_page(PageID pid, lsn_t& prev_page_lsn)
 {
-    logrec_t* lr = new dealloc_page_log(pid);
+    dealloc_page_log* lr = new dealloc_page_log();
+    lr->construct(pid);
     lr->set_page_prev_lsn(prev_page_lsn);
     W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
     delete lr;
@@ -75,7 +77,8 @@ void sysevent::log_dealloc_page(PageID pid, lsn_t& prev_page_lsn)
 
 void sysevent::log_create_store(PageID root, StoreID stid, lsn_t& prev_page_lsn)
 {
-    logrec_t* lr = new create_store_log(root, stid);
+    create_store_log* lr = new create_store_log();
+    lr->construct(root, stid);
     lr->set_page_prev_lsn(prev_page_lsn);
     W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
     delete lr;
@@ -83,7 +86,8 @@ void sysevent::log_create_store(PageID root, StoreID stid, lsn_t& prev_page_lsn)
 
 void sysevent::log_append_extent(extent_id_t ext, lsn_t& prev_page_lsn)
 {
-    logrec_t* lr = new append_extent_log(ext);
+    append_extent_log* lr = new append_extent_log();
+    lr->construct(ext);
     lr->set_page_prev_lsn(prev_page_lsn);
     W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
     delete lr;
@@ -91,7 +95,8 @@ void sysevent::log_append_extent(extent_id_t ext, lsn_t& prev_page_lsn)
 
 void sysevent::log_xct_latency_dump(unsigned long nsec)
 {
-    logrec_t* lr = new xct_latency_dump_log(nsec);
+    xct_latency_dump_log* lr = new xct_latency_dump_log();
+    lr->construct(nsec);
     W_COERCE(smlevel_0::log->insert(*lr, nullptr));
     delete lr;
 }

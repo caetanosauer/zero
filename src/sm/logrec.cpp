@@ -19,6 +19,8 @@
 #include "log_spr.h"
 #include <sstream>
 
+#include "btree_page_h.h"
+
 #include <iomanip>
 typedef        ios::fmtflags        ios_fmtflags;
 
@@ -200,13 +202,10 @@ logrec_t::valid_header(const lsn_t & lsn) const
 
 
 /*********************************************************************
- *
- *  logrec_t::redo(page)
- *
  *  Invoke the redo method of the log record.
- *
  *********************************************************************/
-void logrec_t::redo(fixable_page_h* page)
+template <class PagePtr>
+void logrec_t::redo(PagePtr page)
 {
     DBG( << "Redo  log rec: " << *this
         << " size: " << header._len << " xid_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xid_prev()) );
@@ -243,8 +242,8 @@ static __thread logrec_t::kind_t undoing_context = logrec_t::t_max_logrec; // fo
  *  undo operation.
  *
  *********************************************************************/
-void
-logrec_t::undo(fixable_page_h* page)
+template <class PagePtr>
+void logrec_t::undo(PagePtr page)
 {
     w_assert0(!is_single_sys_xct()); // UNDO shouldn't be called for single-log sys xct
     undoing_context = logrec_t::kind_t(header._type);
@@ -300,7 +299,7 @@ logrec_t::corrupt()
  *  Synchronous for commit. Async for abort.
  *
  *********************************************************************/
-xct_freeing_space_log::xct_freeing_space_log()
+void xct_freeing_space_log::construct()
 {
     fill((PageID) 0, 0);
 }
@@ -325,7 +324,7 @@ xct_list_t::xct_list_t(
     }
 }
 
-xct_end_group_log::xct_end_group_log(const xct_t *list[], int listlen)
+void xct_end_group_log::construct(const xct_t *list[], int listlen)
 {
     fill((PageID) 0, (new (_data) xct_list_t(list, listlen))->size());
 }
@@ -337,13 +336,13 @@ xct_end_group_log::xct_end_group_log(const xct_t *list[], int listlen)
  *  Status Log to mark the end of transaction and space recovery.
  *
  *********************************************************************/
-xct_end_log::xct_end_log()
+void xct_end_log::construct()
 {
     fill((PageID) 0, 0);
 }
 
 // We use a different log record type here only for debugging purposes
-xct_abort_log::xct_abort_log()
+void xct_abort_log::construct()
 {
     fill((PageID) 0, 0);
 }
@@ -355,7 +354,7 @@ xct_abort_log::xct_abort_log()
  *  For debugging
  *
  *********************************************************************/
-comment_log::comment_log(const char *msg)
+void comment_log::construct(const char *msg)
 {
     w_assert1(strlen(msg) < sizeof(_data));
     memcpy(_data, msg, strlen(msg)+1);
@@ -363,16 +362,16 @@ comment_log::comment_log(const char *msg)
     fill((PageID) 0, strlen(msg)+1);
 }
 
-void
-comment_log::redo(fixable_page_h *page)
+template <class PagePtr>
+void comment_log::redo(PagePtr page)
 {
     w_assert9(page == 0);
     DBG(<<"comment_log: R: " << (const char *)_data);
     ; // just for the purpose of setting breakpoints
 }
 
-void
-comment_log::undo(fixable_page_h *page)
+template <class PagePtr>
+void comment_log::undo(PagePtr page)
 {
     w_assert9(page == 0);
     DBG(<<"comment_log: U: " << (const char *)_data);
@@ -387,7 +386,7 @@ comment_log::undo(fixable_page_h *page)
  *  on another record
  *
  *********************************************************************/
-compensate_log::compensate_log(const lsn_t& rec_lsn)
+void compensate_log::construct(const lsn_t& rec_lsn)
 {
     fill((PageID) 0, 0);
     set_clr(rec_lsn);
@@ -401,7 +400,7 @@ compensate_log::compensate_log(const lsn_t& rec_lsn)
  *  Filler log record -- for skipping to end of log partition
  *
  *********************************************************************/
-skip_log::skip_log()
+void skip_log::construct()
 {
     fill((PageID) 0, 0);
 }
@@ -413,12 +412,26 @@ skip_log::skip_log()
  *  Status Log to mark start of fussy checkpoint.
  *
  *********************************************************************/
-chkpt_begin_log::chkpt_begin_log(const lsn_t &lastMountLSN)
+void chkpt_begin_log::construct(const lsn_t &lastMountLSN)
 {
     new (_data) lsn_t(lastMountLSN);
     fill((PageID) 0, sizeof(lsn_t));
 }
 
+template <class PagePtr>
+void page_evict_log::construct (const PagePtr p,
+                                general_recordid_t child_slot, lsn_t child_lsn)
+{
+    new (data_ssx()) page_evict_t(child_lsn, child_slot);
+    fill(p, sizeof(page_evict_t));
+}
+
+template <class PagePtr>
+void page_evict_log::redo(PagePtr page) {
+    borrowed_btree_page_h bp(*page);
+    page_evict_t *dp = (page_evict_t*) data_ssx();
+    bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
+}
 
 
 /*********************************************************************
@@ -431,7 +444,7 @@ chkpt_begin_log::chkpt_begin_log(const lsn_t &lastMountLSN)
  *  min_txn_lsn is the earliest lsn for all txn in this chkpt.
  *
  *********************************************************************/
-chkpt_end_log::chkpt_end_log(const lsn_t& lsn, const lsn_t& min_rec_lsn,
+void chkpt_end_log::construct(const lsn_t& lsn, const lsn_t& min_rec_lsn,
                                 const lsn_t& min_txn_lsn)
 {
     // initialize _data
@@ -444,7 +457,7 @@ chkpt_end_log::chkpt_end_log(const lsn_t& lsn, const lsn_t& min_rec_lsn,
     fill((PageID) 0, (3 * sizeof(lsn_t)) + (3 * sizeof(int)));
 }
 
-xct_latency_dump_log::xct_latency_dump_log(unsigned long nsec)
+void xct_latency_dump_log::construct(unsigned long nsec)
 {
     *((unsigned long*) _data) = nsec;
     fill((PageID) 0, sizeof(unsigned long));
@@ -476,7 +489,7 @@ chkpt_bf_tab_t::chkpt_bf_tab_t(
 }
 
 
-chkpt_bf_tab_log::chkpt_bf_tab_log(
+void chkpt_bf_tab_log::construct(
     int                 cnt,        // I-  # elements in pids[] and rlsns[]
     const PageID*         pid,        // I-  id of of dirty pages
     const lsn_t*         rec_lsn,// I-  rec_lsn[i] is recovery lsn (oldest) of pids[i]
@@ -514,7 +527,7 @@ chkpt_xct_tab_t::chkpt_xct_tab_t(
     }
 }
 
-chkpt_xct_tab_log::chkpt_xct_tab_log(
+void chkpt_xct_tab_log::construct(
     const tid_t&                         youngest,
     int                                 cnt,
     const tid_t*                         tid,
@@ -549,7 +562,7 @@ chkpt_xct_lock_t::chkpt_xct_lock_t(
     }
 }
 
-chkpt_xct_lock_log::chkpt_xct_lock_log(
+void chkpt_xct_lock_log::construct(
     const tid_t&                        tid,
     int                                 cnt,
     const okvl_mode*                    lock_mode,
@@ -586,14 +599,15 @@ void chkpt_backup_tab_t::read(
     }
 }
 
-chkpt_backup_tab_log::chkpt_backup_tab_log(int cnt,
+void chkpt_backup_tab_log::construct(int cnt,
                                            const string* paths)
 {
     // CS TODO
     fill(0, (new (_data) chkpt_backup_tab_t(cnt, paths))->size());
 }
 
-void chkpt_backup_tab_log::redo(fixable_page_h*)
+template <class PagePtr>
+void chkpt_backup_tab_log::redo(PagePtr)
 {
     // CS TODO
     chkpt_backup_tab_t* tab = (chkpt_backup_tab_t*) _data;
@@ -606,7 +620,7 @@ void chkpt_backup_tab_log::redo(fixable_page_h*)
     }
 }
 
-chkpt_restore_tab_log::chkpt_restore_tab_log()
+void chkpt_restore_tab_log::construct()
 {
     chkpt_restore_tab_t* tab =
         new (_data) chkpt_restore_tab_t();
@@ -615,7 +629,8 @@ chkpt_restore_tab_log::chkpt_restore_tab_log()
     fill((PageID) 0, tab->length());
 }
 
-void chkpt_restore_tab_log::redo(fixable_page_h*)
+template <class PagePtr>
+void chkpt_restore_tab_log::redo(PagePtr)
 {
     // CS TODO: disabled for now
     return;
@@ -647,7 +662,7 @@ void chkpt_restore_tab_log::redo(fixable_page_h*)
     // }
 }
 
-add_backup_log::add_backup_log(const string& path, lsn_t backupLSN)
+void add_backup_log::construct(const string& path, lsn_t backupLSN)
 {
     *((lsn_t*) data_ssx()) = backupLSN;
     w_assert0(path.length() < smlevel_0::max_devname);
@@ -655,34 +670,35 @@ add_backup_log::add_backup_log(const string& path, lsn_t backupLSN)
     fill((PageID) 0, sizeof(lsn_t) + path.length());
 }
 
-void add_backup_log::redo(fixable_page_h*)
+template <class PagePtr>
+void add_backup_log::redo(PagePtr)
 {
     lsn_t backupLSN = *((lsn_t*) data_ssx());
     const char* dev_name = (const char*) (data_ssx() + sizeof(lsn_t));
     W_COERCE(smlevel_0::vol->sx_add_backup(string(dev_name), backupLSN, false));
 }
 
-undo_done_log::undo_done_log()
+void undo_done_log::construct()
 {
     fill((PageID) 0, 0);
 }
 
-redo_done_log::redo_done_log()
+void redo_done_log::construct()
 {
     fill((PageID) 0, 0);
 }
 
-loganalysis_end_log::loganalysis_end_log()
+void loganalysis_end_log::construct()
 {
     fill((PageID) 0, 0);
 }
 
-loganalysis_begin_log::loganalysis_begin_log()
+void loganalysis_begin_log::construct()
 {
     fill((PageID) 0, 0);
 }
 
-restore_begin_log::restore_begin_log()
+void restore_begin_log::construct()
 {
 #ifdef TIMED_LOG_RECORDS
     unsigned long tstamp = sysevent_timer::timestamp();
@@ -693,7 +709,8 @@ restore_begin_log::restore_begin_log()
 #endif
 }
 
-void restore_begin_log::redo(fixable_page_h*)
+template <class PagePtr>
+void restore_begin_log::redo(PagePtr)
 {
     return; // CS TODO: disabled for now
 
@@ -706,7 +723,7 @@ void restore_begin_log::redo(fixable_page_h*)
     W_COERCE(volume->mark_failed(false /* evict */, true /* redo */));
 }
 
-restore_end_log::restore_end_log()
+void restore_end_log::construct()
 {
 #ifdef TIMED_LOG_RECORDS
     unsigned long tstamp = sysevent_timer::timestamp();
@@ -717,7 +734,8 @@ restore_end_log::restore_end_log()
 #endif
 }
 
-void restore_end_log::redo(fixable_page_h*)
+template <class PagePtr>
+void restore_end_log::redo(PagePtr)
 {
     return; // CS TODO: disabled for now
 
@@ -730,7 +748,7 @@ void restore_end_log::redo(fixable_page_h*)
     // w_assert0(finished);
 }
 
-restore_segment_log::restore_segment_log(uint32_t segment)
+void restore_segment_log::construct(uint32_t segment)
 {
     char* pos = data_ssx();
 
@@ -746,7 +764,8 @@ restore_segment_log::restore_segment_log(uint32_t segment)
     fill((PageID) 0, pos - data_ssx());
 }
 
-void restore_segment_log::redo(fixable_page_h*)
+template <class PagePtr>
+void restore_segment_log::redo(PagePtr)
 {
     return; // CS TODO: disabled for now
 
@@ -759,14 +778,15 @@ void restore_segment_log::redo(fixable_page_h*)
     volume->redo_segment_restore(segment);
 }
 
-alloc_page_log::alloc_page_log(PageID pid)
+void alloc_page_log::construct(PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
     PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
     fill(alloc_pid, sizeof(PageID));
 }
 
-void alloc_page_log::redo(fixable_page_h* p)
+template <class PagePtr>
+void alloc_page_log::redo(PagePtr p)
 {
     PageID pid = *((PageID*) data_ssx());
 
@@ -775,14 +795,15 @@ void alloc_page_log::redo(fixable_page_h* p)
     apage->set_bit(index);
 }
 
-dealloc_page_log::dealloc_page_log(PageID pid)
+void dealloc_page_log::construct(PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
     PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
     fill(alloc_pid, sizeof(PageID));
 }
 
-void dealloc_page_log::redo(fixable_page_h* p)
+template <class PagePtr>
+void dealloc_page_log::redo(PagePtr p)
 {
     PageID pid = *((PageID*) data_ssx());
 
@@ -791,12 +812,13 @@ void dealloc_page_log::redo(fixable_page_h* p)
     apage->unset_bit(index);
 }
 
-page_img_format_t::page_img_format_t (const btree_page_h& page)
+template <class PagePtr>
+page_img_format_t<PagePtr>::page_img_format_t (const PagePtr page)
 {
     size_t unused_length;
-    char* unused = page.page()->unused_part(unused_length);
+    char* unused = page->page()->unused_part(unused_length);
 
-    const char *pp_bin = (const char *) page._pp;
+    const char *pp_bin = (const char *) page->_pp;
     beginning_bytes = unused - pp_bin;
     ending_bytes    = sizeof(btree_page) - (beginning_bytes + unused_length);
 
@@ -806,7 +828,8 @@ page_img_format_t::page_img_format_t (const btree_page_h& page)
     w_assert1(beginning_bytes + ending_bytes <= sizeof(btree_page));
 }
 
-void page_img_format_t::apply(fixable_page_h* page)
+template <class PagePtr>
+void page_img_format_t<PagePtr>::apply(PagePtr page)
 {
     w_assert1(beginning_bytes >= btree_page::hdr_sz);
     w_assert1(beginning_bytes + ending_bytes <= sizeof(btree_page));
@@ -816,18 +839,21 @@ void page_img_format_t::apply(fixable_page_h* page)
             data + beginning_bytes, ending_bytes);
 }
 
-page_img_format_log::page_img_format_log(const btree_page_h &page) {
+template <class PagePtr>
+void page_img_format_log::construct(const PagePtr page) {
     fill(page,
-         (new (_data) page_img_format_t(page))->size());
+         (new (_data) page_img_format_t<PagePtr>(page))->size());
 }
 
-void page_img_format_log::undo(fixable_page_h*) {
+template <class PagePtr>
+void page_img_format_log::undo(PagePtr) {
     // we don't have to do anything for UNDO
     // because this is a page creation!
 }
-void page_img_format_log::redo(fixable_page_h* page) {
+template <class PagePtr>
+void page_img_format_log::redo(PagePtr page) {
     // REDO is simply applying the image
-    page_img_format_t* dp = (page_img_format_t*) _data;
+    page_img_format_t<PagePtr>* dp = (page_img_format_t<PagePtr>*) _data;
     dp->apply(page);
 }
 
@@ -939,13 +965,15 @@ public:
     int size()  { return 0;}
 };
 
-page_set_to_be_deleted_log::page_set_to_be_deleted_log(const fixable_page_h& p)
+template <class PagePtr>
+void page_set_to_be_deleted_log::construct(const PagePtr p)
 {
     fill(p, (new (_data) page_set_to_be_deleted_t()) ->size());
 }
 
 
-void page_set_to_be_deleted_log::redo(fixable_page_h* page)
+template <class PagePtr>
+void page_set_to_be_deleted_log::redo(PagePtr page)
 {
     rc_t rc = page->set_to_be_deleted(false); // no log
     if (rc.is_error()) {
@@ -953,12 +981,13 @@ void page_set_to_be_deleted_log::redo(fixable_page_h* page)
     }
 }
 
-void page_set_to_be_deleted_log::undo(fixable_page_h* page)
+template <class PagePtr>
+void page_set_to_be_deleted_log::undo(PagePtr page)
 {
     page->unset_to_be_deleted();
 }
 
-create_store_log::create_store_log(PageID root_pid, StoreID snum)
+void create_store_log::construct(PageID root_pid, StoreID snum)
 {
     memcpy(data_ssx(), &snum, sizeof(StoreID));
     memcpy(data_ssx() + sizeof(StoreID), &root_pid, sizeof(PageID));
@@ -966,7 +995,8 @@ create_store_log::create_store_log(PageID root_pid, StoreID snum)
     fill(stpage_pid, snum, 0, sizeof(StoreID) + sizeof(PageID));
 }
 
-void create_store_log::redo(fixable_page_h* page)
+template <class PagePtr>
+void create_store_log::redo(PagePtr page)
 {
     StoreID snum = *((StoreID*) data_ssx());
     PageID root_pid = *((PageID*) (data_ssx() + sizeof(StoreID)));
@@ -978,14 +1008,15 @@ void create_store_log::redo(fixable_page_h* page)
     stpage->set_root(snum, root_pid);
 }
 
-append_extent_log::append_extent_log(extent_id_t ext)
+void append_extent_log::construct(extent_id_t ext)
 {
     memcpy(data_ssx(), &ext, sizeof(extent_id_t));
     PageID stpage_pid(stnode_page::stpid);
     fill(stpage_pid, 0, 0, sizeof(extent_id_t));
 }
 
-void append_extent_log::redo(fixable_page_h* page)
+template <class PagePtr>
+void append_extent_log::redo(PagePtr page)
 {
     extent_id_t ext = *((extent_id_t*) data_ssx());
     stnode_page* stpage = (stnode_page*) page->get_generic_page();
