@@ -293,7 +293,6 @@ xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
                 xct_active, timeout)),
     __stats(stats),
     __saved_lockid_t(0),
-    __saved_xct_log_t(0),
     _tid(_core->_tid),
     _xct_chain_len(0),
     _ssx_chain_len(0),
@@ -430,11 +429,6 @@ xct_t::~xct_t()
     if(__saved_lockid_t)  {
         delete[] __saved_lockid_t;
         __saved_lockid_t=0;
-    }
-
-    if(__saved_xct_log_t) {
-        delete __saved_xct_log_t;
-        __saved_xct_log_t=0;
     }
 
         if(_core)
@@ -685,80 +679,6 @@ xct_t::chain(bool lazy)
     w_assert9(one_thread_attached());
     return _commit(t_chain | (lazy ? t_lazy : t_chain));
 }
-
-xct_log_t*
-xct_t::new_xct_log_t()
-{
-    xct_log_t*  l = new xct_log_t;
-    if (!l) W_FATAL(eOUTOFMEMORY);
-    return l;
-}
-
-/**\brief Used by smthread upon attach_xct() to avoid excess heap activity.
- *
- * \details
- * If the xct has a stashed copy of the caches, hand them over to the
- * calling smthread. If not, allocate some off the stack.
- */
-void
-xct_t::steal(xct_log_t*&x)
-{
-    /* See comments in smthread_t::new_xct() */
-    w_assert1(is_1thread_xct_mutex_mine());
-
-    if( (x = __saved_xct_log_t) ) {
-        __saved_xct_log_t = 0;
-    } else {
-        x = new_xct_log_t(); // deleted when thread detaches or xct finishes
-    }
-    // Don't dup release
-    // release_1thread_xct_mutex();
-}
-
-/**\brief Used by smthread upon detach_xct() to avoid excess heap activity.
- *
- * \details
- * If the xct has a stashed copy of the caches, free the caches
- * passed in, otherwise, hang onto them to hand over to the next
- * thread that attaches to this xct.
- */
-void
-xct_t::stash(xct_log_t*&x)
-{
-    /* See comments in smthread_t::new_xct() */
-    w_assert1(is_1thread_xct_mutex_mine());
-
-    if(__saved_xct_log_t) {
-        DBGX(<<"stash: delete " << x);
-        delete x;
-    }
-    else { __saved_xct_log_t = x; }
-    x = 0;
-    // dup acquire/release removed release_1thread_xct_mutex();
-}
-
-/**\brief Set the log state for this xct/thread pair to the value \e s.
- */
-smlevel_0::switch_t
-xct_t::set_log_state(switch_t s)
-{
-    xct_log_t *mine = smthread_t::xct_log();
-
-    switch_t old = (mine->xct_log_is_off()? OFF: ON);
-
-    if(s==OFF) mine->set_xct_log_off();
-
-    else mine->set_xct_log_on();
-
-    return old;
-}
-
-void
-xct_t::restore_log_state(switch_t s)
-{
-    (void) set_log_state(s);
-}
-
 
 tid_t
 xct_t::youngest_tid()
@@ -1978,22 +1898,6 @@ done:
     return rc;
 }
 
-void
-xct_t::attach_thread()
-{
-    CRITICAL_SECTION(xctstructure, *this);
-
-    w_assert2(is_1thread_xct_mutex_mine());
-
-    if (_core->_threads_attached++ > 0) {
-        INC_TSTAT(mpl_attach_cnt);
-    }
-    w_assert2(_core->_threads_attached >=0);
-    w_assert2(is_1thread_xct_mutex_mine());
-    smthread_t::new_xct(this);
-    w_assert2(is_1thread_xct_mutex_mine());
-}
-
 
 void
 xct_t::detach_thread()
@@ -2096,23 +2000,6 @@ xct_t::dump_locks(ostream &out) const
 {
     raw_lock_xct()->dump_lockinfo(out);
     return out;
-}
-
-
-smlevel_0::switch_t
-xct_t::set_log_state(switch_t s, bool &)
-{
-    xct_log_t *mine = smthread_t::xct_log();
-    switch_t old = (mine->xct_log_is_off()? OFF: ON);
-    if(s==OFF) mine->set_xct_log_off();
-    else mine->set_xct_log_on();
-    return old;
-}
-
-void
-xct_t::restore_log_state(switch_t s, bool n )
-{
-    (void) set_log_state(s, n);
 }
 
 xct_dependent_t::xct_dependent_t(xct_t* xd) : _xd(xd), _registered(false)

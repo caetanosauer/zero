@@ -20,8 +20,7 @@ public:
     static rc_t log(const Args&... args)
     {
         xct_t* xd = smthread_t::xct();
-        bool should_log = smlevel_0::log && smlevel_0::logging_enabled
-                            && xd && xd->is_log_on();
+        bool should_log = smlevel_0::log && smlevel_0::logging_enabled && xd;
         if (!should_log)  { return RCOK; }
 
         logrec_t* logrec = _get_logbuf(xd);
@@ -53,8 +52,7 @@ public:
     static rc_t log(const btree_page_h& p, const Args&... args)
     {
         xct_t* xd = smthread_t::xct();
-        bool should_log = smlevel_0::log && smlevel_0::logging_enabled
-                            && xd && xd->is_log_on();
+        bool should_log = smlevel_0::log && smlevel_0::logging_enabled && xd;
         if (!should_log)  { return RCOK; }
 
         logrec_t* logrec = _get_logbuf(xd);
@@ -91,8 +89,7 @@ public:
     static rc_t log(const btree_page_h& p, const btree_page_h& p2, const Args&... args)
     {
         xct_t* xd = smthread_t::xct();
-        bool should_log = smlevel_0::log && smlevel_0::logging_enabled
-                            && xd && xd->is_log_on();
+        bool should_log = smlevel_0::log && smlevel_0::logging_enabled && xd;
         if (!should_log)  { return RCOK; }
 
         logrec_t* logrec = _get_logbuf(xd);

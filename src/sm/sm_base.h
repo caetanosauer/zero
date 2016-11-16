@@ -229,12 +229,6 @@ public:
     /**\endcond skip */
 
     typedef    uint32_t partition_number_t;
-/**\cond skip */
-    enum switch_t {
-        ON = 1,
-        OFF = 0
-    };
-/**\endcond skip */
 
     /**\brief Comparison types used in scan_index_i
      * \enum cmp_t

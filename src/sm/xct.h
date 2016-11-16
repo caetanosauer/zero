@@ -91,32 +91,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 class xct_dependent_t;
 struct okvl_mode;
 struct RawXct;
-
-/**\cond skip */
-/**\internal Tells whether the log is on or off for this xct at this moment.
- * \details
- * This is used internally for turning on & off the log during
- * top-level actions.
- */
-class xct_log_t : public smlevel_0 {
-private:
-    //per-thread-per-xct info
-    bool         _xct_log_off;
-public:
-    NORET        xct_log_t(): _xct_log_off(false) {};
-    bool         xct_log_is_off() { return _xct_log_off; }
-    void         set_xct_log_off() { _xct_log_off = true; }
-    void         set_xct_log_on() { _xct_log_off = false; }
-};
-/**\endcond skip */
-
 class lockid_t; // forward
 class xct_i; // forward
 class restart_m; // forward
 class lock_m; // forward
 class lock_core_m; // forward
 class lock_request_t; // forward
-class xct_log_switch_t; // forward
 class xct_lock_info_t; // forward
 class smthread_t; // forward
 class lil_private_table;
@@ -205,7 +185,6 @@ class xct_t : public smlevel_0 {
     friend class lock_m;
     friend class lock_core_m;
     friend class lock_request_t;
-    friend class xct_log_switch_t;
 
 public:
     typedef xct_state_t           state_t;
@@ -400,12 +379,7 @@ public:
     rc_t                        remove_dependent(xct_dependent_t* dependent);
     bool                        find_dependent(xct_dependent_t* dependent);
 
-    //
-    //        logging functions -- used in logstub_gen.cpp only
-    //
-    bool                        is_log_on() const;
-
-    // virtual rc_t                        get_logbuf(logrec_t* &ret);
+    //        logging functions
 
     rc_t                        update_last_logrec(logrec_t* l, lsn_t lsn);
 
@@ -423,20 +397,8 @@ protected:
     // doesn't know about the structures
     // and we have changed these to be a per-thread structures.
     static lockid_t*            new_lock_hierarchy();
-    static xct_log_t*           new_xct_log_t();
-    void                        steal(xct_log_t*&);
-    void                        stash(xct_log_t*&);
-
     void                        attach_thread();
     void                        detach_thread();
-
-protected:
-    // for xct_log_switch_t:
-    /// Set {thread,xct} pair's log-state to on/off (s) and return the old value.
-    switch_t                    set_log_state(switch_t s);
-    /// Restore {thread,xct} pair's log-state to on/off (s)
-    void                        restore_log_state(switch_t s);
-
 
 public:
     int                          num_threads();
@@ -494,7 +456,6 @@ private:
 
     sm_stats_info_t*             __stats; // allocated by user
     lockid_t*                    __saved_lockid_t;
-    xct_log_t*                   __saved_xct_log_t;
 
     // NB: must replicate because _xlist keys off it...
     // NB: can't be const because we might chain...
@@ -598,11 +559,6 @@ protected:
     rc_t _commit_read_only(uint32_t flags, lsn_t& inherited_read_watermark);
     rc_t _pre_commit(uint32_t flags);
     rc_t _pre_abort();
-
-protected:
-    // for xct_log_switch_t:
-    switch_t                    set_log_state(switch_t s, bool &nested);
-    void                        restore_log_state(switch_t s, bool nested);
 
 private:
     bool                        one_thread_attached() const;   // assertion
@@ -912,41 +868,6 @@ public:
     } \
 }
 #endif
-
-/**\cond skip */
-class xct_log_switch_t : public smlevel_0 {
-    /*
-     * NB: use sparingly!!!! EVERYTHING DONE UNDER
-     * CONTROL OF ONE OF THESE IS A CRITICAL SECTION
-     */
-    switch_t old_state;
-public:
-    /// Initialize old state
-    NORET xct_log_switch_t(switch_t s)  : old_state(OFF)
-    {
-        if(smlevel_0::log) {
-            INC_TSTAT(log_switches);
-            if (xct()) {
-                old_state = xct()->set_log_state(s);
-            }
-        }
-    }
-
-    NORET
-    ~xct_log_switch_t()  {
-        if(smlevel_0::log) {
-            if (xct()) {
-                xct()->restore_log_state(old_state);
-            }
-        }
-    }
-};
-
-inline
-bool xct_t::is_log_on() const {
-    return (smthread_t::xct_log()->xct_log_is_off() == false);
-}
-/**\endcond skip */
 
 /* XXXX This is somewhat hacky becuase I am working on cleaning
    up the xct_i xct iterator to provide various levels of consistency.

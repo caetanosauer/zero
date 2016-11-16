@@ -84,7 +84,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 static __thread rand48 tls_rng = RAND48_INITIALIZER;
 
 class xct_t;
-class xct_log_t;
 class lockid_t;
 
 class smthread_t;
@@ -227,7 +226,6 @@ class smthread_t {
         int16_t  _depth; // how many "outer" this has
         tcb_t*   _outer; // this forms a singly linked list
 
-        xct_log_t         *_xct_log;
         sm_stats_info_t*  _TL_stats; // thread-local stats
 
         // for lock_head_t::my_lock::get_me
@@ -264,7 +262,6 @@ class smthread_t {
             _is_update_thread(false),
             _depth(outer == NULL ? 1 : outer->_depth + 1),
             _outer(outer),
-            _xct_log(0),
             _TL_stats(0)
         {
             QUEUE_EXT_QNODE_INITIALIZE(_me1);
@@ -435,11 +432,7 @@ public:
     static inline
     void             set_is_update_thread(bool in) { tcb()._is_update_thread = in; }
 
-    static void             new_xct(xct_t *);
     static void             no_xct(xct_t *);
-
-    static inline
-    xct_log_t*       xct_log() { return tcb()._xct_log; }
 
     virtual void     _dump(ostream &) const; // to be over-ridden
     /**\endcond skip */

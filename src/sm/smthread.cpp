@@ -425,10 +425,6 @@ smthread_t::attach_xct(xct_t* x)
 
     w_assert0(xct() != NULL);
     w_assert0(xct() == x);
-
-    x->attach_thread();
-    // descends to xct_impl::attach_thread()
-    // which grabs the 1thread mutex, calls new_xct, releases the mutex.
 }
 
 
@@ -450,21 +446,6 @@ smthread_t::detach_xct(xct_t* x)
     tcb_ptr() = outmost->_outer;
     delete outmost;
     w_assert0(get_tcb_depth() >= 1);
-}
-
-/*
- * We're attaching x to this thread
- */
-void
-smthread_t::new_xct(xct_t *x)
-{
-    w_assert1(x);
-
-    /* Get the three caches. If the xct doesn't have these stashed,
-     * it will malloc them for us.
-     */
-    // DBG(<<"new_xct: id=" << me()->id);
-    x->steal(tcb()._xct_log);
 }
 
 /**\brief Called to effect a detach_xct().
@@ -532,9 +513,6 @@ smthread_t::no_xct(xct_t *x)
             */
             tcb().clear_TL_stats();
         }
-
-        /* See comments in smthread_t::new_xct() */
-        x->stash(tcb()._xct_log);
     }
 }
 
