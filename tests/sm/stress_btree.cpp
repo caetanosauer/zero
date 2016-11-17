@@ -3,6 +3,7 @@
 #include "stopwatch.h"
 #include "base/command.h"
 #include <atomic>
+#include <random>
 #include <chrono>
 #include <thread>
 #include <functional>

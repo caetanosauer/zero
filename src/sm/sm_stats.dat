@@ -336,6 +336,7 @@ SM Storage manager = 0x00060000 sm_stats_t {
     // Restore stats
     u_long restore_sched_seq        Restore scheduled a page in single-pass restore
     u_long restore_sched_queued     Restore scheduled a page which was queued (on-demand)
+    u_long restore_sched_random     Restore scheduled a page at random
     u_long restore_time_read        Time spent by restore reading backup segments (usec)
     u_long restore_time_replay      Time spent by restore replaying log archive (usec)
     u_long restore_time_openscan    Time spent by restore opening archive scan (usec)
@@ -347,6 +348,8 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long restore_multiple_segments How often multiple segments were restored with a single log scan
     u_long restore_segment_count    Total number of segments restored
     u_long restore_invocations      How often the restore segment procedure was invoked
+    u_long restore_preempt_queue    How often sequential restore was preempted due to queued request
+    u_long restore_preempt_bitmap   How often sequential restore was preempted due to bitmap state
 
     // Log archiver stats
     u_long la_log_slow              Log archiver activated with small window due to slow log growth

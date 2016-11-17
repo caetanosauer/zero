@@ -633,7 +633,7 @@ public:
      * @param[in] key inserted key
      * @param[in] elem record data
      */
-    rc_t            replace_ghost(const w_keystr_t &key, const cvec_t &elem);
+    rc_t            replace_ghost(const w_keystr_t &key, const cvec_t &elem, bool redo = false);
 
     /**
      * \brief Replaces the special fence record with the given new data,

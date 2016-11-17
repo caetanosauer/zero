@@ -103,8 +103,10 @@ public:
     fs::path make_log_path(partition_number_t pnum) const;
     fs::path make_chkpt_path(lsn_t lsn) const;
 
-    void wakeup_recycler();
-    unsigned delete_old_partitions(partition_number_t older_than = 0);
+    void add_checkpoint(lsn_t lsn);
+
+    void wakeup_recycler(bool chkpt_only = false);
+    unsigned delete_old_partitions(bool chkpt_only = false, partition_number_t older_than = 0);
 
 private:
     shared_ptr<partition_t> create_partition(partition_number_t pnum);

@@ -48,8 +48,9 @@ void LogStats::run()
         vector<string> files;
 
         // TODO assuming default block size
-        LogArchiver::ArchiveDirectory dir(logdir,
-                LogArchiver::DFT_BLOCK_SIZE);
+        sm_options opt;
+        opt.set_string_option("sm_archdir", logdir);
+        LogArchiver::ArchiveDirectory dir(opt);
 
         if (filename.empty()) {
             dir.listFiles(files);

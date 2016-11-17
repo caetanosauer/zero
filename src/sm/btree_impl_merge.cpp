@@ -126,7 +126,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(
             lsn_t new_pid0_emlsn,           // Non-leaf only
             bool &caller_commit,            // Out: true if caller has to commit the system transaction, not full logging
                                             //       false if callee commits the system transaction, full logging
-            sys_xct_section_t& sxs)         // Handle to the current system transaction, page split is
+            sys_xct_section_t& /*sxs*/)         // Handle to the current system transaction, page split is
                                             //performed inside of a system transaction
 {
     w_assert1 (g_xct()->is_single_log_sys_xct());
@@ -401,7 +401,7 @@ smsize_t estimate_required_space_to_merge (btree_page_h &page, btree_page_h &mer
 rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page,      // In/Out: destination, foster parent page
                                             btree_page_h &foster_p,  // In/Out: source, foster child page
                                             bool &caller_commit,
-                                            sys_xct_section_t& sxs)  // Current system transaction, the page merge
+                                            sys_xct_section_t& /*sxs*/)  // Current system transaction, the page merge
                                                                      // operation is performed inside of a
                                                                      // system transaction
 {

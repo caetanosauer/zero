@@ -74,7 +74,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <unistd.h>
 #include <sstream>
 
-restart_m::restart_m(const sm_options& options)
+restart_m::restart_m(const sm_options&)
     : _restart_thread(NULL)
 {
 }
@@ -126,7 +126,7 @@ void restart_m::log_analysis()
 
     //Re-add backups
     // CS TODO only works for one backup
-    smlevel_0::vol->sx_add_backup(chkpt.bkp_path, true);
+    // smlevel_0::vol->sx_add_backup(chkpt.bkp_path, true);
 
     ADD_TSTAT(restart_log_analysis_time, timer.time_us());
     sysevent::log(logrec_t::t_loganalysis_end);
@@ -134,7 +134,7 @@ void restart_m::log_analysis()
     ERROUT(<< "Log analysis found "
             << chkpt.buf_tab.size() << " dirty pages and "
             << chkpt.xct_tab.size() << " active transactions");
-    chkpt.dump(cerr);
+    // chkpt.dump(cerr);
 }
 
 /*********************************************************************
@@ -384,7 +384,7 @@ void restart_m::redo_page_pass()
 
         // simply fixing the page will take care of single-page recovery
         W_COERCE(smlevel_0::bf->fix_nonroot(
-                    page, NULL, pid, LATCH_SH, false, false, lastLSN));
+                    page, NULL, pid, LATCH_SH, false, false, false, lastLSN));
         smlevel_0::bf->unfix(page);
 
         iter++;

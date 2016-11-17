@@ -153,7 +153,7 @@ w_rc_t base_client_t::run_xcts(int xct_type, int num_xct)
         break;
     }
         // case of duration-based measurement
-    case (MT_TIME_DUR):
+    case MT_TIME_DUR: case MT_LOG_VOL:
 
 	// submit the first two batches...
 	W_COERCE(submit_batch(xct_type, i, batchsz));

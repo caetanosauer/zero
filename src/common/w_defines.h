@@ -85,13 +85,13 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "shore-config.h"
 #include "shore.def"
 
-#ifdef HAVE_VALGRIND_H
-#define USING_VALGRIND 1
-#include <valgrind.h>
-#elif defined(HAVE_VALGRIND_VALGRIND_H)
-#define USING_VALGRIND 1
-#include <valgrind/valgrind.h>
-#endif
+// #ifdef HAVE_VALGRIND_H
+// #define USING_VALGRIND 1
+// #include <valgrind.h>
+// #elif defined(HAVE_VALGRIND_VALGRIND_H)
+// #define USING_VALGRIND 1
+// #include <valgrind/valgrind.h>
+// #endif
 
 // #ifdef USING_VALGRIND
 // #include "valgrind_help.h"

@@ -553,46 +553,48 @@ w_rc_t table_man_t<T>::print_index(unsigned ind, ostream& os,
  *********************************************************************/
 
 template<class T>
-w_rc_t table_man_t<T>::fetch_table(ss_m* /* db */, lock_mode_t /* alm */)
+w_rc_t table_man_t<T>::fetch_table(ss_m* db, lock_mode_t /* alm */)
 {
-    // CS TODO
-    // assert (db);
-    // assert (_ptable);
+    assert (db);
+    assert (_ptable);
 
-    // bool eof = false;
-    // int counter = -1;
-    // pin_i* handle;
+    bool eof = false;
+    int counter = -1;
 
-    // W_DO(db->begin_xct());
+    table_row_t* tuple = get_tuple();
+    rep_row_t areprow(ts());
+    rep_row_t areprow_key(ts());
+    areprow.set(_ptable->maxsize());
+    areprow_key.set(_ptable->maxsize());
+    tuple->_rep = &areprow;
+    tuple->_rep_key = &areprow_key;
 
-    // // 1. scan the table
-    // scan_file_i t_scan(_ptable->fid(), ss_m::t_cc_record, false, alm);
-    // while(!eof) {
-	// W_DO(t_scan.next_page(handle, 0, eof));
-	// counter++;
-    // }
-    // TRACE( TRACE_ALWAYS, "%s:%d pages\n", _ptable->name(), counter);
+    W_DO(db->begin_xct());
 
-    // // 2. scan the indexes
-    // index_desc_t* index = _ptable->indexes();
-    // int pnum = 0;
-    // while (index) {
-	// for(int pnum = 0; pnum < index->get_partition_count(); pnum++) {
-	    // scan_file_i if_scan(index->fid(pnum), ss_m::t_cc_record, false, alm);
-	    // eof = false;
-	    // counter = -1;
-	    // while(!eof) {
-		// W_DO(if_scan.next_page(handle, 0, eof));
-		// counter++;
-	    // }
-	    // TRACE( TRACE_ALWAYS, "\t%s:%d pages (pnum: %d)\n", index->name(), counter, pnum);
-	// }
-	// index = index->next();
-    // }
+    // 1. scan the table
+    table_scan_iter_impl<T> t_scan(this);
+    while(!eof) {
+	W_DO(t_scan.next(eof, *tuple));
+	counter++;
+    }
+    TRACE( TRACE_ALWAYS, "%s:%d pages\n", _ptable->name(), counter);
 
-    // W_DO(db->commit_xct());
+    // 2. scan the indexes
+    for (auto index : _ptable->get_indexes()) {
+        index_scan_iter_impl<T> i_scan(index, this);
+        eof = false;
+        counter = -1;
+        while(!eof) {
+            W_DO(i_scan.next(eof, *tuple));
+            counter++;
+        }
+        TRACE( TRACE_ALWAYS, "\t%s:%d pages\n", index->name().c_str(), counter);
+    }
 
-    return RC(eNOTIMPLEMENTED);
+    W_DO(db->commit_xct());
+    give_tuple(tuple);
+
+    return RCOK;
 }
 
 #if 0 // CS -- TODO migrate to other file

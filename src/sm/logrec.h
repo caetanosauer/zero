@@ -780,7 +780,9 @@ logrec_t::is_cpsn() const
 inline bool
 logrec_t::is_page_update() const
 {
-    // old: return is_redo() && ! is_cpsn();
+    // CS: I have no idea why a compensation log record is not considered a
+    // page update. In fact every check of in_page_update() is or'ed with
+    // is_cpsn()
     return is_redo() && !is_cpsn();
 }
 

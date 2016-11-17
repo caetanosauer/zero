@@ -179,9 +179,11 @@ history_t::history_t(const uint32_t& pd) :
     _desc[6].setup(SQL_FLOAT, "H_AMOUNT");
     _desc[7].setup(SQL_FIXCHAR,  "H_DATA", 25);
 
-    // index is required in Zero -- use all fields
-    unsigned keys[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
-    create_primary_idx_desc(keys, 8, pd);
+    // index is required in Zero -- use all fields (except for data)
+    // but put datetime first to avoid completely random inserts instead of appends
+    // TODO: ideally we would use an auto-incr field, or duplicate key support
+    unsigned keys[8] = { 5, 0, 1, 2, 3, 4, 6 };
+    create_primary_idx_desc(keys, 7, pd);
 }
 
 

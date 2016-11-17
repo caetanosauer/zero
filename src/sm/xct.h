@@ -79,6 +79,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define  X_LOG_COMMENT_USE(x)
 #endif
 
+#include <chrono>
 #include <set>
 #include <AtomicCounter.hpp>
 #include "w_key.h"
@@ -761,6 +762,9 @@ protected: // all data members protected
     // list of dependents: protected by _1thread_xct
     // FRJ: this will become per-stream and not need the mutex any more
     w_list_t<xct_dependent_t,queue_based_lock_t>    _dependent_list;
+
+    // timestamp for calculating latency
+    std::chrono::high_resolution_clock::time_point _begin_tstamp;
 
     /*
      *  log_m related

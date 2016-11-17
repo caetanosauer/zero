@@ -87,13 +87,9 @@ bool         smlevel_0::shutdown_clean = false;
 bool         smlevel_0::shutting_down = false;
 
 
-#ifdef USE_TLS_ALLOCATOR
-    sm_tls_allocator smlevel_0::allocator;
-#else
-    sm_naive_allocator smlevel_0::allocator;
-#endif
+sm_tls_allocator smlevel_0::allocator;
 
-
+memalign_allocator<char, smlevel_0::IO_ALIGN> smlevel_0::aligned_allocator;
 
             //controlled by AutoTurnOffLogging:
 bool        smlevel_0::lock_caching_default = true;
@@ -326,7 +322,7 @@ ss_m::_construct_once()
     }
     bt->construct_once();
 
-    chkpt = new chkpt_m(_options);
+    chkpt = new chkpt_m(_options, chkpt_info->get_last_scan_start());
     if (! chkpt)  {
         W_FATAL(eOUTOFMEMORY);
     }
@@ -407,10 +403,19 @@ ss_m::_destruct_once()
     }
 
     ERROUT(<< "Terminating recovery manager");
+
+    // CS TODO: this should not be necessary with proper shutdown (shared_ptr-based)
+    // CS TODO: dirty shutdown should interrupt restore threads and finish them abruptly
+    while (!vol->check_restore_finished()) {
+        ::usleep(100 * 1000); // 100ms
+    }
     if (recovery) {
         delete recovery;
         recovery = 0;
     }
+
+    // retire chkpt thread (calling take() directly still possible)
+    chkpt->retire_thread();
 
     // now it's safe to do the clean_up
     // The code for distributed txn (prepared xcts has been deleted, the input paramter
@@ -420,6 +425,7 @@ ss_m::_destruct_once()
 
     // log truncation requires clean shutdown
     bool truncate = _options.get_bool_option("sm_truncate_log", false);
+    bool truncate_archive = _options.get_bool_option("sm_truncate_archive", false);
     if (shutdown_clean || truncate) {
         ERROUT(<< "SM performing clean shutdown");
 
@@ -434,19 +440,21 @@ ss_m::_destruct_once()
         W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
         W_COERCE(vol->get_stnode_cache()->write_page(dur_lsn));
 
-        chkpt->take();
-
-        if (truncate) {
-            W_COERCE(_truncate_log());
-        }
+        if (truncate) { W_COERCE(_truncate_log(truncate_archive)); }
+        else { chkpt->take(); }
 
         ERROUT(<< "All pages cleaned successfully");
     }
     else {
         ERROUT(<< "SM performing dirty shutdown");
-
     }
+
     delete chkpt; chkpt = 0;
+
+    ERROUT(<< "Terminating log archiver");
+    if (logArchiver) {
+        logArchiver->shutdown();
+    }
 
     nprepared = xct_t::cleanup(true /* now dispose of prepared xcts */);
     w_assert1(nprepared == 0);
@@ -457,11 +465,6 @@ ss_m::_destruct_once()
     bt->destruct_once();
     delete bt; bt = 0; // btree manager
     delete lm; lm = 0;
-
-    ERROUT(<< "Terminating log archiver");
-    if (logArchiver) {
-        logArchiver->shutdown();
-    }
 
 #ifndef USE_ATOMIC_COMMIT // otherwise clog and log point to the same object
     if(clog) {
@@ -505,16 +508,30 @@ ss_m::_destruct_once()
      ERROUT(<< "SM shutdown complete!");
 }
 
-rc_t ss_m::_truncate_log()
+rc_t ss_m::_truncate_log(bool truncate_archive)
 {
     DBGTHRD(<< "Truncating log on LSN " << log->durable_lsn());
 
+    // Wait for cleaner to finish its current round
+    bf->shutdown();
     W_DO(log->flush_all());
+
+    if (logArchiver) {
+        logArchiver->archiveUntilLSN(log->durable_lsn());
+        if (truncate_archive) { logArchiver->getDirectory()->deleteAllRuns(); }
+    }
+
     W_DO(log->truncate());
     W_DO(log->flush_all());
 
     // this should be an "empty" checkpoint
     chkpt->take();
+
+    // generate an "empty" log archive run
+    if(logArchiver) {
+        logArchiver->archiveUntilLSN(log->durable_lsn());
+    }
+
     log->get_storage()->delete_old_partitions();
 
     return RCOK;

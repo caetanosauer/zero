@@ -40,7 +40,7 @@ public:
             return;
         }
         // Code copied from chkpt_t::scan_log
-        if (r.is_page_update()) {
+        if (r.is_redo()) {
             // Ignore metadata pages
             if (r.pid() % alloc_cache_t::extent_size == 0 ||
                     r.pid() == stnode_page::stpid)

@@ -1,5 +1,3 @@
-#define private public
-
 #include "btree_test_env.h"
 #include "sm_base.h"
 #include "log_core.h"

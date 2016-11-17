@@ -17,8 +17,6 @@ void MergeRuns::setupOptions()
             "Directory containing the runs to be merged")
         ("outdir", po::value<string>(&outdir)->default_value(""),
             "Directory where the merged runs will be stored (empty for same as indir)")
-        ("minRunSize", po::value<size_t>(&minRunSize)->default_value(0),
-            "Minimum size of a merged run (0 for any)")
         ("maxRunSize", po::value<size_t>(&maxRunSize)->default_value(0),
             "Maximum size of a merged run (0 for any)")
         ("fanin", po::value<size_t>(&fanin)->required(),
@@ -32,8 +30,11 @@ void MergeRuns::run()
         throw runtime_error("Invalid merge fan-in (must be > 1)");
     }
 
-    LogArchiver::ArchiveDirectory* in =
-        new LogArchiver::ArchiveDirectory(indir, BLOCK_SIZE, BUCKET_SIZE);
+    sm_options opt;
+    opt.set_string_option("sm_archdir", indir);
+    opt.set_int_option("sm_archiver_block_size", BLOCK_SIZE);
+    opt.set_int_option("sm_archiver_bucket_size", BUCKET_SIZE);
+    LogArchiver::ArchiveDirectory* in = new LogArchiver::ArchiveDirectory(opt);
 
     LogArchiver::ArchiveDirectory* out = in;
     if (!outdir.empty() && outdir != indir) {
@@ -48,9 +49,10 @@ void MergeRuns::run()
             }
         }
 
-        out = new LogArchiver::ArchiveDirectory(outdir, BLOCK_SIZE, BUCKET_SIZE);
+        opt.set_string_option("sm_archdir", outdir);
+        out = new LogArchiver::ArchiveDirectory(opt);
     }
 
     LogArchiver::MergerDaemon merge(in, out);
-    W_COERCE(merge.runSync(fanin, minRunSize, maxRunSize));
+    W_COERCE(merge.runSync(fanin, maxRunSize));
 }

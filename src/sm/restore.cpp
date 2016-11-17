@@ -10,114 +10,146 @@
 #include "backup_reader.h"
 
 #include <algorithm>
+#include <random>
 
 #include "stopwatch.h"
 
-RestoreBitmap::RestoreBitmap(size_t size)
-    : bits(size, false) // initialize all bits to false
-{
-}
-
-RestoreBitmap::~RestoreBitmap()
-{
-}
-
-bool RestoreBitmap::get(unsigned i)
+bool RestoreBitmap::is_unrestored(unsigned i)
 {
     spinlock_read_critical_section cs(&mutex);
-    return bits.at(i);
+    return states[i] == State::UNRESTORED;
 }
 
-void RestoreBitmap::set(unsigned i)
+bool RestoreBitmap::is_restoring(unsigned i)
+{
+    spinlock_read_critical_section cs(&mutex);
+    return states[i] == State::RESTORING;
+}
+
+bool RestoreBitmap::is_replayed(unsigned i)
+{
+    spinlock_read_critical_section cs(&mutex);
+    return states[i] >= State::REPLAYED;
+}
+
+bool RestoreBitmap::is_restored(unsigned i)
+{
+    spinlock_read_critical_section cs(&mutex);
+    return states[i] == State::RESTORED;
+}
+
+bool RestoreBitmap::attempt_restore(unsigned i)
 {
     spinlock_write_critical_section cs(&mutex);
-    bits.at(i) = true;
-}
-
-void RestoreBitmap::serialize(char* buf, size_t from, size_t to)
-{
-    spinlock_read_critical_section cs(&mutex);
-    w_assert0(from < to);
-    w_assert0(to <= bits.size());
-
-    /*
-     * vector<bool> does not provide access to the internal bitmap structure,
-     * so we stick with this non-efficient loop mechanism. If this becomes a
-     * performance concern, the options are:
-     * 1) Implement our own bitmap
-     * 2) Reuse a bitmap with serialization support (e.g., Boost)
-     * 3) In C++11, there is a data() method that returns the underlying array.
-     *    Maybe that would work here.
-     */
-    size_t byte = 0, j = 0;
-    for (size_t i = from; i < to; i++) {
-        // set bit j on current byte
-        // C++ guarantees that "true" expands to the integer 1
-        buf[byte] |= (bits[i] << j++);
-
-        // wrap around next byte
-        if (j == 8) {
-            j = 0;
-            byte++;
-        }
+    if (states[i] != State::UNRESTORED) {
+        return false;
     }
+    states[i] = State::RESTORING;
+    return true;
 }
 
-void RestoreBitmap::deserialize(char* buf, size_t from, size_t to)
+void RestoreBitmap::mark_replayed(unsigned i)
 {
     spinlock_write_critical_section cs(&mutex);
-    w_assert0(from < to);
-    w_assert0(to <= bits.size());
-
-    size_t byte = 0, j = 0;
-    for (size_t i = from; i < to; i++) {
-        // set if bit on position j is a one
-        bits[i] = buf[byte] & (1 << j++);
-
-        // wrap around next byte
-        if (j == 8) {
-            j = 0;
-            byte++;
-        }
-    }
+    w_assert1(states[i] == State::RESTORING);
+    states[i] = State::REPLAYED;
 }
 
-void RestoreBitmap::getBoundaries(size_t& lowestFalse, size_t& highestTrue)
+void RestoreBitmap::mark_restored(unsigned i)
 {
-    spinlock_read_critical_section cs(&mutex);
-
-    lowestFalse = 0;
-    highestTrue = 0;
-    bool allTrueSoFar = true;
-    for (size_t i = 0; i < bits.size(); i++) {
-        if (bits[i]) highestTrue = i;
-        if (allTrueSoFar && bits[i]) {
-            lowestFalse = i + 1;
-        }
-        else {
-            allTrueSoFar = false;
-        }
-    }
-    w_assert0(lowestFalse <= bits.size());
-    w_assert0(highestTrue < bits.size());
+    spinlock_write_critical_section cs(&mutex);
+    w_assert1(states[i] == State::REPLAYED);
+    states[i] = State::RESTORED;
 }
 
-RestoreScheduler::RestoreScheduler(const sm_options& options,
-        RestoreMgr* restore)
+// void RestoreBitmap::serialize(char* buf, size_t from, size_t to)
+// {
+//     spinlock_read_critical_section cs(&mutex);
+//     w_assert0(from < to);
+//     w_assert0(to <= bits.size());
+
+//     /*
+//      * vector<bool> does not provide access to the internal bitmap structure,
+//      * so we stick with this non-efficient loop mechanism. If this becomes a
+//      * performance concern, the options are:
+//      * 1) Implement our own bitmap
+//      * 2) Reuse a bitmap with serialization support (e.g., Boost)
+//      * 3) In C++11, there is a data() method that returns the underlying array.
+//      *    Maybe that would work here.
+//      */
+//     size_t byte = 0, j = 0;
+//     for (size_t i = from; i < to; i++) {
+//         // set bit j on current byte
+//         // C++ guarantees that "true" expands to the integer 1
+//         buf[byte] |= (bits[i] << j++);
+
+//         // wrap around next byte
+//         if (j == 8) {
+//             j = 0;
+//             byte++;
+//         }
+//     }
+// }
+
+// void RestoreBitmap::deserialize(char* buf, size_t from, size_t to)
+// {
+//     spinlock_write_critical_section cs(&mutex);
+//     w_assert0(from < to);
+//     w_assert0(to <= bits.size());
+
+//     size_t byte = 0, j = 0;
+//     for (size_t i = from; i < to; i++) {
+//         // set if bit on position j is a one
+//         bits[i] = buf[byte] & (1 << j++);
+
+//         // wrap around next byte
+//         if (j == 8) {
+//             j = 0;
+//             byte++;
+//         }
+//     }
+// }
+
+// void RestoreBitmap::getBoundaries(size_t& lowestFalse, size_t& highestTrue)
+// {
+//     spinlock_read_critical_section cs(&mutex);
+
+//     lowestFalse = 0;
+//     highestTrue = 0;
+//     bool allTrueSoFar = true;
+//     for (size_t i = 0; i < bits.size(); i++) {
+//         if (bits[i]) highestTrue = i;
+//         if (allTrueSoFar && bits[i]) {
+//             lowestFalse = i + 1;
+//         }
+//         else {
+//             allTrueSoFar = false;
+//         }
+//     }
+//     w_assert0(lowestFalse <= bits.size());
+//     w_assert0(highestTrue < bits.size());
+// }
+
+RestoreScheduler::RestoreScheduler(const sm_options& options, RestoreMgr* restore)
     : restore(restore)
 {
     w_assert0(restore);
     firstNotRestored = PageID(0);
     lastUsedPid = restore->getLastUsedPid();
-    trySinglePass =
-        options.get_bool_option("sm_restore_sched_singlepass", true);
-    onDemand =
-        options.get_bool_option("sm_restore_sched_ondemand", true);
+    // trySinglePass =
+    //     options.get_bool_option("sm_restore_sched_singlepass", true);
+    onDemand = options.get_bool_option("sm_restore_sched_ondemand", true);
+    unsigned threads = options.get_int_option("sm_restore_threads", 1);
 
-    if (!onDemand) {
-        // override single-pass option
-        trySinglePass = true;
+    segmentsPerThread = (lastUsedPid / restore->getSegmentSize()) / threads;
+    for (unsigned i = 0; i < threads; i++) {
+        firstNotRestoredPerThread.push_back(segmentsPerThread * i * restore->getSegmentSize());
     }
+
+    // if (!onDemand) {
+    //     // override single-pass option
+    //     trySinglePass = true;
+    // }
 }
 
 RestoreScheduler::~RestoreScheduler()
@@ -135,19 +167,53 @@ bool RestoreScheduler::hasWaitingRequest()
     return onDemand && queue.size() > 0;
 }
 
-bool RestoreScheduler::next(PageID& next, bool peek)
+// bool RestoreScheduler::next(PageID& next, unsigned thread_id, bool peek)
+// {
+//     spinlock_write_critical_section cs(&mutex);
+
+//     // TODO ignoring queue for now
+//     // if (queue.size() > 0) {
+//     //     next = queue.front();
+//     //     if (!peek && is_mine(next)) {
+//     //         queue.pop();
+//     //         INC_TSTAT(restore_sched_queued);
+//     //     }
+//     // }
+
+//     next = firstNotRestoredPerThread[thread_id];
+//     // if queue is empty, find the first not-yet-restored PID
+//     while (next <= lastUsedPid && restore->isRestored(next)) {
+//         // if next pid is already restored, then the whole segment is
+//         next = next + restore->getSegmentSize();
+//     }
+//     if (!peek) {
+//         firstNotRestoredPerThread[thread_id] = next + restore->getSegmentSize();
+//         INC_TSTAT(restore_sched_seq);
+//     }
+
+//     if (next > lastUsedPid) { return false; }
+
+//     return true;
+// }
+
+// CS TODO: provide different implementations of scheduler
+bool RestoreScheduler::next(PageID& next, unsigned thread_id, bool peek)
 {
+    static std::default_random_engine gen;
+    static std::uniform_int_distribution<unsigned> distr(0, 100);
+
     spinlock_write_critical_section cs(&mutex);
 
-    next = firstNotRestored;
-    if (onDemand && queue.size() > 0) {
+    bool singlePass = (thread_id == 0);
+    if (queue.size() > 0) {
         next = queue.front();
         if (!peek) {
             queue.pop();
             INC_TSTAT(restore_sched_queued);
         }
     }
-    else if (trySinglePass) {
+    else if (singlePass) {
+        next = firstNotRestored;
         // if queue is empty, find the first not-yet-restored PID
         while (next <= lastUsedPid && restore->isRestored(next)) {
             // if next pid is already restored, then the whole segment is
@@ -155,35 +221,26 @@ bool RestoreScheduler::next(PageID& next, bool peek)
         }
         if (!peek) {
             firstNotRestored = next + restore->getSegmentSize();
+            INC_TSTAT(restore_sched_seq);
         }
-
-        if (next > lastUsedPid) { next = 0; }
-
-        if (!peek) { INC_TSTAT(restore_sched_seq); }
     }
     else {
-        w_assert0(onDemand);
-        return false;
+        // if not in singlePass mode, pick a random segment after firstNotRestored
+        INC_TSTAT(restore_sched_random);
+        unsigned rnd = distr(gen);
+        next = firstNotRestored + (rnd * ((lastUsedPid - firstNotRestored) / 100));
     }
 
-    /*
-     * CS: there is no guarantee (from the scheduler) that next is indeed not
-     * restored yet, because we do not control the bitmap from here.  The only
-     * guarantee is that only one thread will be executing the restore loop (or
-     * that multiple threads will restore disjunct segment sets). In the
-     * current implementation, it turns out that the scheduler is only invoked
-     * from the restore loop, which means that a page returned by the scheduler
-     * is guaranteed to not be restored when is is picked up by the restore
-     * loop, but that may change in the future.
-     */
+    if (next > lastUsedPid) { return false; }
+
     return true;
 }
 
-void RestoreScheduler::setSinglePass(bool singlePass)
-{
-    spinlock_write_critical_section cs(&mutex);
-    trySinglePass = singlePass;
-}
+// void RestoreScheduler::setSinglePass(bool singlePass)
+// {
+//     spinlock_write_critical_section cs(&mutex);
+//     trySinglePass = singlePass;
+// }
 
 /** Asynchronous writer for restored segments
  *  CS: Placed here on cpp file because it isn't used anywhere else.
@@ -234,7 +291,7 @@ private:
 RestoreMgr::RestoreMgr(const sm_options& options,
         LogArchiver::ArchiveDirectory* archive, vol_t* volume, bool useBackup,
         bool takeBackup)
-    : smthread_t(t_regular, "Restore Manager"),
+    :
     archive(archive), volume(volume), numRestoredPages(0),
     useBackup(useBackup), takeBackup(takeBackup),
     failureLSN(lsn_t::null), pinCount(0)
@@ -255,6 +312,9 @@ RestoreMgr::RestoreMgr(const sm_options& options,
 
     reuseRestoredBuffer =
         options.get_bool_option("sm_restore_reuse_buffer", false);
+
+    restoreThreadCount =
+        options.get_int_option("sm_restore_threads", 1);
 
     logReadSize =
         options.get_int_option("sm_restore_log_read_size", 1048576);
@@ -277,9 +337,9 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     // Construct backup reader/buffer based on system options
     if (useBackup) {
         string backupImpl = options.get_string_option("sm_backup_kind",
-                BackupPrefetcher::IMPL_NAME);
+                BackupOnDemandReader::IMPL_NAME);
         if (backupImpl == BackupOnDemandReader::IMPL_NAME) {
-            backup = new BackupOnDemandReader(volume, segmentSize);
+            backup = new BackupOnDemandReader(volume, segmentSize, restoreThreadCount);
         }
         else if (backupImpl == BackupPrefetcher::IMPL_NAME) {
             int numSegments = options.get_int_option(
@@ -312,7 +372,6 @@ RestoreMgr::RestoreMgr(const sm_options& options,
 
     scheduler = new RestoreScheduler(options, this);
     bitmap = new RestoreBitmap(lastUsedPid / segmentSize + 1);
-    replayedBitmap = new RestoreBitmap(lastUsedPid / segmentSize + 1);
 }
 
 bool RestoreMgr::try_shutdown()
@@ -322,6 +381,11 @@ bool RestoreMgr::try_shutdown()
         return true;
     }
 
+    if (!all_pages_restored()) {
+        // restore not finished yet -- can't shutdown
+        return false;
+    }
+
     // Try to atomically switch pin count from 0 to -1. If that fails, it means
     // someone is still using us and we can't shutdown.
     int32_t z = 0;
@@ -329,10 +393,11 @@ bool RestoreMgr::try_shutdown()
         return false;
     }
 
-    if (!finished()) {
-        // restore not finished yet -- can't shutdown
-        return false;
+    w_assert1(restoreThreads.size() == restoreThreadCount);
+    for (size_t i = 0; i < restoreThreads.size(); i++) {
+        restoreThreads[i]->join();
     }
+    restoreThreads.clear();
 
     if (asyncWriter) {
         asyncWriter->shutdown();
@@ -340,11 +405,17 @@ bool RestoreMgr::try_shutdown()
     }
 
     backup->finish();
+
+    sys_xct_section_t ssx(true);
+    log_restore_end();
+    ssx.end_sys_xct(RCOK);
+
     return true;
 }
 
 RestoreMgr::~RestoreMgr()
 {
+    shutdown();
     if (asyncWriter) { delete asyncWriter; }
     delete backup;
     delete bitmap;
@@ -377,11 +448,6 @@ bool RestoreMgr::waitUntilRestored(const PageID& pid, size_t timeout_in_ms)
     return true;
 }
 
-void RestoreMgr::setSinglePass(bool singlePass)
-{
-    scheduler->setSinglePass(singlePass);
-}
-
 void RestoreMgr::setInstant(bool instant)
 {
     instantRestore = instant;
@@ -412,7 +478,8 @@ bool RestoreMgr::requestRestore(const PageID& pid, generic_page* addr)
          * we guarantee that the segment cannot go from not-restored to
          * restored inside this critical section.
          */
-        if (!replayedBitmap->get(getSegmentForPid(pid))) {
+        auto seg = getSegmentForPid(pid);
+        if (!bitmap->is_replayed(seg)) {
             // only one request for each page ID at a time
             // (buffer pool logic is responsible for ensuring this)
             w_assert1(bufferedRequests.find(pid) == bufferedRequests.end());
@@ -426,8 +493,9 @@ bool RestoreMgr::requestRestore(const PageID& pid, generic_page* addr)
 }
 
 void RestoreMgr::restoreSegment(char* workspace,
-        LogArchiver::ArchiveScanner::RunMerger* merger, PageID firstPage)
+        LogArchiver::ArchiveScanner::RunMerger* merger, PageID firstPage, unsigned thread_id)
 {
+    INC_TSTAT(restore_invocations);
     stopwatch_t timer;
 
     generic_page* page = (generic_page*) workspace;
@@ -472,15 +540,23 @@ void RestoreMgr::restoreSegment(char* workspace,
                 // If segment already restored or someone is waiting in the
                 // scheduler, terminate earlier. We also don't have to replay
                 // pages created after the failure.
-                if (!scheduler->isSinglePass() || lrpid > lastUsedPid
-                        || replayedBitmap->get(segment)
-                        || (preemptive && scheduler->hasWaitingRequest()))
+                if (lrpid > lastUsedPid || (preemptive && scheduler->hasWaitingRequest()))
                 {
+                    // we were preempted
+                    INC_TSTAT(restore_preempt_queue);
                     merger->close();
                     return;
                 }
 
-                workspace = backup->fix(segment);
+                bool got_attempt = bitmap->attempt_restore(segment);
+                if (!got_attempt) {
+                    // someone is already restoring the segment
+                    INC_TSTAT(restore_preempt_bitmap);
+                    merger->close();
+                    return;
+                }
+
+                workspace = backup->fix(segment, thread_id);
                 ADD_TSTAT(restore_time_read, timer.time_us());
 
                 page = (generic_page*) workspace;
@@ -538,7 +614,7 @@ void RestoreMgr::restoreSegment(char* workspace,
     INC_TSTAT(restore_invocations);
 }
 
-void RestoreMgr::restoreLoop()
+void RestoreMgr::restoreLoop(unsigned id)
 {
     LogArchiver::ArchiveScanner logScan(archive);
 
@@ -546,7 +622,7 @@ void RestoreMgr::restoreLoop()
 
     while (numRestoredPages < lastUsedPid) {
         PageID requested;
-        if (!scheduler->next(requested)) {
+        if (!scheduler->next(requested, id)) {
             // no page available for now
             usleep(2000); // 2 ms
             continue;
@@ -558,13 +634,14 @@ void RestoreMgr::restoreLoop()
         unsigned segment = getSegmentForPid(requested);
         PageID firstPage = getPidForSegment(segment);
 
-        if (replayedBitmap->get(segment)) {
+        if (!bitmap->attempt_restore(segment)) {
+            // someone is already restoring or has already restored the segment
             continue;
         }
 
         timer.reset();
 
-        char* workspace = backup->fix(segment);
+        char* workspace = backup->fix(segment, id);
         ADD_TSTAT(restore_time_read, timer.time_us());
 
         PageID startPID = firstPage;
@@ -591,7 +668,7 @@ void RestoreMgr::restoreLoop()
         DBG(<< "Restoring segment " << getSegmentForPid(firstPage) << " (pages "
                 << firstPage << " - " << firstPage + segmentSize << ")");
 
-        restoreSegment(workspace, merger, firstPage);
+        restoreSegment(workspace, merger, firstPage, id);
 
         delete merger;
     }
@@ -602,7 +679,7 @@ void RestoreMgr::restoreLoop()
 
 void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
 {
-    replayedBitmap->set(segment);
+    bitmap->mark_replayed(segment);
 
     /*
      * Now that the segment is restored, copy it into the buffer pool frame
@@ -645,16 +722,16 @@ void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
     INC_TSTAT(restore_segment_count);
 
     // as we're done with one segment, prefetch the next
-    if (scheduler->isOnDemand()) {
-        if (scheduler->hasWaitingRequest()) {
-            PageID next;
-            if (scheduler->next(next, true /* peek */)) {
-                backup->prefetch(next);
-            }
-        } else {
-            backup->prefetch(segment + 1);
-        }
-    }
+    // if (scheduler->isOnDemand()) {
+    //     if (scheduler->hasWaitingRequest()) {
+    //         PageID next;
+    //         if (scheduler->next(next, true /* singlePass */, true /* peek */)) {
+    //             backup->prefetch(next);
+    //         }
+    //     } else {
+    //         backup->prefetch(segment + 1);
+    //     }
+    // }
 }
 
 void RestoreMgr::writeSegment(char* workspace, unsigned segment, size_t count)
@@ -695,7 +772,7 @@ void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
         ssx.end_sys_xct(RCOK);
     }
 
-    bitmap->set(segment);
+    bitmap->mark_restored(segment);
 
     // send signal to waiting threads (acquire mutex to avoid lost signal)
     DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
@@ -703,7 +780,7 @@ void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
     DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
 }
 
-void RestoreMgr::run()
+void RestoreMgr::start()
 {
     if (failureLSN == lsn_t::null && !takeBackup) {
         W_FATAL_MSG(fcINTERNAL,
@@ -721,27 +798,9 @@ void RestoreMgr::run()
         ERROUT(<< "Restore waiting for log archiver to reach LSN "
                 << failureLSN);
 
-        // wait for log record to be consumed
-        while (la->getNextConsumedLSN() < failureLSN) {
-            la->activate(failureLSN, true);
-            ::usleep(10000); // 10ms
-        }
-
-        // Time to wait until requesting a log archive flush (msec). If we're
-        // lucky, log is archiving very fast and a flush request is not needed.
-        int waitBeforeFlush = 100;
-        ::usleep(waitBeforeFlush * 1000);
-
-        if (la->getDirectory()->getLastLSN() < failureLSN) {
-            la->requestFlushSync(failureLSN);
-        }
+        la->archiveUntilLSN(failureLSN);
 
         ERROUT(<< "Log archiver finished in " << timer.time() << " seconds");
-    }
-
-    // wait until volume is actually marked as failed
-    while(!takeBackup && !volume->is_failed()) {
-        usleep(1000); // 1 ms
     }
 
     // if doing offline or single-pass restore, prefetch all segments
@@ -752,19 +811,22 @@ void RestoreMgr::run()
         }
     }
 
+    // kick-off restore threads
+    w_assert0(restoreThreadCount > 0);
+    for (unsigned i = 0; i < restoreThreadCount; i++) {
+        // restoreThreads.emplace_back(new std::thread {&RestoreMgr::restoreLoop, this});
+        RestoreThread* t = new RestoreThread {this, i};
+        t->fork();
+        restoreThreads.emplace_back(std::move(t));
+    }
+}
 
-    restoreLoop();
-
+void RestoreMgr::shutdown()
+{
     w_assert1(bufferedRequests.size() == 0);
-
-    sys_xct_section_t ssx(true);
-    log_restore_end();
-    ssx.end_sys_xct(RCOK);
-
     while (!try_shutdown()) {
         ::usleep(1000000); // 1 sec
     }
-    w_assert0(finished());
 }
 
 SegmentWriter::SegmentWriter(RestoreMgr* restore)

@@ -287,8 +287,7 @@ rc_t btree_impl::_ux_adopt_foster_core (btree_page_h &parent, btree_page_h &chil
 }
 
 rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
-                                                      btree_page_h &child, bool &pushedup,
-                                                      const bool from_recovery)
+                                                      btree_page_h &child, bool &pushedup)
 {
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.is_node());
@@ -313,15 +312,14 @@ rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
 
     // this is a VERY good chance. So, why not sweep all (but a few unlucky execptions)
     // foster-children.
-    W_DO(_sx_adopt_foster_sweep_approximate(parent, surely_need_child_pid, from_recovery));
+    W_DO(_sx_adopt_foster_sweep_approximate(parent, surely_need_child_pid));
     // note, this function might switch parent upon its split.
     // so, the caller is really responsible to restart search on seeing pushedup == true
     return RCOK;
 }
 
 rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent,
-                                                             PageID surely_need_child_pid,
-                                                             const bool /*from_recovery*/)
+                                                             PageID surely_need_child_pid)
 {
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.latch_mode() == LATCH_EX);
@@ -335,8 +333,12 @@ rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent,
                 continue; // then doesn't matter (this could be false in low probability, but it's fine)
             }
             btree_page_h child;
+            // CS TODO: modified method to only try this if ifx is not a miss; otherwise,
+            // some pages will be fetched and replaced just to see that they don't have
+            // anything to adopt -- i.e., this "opportunistic" adopt is actually very
+            // disturbing
             rc_t rc = child.fix_nonroot(parent, shpid_opaqueptr, LATCH_EX, true /*conditional*/,
-                                        false /*virgin_page*/);
+                                        false /*virgin_page*/, true /* only_if_hit */);
             // if we can't instantly get latch, just skip it. we can defer it arbitrary
             if (rc.is_error()) {
                 continue;

@@ -16,6 +16,10 @@
 #include <queue>
 #include <set>
 
+#define BOOST_FILESYSTEM_NO_DEPRECATED
+#include <boost/filesystem.hpp>
+namespace fs = boost::filesystem;
+
 class sm_options;
 class LogScanner;
 
@@ -327,8 +331,7 @@ public:
      */
     class ArchiveDirectory {
     public:
-        ArchiveDirectory(std::string archdir, size_t blockSize,
-                size_t bucketSize = 0, lsn_t tailLSN = lsn_t::null);
+        ArchiveDirectory(const sm_options& options);
         virtual ~ArchiveDirectory();
 
         struct RunFileStats {
@@ -354,6 +357,7 @@ public:
 
         rc_t listFiles(std::vector<std::string>& list);
         rc_t listFileStats(std::list<RunFileStats>& list);
+        void deleteAllRuns();
 
         static lsn_t parseLSN(const char* str, bool end = true);
         static size_t getFileSize(int fd);
@@ -367,12 +371,20 @@ public:
         fileoff_t appendPos;
         size_t blockSize;
 
+        fs::path archpath;
+        const static string RUN_PREFIX;
+        const static string CURR_RUN_FILE;
+        const static string CURR_MERGE_FILE;
+        const static string run_regex;
+        const static string current_regex;
+
         // closeCurrentRun needs mutual exclusion because it is called by both
         // the writer thread and the archiver thread in processFlushRequest
         pthread_mutex_t mutex;
 
+        fs::path make_run_path(lsn_t begin, lsn_t end) const;
+        fs::path make_current_run_path() const;
         rc_t openNewRun();
-        os_dirent_t* scanDir(os_dir_t& dir);
     };
 
     /** \brief Asynchronous writer thread to produce run files on disk
@@ -535,7 +547,7 @@ public:
 
             RunScanner(lsn_t b, lsn_t e, PageID f, PageID l, fileoff_t o,
                     ArchiveDirectory* directory, size_t readSize = 0);
-            virtual ~RunScanner();
+            ~RunScanner();
 
             bool next(logrec_t*& lr);
 
@@ -761,8 +773,7 @@ public:
         virtual ~MergerDaemon()
         {}
 
-        rc_t runSync(size_t fanin, size_t minRunSize, size_t maxRunSize);
-        void runAsync(size_t fanin, size_t minRunSize, size_t maxRunSize);
+        rc_t runSync(size_t fanin, size_t maxRunSize);
         rc_t join(bool terminate);
 
     private:
@@ -792,6 +803,7 @@ public:
     void shutdown();
     bool requestFlushAsync(lsn_t);
     void requestFlushSync(lsn_t);
+    void archiveUntilLSN(lsn_t);
 
     ArchiveDirectory* getDirectory() { return directory; }
     lsn_t getNextConsumedLSN() { return consumer->getNextLSN(); }
@@ -816,10 +828,6 @@ public:
     const static int DFT_GRACE_PERIOD = 1000000; // 1 sec
 
     const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
-    const static char* RUN_PREFIX;
-    const static char* CURR_RUN_FILE;
-    const static char* CURR_MERGE_FILE;
-    const static size_t MAX_LOGREC_SIZE;
     const static size_t IO_ALIGN;
 
 private:
@@ -887,7 +895,7 @@ public:
     }
 
     ~LogScanner() {
-        delete truncBuf;
+        delete[] truncBuf;
     }
 
     size_t getBlockSize() {

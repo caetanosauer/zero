@@ -261,7 +261,7 @@ public:
     w_rc_t db_print(int lines);
 
     //fetch the pages of the current tables and their indexes into the buffer pool
-    w_rc_t db_fetch();
+    virtual w_rc_t db_fetch();
 
 }; // EOF ShoreTPCCEnv
 

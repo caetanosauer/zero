@@ -71,7 +71,7 @@ public:
     rc_t write_backup(PageID first, size_t count, void* buf);
 
     /** Add a backup file to be used for restore */
-    rc_t sx_add_backup(string path, bool redo = false);
+    rc_t sx_add_backup(const string& path, lsn_t backupLSN, bool redo = false);
 
     void list_backups(std::vector<string>& backups);
 
@@ -122,7 +122,7 @@ public:
 
     bool is_failed() const
     {
-        lintel::atomic_thread_fence(lintel::memory_order_acquire);
+        spinlock_read_critical_section cs(&_mutex);
         return _failed;
     }
 
@@ -194,6 +194,9 @@ private:
      *  (128 bytes are enough since it contains only vid) */
     char _logrec_buf[128];
 
+    /** Wheter to open file with O_SYNC */
+    bool _use_o_sync;
+
     /** Whether to open file with O_DIRECT */
     bool _use_o_direct;
 
@@ -201,13 +204,6 @@ private:
 
     /** Open backup file descriptor for retore or taking new backup */
     rc_t open_backup();
-
-    // setting failed status only allowed internally (private method)
-    void set_failed(bool failed)
-    {
-        _failed = failed;
-        lintel::atomic_thread_fence(lintel::memory_order_release);
-    }
 
     lsn_t get_dirty_page_emlsn(PageID pid) const;
     void delete_dirty_page(PageID pid);

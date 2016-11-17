@@ -44,12 +44,12 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 {
     // sm_bufboolsize given in MB -- default 8GB
     long bufpoolsize = options.get_int_option("sm_bufpoolsize", 8192) * 1024 * 1024;
-    uint32_t  nbufpages = (bufpoolsize - 1) / smlevel_0::page_sz + 1;
+    uint32_t  nbufpages = (bufpoolsize - 1) / sizeof(generic_page) + 1;
     if (nbufpages < 10)  {
         cerr << "ERROR: buffer size ("
              << bufpoolsize
              << "-KB) is too small" << endl;
-        cerr << "       at least " << 32 * smlevel_0::page_sz / 1024
+        cerr << "       at least " << 32 * sizeof(generic_page) / 1024
              << "-KB is needed" << endl;
         W_FATAL(eCRASH);
     }
@@ -91,7 +91,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     // fill the block-0 with garbages
     ::memset (&_buffer[0], 0x27, sizeof(generic_page));
 
-#ifdef BP_ALTERNATE_CB_LATCH
     // this allocation scheme is sensible only for control block and latch sizes of 64B (cacheline size)
     BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) == 64);
     BOOST_STATIC_ASSERT(sizeof(latch_t) == 64);
@@ -119,18 +118,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
             get_cb(i)._latch_offset = sizeof(bf_tree_cb_t); // place the latch after the control block
         }
     }
-#else
-    if (::posix_memalign(&buf, sizeof(bf_tree_cb_t),
-                sizeof(bf_tree_cb_t) * ((uint64_t) nbufpages)) != 0)
-    {
-        ERROUT (<< "failed to reserve " << nbufpages
-                << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
-        W_FATAL(eOUTOFMEMORY);
-    }
-    _control_blocks = reinterpret_cast<bf_tree_cb_t*>(buf);
-    w_assert0(_control_blocks != NULL);
-    ::memset (_control_blocks, 0, sizeof(bf_tree_cb_t) * nbufpages);
-#endif
 
     // initially, all blocks are free
     _freelist = new bf_idx[nbufpages];
@@ -158,17 +145,15 @@ void bf_tree_m::shutdown()
     if (_cleaner) {
         _cleaner->stop();
         delete _cleaner;
+        _cleaner = NULL;
     }
 }
 
 bf_tree_m::~bf_tree_m()
 {
     if (_control_blocks != NULL) {
-#ifdef BP_ALTERNATE_CB_LATCH
         char* buf = reinterpret_cast<char*>(_control_blocks) - sizeof(bf_tree_cb_t);
-#else
-        char* buf = reinterpret_cast<char*>(_control_blocks);
-#endif
+
         // note we use free(), not delete[], which corresponds to posix_memalign
         ::free (buf);
         _control_blocks = NULL;
@@ -232,7 +217,7 @@ bf_idx bf_tree_m::lookup(PageID pid) const
 
 w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                                    PageID pid, latch_mode_t mode,
-                                   bool conditional, bool virgin_page,
+                                   bool conditional, bool virgin_page, bool only_if_hit,
                                    lsn_t emlsn)
 {
     if (is_swizzled_pointer(pid)) {
@@ -266,7 +251,6 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
     // CS TODO: get rid of this loop
     while (true)
     {
-        const uint32_t ONE_MICROSEC = 10000;
 #if W_DEBUG_LEVEL>0
         if (++retry_count % 10000 == 0) {
             DBGOUT1(<<"keep trying to fix.. " << pid << ". current retry count=" << retry_count);
@@ -285,10 +269,15 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
         if (idx == 0)
         {
+            if (only_if_hit) {
+                return RC(stINUSE);
+            }
+
             // STEP 1) Grab a free frame to read into
             W_DO(_grab_free_block(idx));
-            w_assert1(idx != 0);
+            w_assert1(_is_valid_idx(idx));
             bf_tree_cb_t &cb = get_cb(idx);
+            w_assert1(!cb._used);
 
             // STEP 2) Acquire EX latch before hash table insert, to make sure
             // nobody will access this page until we're done
@@ -297,7 +286,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             if (check_rc.is_error())
             {
                 _add_free_block(idx);
-                ::usleep(ONE_MICROSEC);
+                // TODO: add a sleep or wait mechanism whenever fix fails
                 continue;
             }
 
@@ -314,6 +303,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
             // Read page from disk
             page = &_buffer[idx];
+            cb.init(pid, lsn_t::null);
 
             if (!virgin_page) {
                 INC_TSTAT(bf_fix_nonroot_miss_count);
@@ -330,17 +320,19 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                 if (read_rc.is_error())
                 {
                     _hashtable->remove(pid);
+                    cb.clear_except_latch();
                     cb.latch().latch_release();
                     _add_free_block(idx);
                     return read_rc;
                 }
+                cb.init(pid, page->lsn);
             }
 
-            cb.init(pid, page->lsn);
+            w_assert1(_is_active_idx(idx));
 
             // STEP 6) Fix successful -- pin page and downgrade latch
             cb.pin();
-            w_assert1(cb.latch().held_by_me());
+            w_assert1(cb.latch().is_mine());
             w_assert1(cb._pin_cnt > 0);
             DBG(<< "Fixed page " << pid << " (miss) to frame " << idx);
 
@@ -367,6 +359,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                 continue;
             }
 
+            w_assert1(_is_active_idx(idx));
             cb.pin();
             cb.inc_ref_count();
             if (mode == LATCH_EX) {
@@ -423,6 +416,15 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
         return RCOK;
     }
+}
+
+bool bf_tree_m::_is_frame_latched(generic_page* frame, latch_mode_t mode)
+{
+    bf_idx idx = frame - _buffer;
+    w_assert1(_is_valid_idx(idx));
+    if (!_is_active_idx(idx)) { return false; }
+    bf_tree_cb_t& cb = get_cb(idx);
+    return cb.latch().mode() == mode;
 }
 
 void bf_tree_m::print_page(PageID pid)
@@ -730,13 +732,9 @@ void bf_tree_m::_delete_block(bf_idx idx) {
 }
 
 bf_tree_cb_t* bf_tree_m::get_cbp(bf_idx idx) const {
-#ifdef BP_ALTERNATE_CB_LATCH
     bf_idx real_idx;
     real_idx = (idx << 1) + (idx & 0x1); // more efficient version of: real_idx = (idx % 2) ? idx*2+1 : idx*2
     return &_control_blocks[real_idx];
-#else
-    return &_control_blocks[idx];
-#endif
 }
 
 bf_tree_cb_t& bf_tree_m::get_cb(bf_idx idx) const {
@@ -745,11 +743,7 @@ bf_tree_cb_t& bf_tree_m::get_cb(bf_idx idx) const {
 
 bf_idx bf_tree_m::get_idx(const bf_tree_cb_t* cb) const {
     bf_idx real_idx = cb - _control_blocks;
-#ifdef BP_ALTERNATE_CB_LATCH
     return real_idx / 2;
-#else
-    return real_idx;
-#endif
 }
 
 bf_tree_cb_t* bf_tree_m::get_cb(const generic_page *page) {
@@ -797,7 +791,7 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
     w_assert1(cb._pin_cnt > 0);
     cb.pin();
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
-    ++cb._ref_count;
+    cb.inc_ref_count();
     if (mode == LATCH_EX) { ++cb._ref_count_ex; }
     page = &(_buffer[idx]);
     return RCOK;
@@ -805,10 +799,10 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
 
 w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
                                      PageID pid, latch_mode_t mode, bool conditional,
-                                     bool virgin_page, lsn_t emlsn)
+                                     bool virgin_page, bool only_if_hit, lsn_t emlsn)
 {
     INC_TSTAT(bf_fix_nonroot_count);
-    return fix(parent, page, pid, mode, conditional, virgin_page, emlsn);
+    return fix(parent, page, pid, mode, conditional, virgin_page, only_if_hit, emlsn);
 }
 
 w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
@@ -828,7 +822,7 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
         w_assert0(found);
         idx = p.first;
 
-        if (_enable_swizzling) {
+        // if (_enable_swizzling) {
             // Swizzle pointer to root in _root_pages array
             bool old_value = false;
             if (!std::atomic_compare_exchange_strong(&(get_cb(idx)._swizzled),
@@ -839,7 +833,7 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
             }
             w_assert1(is_swizzled(page));
             _root_pages[store] = idx;
-        }
+        // }
     }
     else {
         // Pointer to root page was swizzled -- direct access to CB
@@ -867,7 +861,7 @@ void bf_tree_m::unfix(const generic_page* p, bool evict)
     bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb.latch().held_by_me());
     if (evict) {
-        w_assert0(cb.latch().mode() == LATCH_EX);
+        w_assert0(cb.latch().is_mine());
         bool removed = _hashtable->remove(p->pid);
         w_assert1(removed);
 
@@ -905,11 +899,21 @@ bool bf_tree_m::is_used (bf_idx idx) const {
 void bf_tree_m::set_page_lsn(generic_page* p, lsn_t lsn)
 {
     uint32_t idx = p - _buffer;
+
+    // CS: workaround for design limitation of restore. When redoing a log
+    // record, the LSN should only be updated if the page image being used
+    // belongs to the buffer pool. Initially, we checked this by only calling
+    // this method when _bufferpool_managed was set in fixable_page_h. However,
+    // that would break single-page recovery, since fix_nonbufferpool_page is
+    // required in that case. To fix that, I enabled updating page LSN for any
+    // page image, and the check below makes sure it belongs to the buffer pool
+    if (!_is_valid_idx(idx)) { return; }
+
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t& cb = get_cb(idx);
-    w_assert1(cb.latch().held_by_me());
+    w_assert1(cb.latch().is_mine());
     w_assert1(cb.latch().mode() == LATCH_EX);
-    w_assert1(cb.get_page_lsn() < lsn);
+    w_assert1(cb.get_page_lsn() <= lsn);
     cb.set_page_lsn(lsn);
 }
 

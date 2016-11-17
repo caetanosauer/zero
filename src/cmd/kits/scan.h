@@ -112,6 +112,8 @@ public:
 
     virtual w_rc_t next(bool& eof, table_row_t& tuple)
     {
+        if (!btcursor) open_scan();
+
         assert (btcursor);
 
         W_DO(btcursor->next());

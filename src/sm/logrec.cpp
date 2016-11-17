@@ -142,11 +142,11 @@ logrec_t::fill(PageID p, StoreID store, uint16_t tag, smsize_t l)
     header._pid = p;
     header._stid = store;
     char *dat = is_single_sys_xct() ? data_ssx() : data();
-    if (l != align(l)) {
+    if (l != ALIGN_BYTE(l)) {
         // zero out extra space to keep purify happy
-        memset(dat+l, 0, align(l)-l);
+        memset(dat+l, 0, ALIGN_BYTE(l)-l);
     }
-    unsigned int tmp = align(l) + (is_single_sys_xct() ? hdr_single_sys_xct_sz : hdr_non_ssx_sz) + sizeof(lsn_t);
+    unsigned int tmp = ALIGN_BYTE(l) + (is_single_sys_xct() ? hdr_single_sys_xct_sz : hdr_non_ssx_sz) + sizeof(lsn_t);
     tmp = (tmp + 7) & unsigned(-8); // force 8-byte alignment
     w_assert1(tmp <= sizeof(*this));
     header._len = tmp;
@@ -432,7 +432,11 @@ chkpt_end_log::chkpt_end_log(const lsn_t& lsn, const lsn_t& min_rec_lsn,
     fill((PageID) 0, (3 * sizeof(lsn_t)) + (3 * sizeof(int)));
 }
 
-
+xct_latency_dump_log::xct_latency_dump_log(unsigned long nsec)
+{
+    *((unsigned long*) _data) = nsec;
+    fill((PageID) 0, sizeof(unsigned long));
+}
 
 /*********************************************************************
  *
@@ -573,18 +577,20 @@ void chkpt_backup_tab_t::read(
 chkpt_backup_tab_log::chkpt_backup_tab_log(int cnt,
                                            const string* paths)
 {
+    // CS TODO
     fill(0, (new (_data) chkpt_backup_tab_t(cnt, paths))->size());
 }
 
 void chkpt_backup_tab_log::redo(fixable_page_h*)
 {
+    // CS TODO
     chkpt_backup_tab_t* tab = (chkpt_backup_tab_t*) _data;
     std::vector<string> paths;
     tab->read(paths);
     w_assert0(tab->count == paths.size());
 
     for (size_t i = 0; i < tab->count; i++) {
-        W_COERCE(smlevel_0::vol->sx_add_backup(paths[i], false /* log */));
+        W_COERCE(smlevel_0::vol->sx_add_backup(paths[i], lsn_t::null, false /* log */));
     }
 }
 
@@ -618,29 +624,30 @@ void chkpt_restore_tab_log::redo(fixable_page_h*)
     }
 
     // CS TODO
-    RestoreBitmap bitmap(vol->num_used_pages());
-    bitmap.deserialize(tab->bitmap, tab->firstNotRestored,
-            tab->firstNotRestored + tab->bitmapSize);
-    // Bitmap of RestoreMgr might have been initialized already
-    for (size_t i = tab->firstNotRestored; i < bitmap.getSize(); i++) {
-        if (bitmap.get(i)) {
-            vol->redo_segment_restore(i);
-        }
-    }
+    // RestoreBitmap bitmap(vol->num_used_pages());
+    // bitmap.deserialize(tab->bitmap, tab->firstNotRestored,
+    //         tab->firstNotRestored + tab->bitmapSize);
+    // // Bitmap of RestoreMgr might have been initialized already
+    // for (size_t i = tab->firstNotRestored; i < bitmap.getSize(); i++) {
+    //     if (bitmap.get(i)) {
+    //         vol->redo_segment_restore(i);
+    //     }
+    // }
 }
 
-add_backup_log::add_backup_log(const char* dev_name)
+add_backup_log::add_backup_log(const string& path, lsn_t backupLSN)
 {
-    size_t length = strlen(dev_name);
-    w_assert0(length < smlevel_0::max_devname);
-    memcpy(data_ssx(), dev_name, length);
-    fill((PageID) 0, length);
+    *((lsn_t*) data_ssx()) = backupLSN;
+    w_assert0(path.length() < smlevel_0::max_devname);
+    memcpy(data_ssx() + sizeof(lsn_t), path.data(), path.length());
+    fill((PageID) 0, sizeof(lsn_t) + path.length());
 }
 
 void add_backup_log::redo(fixable_page_h*)
 {
-    const char* dev_name = (const char*) data_ssx();
-    W_COERCE(smlevel_0::vol->sx_add_backup(dev_name, false));
+    lsn_t backupLSN = *((lsn_t*) data_ssx());
+    const char* dev_name = (const char*) (data_ssx() + sizeof(lsn_t));
+    W_COERCE(smlevel_0::vol->sx_add_backup(string(dev_name), backupLSN, false));
 }
 
 undo_done_log::undo_done_log()
@@ -713,7 +720,7 @@ void restore_end_log::redo(fixable_page_h*)
 
 restore_segment_log::restore_segment_log(uint32_t segment)
 {
-    char* pos = _data;
+    char* pos = data_ssx();
 
     memcpy(pos, &segment, sizeof(uint32_t));
     pos += sizeof(uint32_t);
@@ -724,7 +731,7 @@ restore_segment_log::restore_segment_log(uint32_t segment)
     pos += sizeof(unsigned long);
 #endif
 
-    fill((PageID) 0, pos - _data);
+    fill((PageID) 0, pos - data_ssx());
 }
 
 void restore_segment_log::redo(fixable_page_h*)
@@ -735,7 +742,7 @@ void restore_segment_log::redo(fixable_page_h*)
     // volume must be mounted and failed
     w_assert0(volume && volume->is_failed());
 
-    uint32_t segment = *((uint32_t*) _data);
+    uint32_t segment = *((uint32_t*) data_ssx());
 
     volume->redo_segment_restore(segment);
 }
@@ -886,6 +893,12 @@ operator<<(ostream& o, const logrec_t& l)
                 PageID first = *((PageID*) (l.data()));
                 PageID last = first + *((uint32_t*) (l.data() + sizeof(PageID) + sizeof(lsn_t))) - 1;
                 o << " pids: " << first << "-" << last;
+                break;
+            }
+        case t_restore_segment:
+            {
+                o << " segment: " << *((uint32_t*) l.data_ssx());
+                break;
             }
 
 

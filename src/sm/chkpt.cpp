@@ -115,10 +115,11 @@ private:
     chkpt_thread_t&      operator=(const chkpt_thread_t&);
 };
 
-chkpt_m::chkpt_m(const sm_options& options)
+chkpt_m::chkpt_m(const sm_options& options, lsn_t last_chkpt_lsn)
     : _chkpt_thread(NULL), _chkpt_count(0), _min_rec_lsn(0), _min_xct_lsn(0),
-    _last_end_lsn(0)
+    _last_end_lsn(last_chkpt_lsn)
 {
+    if (_last_end_lsn.is_null()) { _last_end_lsn = lsn_t(1, 0); }
     int interval = options.get_int_option("sm_chkpt_interval", -1);
     if (interval >= 0) {
         _chkpt_thread = new chkpt_thread_t(interval);
@@ -128,10 +129,16 @@ chkpt_m::chkpt_m(const sm_options& options)
 
 chkpt_m::~chkpt_m()
 {
+    retire_thread();
+}
+
+void chkpt_m::retire_thread()
+{
     if (_chkpt_thread) {
         _chkpt_thread->retire();
         W_COERCE(_chkpt_thread->join());
         delete _chkpt_thread;
+        _chkpt_thread = nullptr;
     }
 }
 
@@ -152,11 +159,14 @@ void chkpt_m::wakeup_thread()
 *  corresponding to the latest completed checkpoint.
 *
 *********************************************************************/
-void chkpt_t::scan_log()
+void chkpt_t::scan_log(lsn_t scan_start)
 {
     init();
 
-    lsn_t scan_start = smlevel_0::log->durable_lsn();
+    if (scan_start.is_null()) {
+        scan_start = smlevel_0::log->durable_lsn();
+    }
+    w_assert1(scan_start <= smlevel_0::log->durable_lsn());
     if (scan_start == lsn_t(1,0)) { return; }
 
     log_i scan(*smlevel_0::log, scan_start, false); // false == backward scan
@@ -192,8 +202,8 @@ void chkpt_t::scan_log()
             }
         }
 
-        if (r.is_page_update()) {
-            w_assert0(r.is_redo());
+        // CS: A CLR is not considered a page update for some reason...
+        if (r.is_redo()) {
             mark_page_dirty(r.pid(), lsn, lsn);
 
             if (r.is_multi_page()) {
@@ -333,6 +343,7 @@ void chkpt_t::scan_log()
     } //while
 
     w_assert0(lsn == scan_stop);
+    last_scan_start = scan_start;
 
     cleanup();
 }
@@ -340,6 +351,7 @@ void chkpt_t::scan_log()
 void chkpt_t::init()
 {
     highest_tid = tid_t::null;
+    last_scan_start = lsn_t::null;
     buf_tab.clear();
     xct_tab.clear();
     bkp_path.clear();
@@ -668,14 +680,14 @@ void chkpt_t::dump(ostream& os)
             << endl;
     }
 
-    // os << "DIRTY PAGES" << endl;
-    // for(buf_tab_t::const_iterator it = buf_tab.begin();
-    //                         it != buf_tab.end(); ++it)
-    // {
-    //     os << it->first << "(" << it->second.rec_lsn
-    //         << "-" << it->second.page_lsn << ") ";
-    // }
-    // os << endl;
+    os << "DIRTY PAGES" << endl;
+    for(buf_tab_t::const_iterator it = buf_tab.begin();
+                            it != buf_tab.end(); ++it)
+    {
+        os << it->first << "(" << it->second.rec_lsn
+            << "-" << it->second.page_lsn << ") " << endl;
+    }
+    os << endl;
 }
 
 void chkpt_m::take()
@@ -692,7 +704,7 @@ void chkpt_m::take()
     W_COERCE(ss_m::log->flush_all());
 
     // Collect checkpoint information from log
-    curr_chkpt.scan_log();
+    curr_chkpt.scan_log(begin_lsn);
 
     // Serialize chkpt to file
     fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn_t::null);
@@ -701,9 +713,11 @@ void chkpt_m::take()
     curr_chkpt.serialize_binary(ofs);
     ofs.close();
     fs::rename(fpath, newpath);
+    smlevel_0::log->get_storage()->add_checkpoint(begin_lsn);
 
     _min_rec_lsn = curr_chkpt.get_min_rec_lsn();
     _min_xct_lsn = curr_chkpt.get_min_xct_lsn();
+    _last_end_lsn = curr_chkpt.get_last_scan_start();
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_mutex.release_write();
@@ -857,6 +871,7 @@ void chkpt_thread_t::run()
         if (!_wakeup) { continue; }
 
         ss_m::chkpt->take();
+        ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
     }
 }
 

@@ -1443,10 +1443,13 @@ w_rc_t ShoreTPCCEnv::xct_order_status(const int xct_id,
 	ol_iter = tmp_ol_iter;
     }
 
+    // CS: just trying something out...
+    // w_assert0(aorder.O_OL_CNT < 100000);
+
     porderlines = new tpcc_orderline_tuple[aorder.O_OL_CNT];
     int i=0;
 
-    W_DO(ol_iter->next(eof, *prol));
+    W_COERCE(ol_iter->next(eof, *prol));
     while (!eof) {
 	prol->get_value(4, porderlines[i].OL_I_ID);
 	prol->get_value(5, porderlines[i].OL_SUPPLY_W_ID);
@@ -1454,7 +1457,7 @@ w_rc_t ShoreTPCCEnv::xct_order_status(const int xct_id,
 	prol->get_value(7, porderlines[i].OL_QUANTITY);
 	prol->get_value(8, porderlines[i].OL_AMOUNT);
 	i++;
-	W_DO(ol_iter->next(eof, *prol));
+	W_COERCE(ol_iter->next(eof, *prol));
     }
 
 #ifdef PRINT_TRX_RESULTS
@@ -1465,7 +1468,7 @@ w_rc_t ShoreTPCCEnv::xct_order_status(const int xct_id,
     rordline.print_tuple();
 #endif
 
-    if (porderlines) delete [] porderlines;
+    delete [] porderlines;
 
     return RCOK;
 

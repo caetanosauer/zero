@@ -39,6 +39,37 @@ private:
     unsigned delay;
 };
 
+class FailureThread : public smthread_t
+{
+public:
+    FailureThread(unsigned delay, bool* flag)
+        : smthread_t(t_regular, "FailureThread"),
+        delay(delay), flag(flag)
+    {
+    }
+
+    virtual ~FailureThread() {}
+
+    virtual void run()
+    {
+        ::sleep(delay);
+
+        vol_t* vol = smlevel_0::vol;
+        w_assert0(vol);
+        vol->mark_failed();
+
+        // disable eager archiving
+        smlevel_0::logArchiver->setEager(false);
+
+        *flag = true;
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+    }
+
+private:
+    unsigned delay;
+    bool* flag;
+};
+
 void KitsCommand::setupOptions()
 {
     setupSMOptions(options);
@@ -52,9 +83,12 @@ void KitsCommand::setupOptions()
             and backups are deleted, and dataset is loaded from scratch")
         ("trxs", po::value<int>(&opt_num_trxs)->default_value(0),
             "Number of transactions to execute")
+        ("logVolume", po::value<unsigned>(&opt_log_volume)->default_value(0),
+            "Run benchmark until the given amount of log volume (in MB) is reached \
+            (overrides the trxs option)")
         ("duration", po::value<unsigned>(&opt_duration)->default_value(0),
             "Run benchmark for the given number of seconds (overrides the \
-            trxs option)")
+            logVolume option)")
         ("threads,t", po::value<int>(&opt_num_threads)->default_value(4),
             "Number of threads to execute benchmark with")
         ("select_trx,s", po::value<int>(&opt_select_trx)->default_value(0),
@@ -76,6 +110,8 @@ void KitsCommand::setupOptions()
         ("crashDelay", po::value<int>(&opt_crashDelay)->default_value(-1),
             "Time (sec) to wait before aborting execution to simulate system \
             failure (negative disables)")
+        ("failDelay", po::value<int>(&opt_failDelay)->default_value(-1),
+            "Time to wait before marking the volume as failed (simulates media failure)")
     ;
     options.add(kits);
 }
@@ -129,17 +165,42 @@ void KitsCommand::run()
         cout << "Loading finished!" << endl;
     }
 
-    // Spawn crash thread if requested
-    if (opt_crashDelay >= 0) {
-        CrashThread* t = new CrashThread(opt_crashDelay);
-        t->fork();
+    if (opt_warmup > 0) {
+        TRACE(TRACE_ALWAYS, "warming up buffer\n");
+        // WarmupThread t;
+        // t.fork();
+        // t.join();
+
+        W_COERCE(shoreEnv->db_fetch());
+        cout << "Warmup finished!" << endl;
     }
 
-    if (opt_num_trxs > 0 || opt_duration > 0) {
+    // Spawn crash thread if requested
+    CrashThread* crash_thread;
+    if (opt_crashDelay >= 0) {
+        crash_thread = new CrashThread(opt_crashDelay);
+        crash_thread->fork();
+    }
+
+    // Spawn failure thread if requested
+    FailureThread* failure_thread = nullptr;
+    if (opt_failDelay >= 0) {
+        hasFailed = false;
+        failure_thread = new FailureThread(opt_failDelay, &hasFailed);
+        failure_thread->fork();
+    }
+
+    if (runBenchAfterLoad()) {
         runBenchmark();
     }
 
     finish();
+
+    if (failure_thread) {
+        failure_thread->join();
+        delete failure_thread;
+    }
+    // crash_thread aborts the program, so we don't worry about joining it
 }
 
 void KitsCommand::init()
@@ -183,39 +244,16 @@ void KitsCommand::runBenchmarkSpec()
         opt_queried_sf = shoreEnv->get_sf();
     }
 
-    if (opt_warmup > 0) {
-        TRACE(TRACE_ALWAYS, "warming up buffer\n");
-        WarmupThread t;
-        t.fork();
-        t.join();
-
-        // run transactions for the given number of seconds
-        createClients<Client, Environment>();
-        forkClients();
-
-        int remaining = opt_warmup;
-        while (remaining > 1) {
-            remaining = ::sleep(remaining);
-        }
-
-        joinClients();
-
-        if (opt_warmup > 1) {
-            // sleep some more to get a gap in the log ticks
-            ::sleep(5);
-        }
-    }
-
     stopwatch_t timer;
 
-    if (opt_num_trxs > 0 || opt_duration > 0) {
+    if (runBenchAfterLoad()) {
         TRACE(TRACE_ALWAYS, "begin measurement\n");
         createClients<Client, Environment>();
     }
 
     doWork();
 
-    if (opt_num_trxs > 0 || opt_duration > 0) {
+    if (runBenchAfterLoad()) {
         joinClients();
     }
 
@@ -241,8 +279,19 @@ void KitsCommand::createClients()
     int current_prs_id = -1;
     int wh_id = 0;
 
-    mtype = opt_duration > 0 ? MT_TIME_DUR : MT_NUM_OF_TRXS;
-    int trxsPerThread = opt_num_trxs / opt_num_threads;
+    mtype = MT_UNDEF;
+    int trxsPerThread = 0;
+    if (opt_duration > 0) {
+        mtype = MT_TIME_DUR;
+    }
+    else if (opt_num_trxs > 0) {
+        mtype = MT_NUM_OF_TRXS;
+        trxsPerThread = opt_num_trxs / opt_num_threads;
+    }
+    else if (opt_log_volume > 0) {
+        mtype = MT_LOG_VOL;
+    }
+
     for (int i = 0; i < opt_num_threads; i++) {
         // create & fork testing threads
         if (opt_spread) {
@@ -294,13 +343,52 @@ void KitsCommand::joinClients()
 
 void KitsCommand::doWork()
 {
+    lsn_t last_log_tail = smlevel_0::log->durable_lsn();
+
     forkClients();
+
+    if (opt_failDelay > 0) {
+        // Start benchmark and wait for failure thread to mark device failed
+        sleep(opt_failDelay);
+        while (!hasFailed) {
+            sleep(1);
+            lintel::atomic_thread_fence(lintel::memory_order_consume);
+        }
+
+        vol_t* vol = smlevel_0::vol;
+        w_assert0(vol);
+
+        // Now wait for device to be restored -- check every 1 second
+        while (vol->is_failed()) {
+            sleep(1);
+            vol->check_restore_finished();
+        }
+    }
 
     // If running for a time duration, wait specified number of seconds
     if (mtype == MT_TIME_DUR) {
         int remaining = opt_duration;
         while (remaining > 0) {
             remaining = ::sleep(remaining);
+        }
+    }
+    else if (mtype == MT_LOG_VOL) {
+        // check every second
+        size_t part_size = smlevel_0::log->get_storage()->get_partition_size();
+        unsigned long generated_log_vol = 0;
+        while (generated_log_vol / 1048576 < opt_log_volume) {
+            ::sleep(1);
+            lsn_t log_tail = smlevel_0::log->durable_lsn();
+            unsigned partitions = log_tail.hi() - last_log_tail.hi();
+            if (partitions == 0) {
+                generated_log_vol += log_tail.lo() - last_log_tail.lo();
+            }
+            else {
+                generated_log_vol += part_size - last_log_tail.lo();
+                generated_log_vol += part_size * (partitions-1);
+                generated_log_vol += log_tail.lo();
+            }
+            last_log_tail = log_tail;
         }
     }
 }
@@ -310,14 +398,14 @@ void KitsCommand::initShoreEnv()
 {
     shoreEnv = new Environment(optionValues);
 
-    loadOptions(shoreEnv->get_opts());
-
     shoreEnv->set_sf(opt_queried_sf);
     shoreEnv->set_qf(opt_queried_sf);
     shoreEnv->set_loaders(opt_num_threads);
 
     shoreEnv->init();
     shoreEnv->set_clobber(opt_load);
+    loadOptions(shoreEnv->get_opts());
+
     shoreEnv->start();
 }
 

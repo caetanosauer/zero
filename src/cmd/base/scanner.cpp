@@ -35,7 +35,9 @@ BlockScanner::BlockScanner(const po::variables_map& options,
     : BaseScanner(options), pnum(-1)
 {
     logdir = options["logdir"].as<string>().c_str();
-    blockSize = options["sm_archiver_block_size"].as<int>();
+    // blockSize = options["sm_archiver_block_size"].as<int>();
+    // CS TODO no option for archiver block size
+    blockSize = LogArchiver::DFT_BLOCK_SIZE;
     logScanner = new LogScanner(blockSize);
     currentBlock = new char[blockSize];
 
@@ -197,9 +199,14 @@ void LogArchiveScanner::run()
 {
     BaseScanner::initialize();
 
-    size_t blockSize = options["sm_archiver_block_size"].as<int>();
+    // CS TODO no option for archiver block size
+    size_t blockSize = LogArchiver::DFT_BLOCK_SIZE;
+    // size_t blockSize = options["sm_archiver_block_size"].as<int>();
+    sm_options opt;
+    opt.set_string_option("sm_archdir", archdir);
+    // opt.set_int_option("sm_archiver_block_size", blockSize);
     LogArchiver::ArchiveDirectory* directory = new
-        LogArchiver::ArchiveDirectory(archdir, blockSize);
+        LogArchiver::ArchiveDirectory(opt);
 
     std::vector<std::string> runFiles;
 
@@ -243,12 +250,12 @@ void LogArchiveScanner::run()
 
         logrec_t* lr;
         while (rs->next(lr)) {
-            w_assert1(lr->pid() >= prevPid);
-            w_assert1(lr->pid() != prevPid ||
+            w_assert0(lr->pid() >= prevPid);
+            w_assert0(lr->pid() != prevPid ||
                     lr->page_prev_lsn() == lsn_t::null ||
                     lr->page_prev_lsn() == prevLSN);
-            w_assert1(lr->lsn_ck() >= runBegin);
-            w_assert1(lr->lsn_ck() < runEnd);
+            w_assert0(lr->lsn_ck() >= runBegin);
+            w_assert0(lr->lsn_ck() < runEnd);
 
             handle(lr);
 
@@ -273,11 +280,17 @@ void MergeScanner::run()
     BaseScanner::initialize();
 
     // CS TODO blockSize not used anymore
-    size_t blockSize = options["sm_archiver_block_size"].as<int>();
+    // CS TODO no option for archiver block size
+    size_t blockSize = LogArchiver::DFT_BLOCK_SIZE;
+    // size_t blockSize = options["sm_archiver_block_size"].as<int>();
     size_t bucketSize = options["sm_archiver_bucket_size"].as<int>();
+    sm_options opt;
+    opt.set_string_option("sm_archdir", archdir);
+    // opt.set_int_option("sm_archiver_block_size", blockSize);
+    opt.set_int_option("sm_archiver_bucket_size", bucketSize);
 
     LogArchiver::ArchiveDirectory* directory = new
-        LogArchiver::ArchiveDirectory(archdir, blockSize, bucketSize);
+        LogArchiver::ArchiveDirectory(opt);
     LogArchiver::ArchiveScanner logScan(directory);
 
     LogArchiver::ArchiveScanner::RunMerger* merger =
@@ -289,8 +302,8 @@ void MergeScanner::run()
     PageID prevPid = 0;
 
     while (merger && merger->next(lr)) {
-        w_assert1(lr->pid() >= prevPid);
-        w_assert1(lr->pid() != prevPid ||
+        w_assert0(lr->pid() >= prevPid);
+        w_assert0(lr->pid() != prevPid ||
                 lr->page_prev_lsn() == lsn_t::null ||
                 lr->page_prev_lsn() == prevLSN);
 

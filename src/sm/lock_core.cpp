@@ -40,14 +40,31 @@ struct RawLockCleanerFunctor : public GcWakeupFunctor {
 lock_core_m::lock_core_m(const sm_options &options) : _htab(NULL), _htabsz(0) {
     size_t sz = options.get_int_option("sm_locktablesize", 64000);
 
+
+    // CS TODO: options below were set in the old Zero tpcc.cpp
+            // // very short interval, large segments, for massive accesses.
+            // // back-of-envelope-calculation: ignore xct. it's all about RawLock.
+            // // sizeof(RawLock)=64 or something. 8 * 256 * 4096 * 64 = 512MB. tolerable.
+            // options.set_int_option("sm_rawlock_gc_interval_ms", 3);
+            // options.set_int_option("sm_rawlock_lockpool_initseg", 255);
+            // options.set_int_option("sm_rawlock_xctpool_initseg", 255);
+            // options.set_int_option("sm_rawlock_lockpool_segsize", 1 << 12);
+            // options.set_int_option("sm_rawlock_xctpool_segsize", 1 << 8);
+            // options.set_int_option("sm_rawlock_gc_generation_count", 5);
+            // options.set_int_option("sm_rawlock_gc_init_generation_count", 5);
+            // options.set_int_option("sm_rawlock_gc_free_segment_count", 50);
+            // options.set_int_option("sm_rawlock_gc_max_segment_count", 255);
+            // // meaning: a newly created generation has a lot of (255) segments.
+            // // as soon as remaining gets low, we recycle older ones (few generations).
+
     size_t generation_count = options.get_int_option("sm_rawlock_gc_generation_count", 5);
-    size_t init_generations = options.get_int_option("sm_rawlock_gc_init_generation_count", 0);
+    size_t init_generations = options.get_int_option("sm_rawlock_gc_init_generation_count", 5);
     if (init_generations > generation_count) {
         generation_count = init_generations;
     }
-    size_t lockpool_initseg = options.get_int_option("sm_rawlock_lockpool_initseg", 32);
-    size_t xctpool_initseg = options.get_int_option("sm_rawlock_xctpool_initseg", 128);
-    size_t lockpool_segsize = options.get_int_option("sm_rawlock_lockpool_segsize", 1 << 13);
+    size_t lockpool_initseg = options.get_int_option("sm_rawlock_lockpool_initseg", 255);
+    size_t xctpool_initseg = options.get_int_option("sm_rawlock_xctpool_initseg", 255);
+    size_t lockpool_segsize = options.get_int_option("sm_rawlock_lockpool_segsize", 1 << 12);
     size_t xctpool_segsize = options.get_int_option("sm_rawlock_xctpool_segsize", 1 << 8);
     DBGOUT3(<<"lock_core_m constructor: sm_locktablesize=" << sz
         << ", sm_rawlock_gc_generation_count=" << generation_count

@@ -5,15 +5,6 @@
 #define HUGETLBFS_PATH "/mnt/huge/SSM-BUFPOOL"
 
 /*
- * Define this if you want to include crash test hooks in your
- * executable.  (For use with ssh, really).
- * A release executable should not be built with this unless you
- * are a maintainer and want to test it.
- */
-#undef USE_SSMTEST
-
-
-/*
  * Define these if you do not like the default lengths (in tid_t.h)
  */
 #undef COMMON_GTID_LENGTH
@@ -46,16 +37,18 @@
  */
 #define EXPENSIVE_LATCH_COUNTS 0
 
-/* CS: Define this to keep the log files for later inspection or debug.
-   If set, partitions are cleaned normally, but the call to unlink is
-   skipped. Thus, the log manager should behave the exact same way, but
-   the files will be kept.
- */
-#define KEEP_LOG_PARTITIONS
-
 /* CS: IF this is set, then system event log records, as well as certain
    selected log records (e.g., restore events), will contain an additional
    field with a timestamp. This is useful in experiments to correlate events
    in the log with time
 */
 #define TIMED_LOG_RECORDS
+
+/*
+ * We found that pure spinning is much faster than mutex sleep/wake-up as in [JUNG13].
+ * As far as we don't over-subscribe workers, this has no disadvantages.
+ * Pure spinning means we don't have to do anything in lock release, we don't have to do
+ * keep any of mutexes, so much faster.
+ * \ingroup RAWLOCK
+ */
+#define PURE_SPIN_RAWLOCK

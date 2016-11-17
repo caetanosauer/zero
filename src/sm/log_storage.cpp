@@ -34,14 +34,14 @@ typedef smlevel_0::fileoff_t fileoff_t;
 const string log_storage::log_prefix = "log.";
 const string log_storage::log_regex = "log\\.[1-9][0-9]*";
 const string log_storage::chkpt_prefix = "chkpt_";
-const string log_storage::chkpt_regex = "chkpt_[1-9][0-9]*\\.[1-9][0-9]*";
+const string log_storage::chkpt_regex = "chkpt_[1-9][0-9]*\\.[0-9][0-9]*";
 
 class partition_recycler_t : public smthread_t
 {
 public:
-    partition_recycler_t(log_storage* storage)
+    partition_recycler_t(log_storage* storage, bool chkpt_only = false)
         : smthread_t(t_regular, "partition_recycler"), storage(storage),
-        retire(false)
+        chkpt_only(chkpt_only), retire(false)
     {}
 
     virtual ~partition_recycler_t() {}
@@ -52,7 +52,7 @@ public:
             unique_lock<mutex> lck(_recycler_mutex);
             _recycler_condvar.wait(lck);
             if (retire) { break; }
-            storage->delete_old_partitions();
+            storage->delete_old_partitions(chkpt_only);
         }
     }
 
@@ -63,6 +63,8 @@ public:
     }
 
     log_storage* storage;
+    bool chkpt_only;
+
     std::atomic<bool> retire;
     std::condition_variable _recycler_condvar;
     std::mutex _recycler_mutex;
@@ -367,9 +369,9 @@ shared_ptr<partition_t> log_storage::create_partition(partition_number_t pnum)
 
     // take checkpoint & kick-off partition recycler (oportunistically)
     if (_max_partitions > 0) {
-        if (smlevel_0::chkpt) { smlevel_0::chkpt->wakeup_thread(); }
         if (smlevel_0::bf && smlevel_0::bf->get_cleaner()) {
             smlevel_0::bf->get_cleaner()->wakeup();
+            if (smlevel_0::chkpt) { smlevel_0::chkpt->wakeup_thread(); }
         }
     }
     wakeup_recycler();
@@ -383,24 +385,36 @@ shared_ptr<partition_t> log_storage::create_partition(partition_number_t pnum)
     return p;
 }
 
-void log_storage::wakeup_recycler()
+void log_storage::wakeup_recycler(bool chkpt_only)
 {
-    if (!_delete_old_partitions) { return; }
+    if (!_delete_old_partitions && !chkpt_only) { return; }
 
     if (!_recycler_thread) {
-        _recycler_thread.reset(new partition_recycler_t(this));
+        _recycler_thread.reset(new partition_recycler_t(this, chkpt_only));
         _recycler_thread->fork();
     }
     _recycler_thread->wakeup();
 }
 
-unsigned log_storage::delete_old_partitions(partition_number_t older_than)
+void log_storage::add_checkpoint(lsn_t lsn)
 {
-    if (!_delete_old_partitions) { return 0; }
+    spinlock_write_critical_section cs(&_partition_map_latch);
+    _checkpoints.push_back(lsn);
+}
+
+unsigned log_storage::delete_old_partitions(bool chkpt_only, partition_number_t older_than)
+{
+    if (!_delete_old_partitions && !chkpt_only) { return 0; }
 
     if (older_than == 0 && smlevel_0::chkpt) {
         lsn_t min_lsn = smlevel_0::chkpt->get_min_active_lsn();
-        older_than = min_lsn.hi();
+        older_than = min_lsn.is_null() ? smlevel_0::log->durable_lsn().hi() : min_lsn.hi();
+        if (smlevel_0::logArchiver) {
+            lsn_t lastArchivedLSN = smlevel_0::logArchiver->getDirectory()->getLastLSN();
+            if (older_than > lastArchivedLSN.hi()) {
+                older_than = lastArchivedLSN.hi();
+            }
+        }
     }
     // CS TODO: talk to log archiver!
 
@@ -411,7 +425,7 @@ unsigned log_storage::delete_old_partitions(partition_number_t older_than)
         spinlock_write_critical_section cs(&_partition_map_latch);
 
         partition_map_t::iterator it = _partitions.begin();
-        while (it != _partitions.end()) {
+        while (it != _partitions.end() && !chkpt_only) {
             if (it->first < older_than) {
                 to_be_deleted.push_front(it->second);
                 it = _partitions.erase(it);

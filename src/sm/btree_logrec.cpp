@@ -78,7 +78,7 @@ DBGOUT3( << "&&&& REDO insertion by replace ghost, key: " << key);
     // record for the key that is enough spacious.
     // so, we just replace the record!
     DBGOUT3( << "btree_insert_log::redo - key to replace ghost: " << key);
-    w_rc_t rc = bp.replace_ghost(key, el);
+    w_rc_t rc = bp.replace_ghost(key, el, true /* redo */);
     if(rc.is_error()) { // can't happen. wtf?
         W_FATAL_MSG(fcINTERNAL, << "btree_insert_log::redo " );
     }

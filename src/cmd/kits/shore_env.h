@@ -372,7 +372,7 @@ protected:
     pthread_mutex_t    _vol_mutex; // volume mutex
 
     // Configuration variables
-    guard<sm_options> _popts;
+    sm_options _popts;
 
     // Processor info
     uint _max_cpu_count;    // hard limit
@@ -466,7 +466,7 @@ public:
     ShoreEnv(po::variables_map& vm);
     virtual ~ShoreEnv();
 
-    sm_options& get_opts() { return *_popts; }
+    sm_options& get_opts() { return _popts; }
     po::variables_map& get_optionValues(){ return optionValues; };
     // DB INTERFACE
 
@@ -584,7 +584,7 @@ public:
 
     // fetch the current db to buffer pool
     // virtual void db_fetch_init();
-    // virtual w_rc_t db_fetch() { return(RCOK); }
+    virtual w_rc_t db_fetch() { return(RCOK); }
 
     // Environment workers
     uint upd_worker_cnt();

@@ -28,13 +28,14 @@ void fixable_page_h::unfix(bool evict)
 
 w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent,
                                    PageID shpid, latch_mode_t mode,
-                                   bool conditional, bool virgin_page)
+                                   bool conditional, bool virgin_page, bool only_if_hit)
 {
     w_assert1(parent.is_fixed());
     w_assert1(mode != LATCH_NL);
 
     unfix();
-    W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, shpid, mode, conditional, virgin_page));
+    W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, shpid, mode, conditional,
+                virgin_page, only_if_hit));
     w_assert1(bf_tree_m::is_swizzled_pointer(shpid)
             || smlevel_0::bf->get_cb(_pp)->_pid == shpid);
     _bufferpool_managed = true;
@@ -111,21 +112,14 @@ bool fixable_page_h::is_dirty() const {
 
 lsn_t fixable_page_h::get_page_lsn() const
 {
-    if (_bufferpool_managed)
-    {
-        w_assert1(_pp);
-        return smlevel_0::bf->get_page_lsn(_pp);
-    }
-    return lsn_t::null;
+    w_assert1(_pp);
+    return smlevel_0::bf->get_page_lsn(_pp);
 }
 
 void fixable_page_h::update_page_lsn(const lsn_t & lsn) const
 {
-    if (_bufferpool_managed)
-    {
-        w_assert1(_pp);
-        smlevel_0::bf->set_page_lsn(_pp, lsn);
-    }
+    w_assert1(_pp);
+    smlevel_0::bf->set_page_lsn(_pp, lsn);
 }
 
 void fixable_page_h::set_img_page_lsn(const lsn_t & lsn)

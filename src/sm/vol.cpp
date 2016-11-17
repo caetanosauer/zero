@@ -43,12 +43,21 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
     bool truncate = options.get_bool_option("sm_format", false);
     _readonly = options.get_bool_option("sm_vol_readonly", false);
     _log_page_reads = options.get_bool_option("sm_vol_log_reads", false);
+    _use_o_sync = options.get_bool_option("sm_vol_o_sync", true);
     _use_o_direct = options.get_bool_option("sm_vol_o_direct", false);
 
     spinlock_write_critical_section cs(&_mutex);
 
     // CS TODO: do we need/want OPEN_SYNC?
-    int open_flags = smthread_t::OPEN_SYNC | smthread_t::OPEN_DIRECT;
+    int open_flags = 0;
+    if(_use_o_sync) {
+        open_flags |= smthread_t::OPEN_SYNC;
+    }
+
+    if(_use_o_direct) {
+        open_flags |= smthread_t::OPEN_DIRECT;
+    }
+
     open_flags |= _readonly ? smthread_t::OPEN_RDONLY : smthread_t::OPEN_RDWR;
     if (truncate) {
         open_flags |= smthread_t::OPEN_TRUNC | smthread_t::OPEN_CREATE;
@@ -142,9 +151,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
 {
     spinlock_write_critical_section cs(&_mutex);
 
-    if (is_failed()) {
-        return RCOK;
-    }
+    if (_failed) { return RCOK; }
 
     bool useBackup = _backups.size() > 0;
 
@@ -173,7 +180,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
     _restore_mgr = new RestoreMgr(ss_m::get_options(),
             ss_m::logArchiver->getDirectory(), this, useBackup);
 
-    set_failed(true);
+    _failed = true;
 
     lsn_t failureLSN = lsn_t::null;
     if (!redo) {
@@ -184,7 +191,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
     }
 
     _restore_mgr->setFailureLSN(failureLSN);
-    _restore_mgr->fork();
+    _restore_mgr->start();
 
     return RCOK;
 }
@@ -194,59 +201,48 @@ void vol_t::chkpt_restore_progress(chkpt_restore_tab_t* tab)
     w_assert0(tab);
     spinlock_read_critical_section cs(&_mutex);
 
-    if (!is_failed()) {
-        return;
-    }
+    if (!_failed) { return; }
     w_assert0(_restore_mgr);
 
-    RestoreBitmap* bitmap = _restore_mgr->getBitmap();
-    size_t bitmapSize = bitmap->getSize();
-    size_t firstNotRestored = 0;
-    size_t lastRestored = 0;
-    bitmap->getBoundaries(firstNotRestored, lastRestored);
-    tab->firstNotRestored = firstNotRestored;
-    tab->bitmapSize = bitmapSize - firstNotRestored;
+    // TODO
+    // RestoreBitmap* bitmap = _restore_mgr->getBitmap();
+    // size_t bitmapSize = bitmap->getSize();
+    // size_t firstNotRestored = 0;
+    // size_t lastRestored = 0;
+    // bitmap->getBoundaries(firstNotRestored, lastRestored);
+    // tab->firstNotRestored = firstNotRestored;
+    // tab->bitmapSize = bitmapSize - firstNotRestored;
 
-    if (tab->bitmapSize > chkpt_restore_tab_t::maxSegments) {
-        W_FATAL_MSG(eINTERNAL,
-                << "RestoreBitmap of " << bitmapSize
-                << " does not fit in checkpoint");
-    }
+    // if (tab->bitmapSize > chkpt_restore_tab_t::maxSegments) {
+    //     W_FATAL_MSG(eINTERNAL,
+    //             << "RestoreBitmap of " << bitmapSize
+    //             << " does not fit in checkpoint");
+    // }
 
-    if (firstNotRestored < lastRestored) {
-        // "to" is exclusive boundary
-        bitmap->serialize(tab->bitmap, firstNotRestored, lastRestored + 1);
-    }
+    // if (firstNotRestored < lastRestored) {
+    //     // "to" is exclusive boundary
+    //     bitmap->serialize(tab->bitmap, firstNotRestored, lastRestored + 1);
+    // }
 }
 
 bool vol_t::check_restore_finished()
 {
-    if (!is_failed()) {
-        return true;
-    }
-
     // with a read latch, check if finished -- most likely no
     {
         spinlock_read_critical_section cs(&_mutex);
-        if (!is_failed()) {
-            return true;
-        }
-        if (!_restore_mgr->finished()) {
-            return false;
-        }
+        if (!_failed) { return true; }
+        if (!_restore_mgr) { return true; }
+        if (!_restore_mgr->all_pages_restored()) { return false; }
     }
     // restore finished -- update status with write latch
     {
         spinlock_write_critical_section cs(&_mutex);
         // check again for race
-        if (!is_failed()) {
-            return true;
-        }
+        if (!_failed) { return true; }
 
         // close restore manager
         if (_restore_mgr->try_shutdown()) {
             // join should be immediate, since thread is not running
-            _restore_mgr->join();
             delete _restore_mgr;
             _restore_mgr = NULL;
 
@@ -257,7 +253,7 @@ bool vol_t::check_restore_finished()
                 _current_backup_lsn = lsn_t::null;
             }
 
-            set_failed(false);
+            _failed = false;
             return true;
         }
     }
@@ -267,7 +263,7 @@ bool vol_t::check_restore_finished()
 
 void vol_t::redo_segment_restore(unsigned segment)
 {
-    w_assert0(_restore_mgr && is_failed());
+    w_assert1(_restore_mgr && is_failed());
     _restore_mgr->markSegmentRestored(segment, true /* redo */);
 }
 
@@ -282,20 +278,19 @@ rc_t vol_t::dismount(bool abrupt)
     w_assert1(_unix_fd >= 0);
 
     if (!abrupt) {
-        if (is_failed()) {
+        if (_failed) {
             // wait for ongoing restore to complete
-            _restore_mgr->setSinglePass();
-            _restore_mgr->join();
+            _restore_mgr->shutdown();
             if (_backup_fd > 0) {
                 W_COERCE(me()->close(_backup_fd));
                 _backup_fd = -1;
                 _current_backup_lsn = lsn_t::null;
             }
-            set_failed(false);
+            _failed = false;
         }
         // CS TODO -- also make sure no restart is ongoing
     }
-    else if (is_failed()) {
+    else if (_failed) {
         DBG(<< "WARNING: Volume shutting down abruptly during restore!");
     }
 
@@ -321,32 +316,8 @@ void vol_t::list_backups(
     }
 }
 
-rc_t vol_t::sx_add_backup(string path, bool redo)
+rc_t vol_t::sx_add_backup(const string& path, lsn_t backupLSN, bool redo)
 {
-    // Make sure backup volume header matches this volume
-    stnode_page stpage;
-    {
-        int fd = -1;
-        int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC;
-        rc_t rc = me()->open(path.c_str(), open_flags, 0666, fd);
-        if (rc.is_error())  {
-            W_IGNORE(me()->close(fd));
-            return RC_AUGMENT(rc);
-        }
-        rc = me()->read(fd, &stpage, sizeof(generic_page));
-        if (rc.is_error())  {
-            W_IGNORE(me()->close(fd));
-            return RC_AUGMENT(rc);
-        }
-
-        W_DO(me()->close(fd));
-    }
-
-    lsn_t backupLSN = stpage.getBackupLSN();
-
-    // will change vol_t state -- start critical section
-    // Multiple adds of the same backup file are weird, but not an error.
-    // The mutex is just ot protect against mounts and checkpoints
     spinlock_write_critical_section cs(&_mutex);
 
     _backups.push_back(path);
@@ -355,7 +326,7 @@ rc_t vol_t::sx_add_backup(string path, bool redo)
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        W_DO(log_add_backup(path.c_str()));
+        W_DO(log_add_backup(path, backupLSN));
         W_DO(ssx.end_sys_xct(RCOK));
     }
 
@@ -478,14 +449,16 @@ rc_t vol_t::read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn)
     // if (checksum != buf->checksum && !emlsn.is_null())
 
     if (buf->lsn < emlsn) {
-        if (buf->pid == 0) { // virgin page
-            buf->lsn = lsn_t::null;
-            buf->pid = pnum;
-            buf->tag = t_btree_p;
-        }
+        // if (buf->lsn == lsn_t::null) { // virgin page
+        //     buf->lsn = lsn_t::null;
+        //     buf->pid = pnum;
+        //     buf->tag = t_btree_p;
+        // }
 
         btree_page_h p;
+        buf->pid = pnum;
         p.fix_nonbufferpool_page(buf);
+        p.update_page_lsn(buf->lsn);
         W_DO(smlevel_0::recovery->recover_single_page(p, emlsn));
         delete_dirty_page(pnum);
         // cerr << "Recovered " << pnum << " to LSN " << emlsn << endl;
@@ -512,20 +485,6 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
 {
     DBG(<< "Page read: from " << first_page << " to " << first_page + cnt);
     ADD_TSTAT(vol_reads, cnt);
-    #ifdef ZERO_INIT
-    /*
-     * When a write into the buffer pool of potentially uninitialized
-     * memory occurs (such as padding)
-     * there is a purify/valgrind supression to keep the SM from being gigged
-     * for the SM-using application's legitimate behavior.  However, this
-     * uninitialized memory writes to a page in the buffer pool
-     * colors the corresponding bytes in the buffer pool with the
-     * "uninitialized" memory color.  When a new page is read in from
-     * disk, nothing changes the color of the page back to "initialized",
-     * and you suddenly see UMR or UMC errors from valid buffer pool pages.
-     */
-    memset(buf, '\0', cnt * sizeof(generic_page));
-    #endif
 
 
     /*
@@ -541,51 +500,51 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
      * for restore, however, would remain the same.
      */
 
-    while (is_failed()) {
+    while (_failed) { // unsafe read at first -- latch acquired to verify it below
         if(ignoreRestore) {
             // volume is failed, but we don't want to restore
             return RC(eVOLFAILED);
         }
-        else {
-            {
-                // Pin avoids restore mgr being destructed while we access it.
-                // If it returns false, then restore manager was terminated,
-                // which implies that restore process is done and we can safely
-                // read the volume
-                spinlock_read_critical_section cs(&_mutex);
-                if (!_restore_mgr->pin()) { break; }
-            }
 
-            // volume is failed, but we want restore to take place
-            int i = 0;
-            while(i < cnt) {
-                if (!_restore_mgr->isRestored(first_page + i)) {
-                    DBG(<< "Page read triggering restore of " << first_page + i);
-                    bool reqSucceeded = false;
-                    if(cnt == 1) {
-                        reqSucceeded = _restore_mgr->requestRestore(first_page + i, buf);
-                    }
-                    else {
-                        reqSucceeded = _restore_mgr->requestRestore(first_page + i, NULL);
-                    }
-                    _restore_mgr->waitUntilRestored(first_page + i);
-                    w_assert1(_restore_mgr->isRestored(first_page));
-                    if (reqSucceeded) {
-                        // page is loaded in buffer pool already
-                        w_assert1(buf->pid == first_page + i);
-                        if (_log_page_reads) {
-                            sysevent::log_page_read(first_page + i);
-                        }
-                        _restore_mgr->unpin();
-                        return RCOK;
-                    }
-                }
-                i++;
-            }
-            _restore_mgr->unpin();
-            check_restore_finished();
-            break;
+        {
+            // Pin avoids restore mgr being destructed while we access it.
+            // If it returns false, then restore manager was terminated,
+            // which implies that restore process is done and we can safely
+            // read the volume
+            spinlock_read_critical_section cs(&_mutex);
+            if (!_failed) { break; }
+            if (!_restore_mgr->pin()) { break; }
         }
+
+        // volume is failed, but we want restore to take place
+        int i = 0;
+        while(i < cnt) {
+            if (!_restore_mgr->isRestored(first_page + i)) {
+                DBG(<< "Page read triggering restore of " << first_page + i);
+                bool reqSucceeded = false;
+                if(cnt == 1) {
+                    reqSucceeded = _restore_mgr->requestRestore(first_page + i, buf);
+                }
+                else {
+                    reqSucceeded = _restore_mgr->requestRestore(first_page + i, NULL);
+                }
+                _restore_mgr->waitUntilRestored(first_page + i);
+                w_assert1(_restore_mgr->isRestored(first_page));
+                if (reqSucceeded) {
+                    // page is loaded in buffer pool already
+                    w_assert1(buf->pid == first_page + i);
+                    if (_log_page_reads) {
+                        sysevent::log_page_read(first_page + i);
+                    }
+                    _restore_mgr->unpin();
+                    return RCOK;
+                }
+            }
+            i++;
+        }
+        _restore_mgr->unpin();
+        check_restore_finished();
+        break;
     }
 
     w_assert1(cnt > 0);
@@ -666,39 +625,23 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     // No need to hold latch here -- mutual exclusion is guaranteed because
     // only one thread may set _backup_write_fd (i.e., open file) above.
 
-    if (flushArchive) {
-        LogArchiver* la = smlevel_0::logArchiver;
-        W_DO(smlevel_0::log->flush_all());
-        lsn_t currLSN = smlevel_0::log->curr_lsn();
-        // wait for log record to be consumed
-        while (la->getNextConsumedLSN() < currLSN) {
-            ::usleep(10000); // 10ms
-        }
-
-        // Time to wait until requesting a log archive flush (msec). If we're
-        // lucky, log is archiving very fast and a flush request is not needed.
-        int waitBeforeFlush = 5000; // 5 sec
-        ::usleep(waitBeforeFlush * 1000);
-
-        DBGTHRD(<< "Taking sharp backup until " << currLSN);
-
-        if (la->getDirectory()->getLastLSN() < currLSN) {
-            la->requestFlushSync(currLSN);
-        }
-    }
-
     // Maximum LSN which is guaranteed to be reflected in the backup
-    lsn_t backupLSN = ss_m::logArchiver->getDirectory()->getLastLSN();
-
-    DBG1(<< "Taking backup until LSN " << backupLSN);
+    // lsn_t backupLSN = ss_m::logArchiver->getDirectory()->getLastLSN();
+    // DBG1(<< "Taking backup until LSN " << backupLSN);
 
     // Instantiate special restore manager for taking backup
     RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
             this, useBackup, true /* takeBackup */);
-    restore.setSinglePass(true);
+
     restore.setInstant(false);
-    restore.fork();
-    restore.join();
+    if (flushArchive) {
+        lsn_t currLSN = smlevel_0::log->durable_lsn();
+        restore.setFailureLSN(currLSN);
+        DBGTHRD(<< "Taking sharp backup until " << currLSN);
+    }
+
+    restore.start();
+    restore.shutdown();
     // TODO -- do we have to catch errors from restore thread?
 
     // Write volume header and metadata to new backup
@@ -793,7 +736,7 @@ rc_t vol_t::write_many_pages(PageID first_page, const generic_page* const buf, i
     //     break;
     // }
 
-    if (is_failed() && !ignoreRestore) {
+    if (_failed && !ignoreRestore) {
         check_restore_finished();
     }
 

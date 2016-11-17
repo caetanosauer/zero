@@ -108,7 +108,8 @@ const int DF_WARMUP_INTERVAL = 2; // 2 secs
 enum MeasurementType {
     MT_UNDEF,
     MT_NUM_OF_TRXS,
-    MT_TIME_DUR
+    MT_TIME_DUR,
+    MT_LOG_VOL
 };
 
 
@@ -175,7 +176,7 @@ public:
     {
         assert (_env);
         assert (_measure_type != MT_UNDEF);
-        assert (_notrxs || (_measure_type == MT_TIME_DUR));
+        assert (_notrxs || (_measure_type == MT_TIME_DUR) || (_measure_type == MT_LOG_VOL));
         _cp = new condex_pair();
     }
 

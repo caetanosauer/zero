@@ -17,9 +17,6 @@ w_rc_t create_test(ss_m* ssm, test_volume_t *test_volume) {
     PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
-    W_DO(ssm->begin_xct());
-    W_DO(ssm->print_index(stid));
-    W_DO(ssm->commit_xct());
     return RCOK;
 }
 
@@ -37,9 +34,6 @@ w_rc_t create_test2(ss_m* ssm, test_volume_t *test_volume) {
     PageID root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
-    W_DO(ssm->begin_xct());
-    W_DO(ssm->print_index(stid));
-    W_DO(ssm->commit_xct());
     return RCOK;
 }
 

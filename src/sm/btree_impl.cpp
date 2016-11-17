@@ -120,13 +120,6 @@ btree_impl::_ux_insert_core(
             W_DO(_ux_lock_range(store, leaf, key, -1, // search again because it might be split
                 LATCH_EX, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
-
-#ifdef USE_ATOMIC_COMMIT
-        // Since an undo flag is not available here, this seems to be
-        // the only alternative at the moment. Perhaps this logic should
-        // be moved to the log stubs. (TODO)
-        if (!me()->xct()->rolling_back())
-#endif
         W_DO(log_btree_insert_nonghost(leaf, key, el, false /*is_sys_txn*/));
 
         leaf.insert_nonghost(key, el);
@@ -299,10 +292,10 @@ rc_t btree_impl::_ux_reserve_ghost_core(btree_page_h &leaf, const w_keystr_t &ke
 }
 
 rc_t
-btree_impl::_ux_update(StoreID store, const w_keystr_t &key, const cvec_t &el, const bool undo)
+btree_impl::_ux_update(StoreID store, const w_keystr_t &key, const cvec_t &el)
 {
     while (true) {
-        rc_t rc = _ux_update_core (store, key, el, undo);
+        rc_t rc = _ux_update_core (store, key, el);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -312,13 +305,13 @@ btree_impl::_ux_update(StoreID store, const w_keystr_t &key, const cvec_t &el, c
 }
 
 rc_t
-btree_impl::_ux_update_core(StoreID store, const w_keystr_t &key, const cvec_t &el, const bool undo)
+btree_impl::_ux_update_core(StoreID store, const w_keystr_t &key, const cvec_t &el)
 {
     bool need_lock = g_xct_does_need_lock();
     btree_page_h         leaf;
 
     // find the leaf (potentially) containing the key
-    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
+    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -357,20 +350,13 @@ btree_impl::_ux_update_core(StoreID store, const w_keystr_t &key, const cvec_t &
         if (!leaf.check_space_for_insert_leaf(key, el)) {
             // this page needs split. As this is a rare case,
             // we just call remove and then insert to simplify the code
-            W_DO(_ux_remove(store, key, undo));
+            W_DO(_ux_remove(store, key));
             W_DO(_ux_insert(store, key, el));
             return RCOK;
         }
     }
 
-#ifdef USE_ATOMIC_COMMIT
-    if (!undo) {
-#endif
     W_DO(log_btree_update (leaf, key, old_element, old_element_len, el));
-#ifdef USE_ATOMIC_COMMIT
-    }
-#endif
-
 
     W_DO(leaf.replace_el_nolog(slot, el));
     return RCOK;
@@ -402,18 +388,12 @@ btree_impl::_ux_update_core_tail(StoreID store,
         if (!leaf.check_space_for_insert_leaf(key, el)) {
             // this page needs split. As this is a rare case,
             // we just call remove and then insert to simplify the code
-            W_DO(_ux_remove(store, key, false));  // Not from UNDO
+            W_DO(_ux_remove(store, key));
             W_DO(_ux_insert(store, key, el));
             return RCOK;
         }
     }
 
-#ifdef USE_ATOMIC_COMMIT
-    // Since an undo flag is not available here, this seems to be
-    // the only alternative at the moment. Perhaps this logic should
-    // be moved to the log stubs. (TODO)
-    if (!me()->xct()->rolling_back())
-#endif
     W_DO(log_btree_update (leaf, key, old_element, old_element_len, el));
 
     W_DO(leaf.replace_el_nolog(slot, el));
@@ -423,11 +403,10 @@ btree_impl::_ux_update_core_tail(StoreID store,
 rc_t btree_impl::_ux_overwrite(
         StoreID store,
         const w_keystr_t&                 key,
-        const char *el, smsize_t offset, smsize_t elen,
-        const bool undo)
+        const char *el, smsize_t offset, smsize_t elen)
 {
     while (true) {
-        rc_t rc = _ux_overwrite_core (store, key, el, offset, elen, undo);
+        rc_t rc = _ux_overwrite_core (store, key, el, offset, elen);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -439,13 +418,13 @@ rc_t btree_impl::_ux_overwrite(
 rc_t btree_impl::_ux_overwrite_core(
         StoreID store,
         const w_keystr_t& key,
-        const char *el, smsize_t offset, smsize_t elen, const bool undo)
+        const char *el, smsize_t offset, smsize_t elen)
 {
     // basically same as ux_update
     bool need_lock = g_xct_does_need_lock();
     btree_page_h leaf;
 
-    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
+    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -477,20 +456,17 @@ rc_t btree_impl::_ux_overwrite_core(
         return RC(eRECWONTFIT);
     }
 
-#ifdef USE_ATOMIC_COMMIT
-    if (!undo)
-#endif
     W_DO(log_btree_overwrite (leaf, key, old_element, el, offset, elen));
     leaf.overwrite_el_nolog(slot, offset, el, elen);
     return RCOK;
 }
 
 rc_t
-btree_impl::_ux_remove(StoreID store, const w_keystr_t &key, const bool undo)
+btree_impl::_ux_remove(StoreID store, const w_keystr_t &key)
 {
     INC_TSTAT(bt_remove_cnt);
     while (true) {
-        rc_t rc = _ux_remove_core (store, key, undo);
+        rc_t rc = _ux_remove_core (store, key);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -500,11 +476,8 @@ btree_impl::_ux_remove(StoreID store, const w_keystr_t &key, const bool undo)
 }
 
 rc_t
-btree_impl::_ux_remove_core(StoreID store, const w_keystr_t &key, const bool undo)
+btree_impl::_ux_remove_core(StoreID store, const w_keystr_t &key)
 {
-    // If called from 'remove_as_undo' to undo an insert operation, input parameter 'undo' ==  true.
-    // This could be either transaction rollback or restart undo.
-
     // If the original insert operation was from a page split with full logging, the fence keys
     // were changed during page split, so the record we found would come from the destination
     // page, not the source page.
@@ -520,7 +493,7 @@ btree_impl::_ux_remove_core(StoreID store, const w_keystr_t &key, const bool und
     btree_page_h         leaf;
 
     // find the leaf (potentially) containing the key
-    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
+    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -551,27 +524,14 @@ DBGOUT3( << "&&&& _ux_remove_core - not found");
     // it might be already ghost..
     if (leaf.is_ghost(slot))
     {
-// TODO(Restart)...
-DBGOUT3( << "&&&& _ux_remove_core - already ghost");
-
         return RC(eNOTFOUND);
     }
     else
     {
-// TODO(Restart)...
-DBGOUT3( << "&&&& Log for deletion, key: " << key);
-
-#ifdef USE_ATOMIC_COMMIT
-        if (!undo) {
-#endif
         // log first
         vector<slotid_t> slots;
         slots.push_back(slot);
         W_DO(log_btree_ghost_mark (leaf, slots, false /*is_sys_txn*/));
-
-#ifdef USE_ATOMIC_COMMIT
-        }
-#endif
 
         // then mark it as ghost
         leaf.mark_ghost (slot);
@@ -595,7 +555,7 @@ btree_impl::_ux_undo_ghost_mark(StoreID store, const w_keystr_t &key)
 
     w_assert1(key.is_regular());
     btree_page_h         leaf;
-    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true/*allow retry*/, true /*from undo*/));
+    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true/*allow retry*/));
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
 
@@ -624,9 +584,7 @@ btree_impl::_ux_undo_ghost_mark(StoreID store, const w_keystr_t &key)
 // TODO(Restart)...
 DBGOUT3( << "&&&& btree_impl::_ux_undo_ghost_mark - undo a remove, key: " << key);
 
-#ifndef USE_ATOMIC_COMMIT
     W_DO(log_btree_insert_nonghost(leaf, key, el, false /*is_sys_txn*/));
-#endif
 
     leaf.unmark_ghost (slot);
     return RCOK;
