@@ -314,7 +314,8 @@ void session::interact(std::shared_ptr<session> pThis, HandleKits &kits)
 
 
 HandleKits::HandleKits():
-kitsExecuted(false)
+kitsExecuted(false),
+kitsJustStarted(false)
 {
     kits = new KitsCommand();
     kits->setupOptions();
@@ -331,7 +332,7 @@ void counters(std::vector<std::string> &counters, KitsCommand *kits)
     string varJson, parJson;
     while (ssOut >> varJson) {
         ssOut >> parJson;
-        counters.push_back("\"" + varJson + "\" :  [" + parJson + ", ");
+        counters.push_back("\"" + varJson + "\" :  [0, ");
     }
 
     while(kits->running()) {
@@ -362,8 +363,6 @@ void HandleKits::runKits()
         kits = new KitsCommand();
         kits->setupOptions();
     }
-    kitsExecuted = true;
-
     int argc=9;
     char* argv[9]={"zapps", "kits", "-b", "tpcc", "--duration", "90", "-t", "1", "--load"};
     po::store(po::parse_command_line(argc,argv,kits->getOptions()), vm);
@@ -371,6 +370,10 @@ void HandleKits::runKits()
     kits->setOptionValues(vm);
 
     kits->fork();
+
+    kitsExecuted = true;
+    kitsJustStarted = true;
+
     t1 = new std::thread (counters, std::ref(countersJson), kits);
 };
 
@@ -441,7 +444,14 @@ string HandleKits::getCounters()
 
 string HandleKits::isRunning()
 {
-    if (kits->running())
-        return "{\"isRunning\" : true}";
-    return "{\"isRunning\" : false}";
+    string jsonReply = "{\"isRunning\" : false}";
+
+    if (kits->running()){
+        kitsJustStarted = false;
+        jsonReply =  "{\"isRunning\" : true}";
+    }
+    else if (kitsJustStarted)
+        jsonReply = "{\"isRunning\" : true}";
+
+    return jsonReply;
 };

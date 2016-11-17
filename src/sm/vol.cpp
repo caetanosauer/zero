@@ -511,7 +511,7 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
         bool ignoreRestore)
 {
     DBG(<< "Page read: from " << first_page << " to " << first_page + cnt);
-
+    ADD_TSTAT(vol_reads, cnt);
     #ifdef ZERO_INIT
     /*
      * When a write into the buffer pool of potentially uninitialized
