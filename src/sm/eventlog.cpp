@@ -11,7 +11,7 @@ void sysevent::log(logrec_t::kind_t kind)
     logrec_t* lr = new logrec_t();
     lr->header._type = kind;
     lr->header._cat = 0 | logrec_t::t_status;
-    lr->fill(0, 0);
+    lr->fill(0, 0, 0);
     W_COERCE(smlevel_0::log->insert(*lr, NULL));
     delete lr;
 }
@@ -24,7 +24,7 @@ void sysevent::log_page_read(PageID shpid, uint32_t count)
 
     memcpy(lr->data(), &shpid, sizeof(PageID));
     memcpy(lr->_data + sizeof(PageID), &count, sizeof(uint32_t));
-    lr->fill(0, sizeof(PageID) + sizeof(uint32_t));
+    lr->fill(0, 0, sizeof(PageID) + sizeof(uint32_t));
     W_COERCE(smlevel_0::log->insert(*lr, NULL));
     delete lr;
 }
@@ -47,7 +47,7 @@ void sysevent::log_page_write(PageID shpid, lsn_t lsn, uint32_t count)
     pos += sizeof(uint32_t);
 
 
-    lr->fill(0, pos - lr->_data);
+    lr->fill(0, 0, pos - lr->_data);
     W_COERCE(smlevel_0::log->insert(*lr, NULL));
     delete lr;
 }

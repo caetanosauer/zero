@@ -77,7 +77,7 @@ btrec_t::btrec_t(const btree_page_h& page, slotid_t slot) {
 
 
 class btree_impl;
-class btree_ghost_t;
+template <class T> class btree_ghost_t;
 class btree_ghost_mark_log;
 class btree_ghost_reclaim_log;
 
@@ -165,7 +165,7 @@ class btree_ghost_reclaim_log;
  */
 class btree_page_h : public fixable_page_h {
     friend class btree_impl;
-    friend class btree_ghost_t;
+    template <class T> friend class btree_ghost_t;
     friend class btree_ghost_mark_log;
     friend class btree_ghost_reclaim_log;
     template <class T> friend class page_img_format_t;

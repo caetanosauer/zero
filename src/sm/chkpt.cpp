@@ -636,7 +636,7 @@ void chkpt_t::acquire_lock(logrec_t& r)
             break;
         case logrec_t::t_btree_ghost_mark:
             {
-                btree_ghost_t* dp = (btree_ghost_t*) r.data();
+                btree_ghost_t<btree_page_h*>* dp = (btree_ghost_t<btree_page_h*>*) r.data();
                 for (size_t i = 0; i < dp->cnt; ++i) {
                     w_keystr_t key (dp->get_key(i));
 

@@ -57,7 +57,7 @@ struct btree_insert_t {
     bool        sys_txn;   // True if the insertion was from a page rebalance full logging operation
     char        data[logrec_t::max_data_sz - sizeof(PageID) - 2*sizeof(int16_t) - sizeof(bool)];
 
-    btree_insert_t(const btree_page_h& page, const w_keystr_t& key,
+    btree_insert_t(PageID root, const w_keystr_t& key,
                    const cvec_t& el, bool is_sys_txn);
     int size()        { return sizeof(PageID) + 2*sizeof(int16_t) + klen + elen + sizeof(bool); }
 };
@@ -69,9 +69,9 @@ struct btree_update_t {
     uint16_t    _new_elen;
     char        _data[logrec_t::max_data_sz - sizeof(PageID) - 3*sizeof(int16_t)];
 
-    btree_update_t(const btree_page_h& page, const w_keystr_t& key,
+    btree_update_t(PageID root_pid, const w_keystr_t& key,
                    const char* old_el, int old_elen, const cvec_t& new_el) {
-        _root_shpid = page.btree_root();
+        _root_shpid = root_pid;
         _klen       = key.get_length_as_keystr();
         _old_elen   = old_elen;
         _new_elen   = new_el.size();
@@ -102,6 +102,7 @@ struct btree_overwrite_t {
     int size()        { return sizeof(PageID) + 3*sizeof(int16_t) + _klen + _elen * 2; }
 };
 
+template <class PagePtr>
 struct btree_ghost_t {
     PageID       root_shpid;
     uint16_t      sys_txn:1,      // 1 if the insertion was from a page rebalance full logging operation
@@ -115,7 +116,7 @@ struct btree_ghost_t {
     char          slot_data[logrec_t::max_data_sz - sizeof(PageID)
                         - sizeof(uint16_t) * 2 - sizeof(size_t)];
 
-    btree_ghost_t(const btree_page_h& p, const vector<slotid_t>& slots, const bool is_sys_txn);
+    btree_ghost_t(const PagePtr p, const vector<slotid_t>& slots, const bool is_sys_txn);
     w_keystr_t get_key (size_t i) const;
     int size() { return sizeof(PageID) + sizeof(uint16_t) * 2 + sizeof(size_t) + total_data_size; }
 };
@@ -134,8 +135,9 @@ struct btree_ghost_reserve_t {
  * A \b multi-page \b SSX log record for \b btree_norec_alloc.
  * This log is totally \b self-contained, so no WOD assumed.
  */
+template <class PagePtr>
 struct btree_norec_alloc_t : public multi_page_log_t {
-    btree_norec_alloc_t(const btree_page_h &p,
+    btree_norec_alloc_t(const PagePtr p,
         PageID new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high);
     PageID     _root_pid, _foster_pid;       // +4+4 => 8
     lsn_t       _foster_emlsn;                // +8   => 16

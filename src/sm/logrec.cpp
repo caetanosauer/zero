@@ -210,24 +210,17 @@ void logrec_t::redo(PagePtr page)
     DBG( << "Redo  log rec: " << *this
         << " size: " << header._len << " xid_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xid_prev()) );
 
-    // Could be either user transaction or compensation operatio,
-    // not system transaction because currently all system transactions
-    // are single log
-
-    // This is used by both Single-Page-Recovery and serial recovery REDO phase
-
-    // Not all REDO operations have associated page
-    // If there is a page, mark the page for recovery access
-    // this is for page access validation purpose to allow recovery
-    // operation to by-pass the page concurrent access check
-
-
     switch (header._type)  {
 #include "redo_gen.cpp"
     }
 
     page->update_page_lsn(lsn());
     page->set_img_page_lsn(lsn());
+}
+
+void logrec_t::redo()
+{
+    redo<btree_page_h*>(nullptr);
 }
 
 static __thread logrec_t::kind_t undoing_context = logrec_t::t_max_logrec; // for accounting TODO REMOVE
@@ -301,7 +294,7 @@ logrec_t::corrupt()
  *********************************************************************/
 void xct_freeing_space_log::construct()
 {
-    fill((PageID) 0, 0);
+    fill(0);
 }
 
 
@@ -326,7 +319,7 @@ xct_list_t::xct_list_t(
 
 void xct_end_group_log::construct(const xct_t *list[], int listlen)
 {
-    fill((PageID) 0, (new (_data) xct_list_t(list, listlen))->size());
+    fill((new (_data) xct_list_t(list, listlen))->size());
 }
 /*********************************************************************
  *
@@ -338,13 +331,13 @@ void xct_end_group_log::construct(const xct_t *list[], int listlen)
  *********************************************************************/
 void xct_end_log::construct()
 {
-    fill((PageID) 0, 0);
+    fill(0);
 }
 
 // We use a different log record type here only for debugging purposes
 void xct_abort_log::construct()
 {
-    fill((PageID) 0, 0);
+    fill(0);
 }
 
 /*********************************************************************
@@ -359,7 +352,7 @@ void comment_log::construct(const char *msg)
     w_assert1(strlen(msg) < sizeof(_data));
     memcpy(_data, msg, strlen(msg)+1);
     DBG(<<"comment_log: L: " << (const char *)_data);
-    fill((PageID) 0, strlen(msg)+1);
+    fill(strlen(msg)+1);
 }
 
 template <class PagePtr>
@@ -388,7 +381,7 @@ void comment_log::undo(PagePtr page)
  *********************************************************************/
 void compensate_log::construct(const lsn_t& rec_lsn)
 {
-    fill((PageID) 0, 0);
+    fill(0);
     set_clr(rec_lsn);
 }
 
@@ -402,7 +395,7 @@ void compensate_log::construct(const lsn_t& rec_lsn)
  *********************************************************************/
 void skip_log::construct()
 {
-    fill((PageID) 0, 0);
+    fill(0);
 }
 
 /*********************************************************************
@@ -415,7 +408,7 @@ void skip_log::construct()
 void chkpt_begin_log::construct(const lsn_t &lastMountLSN)
 {
     new (_data) lsn_t(lastMountLSN);
-    fill((PageID) 0, sizeof(lsn_t));
+    fill(sizeof(lsn_t));
 }
 
 template <class PagePtr>
@@ -423,12 +416,12 @@ void page_evict_log::construct (const PagePtr p,
                                 general_recordid_t child_slot, lsn_t child_lsn)
 {
     new (data_ssx()) page_evict_t(child_lsn, child_slot);
-    fill(p, sizeof(page_evict_t));
+    fill(p->pid(), p->store(), p->tag(), sizeof(page_evict_t));
 }
 
 template <class PagePtr>
 void page_evict_log::redo(PagePtr page) {
-    borrowed_btree_page_h bp(*page);
+    borrowed_btree_page_h bp(page);
     page_evict_t *dp = (page_evict_t*) data_ssx();
     bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
 }
@@ -454,13 +447,13 @@ void chkpt_end_log::construct(const lsn_t& lsn, const lsn_t& min_rec_lsn,
     l++; //grot
     *l = min_txn_lsn;
 
-    fill((PageID) 0, (3 * sizeof(lsn_t)) + (3 * sizeof(int)));
+    fill((3 * sizeof(lsn_t)) + (3 * sizeof(int)));
 }
 
 void xct_latency_dump_log::construct(unsigned long nsec)
 {
     *((unsigned long*) _data) = nsec;
-    fill((PageID) 0, sizeof(unsigned long));
+    fill(sizeof(unsigned long));
 }
 
 /*********************************************************************
@@ -495,7 +488,7 @@ void chkpt_bf_tab_log::construct(
     const lsn_t*         rec_lsn,// I-  rec_lsn[i] is recovery lsn (oldest) of pids[i]
     const lsn_t*         page_lsn)// I-  page_lsn[i] is page lsn (latest) of pids[i]
 {
-    fill((PageID) 0, (new (_data) chkpt_bf_tab_t(cnt, pid, rec_lsn, page_lsn))->size());
+    fill((new (_data) chkpt_bf_tab_t(cnt, pid, rec_lsn, page_lsn))->size());
 }
 
 
@@ -535,7 +528,7 @@ void chkpt_xct_tab_log::construct(
     const lsn_t*                         last_lsn,
     const lsn_t*                         first_lsn)
 {
-    fill((PageID) 0, (new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
+    fill((new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
                                          last_lsn, first_lsn))->size());
 }
 
@@ -568,7 +561,7 @@ void chkpt_xct_lock_log::construct(
     const okvl_mode*                    lock_mode,
     const uint32_t*                     lock_hash)
 {
-    fill((PageID) 0, (new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
+    fill((new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
                                          lock_hash))->size());
 }
 
@@ -603,7 +596,7 @@ void chkpt_backup_tab_log::construct(int cnt,
                                            const string* paths)
 {
     // CS TODO
-    fill(0, (new (_data) chkpt_backup_tab_t(cnt, paths))->size());
+    fill((new (_data) chkpt_backup_tab_t(cnt, paths))->size());
 }
 
 template <class PagePtr>
@@ -626,7 +619,7 @@ void chkpt_restore_tab_log::construct()
         new (_data) chkpt_restore_tab_t();
 
     smlevel_0::vol->chkpt_restore_progress(tab);
-    fill((PageID) 0, tab->length());
+    fill(tab->length());
 }
 
 template <class PagePtr>
@@ -667,7 +660,7 @@ void add_backup_log::construct(const string& path, lsn_t backupLSN)
     *((lsn_t*) data_ssx()) = backupLSN;
     w_assert0(path.length() < smlevel_0::max_devname);
     memcpy(data_ssx() + sizeof(lsn_t), path.data(), path.length());
-    fill((PageID) 0, sizeof(lsn_t) + path.length());
+    fill(sizeof(lsn_t) + path.length());
 }
 
 template <class PagePtr>
@@ -680,22 +673,22 @@ void add_backup_log::redo(PagePtr)
 
 void undo_done_log::construct()
 {
-    fill((PageID) 0, 0);
+    fill(0);
 }
 
 void redo_done_log::construct()
 {
-    fill((PageID) 0, 0);
+    fill(0);
 }
 
 void loganalysis_end_log::construct()
 {
-    fill((PageID) 0, 0);
+    fill(0);
 }
 
 void loganalysis_begin_log::construct()
 {
-    fill((PageID) 0, 0);
+    fill(0);
 }
 
 void restore_begin_log::construct()
@@ -703,9 +696,9 @@ void restore_begin_log::construct()
 #ifdef TIMED_LOG_RECORDS
     unsigned long tstamp = sysevent_timer::timestamp();
     memcpy(_data, &tstamp, sizeof(unsigned long));
-    fill((PageID) 0, sizeof(unsigned long));
+    fill(sizeof(unsigned long));
 #else
-    fill((PageID) 0, 0);
+    fill(0);
 #endif
 }
 
@@ -728,9 +721,9 @@ void restore_end_log::construct()
 #ifdef TIMED_LOG_RECORDS
     unsigned long tstamp = sysevent_timer::timestamp();
     memcpy(_data, &tstamp, sizeof(unsigned long));
-    fill((PageID) 0, sizeof(unsigned long));
+    fill(sizeof(unsigned long));
 #else
-    fill((PageID) 0, 0);
+    fill(0);
 #endif
 }
 
@@ -761,7 +754,7 @@ void restore_segment_log::construct(uint32_t segment)
     pos += sizeof(unsigned long);
 #endif
 
-    fill((PageID) 0, pos - data_ssx());
+    fill(pos - data_ssx());
 }
 
 template <class PagePtr>
@@ -782,7 +775,7 @@ void alloc_page_log::construct(PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
     PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
-    fill(alloc_pid, sizeof(PageID));
+    fill(alloc_pid, 0, 0, sizeof(PageID));
 }
 
 template <class PagePtr>
@@ -799,7 +792,7 @@ void dealloc_page_log::construct(PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
     PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
-    fill(alloc_pid, sizeof(PageID));
+    fill(alloc_pid, 0, 0, sizeof(PageID));
 }
 
 template <class PagePtr>
@@ -1215,3 +1208,21 @@ __thread double            logrec_accounting_impl_t::ratio_bf       [t_max_logre
 __thread double            logrec_accounting_impl_t::ratio_bf_cxt   [t_max_logrec];
 
 #endif
+
+
+template void logrec_t::template redo<btree_page_h*>(btree_page_h*);
+template void logrec_t::template redo<fixable_page_h*>(fixable_page_h*);
+template void logrec_t::template undo<fixable_page_h*>(fixable_page_h*);
+
+
+
+template class page_img_format_t<btree_page_h*>;
+
+template void page_evict_log::template construct<btree_page_h*>(btree_page_h* p,
+                                general_recordid_t child_slot, lsn_t child_lsn);
+
+template void page_img_format_log::template construct<btree_page_h*>(btree_page_h*);
+
+template void page_set_to_be_deleted_log::template construct<btree_page_h*>(btree_page_h*);
+
+template void page_set_to_be_deleted_log::template construct<fixable_page_h*>(fixable_page_h*);

@@ -234,7 +234,7 @@ restart_m::redo_log_pass()
                         if (xd->state() == xct_t::xct_active)
                         {
                             DBGOUT3(<<"redo - no page, xct is " << r.tid());
-                            r.redo(0);
+                            r.redo();
 
                             // No page involved, no need to update dirty_count
                             redone = true;
@@ -258,7 +258,7 @@ restart_m::redo_log_pass()
                                 r.type() == logrec_t::t_chkpt_backup_tab ||
                                 r.type() == logrec_t::t_add_backup);
 
-                        r.redo(0);
+                        r.redo();
                     }
                     else
                     {
@@ -271,7 +271,7 @@ restart_m::redo_log_pass()
                             DBGOUT3(<<"redo - no page, ssx");
                             sys_xct_section_t sxs (true); // single log!
                             w_assert1(!sxs.check_error_on_start().is_error());
-                            r.redo(0);
+                            r.redo();
                             redone = true;
                             rc_t sxs_rc = sxs.end_sys_xct (RCOK);
                             w_assert1(!sxs_rc.is_error());

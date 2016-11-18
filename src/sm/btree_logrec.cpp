@@ -12,13 +12,13 @@
 #include "bf_tree_cb.h"
 
 btree_insert_t::btree_insert_t(
-    const btree_page_h&   _page,
+    PageID root_pid,
     const w_keystr_t&     key,
     const cvec_t&         el,
     const bool            is_sys_txn)
     : klen(key.get_length_as_keystr()), elen(el.size())
 {
-    root_shpid = _page.root();
+    root_shpid = root_pid;
     w_assert1((size_t)(klen + elen) < sizeof(data));
     key.serialize_as_keystr(data);
     el.copy_to(data + klen);
@@ -137,9 +137,11 @@ btree_ghost_reserve_t::btree_ghost_reserve_t(const w_keystr_t& key, int elem_len
     key.serialize_as_keystr(data);
 }
 
-btree_ghost_t::btree_ghost_t(const btree_page_h& p, const vector<slotid_t>& slots, const bool is_sys_txn)
+template <class PagePtr>
+btree_ghost_t<PagePtr>::btree_ghost_t
+(const PagePtr p, const vector<slotid_t>& slots, const bool is_sys_txn)
 {
-    root_shpid = p.root();
+    root_shpid = p->root();
     cnt = slots.size();
     if (true == is_sys_txn)
         sys_txn = 1;
@@ -150,20 +152,20 @@ btree_ghost_t::btree_ghost_t(const btree_page_h& p, const vector<slotid_t>& slot
 
     // the first data is prefix
     {
-        uint16_t prefix_len = p.get_prefix_length();
+        uint16_t prefix_len = p->get_prefix_length();
         prefix_offset = (current - slot_data);
         // *reinterpret_cast<uint16_t*>(current) = prefix_len; this causes Bus Error on solaris! so, instead:
         ::memcpy(current, &prefix_len, sizeof(uint16_t));
         if (prefix_len > 0) {
-            ::memcpy(current + sizeof(uint16_t), p.get_prefix_key(), prefix_len);
+            ::memcpy(current + sizeof(uint16_t), p->get_prefix_key(), prefix_len);
         }
         current += sizeof(uint16_t) + prefix_len;
     }
 
      for (size_t i = 0; i < slots.size(); ++i) {
         size_t len;
-        w_assert3(p.is_leaf()); // ghost exists only in leaf
-        const char* key = p._leaf_key_noprefix(slots[i], len);
+        w_assert3(p->is_leaf()); // ghost exists only in leaf
+        const char* key = p->_leaf_key_noprefix(slots[i], len);
         offsets[i] = (current - slot_data);
         // *reinterpret_cast<uint16_t*>(current) = len; this causes Bus Error on solaris! so, instead:
         uint16_t len_u16 = (uint16_t) len;
@@ -174,7 +176,9 @@ btree_ghost_t::btree_ghost_t(const btree_page_h& p, const vector<slotid_t>& slot
     total_data_size = current - slot_data;
     w_assert0(logrec_t::max_data_sz >= sizeof(PageID) + sizeof(uint16_t) * 2  + sizeof(size_t) + total_data_size);
 }
-w_keystr_t btree_ghost_t::get_key (size_t i) const {
+
+template <class T>
+w_keystr_t btree_ghost_t<T>::get_key (size_t i) const {
     w_keystr_t result;
     uint16_t prefix_len;
     // = *reinterpret_cast<const uint16_t*>(slot_data + prefix_offset); this causes Bus Error on solaris
@@ -197,19 +201,20 @@ w_keystr_t btree_ghost_t::get_key (size_t i) const {
  * A \b multi-page \b SSX log record for \b btree_norec_alloc.
  * This log is totally \b self-contained, so no WOD assumed.
  */
-btree_norec_alloc_t::btree_norec_alloc_t(const btree_page_h& p,
+template <class Ptr>
+btree_norec_alloc_t<Ptr>::btree_norec_alloc_t(const Ptr p,
         PageID new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high)
     : multi_page_log_t(new_page_id) {
     w_assert1 (smthread_t::xct()->is_single_log_sys_xct());
-    w_assert1 (new_page_id != p.btree_root());
-    w_assert1 (p.latch_mode() != LATCH_NL);
+    w_assert1 (new_page_id != p->btree_root());
+    w_assert1 (p->latch_mode() != LATCH_NL);
 
-    _root_pid       = p.btree_root();
-    _foster_pid     = p.get_foster();
-    _foster_emlsn   = p.get_foster_emlsn();
+    _root_pid       = p->btree_root();
+    _foster_pid     = p->get_foster();
+    _foster_emlsn   = p->get_foster_emlsn();
     _fence_len      = (uint16_t) fence.get_length_as_keystr();
     _chain_high_len = (uint16_t) chain_fence_high.get_length_as_keystr();
-    _btree_level    = (int16_t) p.level();
+    _btree_level    = (int16_t) p->level();
     w_assert1(size() < logrec_t::max_data_sz);
 
     fence.serialize_as_keystr(_data);
@@ -281,7 +286,7 @@ template <class PagePtr>
 void btree_insert_nonghost_log::construct(
     const PagePtr page, const w_keystr_t &key, const cvec_t &el, const bool is_sys_txn) {
     fill(page,
-        (new (_data) btree_insert_t(page, key, el, is_sys_txn))->size());
+        (new (_data) btree_insert_t(page->root(), key, el, is_sys_txn))->size());
 }
 
 template <class PagePtr>
@@ -314,7 +319,7 @@ void btree_update_log::construct(
     const char* old_el, int old_elen, const cvec_t& new_el)
 {
     fill(page,
-         (new (_data) btree_update_t(page, key, old_el, old_elen, new_el))->size());
+         (new (_data) btree_update_t(page->root(), key, old_el, old_elen, new_el))->size());
 }
 
 template <class PagePtr>
@@ -428,14 +433,14 @@ void btree_ghost_mark_log::construct(const PagePtr p,
                                            const vector<slotid_t>& slots,
                                            const bool is_sys_txn)
 {
-    fill(p, (new (data()) btree_ghost_t(p, slots, is_sys_txn))->size());
+    fill(p, (new (data()) btree_ghost_t<PagePtr>(p, slots, is_sys_txn))->size());
 }
 
 template <class PagePtr>
 void btree_ghost_mark_log::undo(PagePtr)
 {
     // UNDO of ghost marking is to get the record back to regular state
-    btree_ghost_t* dp = (btree_ghost_t*) data();
+    btree_ghost_t<PagePtr>* dp = (btree_ghost_t<PagePtr>*) data();
 
     if (1 == dp->sys_txn)
     {
@@ -466,7 +471,7 @@ void btree_ghost_mark_log::redo(PagePtr page)
     borrowed_btree_page_h bp(page);
 
     w_assert1(bp.is_leaf());
-    btree_ghost_t* dp = (btree_ghost_t*) data();
+    btree_ghost_t<PagePtr>* dp = (btree_ghost_t<PagePtr>*) data();
 
     for (size_t i = 0; i < dp->cnt; ++i) {
         w_keystr_t key (dp->get_key(i));
@@ -506,7 +511,7 @@ void btree_ghost_reclaim_log::construct(const PagePtr p,
                                                  const vector<slotid_t>& slots)
 {
     // ghost reclaim is single-log system transaction. so, use data_ssx()
-    fill(p, (new (data_ssx()) btree_ghost_t(p, slots, false))->size());
+    fill(p, (new (data_ssx()) btree_ghost_t<PagePtr>(p, slots, false))->size());
     w_assert0(is_single_sys_xct());
 }
 
@@ -548,7 +553,7 @@ void btree_ghost_reserve_log::redo(PagePtr page) {
 template <class PagePtr>
 void btree_norec_alloc_log::construct(const PagePtr p, const PagePtr,
     PageID new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high) {
-    fill(p, (new (data_ssx()) btree_norec_alloc_t(*p,
+    fill(p, (new (data_ssx()) btree_norec_alloc_t<PagePtr>(p,
         new_page_id, fence, chain_fence_high))->size());
 }
 
@@ -556,7 +561,8 @@ template <class PagePtr>
 void btree_norec_alloc_log::redo(PagePtr p) {
     w_assert1(is_single_sys_xct());
     borrowed_btree_page_h bp(p);
-    btree_norec_alloc_t *dp = reinterpret_cast<btree_norec_alloc_t*>(data_ssx());
+    btree_norec_alloc_t<PagePtr> *dp =
+        reinterpret_cast<btree_norec_alloc_t<PagePtr>*>(data_ssx());
 
     const lsn_t &new_lsn = lsn_ck();
     w_keystr_t fence, chain_high;
@@ -599,7 +605,7 @@ void btree_foster_merge_log::construct(const PagePtr p, // destination
                                          // self contained data buffer, meaning each reocrd is in the format:
                                          // ghost flag + key length + key (with sign byte) + child + ghost flag + data length + data
 
-    fill(p, (new (data_ssx()) btree_foster_merge_t(p2.pid(),
+    fill(p, (new (data_ssx()) btree_foster_merge_t(p2->pid(),
         high, chain_high, foster_pid0, foster_pid0_emlsn, prefix_len, move_count, record_data_len, record_data))->size());
 }
 
@@ -734,7 +740,7 @@ void btree_foster_rebalance_log::construct(
     // p - destination
     // p2 - source
 
-    fill(p, (new (data_ssx()) btree_foster_rebalance_t(p2.pid(),
+    fill(p, (new (data_ssx()) btree_foster_rebalance_t(p2->pid(),
         fence, new_pid0, new_pid0_emlsn, high, chain_high, prefix_len,
         move_count, record_data_len, record_data))->size());
 }
@@ -1033,7 +1039,7 @@ template <class PagePtr>
 void btree_foster_rebalance_norec_log::construct(
     const PagePtr p, const PagePtr, const w_keystr_t& fence) {
     fill(p, (new (data_ssx()) btree_foster_rebalance_norec_t(
-        p, fence))->size());
+        *p, fence))->size());
 }
 
 template <class PagePtr>
@@ -1068,7 +1074,7 @@ template <class PagePtr>
 void btree_foster_adopt_log::construct(const PagePtr p, const PagePtr p2,
     PageID new_child_pid, lsn_t new_child_emlsn, const w_keystr_t& new_child_key) {
     fill(p, (new (data_ssx()) btree_foster_adopt_t(
-        p2.pid(), new_child_pid, new_child_emlsn, new_child_key))->size());
+        p2->pid(), new_child_pid, new_child_emlsn, new_child_key))->size());
 }
 
 template <class PagePtr>
@@ -1099,8 +1105,8 @@ void btree_foster_deadopt_log::construct(
     const PagePtr p, const PagePtr p2,
     PageID deadopted_pid, lsn_t deadopted_emlsn, int32_t foster_slot,
     const w_keystr_t &low, const w_keystr_t &high) {
-    w_assert1(p.is_node());
-    fill(p, (new (data_ssx()) btree_foster_deadopt_t(p2.pid(),
+    w_assert1(p->is_node());
+    fill(p, (new (data_ssx()) btree_foster_deadopt_t(p2->pid(),
         deadopted_pid, deadopted_emlsn, foster_slot, low, high))->size());
 }
 
@@ -1137,8 +1143,8 @@ void btree_split_log::construct(
 )
 {
     btree_bulk_delete_t* bulk =
-        new (data_ssx()) btree_bulk_delete_t(parent_p.pid(),
-                    child_p.pid(), move_count,
+        new (data_ssx()) btree_bulk_delete_t(parent_p->pid(),
+                    child_p->pid(), move_count,
                     new_high_fence, new_chain);
     page_img_format_t<PagePtr>* format = new (data_ssx() + bulk->size())
         page_img_format_t<PagePtr>(child_p);
@@ -1224,3 +1230,122 @@ void btree_compress_page_log::redo(PagePtr p)
     borrowed_btree_page_h bp(p);
     bp.compress(low, high, chain, true /* redo */);
 }
+
+template void btree_norec_alloc_log::template construct<btree_page_h*>(
+        btree_page_h*, btree_page_h*, PageID, const w_keystr_t&, const w_keystr_t&);
+
+template void btree_split_log::template construct<btree_page_h*>(
+        btree_page_h* child_p,
+        btree_page_h* parent_p,
+        uint16_t move_count,
+        const w_keystr_t& new_high_fence,
+        const w_keystr_t& new_chain
+);
+
+template void btree_foster_adopt_log::template construct<btree_page_h*>(
+        btree_page_h* p, btree_page_h* p2,
+    PageID new_child_pid, lsn_t new_child_emlsn, const w_keystr_t& new_child_key);
+
+template void btree_insert_nonghost_log::template construct<btree_page_h*>(
+    btree_page_h* page, const w_keystr_t &key, const cvec_t &el, const bool is_sys_txn);
+
+template struct btree_ghost_t<btree_page_h*>;
+
+template void btree_ghost_mark_log::template construct<btree_page_h*>(
+        btree_page_h*, const vector<slotid_t>& slots, const bool is_sys_txn);
+
+template void btree_insert_log::template construct<btree_page_h*>(
+    btree_page_h* page,
+    const w_keystr_t&   key,
+    const cvec_t&       el,
+    const bool          is_sys_txn);
+
+template void btree_ghost_reclaim_log::template construct<btree_page_h*>(
+        btree_page_h* p, const vector<slotid_t>& slots);
+
+template void btree_compress_page_log::template construct<btree_page_h*>(
+        btree_page_h* page,
+        const w_keystr_t& low,
+        const w_keystr_t& high,
+        const w_keystr_t& chain);
+
+template void btree_ghost_reserve_log::template construct<btree_page_h*>
+    (btree_page_h* p, const w_keystr_t& key, int element_length);
+
+template void btree_overwrite_log::template construct<btree_page_h*>
+    (btree_page_h* page, const w_keystr_t& key,
+    const char* old_el, const char *new_el, size_t offset, size_t elen) ;
+
+template void btree_update_log::template construct<btree_page_h*>(
+    btree_page_h*   page,
+    const w_keystr_t&     key,
+    const char* old_el, int old_elen, const cvec_t& new_el);
+
+template void btree_foster_deadopt_log::template construct<btree_page_h*>(
+    btree_page_h* p, btree_page_h* p2,
+    PageID deadopted_pid, lsn_t deadopted_emlsn, int32_t foster_slot,
+    const w_keystr_t &low, const w_keystr_t &high);
+
+template void btree_foster_rebalance_log::template construct<btree_page_h*>(
+    btree_page_h* p,               // data destination (foster child page)
+    btree_page_h* p2,              // data source (foster parent page)
+    const w_keystr_t& fence,             // low fence of destination, also high (foster) of source
+    PageID new_pid0, lsn_t new_pid0_emlsn,
+    const w_keystr_t& high,              // high (foster) of destination
+    const w_keystr_t& chain_high,        // high fence of all foster nodes
+    const int16_t prefix_len,            // source page prefix length
+    const int32_t move_count,            // number of records to be moved
+    const smsize_t record_data_len,      // the data length in record_data
+    const cvec_t& record_data);
+
+template void btree_foster_rebalance_norec_log::template construct<btree_page_h*>(
+    btree_page_h* p, btree_page_h*, const w_keystr_t& fence);
+
+template void btree_foster_merge_log::construct(btree_page_h* p, // destination
+    btree_page_h* p2,              // source
+    const w_keystr_t& high,              // high (foster) of destination
+    const w_keystr_t& chain_high,        // high fence of all foster nodes
+    PageID foster_pid0,                 // foster page id in destination page
+    lsn_t foster_pid0_emlsn,             // foster emlsn in destination page
+    const int16_t prefix_len,            // source page prefix length
+    const int32_t move_count,            // number of records to be moved
+    const smsize_t record_data_len,      // the data length in record_data
+    const cvec_t& record_data);
+
+template void btree_insert_log::template undo<fixable_page_h*>(fixable_page_h*);
+template void btree_insert_nonghost_log::template undo<fixable_page_h*>(fixable_page_h*);
+template void btree_update_log::template undo<fixable_page_h*>(fixable_page_h*);
+template void btree_overwrite_log::template undo<fixable_page_h*>(fixable_page_h*);
+template void btree_ghost_mark_log::template undo<fixable_page_h*>(fixable_page_h*);
+
+template void btree_norec_alloc_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_insert_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_insert_nonghost_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_update_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_overwrite_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_ghost_mark_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_ghost_reclaim_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_ghost_reserve_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_foster_adopt_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_foster_deadopt_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_foster_merge_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_foster_rebalance_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_foster_rebalance_norec_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_split_log::template redo<btree_page_h*>(btree_page_h*);
+template void btree_compress_page_log::template redo<btree_page_h*>(btree_page_h*);
+
+template void btree_norec_alloc_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_insert_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_insert_nonghost_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_update_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_overwrite_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_ghost_mark_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_ghost_reclaim_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_ghost_reserve_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_foster_adopt_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_foster_deadopt_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_foster_merge_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_foster_rebalance_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_foster_rebalance_norec_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_split_log::template redo<fixable_page_h*>(fixable_page_h*);
+template void btree_compress_page_log::template redo<fixable_page_h*>(fixable_page_h*);

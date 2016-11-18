@@ -228,17 +228,25 @@ public:
     template <class PagePtr>
     void             redo(PagePtr);
 
+    void redo();
+
     template <class PagePtr>
     void             undo(PagePtr);
+
+    template <class PagePtr>
+    void fill(const PagePtr p, smsize_t length)
+    {
+        fill(p->pid(), p->store(), p->tag(), length);
+    }
 
     void fill(PageID pid, uint16_t tag, smsize_t length)
     {
         fill(pid, 0, tag, length);
     }
 
-    void fill(PageID pid, smsize_t length)
+    void fill(smsize_t length)
     {
-        fill(pid, 0, 0, length);
+        fill(0, 0, 0, length);
     }
 
     enum {
