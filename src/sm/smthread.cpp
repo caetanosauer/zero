@@ -437,11 +437,7 @@ smthread_t::detach_xct(xct_t* x)
         W_FATAL(eNOTRANS);
     }
 
-    // descends to xct_impl::detach_thread()
-    // which grabs the 1thread mutex, calls no_xct, releases the mutex.
-    x->detach_thread();
     no_xct(x);
-
     // pop the outmost tcb_t after the above which cleans up some property of tcb_t
     tcb_t *outmost = tcb_ptr();
     tcb_ptr() = outmost->_outer;

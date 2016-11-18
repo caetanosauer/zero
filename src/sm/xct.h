@@ -214,13 +214,6 @@ public:
         /** RAW-style lock manager's shadow transaction object. Garbage collected. */
         RawXct*                _raw_lock_xct;
 
-        // Count of number of threads are doing update operations.
-        // Used by start_crit and stop_crit.
-        lintel::Atomic<int> _updating_operations;
-
-        // to be manipulated only by smthread funcs
-        lintel::Atomic<int> _threads_attached;
-
         state_t                   _state;
         bool                      _read_only;
 
@@ -348,7 +341,6 @@ public:
     void                        release_anchor(bool compensate
                                    ADD_LOG_COMMENT_SIG
                                    );
-    int                         compensated_op_depth() const ;
 
     void                        compensate(const lsn_t&,
                                           bool undoable
@@ -385,15 +377,6 @@ protected:
     // doesn't know about the structures
     // and we have changed these to be a per-thread structures.
     static lockid_t*            new_lock_hierarchy();
-    void                        attach_thread();
-    void                        detach_thread();
-
-public:
-    int                          num_threads();
-    rc_t                         check_one_thread_attached() const;
-    int                          attach_update_thread();
-    void                         detach_update_thread();
-    int                          update_threads() const;
 
 public: // not quite public thing.. but convenient for experiments
     xct_lock_info_t*             lock_info() const;
@@ -928,7 +911,6 @@ xct_t::state() const
 class xct_auto_abort_t : public smlevel_0 {
 public:
     xct_auto_abort_t() : _xct(new xct_t()) {
-        (void)  _xct->attach_update_thread();
     }
     ~xct_auto_abort_t() {
         switch(_xct->state()) {
@@ -944,7 +926,6 @@ public:
             cerr << "unexpected xct state: " << _xct->state() << endl;
             W_FATAL(eINTERNAL);
         }
-        (void)  _xct->detach_update_thread();
         delete _xct;
     }
     rc_t commit() {

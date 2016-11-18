@@ -251,8 +251,6 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, int timeout)
     _lock_info(agent_lock_info->take()),
     _lil_lock_info(agent_lil_lock_info->take()),
     _raw_lock_xct(NULL),
-    _updating_operations(0),
-    _threads_attached(0),
     _state(s),
     _read_only(false),
     _xct_ended(0), // for assertions
@@ -406,7 +404,6 @@ xct_t::~xct_t()
         w_assert1(is_sys_xct() || smthread_t::xct() == 0);
     }
 
-    w_assert1(one_thread_attached());
     // clean up what's stored in the thread
     smthread_t::no_xct(this);
 
@@ -466,7 +463,6 @@ xct_t::cleanup(bool /*dispose_prepared*/)
             switch(xd->state()) {
             case xct_active: {
                                  smthread_t::attach_xct(xd);
-                    int num = xd->attach_update_thread();
                     /*
                      *  We usually want to shutdown cleanly. For debugging
                      *  purposes, it is sometimes desirable to simply quit.
@@ -475,7 +471,6 @@ xct_t::cleanup(bool /*dispose_prepared*/)
                      *  of a tx at this point, it's going to run into trouble.
                      */
                     if (shutdown_clean) {
-                        w_assert0(num==1);
                         W_COERCE( xd->abort() );
                     } else {
                         W_COERCE( xd->dispose() );
@@ -594,33 +589,6 @@ xct_t::abort(bool save_stats_structure /* = false */)
     return _abort();
 }
 
-int
-xct_t::num_threads()
-{
-    return _core->_threads_attached;
-}
-
-#if CHECK_NESTING_VARIABLES
-
-
-int
-xct_t::compensated_op_depth() const
-{
-    return _in_compensated_op;
-}
-
-int
-check_compensated_op_nesting::compensated_op_depth(xct_t* xd, int dflt)
-{
-    // all bets are off if there's another thread attached to this xct.
-    // return the default, which will allow the asserts to pass
-    if(xd->num_threads() > 1) return dflt;
-    return xd->compensated_op_depth();
-}
-#endif
-
-
-
 void
 xct_t::force_nonblocking()
 {
@@ -630,7 +598,6 @@ xct_t::force_nonblocking()
 rc_t
 xct_t::commit(bool lazy,lsn_t* plastlsn)
 {
-    // w_assert9(one_thread_attached());
     // removed because a checkpoint could
     // be going on right now.... see comments
     // in log_prepared and chkpt.cpp
@@ -660,7 +627,6 @@ xct_t::group_commit(const xct_t *list[], int listlen)
 rc_t
 xct_t::chain(bool lazy)
 {
-    w_assert9(one_thread_attached());
     return _commit(t_chain | (lazy ? t_lazy : t_chain));
 }
 
@@ -743,7 +709,7 @@ operator<<(ostream& o, const xct_t& x)
 {
     o << "tid="<< x.tid();
 
-    o << "\n" << " state=" << x.state() << " num_threads=" << x._core->_threads_attached << "\n" << "   ";
+    o << "\n" << " state=" << x.state() << "\n" << "   ";
 
     // o << " defaultTimeout=";
     // print_timeout(o, x.timeout_c());
@@ -787,8 +753,6 @@ xct_t::_teardown(bool is_chaining) {
 void
 xct_t::change_state(state_t new_state)
 {
-    w_assert1(one_thread_attached());
-
     // Acquire a write latch, the traditional read latch is used by checkpoint
     w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, timeout_t::WAIT_FOREVER);
     if (latch_rc.is_error())
@@ -842,36 +806,9 @@ xct_t::log_warn_is_on() const
     return _core->_warn_on;
 }
 
-/**\todo Figure out how _updating_operations will interact with mtxct */
-int
-xct_t::attach_update_thread()
-{
-    w_assert2(_core->_updating_operations >= 0);
-    int res = _core->_updating_operations++ + 1;
-    smthread_t::set_is_update_thread(true);
-    return res;
-}
-
-void
-xct_t::detach_update_thread()
-{
-    smthread_t::set_is_update_thread(false);
-    _core->_updating_operations--;
-    w_assert2(_core->_updating_operations >= 0);
-}
-
-int
-xct_t::update_threads() const
-{
-    return _core->_updating_operations;
-}
-
 rc_t
 xct_t::_pre_commit(uint32_t flags)
 {
-    // W_DO(check_one_thread_attached()); // now checked in prologue
-    w_assert1(one_thread_attached());
-
     // "normal" means individual commit; not group commit.
     // Group commit cannot be lazy or chained.
     bool individual = ! (flags & xct_t::t_group);
@@ -901,12 +838,6 @@ xct_t::_pre_commit(uint32_t flags)
 
         // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
         // chkpt_serial_m::read_acquire();
-
-        // Have to re-check since in the meantime another thread might
-        // have attached. Of course, that's always the case... we
-        // can't avoid such server errors.
-        // W_DO(check_one_thread_attached());
-        w_assert0(one_thread_attached());
 
         // OLD: don't allow a chkpt to occur between changing the
         // state and writing the log record,
@@ -1173,12 +1104,6 @@ rc_t xct_t::early_lock_release() {
 rc_t
 xct_t::_pre_abort()
 {
-    // If there are too many threads attached, tell the VAS and let it
-    // ensure that only one does this.
-    // W_DO(check_one_thread_attached()); // now done in the prologues.
-
-    w_assert1(one_thread_attached());
-
     // The transaction abort function is shared by :
     // 1. Normal transaction abort, in such case the state would be in xct_active,
     //     xct_committing, or xct_freeing_space, and the _loser_xct flag off
@@ -1334,10 +1259,6 @@ xct_t::_abort()
 rc_t
 xct_t::save_point(lsn_t& lsn)
 {
-    // cannot do this with >1 thread attached
-    // W_DO(check_one_thread_attached()); // now checked in prologue
-    w_assert1(one_thread_attached());
-
     lsn = _last_lsn;
     return RCOK;
 }
@@ -1358,8 +1279,6 @@ xct_t::dispose()
     delete __stats;
     __stats = 0;
 
-    // W_DO(check_one_thread_attached());
-    w_assert0(one_thread_attached());
     W_COERCE( commit_free_locks());
     // ClearAllStoresToFree();
     // ClearAllLoadStores();
@@ -1683,11 +1602,6 @@ rc_t
 xct_t::rollback(const lsn_t &save_pt)
 {
     DBGTHRD(<< "xct_t::rollback to " << save_pt);
-    // W_DO(check_one_thread_attached()); // now checked in prologue
-    // w_assert1(one_thread_attached());
-    // Now we must just assert that at most 1 update thread is
-    // attached
-    w_assert0(update_threads()<=1);
 
     if(!log) {
         cerr
@@ -1810,48 +1724,6 @@ done:
 
     DBGTHRD(<< "xct_t::rollback done to " << save_pt);
     return rc;
-}
-
-
-void
-xct_t::detach_thread()
-{
-    _core->_threads_attached--;
-    w_assert2(_core->_threads_attached >=0);
-}
-
-
-bool
-xct_t::one_thread_attached() const
-{
-    // This function is called in multiple places, including txn commit, abort,
-    // savepoint, chain, change state, etc.
-    // The original code (commented out) would acquire the read mutex on checkpoint,
-    // which wiats until the checkpoint is done, it makes the checkpoint a blocking operation.
-    //
-    // The current code commented out the read mutex on checkpoint, in other words,
-    // checkpoint is not a blocking operation anymore, but when checkpoint gathering
-    // the txn data, it reads stable txn data by grabing a latch on txn object
-    //
-    if( _core->_threads_attached > 1) {
-        // Does not wait for checkpoint to finish, checkpoint is a non-blocking operation
-        // chkpt_serial_m::read_acquire();
-        if( _core->_threads_attached > 1) {
-            // chkpt_serial_m::read_release();
-
-#if W_DEBUG_LEVEL > 2
-            fprintf(stderr,
-                    "Fatal VAS or SSM error: %s %d %s %d.%d \n",
-                    "Only one thread allowed in this operation at any time.",
-                    _core->_threads_attached.load(),
-                    "threads are attached to xct",
-                    tid().get_hi(), tid().get_lo()
-            );
-#endif
-            return false;
-        }
-    }
-    return true;
 }
 
 ostream &
