@@ -256,23 +256,18 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     };
 
     struct tick_sec_log : public logrec_t {
-    void construct ();
     };
 
     struct tick_msec_log : public logrec_t {
-    void construct ();
     };
 
     struct benchmark_start_log : public logrec_t {
-    void construct ();
     };
 
     struct page_write_log : public logrec_t {
-    void construct ();
     };
 
     struct page_read_log : public logrec_t {
-    void construct ();
     };
 
 /**

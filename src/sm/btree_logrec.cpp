@@ -229,6 +229,7 @@ void btree_insert_log::construct(
     const cvec_t&       el,
     const bool          is_sys_txn)
 {
+    header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_insert;
     fill(page,
          (new (_data) btree_insert_t(page->root(), key, el, is_sys_txn))->size());
 }
@@ -285,6 +286,7 @@ DBGOUT3( << "&&&& REDO insertion by replace ghost, key: " << key);
 template <class PagePtr>
 void btree_insert_nonghost_log::construct(
     const PagePtr page, const w_keystr_t &key, const cvec_t &el, const bool is_sys_txn) {
+    header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_insert_nonghost;
     fill(page,
         (new (_data) btree_insert_t(page->root(), key, el, is_sys_txn))->size());
 }
@@ -318,6 +320,7 @@ void btree_update_log::construct(
     const w_keystr_t&     key,
     const char* old_el, int old_elen, const cvec_t& new_el)
 {
+    header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_update;
     fill(page,
          (new (_data) btree_update_t(page->root(), key, old_el, old_elen, new_el))->size());
 }
@@ -370,6 +373,7 @@ void btree_update_log::redo(PagePtr page)
 template <class PagePtr>
 void btree_overwrite_log::construct(const PagePtr page, const w_keystr_t& key,
                                           const char* old_el, const char *new_el, size_t offset, size_t elen) {
+    header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_overwrite;
     fill(page,
          (new (_data) btree_overwrite_t(*page, key, old_el, new_el, offset, elen))->size());
 }
@@ -433,6 +437,7 @@ void btree_ghost_mark_log::construct(const PagePtr p,
                                            const vector<slotid_t>& slots,
                                            const bool is_sys_txn)
 {
+    header._cat = 0|t_redo|t_undo|t_logical, header._type = t_btree_ghost_mark;
     fill(p, (new (data()) btree_ghost_t<PagePtr>(p, slots, is_sys_txn))->size());
 }
 
@@ -511,6 +516,7 @@ void btree_ghost_reclaim_log::construct(const PagePtr p,
                                                  const vector<slotid_t>& slots)
 {
     // ghost reclaim is single-log system transaction. so, use data_ssx()
+    header._cat = 0|t_redo|t_single_sys_xct, header._type = t_btree_ghost_reclaim;
     fill(p, (new (data_ssx()) btree_ghost_t<PagePtr>(p, slots, false))->size());
     w_assert0(is_single_sys_xct());
 }
@@ -533,6 +539,7 @@ template <class PagePtr>
 void btree_ghost_reserve_log::construct (
     const PagePtr p, const w_keystr_t& key, int element_length) {
     // ghost creation is single-log system transaction. so, use data_ssx()
+    header._cat = 0|t_redo|t_single_sys_xct, header._type = t_btree_ghost_reserve;
     fill(p, (new (data_ssx()) btree_ghost_reserve_t(key, element_length))->size());
     w_assert0(is_single_sys_xct());
 }
@@ -553,6 +560,7 @@ void btree_ghost_reserve_log::redo(PagePtr page) {
 template <class PagePtr>
 void btree_norec_alloc_log::construct(const PagePtr p, const PagePtr,
     PageID new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high) {
+    header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_norec_alloc;
     fill(p, (new (data_ssx()) btree_norec_alloc_t<PagePtr>(p,
         new_page_id, fence, chain_fence_high))->size());
 }
@@ -605,6 +613,7 @@ void btree_foster_merge_log::construct(const PagePtr p, // destination
                                          // self contained data buffer, meaning each reocrd is in the format:
                                          // ghost flag + key length + key (with sign byte) + child + ghost flag + data length + data
 
+    header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_merge;
     fill(p, (new (data_ssx()) btree_foster_merge_t(p2->pid(),
         high, chain_high, foster_pid0, foster_pid0_emlsn, prefix_len, move_count, record_data_len, record_data))->size());
 }
@@ -740,6 +749,7 @@ void btree_foster_rebalance_log::construct(
     // p - destination
     // p2 - source
 
+    header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_rebalance;
     fill(p, (new (data_ssx()) btree_foster_rebalance_t(p2->pid(),
         fence, new_pid0, new_pid0_emlsn, high, chain_high, prefix_len,
         move_count, record_data_len, record_data))->size());
@@ -1038,6 +1048,7 @@ void btree_foster_rebalance_log::redo(PagePtr p) {
 template <class PagePtr>
 void btree_foster_rebalance_norec_log::construct(
     const PagePtr p, const PagePtr, const w_keystr_t& fence) {
+    header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_rebalance_norec;
     fill(p, (new (data_ssx()) btree_foster_rebalance_norec_t(
         *p, fence))->size());
 }
@@ -1073,6 +1084,7 @@ void btree_foster_rebalance_norec_log::redo(PagePtr p) {
 template <class PagePtr>
 void btree_foster_adopt_log::construct(const PagePtr p, const PagePtr p2,
     PageID new_child_pid, lsn_t new_child_emlsn, const w_keystr_t& new_child_key) {
+    header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_adopt;
     fill(p, (new (data_ssx()) btree_foster_adopt_t(
         p2->pid(), new_child_pid, new_child_emlsn, new_child_key))->size());
 }
@@ -1106,6 +1118,7 @@ void btree_foster_deadopt_log::construct(
     PageID deadopted_pid, lsn_t deadopted_emlsn, int32_t foster_slot,
     const w_keystr_t &low, const w_keystr_t &high) {
     w_assert1(p->is_node());
+    header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_foster_deadopt;
     fill(p, (new (data_ssx()) btree_foster_deadopt_t(p2->pid(),
         deadopted_pid, deadopted_emlsn, foster_slot, low, high))->size());
 }
@@ -1152,6 +1165,7 @@ void btree_split_log::construct(
     // Logrec will have the child pid as main pid (i.e., destination page).
     // Parent pid is stored in btree_bulk_delete_t, which is a
     // multi_page_log_t (i.e., source page)
+    header._cat = 0|t_redo|t_multi|t_single_sys_xct, header._type = t_btree_split;
     fill(child_p, bulk->size() + format->size());
 }
 
@@ -1205,6 +1219,7 @@ void btree_compress_page_log::construct(
     chain.serialize_as_keystr(ptr);
     ptr += chain_len;
 
+    header._cat = 0|t_redo|t_single_sys_xct, header._type = t_btree_compress_page;
     fill(page, ptr - data_ssx());
 }
 

@@ -294,6 +294,7 @@ logrec_t::corrupt()
  *********************************************************************/
 void xct_freeing_space_log::construct()
 {
+    header._cat = t_status, header._type = t_xct_freeing_space;
     fill(0);
 }
 
@@ -319,6 +320,7 @@ xct_list_t::xct_list_t(
 
 void xct_end_group_log::construct(const xct_t *list[], int listlen)
 {
+    header._cat = t_status, header._type = t_xct_end_group;
     fill((new (_data) xct_list_t(list, listlen))->size());
 }
 /*********************************************************************
@@ -331,12 +333,14 @@ void xct_end_group_log::construct(const xct_t *list[], int listlen)
  *********************************************************************/
 void xct_end_log::construct()
 {
+    header._cat = t_status, header._type = t_xct_end;
     fill(0);
 }
 
 // We use a different log record type here only for debugging purposes
 void xct_abort_log::construct()
 {
+    header._cat = t_status, header._type = t_xct_abort;
     fill(0);
 }
 
@@ -349,6 +353,7 @@ void xct_abort_log::construct()
  *********************************************************************/
 void comment_log::construct(const char *msg)
 {
+    header._cat = 0|t_redo|t_undo|t_logical, header._type = t_comment;
     w_assert1(strlen(msg) < sizeof(_data));
     memcpy(_data, msg, strlen(msg)+1);
     DBG(<<"comment_log: L: " << (const char *)_data);
@@ -381,6 +386,7 @@ void comment_log::undo(PagePtr page)
  *********************************************************************/
 void compensate_log::construct(const lsn_t& rec_lsn)
 {
+    header._cat = 0|t_logical, header._type = t_compensate;
     fill(0);
     set_clr(rec_lsn);
 }
@@ -395,6 +401,7 @@ void compensate_log::construct(const lsn_t& rec_lsn)
  *********************************************************************/
 void skip_log::construct()
 {
+    header._cat = t_status, header._type = t_skip;
     fill(0);
 }
 
@@ -407,6 +414,7 @@ void skip_log::construct()
  *********************************************************************/
 void chkpt_begin_log::construct(const lsn_t &lastMountLSN)
 {
+    header._cat = t_status, header._type = t_chkpt_begin;
     new (_data) lsn_t(lastMountLSN);
     fill(sizeof(lsn_t));
 }
@@ -415,6 +423,7 @@ template <class PagePtr>
 void page_evict_log::construct (const PagePtr p,
                                 general_recordid_t child_slot, lsn_t child_lsn)
 {
+    header._cat = 0|t_redo|t_single_sys_xct, header._type = t_page_evict;
     new (data_ssx()) page_evict_t(child_lsn, child_slot);
     fill(p->pid(), p->store(), p->tag(), sizeof(page_evict_t));
 }
@@ -440,6 +449,7 @@ void page_evict_log::redo(PagePtr page) {
 void chkpt_end_log::construct(const lsn_t& lsn, const lsn_t& min_rec_lsn,
                                 const lsn_t& min_txn_lsn)
 {
+    header._cat = t_status, header._type = t_chkpt_end;
     // initialize _data
     lsn_t *l = new (_data) lsn_t(lsn);
     l++; //grot
@@ -452,6 +462,7 @@ void chkpt_end_log::construct(const lsn_t& lsn, const lsn_t& min_rec_lsn,
 
 void xct_latency_dump_log::construct(unsigned long nsec)
 {
+    header._cat = t_status, header._type = t_xct_latency_dump;
     *((unsigned long*) _data) = nsec;
     fill(sizeof(unsigned long));
 }
@@ -488,6 +499,7 @@ void chkpt_bf_tab_log::construct(
     const lsn_t*         rec_lsn,// I-  rec_lsn[i] is recovery lsn (oldest) of pids[i]
     const lsn_t*         page_lsn)// I-  page_lsn[i] is page lsn (latest) of pids[i]
 {
+    header._cat = t_status, header._type = t_chkpt_bf_tab;
     fill((new (_data) chkpt_bf_tab_t(cnt, pid, rec_lsn, page_lsn))->size());
 }
 
@@ -528,6 +540,7 @@ void chkpt_xct_tab_log::construct(
     const lsn_t*                         last_lsn,
     const lsn_t*                         first_lsn)
 {
+    header._cat = t_status, header._type = t_chkpt_xct_tab;
     fill((new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
                                          last_lsn, first_lsn))->size());
 }
@@ -561,6 +574,7 @@ void chkpt_xct_lock_log::construct(
     const okvl_mode*                    lock_mode,
     const uint32_t*                     lock_hash)
 {
+    header._cat = t_status, header._type = t_chkpt_xct_lock;
     fill((new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
                                          lock_hash))->size());
 }
@@ -596,6 +610,7 @@ void chkpt_backup_tab_log::construct(int cnt,
                                            const string* paths)
 {
     // CS TODO
+    header._cat = 0|t_redo, header._type = t_chkpt_backup_tab;
     fill((new (_data) chkpt_backup_tab_t(cnt, paths))->size());
 }
 
@@ -615,6 +630,7 @@ void chkpt_backup_tab_log::redo(PagePtr)
 
 void chkpt_restore_tab_log::construct()
 {
+    header._cat = 0|t_redo, header._type = t_chkpt_restore_tab;
     chkpt_restore_tab_t* tab =
         new (_data) chkpt_restore_tab_t();
 
@@ -660,6 +676,7 @@ void add_backup_log::construct(const string& path, lsn_t backupLSN)
     *((lsn_t*) data_ssx()) = backupLSN;
     w_assert0(path.length() < smlevel_0::max_devname);
     memcpy(data_ssx() + sizeof(lsn_t), path.data(), path.length());
+    header._cat = 0|t_redo|t_single_sys_xct, header._type = t_add_backup;
     fill(sizeof(lsn_t) + path.length());
 }
 
@@ -673,26 +690,31 @@ void add_backup_log::redo(PagePtr)
 
 void undo_done_log::construct()
 {
+    header._cat = t_status, header._type = t_undo_done;
     fill(0);
 }
 
 void redo_done_log::construct()
 {
+    header._cat = t_status, header._type = t_redo_done;
     fill(0);
 }
 
 void loganalysis_end_log::construct()
 {
+    header._cat = t_status, header._type = t_loganalysis_end;
     fill(0);
 }
 
 void loganalysis_begin_log::construct()
 {
+    header._cat = t_status, header._type = t_loganalysis_begin;
     fill(0);
 }
 
 void restore_begin_log::construct()
 {
+    header._cat = 0|t_redo|t_logical|t_single_sys_xct, header._type = t_restore_begin;
 #ifdef TIMED_LOG_RECORDS
     unsigned long tstamp = sysevent_timer::timestamp();
     memcpy(_data, &tstamp, sizeof(unsigned long));
@@ -718,6 +740,7 @@ void restore_begin_log::redo(PagePtr)
 
 void restore_end_log::construct()
 {
+    header._cat = 0|t_redo|t_logical|t_single_sys_xct, header._type = t_restore_end;
 #ifdef TIMED_LOG_RECORDS
     unsigned long tstamp = sysevent_timer::timestamp();
     memcpy(_data, &tstamp, sizeof(unsigned long));
@@ -754,6 +777,7 @@ void restore_segment_log::construct(uint32_t segment)
     pos += sizeof(unsigned long);
 #endif
 
+    header._cat = 0|t_redo|t_logical|t_single_sys_xct, header._type = t_restore_segment;
     fill(pos - data_ssx());
 }
 
@@ -775,6 +799,7 @@ void alloc_page_log::construct(PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
     PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
+    header._cat = 0|t_redo|t_single_sys_xct, header._type = t_alloc_page;
     fill(alloc_pid, 0, 0, sizeof(PageID));
 }
 
@@ -792,6 +817,7 @@ void dealloc_page_log::construct(PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
     PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
+    header._cat = 0|t_redo|t_single_sys_xct, header._type = t_dealloc_page;
     fill(alloc_pid, 0, 0, sizeof(PageID));
 }
 
@@ -834,6 +860,7 @@ void page_img_format_t<PagePtr>::apply(PagePtr page)
 
 template <class PagePtr>
 void page_img_format_log::construct(const PagePtr page) {
+    header._cat = 0|t_redo|t_undo, header._type = t_page_img_format;
     fill(page,
          (new (_data) page_img_format_t<PagePtr>(page))->size());
 }
@@ -961,6 +988,7 @@ public:
 template <class PagePtr>
 void page_set_to_be_deleted_log::construct(const PagePtr p)
 {
+    header._cat = 0|t_redo|t_undo, header._type = t_page_set_to_be_deleted;
     fill(p, (new (_data) page_set_to_be_deleted_t()) ->size());
 }
 
@@ -985,6 +1013,7 @@ void create_store_log::construct(PageID root_pid, StoreID snum)
     memcpy(data_ssx(), &snum, sizeof(StoreID));
     memcpy(data_ssx() + sizeof(StoreID), &root_pid, sizeof(PageID));
     PageID stpage_pid(stnode_page::stpid);
+    header._cat = 0|t_redo|t_single_sys_xct, header._type = t_create_store;
     fill(stpage_pid, snum, 0, sizeof(StoreID) + sizeof(PageID));
 }
 
@@ -1005,6 +1034,7 @@ void append_extent_log::construct(extent_id_t ext)
 {
     memcpy(data_ssx(), &ext, sizeof(extent_id_t));
     PageID stpage_pid(stnode_page::stpid);
+    header._cat = 0|t_redo|t_single_sys_xct, header._type = t_append_extent;
     fill(stpage_pid, 0, 0, sizeof(extent_id_t));
 }
 
