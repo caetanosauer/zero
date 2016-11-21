@@ -18,7 +18,7 @@
 #include "restore.h"
 #include "log_spr.h"
 #include <sstream>
-
+#include "logrec_support.h"
 #include "btree_page_h.h"
 
 #include <iomanip>
@@ -307,19 +307,10 @@ void xct_freeing_space_log::construct()
  *  for a group of transactions.
  *
  *********************************************************************/
-xct_list_t::xct_list_t(
-    const xct_t*                        xct[],
-    int                                 cnt)
-    : count(cnt)
-{
-    w_assert1(count <= max);
-    for (uint i = 0; i < count; i++)  {
-        xrec[i].tid = xct[i]->tid();
-    }
-}
-
 void xct_end_group_log::construct(const xct_t *list[], int listlen)
 {
+    w_assert0(listlen > xct_list_t::max);
+
     header._cat = t_status, header._type = t_xct_end_group;
     fill((new (_data) xct_list_t(list, listlen))->size());
 }
@@ -467,6 +458,7 @@ void xct_latency_dump_log::construct(unsigned long nsec)
     fill(sizeof(unsigned long));
 }
 
+
 /*********************************************************************
  *
  *  chkpt_bf_tab_log
@@ -475,24 +467,6 @@ void xct_latency_dump_log::construct(unsigned long nsec)
  *  Contains, for each dirty page, its pid, minimum recovery lsn and page (latest) lsn.
  *
  *********************************************************************/
-
-chkpt_bf_tab_t::chkpt_bf_tab_t(
-    int                 cnt,        // I-  # elements in pids[] and rlsns[]
-    const PageID*         pids,        // I-  id of of dirty pages
-    const lsn_t*         rlsns,        // I-  rlsns[i] is recovery lsn of pids[i], the oldest
-    const lsn_t*         plsns)        // I-  plsns[i] is page lsn lsn of pids[i], the latest
-    : count(cnt)
-{
-    w_assert1( sizeof(*this) <= logrec_t::max_data_sz );
-    w_assert1(count <= max);
-    for (uint i = 0; i < count; i++) {
-        brec[i].pid = pids[i];
-        brec[i].rec_lsn = rlsns[i];
-        brec[i].page_lsn = plsns[i];
-    }
-}
-
-
 void chkpt_bf_tab_log::construct(
     int                 cnt,        // I-  # elements in pids[] and rlsns[]
     const PageID*         pid,        // I-  id of of dirty pages
@@ -504,8 +478,6 @@ void chkpt_bf_tab_log::construct(
 }
 
 
-
-
 /*********************************************************************
  *
  *  chkpt_xct_tab_log
@@ -514,24 +486,6 @@ void chkpt_bf_tab_log::construct(
  *  Contains, for each active xct, its id, state, last_lsn
  *
  *********************************************************************/
-chkpt_xct_tab_t::chkpt_xct_tab_t(
-    const tid_t&                         _youngest,
-    int                                 cnt,
-    const tid_t*                         tid,
-    const smlevel_0::xct_state_t*         state,
-    const lsn_t*                         last_lsn,
-    const lsn_t*                         first_lsn)
-    : youngest(_youngest), count(cnt)
-{
-    w_assert1(count <= max);
-    for (uint i = 0; i < count; i++)  {
-        xrec[i].tid = tid[i];
-        xrec[i].state = state[i];
-        xrec[i].last_lsn = last_lsn[i];
-        xrec[i].first_lsn = first_lsn[i];
-    }
-}
-
 void chkpt_xct_tab_log::construct(
     const tid_t&                         youngest,
     int                                 cnt,
@@ -554,20 +508,6 @@ void chkpt_xct_tab_log::construct(
  *  Contains, each active lock, its hash and lock mode
  *
  *********************************************************************/
-chkpt_xct_lock_t::chkpt_xct_lock_t(
-    const tid_t&                        _tid,
-    int                                 cnt,
-    const okvl_mode*                    lock_mode,
-    const uint32_t*                     lock_hash)
-    : tid(_tid), count(cnt)
-{
-    w_assert1(count <= max);
-    for (uint i = 0; i < count; i++)  {
-        xrec[i].lock_mode = lock_mode[i];
-        xrec[i].lock_hash = lock_hash[i];
-    }
-}
-
 void chkpt_xct_lock_log::construct(
     const tid_t&                        tid,
     int                                 cnt,
@@ -577,33 +517,6 @@ void chkpt_xct_lock_log::construct(
     header._cat = t_status, header._type = t_chkpt_xct_lock;
     fill((new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
                                          lock_hash))->size());
-}
-
-chkpt_backup_tab_t::chkpt_backup_tab_t(
-        int cnt,
-        const string* paths)
-    : count(cnt)
-{
-    std::stringstream ss;
-    for (uint i = 0; i < count; i++) {
-        ss << paths[i] << endl;
-    }
-    data_size = ss.tellp();
-    w_assert0(data_size <= logrec_t::max_data_sz);
-    ss.read(data, data_size);
-}
-
-void chkpt_backup_tab_t::read(
-        std::vector<string>& paths)
-{
-    std::string s;
-    std::stringstream ss;
-    ss.write(data, data_size);
-
-    for (uint i = 0; i < count; i++) {
-        ss >> s;
-        paths.push_back(s);
-    }
 }
 
 void chkpt_backup_tab_log::construct(int cnt,
@@ -832,33 +745,6 @@ void dealloc_page_log::redo(PagePtr p)
 }
 
 template <class PagePtr>
-page_img_format_t<PagePtr>::page_img_format_t (const PagePtr page)
-{
-    size_t unused_length;
-    char* unused = page->page()->unused_part(unused_length);
-
-    const char *pp_bin = (const char *) page->_pp;
-    beginning_bytes = unused - pp_bin;
-    ending_bytes    = sizeof(btree_page) - (beginning_bytes + unused_length);
-
-    ::memcpy (data, pp_bin, beginning_bytes);
-    ::memcpy (data + beginning_bytes, unused + unused_length, ending_bytes);
-    w_assert1(beginning_bytes >= btree_page::hdr_sz);
-    w_assert1(beginning_bytes + ending_bytes <= sizeof(btree_page));
-}
-
-template <class PagePtr>
-void page_img_format_t<PagePtr>::apply(PagePtr page)
-{
-    w_assert1(beginning_bytes >= btree_page::hdr_sz);
-    w_assert1(beginning_bytes + ending_bytes <= sizeof(btree_page));
-    char *pp_bin = (char *) page->get_generic_page();
-    ::memcpy (pp_bin, data, beginning_bytes);
-    ::memcpy (pp_bin + sizeof(btree_page) - ending_bytes,
-            data + beginning_bytes, ending_bytes);
-}
-
-template <class PagePtr>
 void page_img_format_log::construct(const PagePtr page) {
     header._cat = 0|t_redo|t_undo, header._type = t_page_img_format;
     fill(page,
@@ -978,18 +864,11 @@ operator<<(ostream& o, const logrec_t& l)
     return o;
 }
 
-// nothing needed so far..
-class page_set_to_be_deleted_t {
-public:
-    page_set_to_be_deleted_t(){}
-    int size()  { return 0;}
-};
-
 template <class PagePtr>
 void page_set_to_be_deleted_log::construct(const PagePtr p)
 {
     header._cat = 0|t_redo|t_undo, header._type = t_page_set_to_be_deleted;
-    fill(p, (new (_data) page_set_to_be_deleted_t()) ->size());
+    fill(p, 0);
 }
 
 
@@ -1243,10 +1122,6 @@ __thread double            logrec_accounting_impl_t::ratio_bf_cxt   [t_max_logre
 template void logrec_t::template redo<btree_page_h*>(btree_page_h*);
 template void logrec_t::template redo<fixable_page_h*>(fixable_page_h*);
 template void logrec_t::template undo<fixable_page_h*>(fixable_page_h*);
-
-
-
-template class page_img_format_t<btree_page_h*>;
 
 template void page_evict_log::template construct<btree_page_h*>(btree_page_h* p,
                                 general_recordid_t child_slot, lsn_t child_lsn);

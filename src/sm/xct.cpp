@@ -616,10 +616,6 @@ xct_t::commit_as_group_member()
 rc_t
 xct_t::group_commit(const xct_t *list[], int listlen)
 {
-    // can we fit this list into the log record?
-    if(listlen > xct_list_t::max)
-        return RC(eLISTTOOLONG);
-
     // Log the whole bunch.
     return Logger::log<xct_end_group_log>(list, listlen);
 }
