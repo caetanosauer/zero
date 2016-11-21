@@ -1,5 +1,5 @@
 	case t_comment :
-		((comment_log *) this)->redo(page);
+		W_FATAL(eINTERNAL);
 		break;
 	case t_compensate :
 		W_FATAL(eINTERNAL);

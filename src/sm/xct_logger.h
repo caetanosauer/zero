@@ -31,6 +31,7 @@ public:
         logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec;
         logrec->init_header(Logrec::TYPE);
+        logrec->init_xct_info();
         reinterpret_cast<Logrec*>(logrec)->construct(args...);
         w_assert1(logrec->valid_header());
 
@@ -48,9 +49,7 @@ public:
         lsn_t lsn;
         W_DO(ss_m::log->insert(*logrec, &lsn));
 
-        if (!logrec->is_single_sys_xct()) {
-            logrec->fill_xct_attr(xd->tid(), lsn);
-        }
+        logrec->set_xid_prev(xd->tid(), lsn);
         W_DO(xd->update_last_logrec(logrec, lsn));
 
         return RCOK;
@@ -66,6 +65,8 @@ public:
         logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec;
         logrec->init_header(Logrec::TYPE);
+        logrec->init_xct_info();
+        logrec->init_page_info(p);
         reinterpret_cast<Logrec*>(logrec)->construct(p, args...);
         w_assert1(logrec->valid_header());
 
@@ -87,9 +88,7 @@ public:
         lsn_t lsn;
         W_DO(ss_m::log->insert(*logrec, &lsn));
 
-        if (!logrec->is_single_sys_xct()) {
-            logrec->fill_xct_attr(xd->tid(), lsn);
-        }
+        logrec->set_xid_prev(xd->tid(), lsn);
         W_DO(xd->update_last_logrec(logrec, lsn));
         _update_page_lsns(p, lsn);
 
@@ -106,6 +105,8 @@ public:
         logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec;
         logrec->init_header(Logrec::TYPE);
+        logrec->init_xct_info();
+        logrec->init_page_info(p);
         reinterpret_cast<Logrec*>(logrec)->construct(p, p2, args...);
         w_assert1(logrec->valid_header());
 
@@ -134,9 +135,7 @@ public:
         lsn_t lsn;
         W_DO(ss_m::log->insert(*logrec, &lsn));
 
-        if (!logrec->is_single_sys_xct()) {
-            logrec->fill_xct_attr(xd->tid(), lsn);
-        }
+        logrec->set_xid_prev(xd->tid(), lsn);
         W_DO(xd->update_last_logrec(logrec, lsn));
         _update_page_lsns(p, lsn);
         _update_page_lsns(p2, lsn);

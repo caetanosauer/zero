@@ -127,54 +127,10 @@ logrec_t::get_type_str(kind_t type)
     return 0;
 }
 
-
-
-
-/*********************************************************************
- *
- *  logrec_t::fill(pid, len)
- *
- *  Fill the "pid" and "length" field of the log record.
- *
- *********************************************************************/
-void
-logrec_t::fill(PageID p, StoreID store, uint16_t tag, smsize_t l)
-{
-    w_assert9(w_base_t::is_aligned(_data));
-
-    /* adjust _cat */
-    xct_t *x = xct();
-    if(x && (x->rolling_back() || x->state() == smlevel_0::xct_aborting))
-    {
-        header._cat |= t_rollback;
-    }
-    set_pid(0);
-    if (!is_single_sys_xct()) { // prv does not exist in single-log system transaction
-        set_xid_prev(lsn_t::null);
-    }
-    header._page_tag = tag;
-    header._pid = p;
-    header._stid = store;
-    char *dat = is_single_sys_xct() ? data_ssx() : data();
-    if (l != ALIGN_BYTE(l)) {
-        // zero out extra space to keep purify happy
-        memset(dat+l, 0, ALIGN_BYTE(l)-l);
-    }
-    unsigned int tmp = ALIGN_BYTE(l) + (is_single_sys_xct() ? hdr_single_sys_xct_sz : hdr_non_ssx_sz) + sizeof(lsn_t);
-    tmp = (tmp + 7) & unsigned(-8); // force 8-byte alignment
-    w_assert1(tmp <= sizeof(*this));
-    header._len = tmp;
-    if(type() != t_skip) {
-        DBG( << "Creat log rec: " << *this
-                << " size: " << header._len << " xid_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xid_prev()) );
-    }
-}
-
-
 u_char logrec_t::get_logrec_cat(kind_t type)
 {
     switch (type) {
-	case t_comment : return t_redo | t_undo | t_logical;
+	case t_comment : return t_status;
 	case t_compensate : return t_logical;
 	case t_skip : return t_status;
 	case t_chkpt_begin : return t_status;
@@ -232,25 +188,49 @@ void logrec_t::init_header(kind_t type)
 {
     header._cat = get_logrec_cat(type);
     header._type = type;
+    header._pid = 0;
+    header._page_tag = 0;
+    header._stid = 0;
+    // CS TODO: for most logrecs, set_size is called twice
+    set_size(0);
 }
 
-
-/*********************************************************************
- *
- *  logrec_t::fill_xct_attr(tid, xid_prev_lsn)
- *
- *  Fill the transaction related fields of the log record.
- *
- *********************************************************************/
-void
-logrec_t::fill_xct_attr(const tid_t& tid, const lsn_t& last)
+void logrec_t::set_size(size_t l)
 {
-    w_assert0(!is_single_sys_xct()); // prv/xid doesn't exist in single-log system transaction!
-    xidInfo._xid = tid;
-    if(xid_prev().valid()) {
-        w_assert2(is_cpsn());
-    } else {
-        set_xid_prev (last);
+    char *dat = is_single_sys_xct() ? data_ssx() : data();
+    if (l != ALIGN_BYTE(l)) {
+        // zero out extra space to keep purify happy
+        memset(dat+l, 0, ALIGN_BYTE(l)-l);
+    }
+    unsigned int tmp = ALIGN_BYTE(l)
+        + (is_single_sys_xct() ? hdr_single_sys_xct_sz : hdr_non_ssx_sz) + sizeof(lsn_t);
+    tmp = (tmp + 7) & unsigned(-8); // force 8-byte alignment
+    w_assert1(tmp <= sizeof(*this));
+    header._len = tmp;
+}
+
+void logrec_t::init_xct_info()
+{
+    /* adjust _cat */
+    xct_t *x = xct();
+    if(x && (x->rolling_back() || x->state() == smlevel_0::xct_aborting))
+    {
+        header._cat |= t_rollback;
+    }
+    if (!is_single_sys_xct()) { // prv does not exist in single-log system transaction
+        set_xid_prev(lsn_t::null);
+    }
+}
+
+void logrec_t::set_xid_prev(tid_t tid, lsn_t last)
+{
+    if (!is_single_sys_xct()) {
+        xidInfo._xid = tid;
+        if(xid_prev().valid()) {
+            w_assert2(is_cpsn());
+        } else {
+            set_xid_prev (last);
+        }
     }
 }
 
@@ -357,7 +337,6 @@ logrec_t::corrupt()
  *********************************************************************/
 void xct_freeing_space_log::construct()
 {
-    fill(0);
 }
 
 
@@ -371,9 +350,7 @@ void xct_freeing_space_log::construct()
  *********************************************************************/
 void xct_end_group_log::construct(const xct_t *list[], int listlen)
 {
-    w_assert0(listlen > xct_list_t::max);
-
-    fill((new (_data) xct_list_t(list, listlen))->size());
+    set_size((new (_data) xct_list_t(list, listlen))->size());
 }
 /*********************************************************************
  *
@@ -385,13 +362,11 @@ void xct_end_group_log::construct(const xct_t *list[], int listlen)
  *********************************************************************/
 void xct_end_log::construct()
 {
-    fill(0);
 }
 
 // We use a different log record type here only for debugging purposes
 void xct_abort_log::construct()
 {
-    fill(0);
 }
 
 /*********************************************************************
@@ -403,26 +378,9 @@ void xct_abort_log::construct()
  *********************************************************************/
 void comment_log::construct(const char *msg)
 {
-    w_assert1(strlen(msg) < sizeof(_data));
+    w_assert1(strlen(msg) < max_data_sz);
     memcpy(_data, msg, strlen(msg)+1);
-    DBG(<<"comment_log: L: " << (const char *)_data);
-    fill(strlen(msg)+1);
-}
-
-template <class PagePtr>
-void comment_log::redo(PagePtr page)
-{
-    w_assert9(page == 0);
-    DBG(<<"comment_log: R: " << (const char *)_data);
-    ; // just for the purpose of setting breakpoints
-}
-
-template <class PagePtr>
-void comment_log::undo(PagePtr page)
-{
-    w_assert9(page == 0);
-    DBG(<<"comment_log: U: " << (const char *)_data);
-    ; // just for the purpose of setting breakpoints
+    set_size(strlen(msg)+1);
 }
 
 /*********************************************************************
@@ -435,7 +393,6 @@ void comment_log::undo(PagePtr page)
  *********************************************************************/
 void compensate_log::construct(const lsn_t& rec_lsn)
 {
-    fill(0);
     set_clr(rec_lsn);
 }
 
@@ -449,7 +406,6 @@ void compensate_log::construct(const lsn_t& rec_lsn)
  *********************************************************************/
 void skip_log::construct()
 {
-    fill(0);
 }
 
 /*********************************************************************
@@ -462,7 +418,7 @@ void skip_log::construct()
 void chkpt_begin_log::construct(const lsn_t &lastMountLSN)
 {
     new (_data) lsn_t(lastMountLSN);
-    fill(sizeof(lsn_t));
+    set_size(sizeof(lsn_t));
 }
 
 template <class PagePtr>
@@ -470,7 +426,7 @@ void page_evict_log::construct (const PagePtr p,
                                 general_recordid_t child_slot, lsn_t child_lsn)
 {
     new (data_ssx()) page_evict_t(child_lsn, child_slot);
-    fill(p->pid(), p->store(), p->tag(), sizeof(page_evict_t));
+    set_size(sizeof(page_evict_t));
 }
 
 template <class PagePtr>
@@ -501,13 +457,13 @@ void chkpt_end_log::construct(const lsn_t& lsn, const lsn_t& min_rec_lsn,
     l++; //grot
     *l = min_txn_lsn;
 
-    fill((3 * sizeof(lsn_t)) + (3 * sizeof(int)));
+    set_size((3 * sizeof(lsn_t)) + (3 * sizeof(int)));
 }
 
 void xct_latency_dump_log::construct(unsigned long nsec)
 {
     *((unsigned long*) _data) = nsec;
-    fill(sizeof(unsigned long));
+    set_size(sizeof(unsigned long));
 }
 
 
@@ -525,7 +481,7 @@ void chkpt_bf_tab_log::construct(
     const lsn_t*         rec_lsn,// I-  rec_lsn[i] is recovery lsn (oldest) of pids[i]
     const lsn_t*         page_lsn)// I-  page_lsn[i] is page lsn (latest) of pids[i]
 {
-    fill((new (_data) chkpt_bf_tab_t(cnt, pid, rec_lsn, page_lsn))->size());
+    set_size((new (_data) chkpt_bf_tab_t(cnt, pid, rec_lsn, page_lsn))->size());
 }
 
 
@@ -545,7 +501,7 @@ void chkpt_xct_tab_log::construct(
     const lsn_t*                         last_lsn,
     const lsn_t*                         first_lsn)
 {
-    fill((new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
+    set_size((new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
                                          last_lsn, first_lsn))->size());
 }
 
@@ -564,7 +520,7 @@ void chkpt_xct_lock_log::construct(
     const okvl_mode*                    lock_mode,
     const uint32_t*                     lock_hash)
 {
-    fill((new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
+    set_size((new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
                                          lock_hash))->size());
 }
 
@@ -572,7 +528,7 @@ void chkpt_backup_tab_log::construct(int cnt,
                                            const string* paths)
 {
     // CS TODO
-    fill((new (_data) chkpt_backup_tab_t(cnt, paths))->size());
+    set_size((new (_data) chkpt_backup_tab_t(cnt, paths))->size());
 }
 
 template <class PagePtr>
@@ -595,7 +551,7 @@ void chkpt_restore_tab_log::construct()
         new (_data) chkpt_restore_tab_t();
 
     smlevel_0::vol->chkpt_restore_progress(tab);
-    fill(tab->length());
+    set_size(tab->length());
 }
 
 template <class PagePtr>
@@ -636,7 +592,7 @@ void add_backup_log::construct(const string& path, lsn_t backupLSN)
     *((lsn_t*) data_ssx()) = backupLSN;
     w_assert0(path.length() < smlevel_0::max_devname);
     memcpy(data_ssx() + sizeof(lsn_t), path.data(), path.length());
-    fill(sizeof(lsn_t) + path.length());
+    set_size(sizeof(lsn_t) + path.length());
 }
 
 template <class PagePtr>
@@ -649,22 +605,18 @@ void add_backup_log::redo(PagePtr)
 
 void undo_done_log::construct()
 {
-    fill(0);
 }
 
 void redo_done_log::construct()
 {
-    fill(0);
 }
 
 void loganalysis_end_log::construct()
 {
-    fill(0);
 }
 
 void loganalysis_begin_log::construct()
 {
-    fill(0);
 }
 
 void restore_begin_log::construct()
@@ -672,9 +624,7 @@ void restore_begin_log::construct()
 #ifdef TIMED_LOG_RECORDS
     unsigned long tstamp = sysevent_timer::timestamp();
     memcpy(_data, &tstamp, sizeof(unsigned long));
-    fill(sizeof(unsigned long));
-#else
-    fill(0);
+    set_size(sizeof(unsigned long));
 #endif
 }
 
@@ -697,9 +647,7 @@ void restore_end_log::construct()
 #ifdef TIMED_LOG_RECORDS
     unsigned long tstamp = sysevent_timer::timestamp();
     memcpy(_data, &tstamp, sizeof(unsigned long));
-    fill(sizeof(unsigned long));
-#else
-    fill(0);
+    set_size(sizeof(unsigned long));
 #endif
 }
 
@@ -730,7 +678,7 @@ void restore_segment_log::construct(uint32_t segment)
     pos += sizeof(unsigned long);
 #endif
 
-    fill(pos - data_ssx());
+    set_size(pos - data_ssx());
 }
 
 template <class PagePtr>
@@ -750,8 +698,12 @@ void restore_segment_log::redo(PagePtr)
 void alloc_page_log::construct(PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
+    // CS TODO: not necessary -- XctLogger sets alloc pid correctly
     PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
-    fill(alloc_pid, 0, 0, sizeof(PageID));
+    // fill(alloc_pid, 0, 0, sizeof(PageID));
+    set_size(sizeof(PageID));
+    // CS TODO: clean up eventlog.cpp and get rid of this
+    set_pid(alloc_pid);
 }
 
 template <class PagePtr>
@@ -768,7 +720,10 @@ void dealloc_page_log::construct(PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
     PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
-    fill(alloc_pid, 0, 0, sizeof(PageID));
+    // fill(alloc_pid, 0, 0, sizeof(PageID));
+    set_size(sizeof(PageID));
+    // CS TODO: clean up eventlog.cpp and get rid of this
+    set_pid(alloc_pid);
 }
 
 template <class PagePtr>
@@ -783,14 +738,14 @@ void dealloc_page_log::redo(PagePtr p)
 
 template <class PagePtr>
 void page_img_format_log::construct(const PagePtr page) {
-    fill(page,
-         (new (_data) page_img_format_t<PagePtr>(page))->size());
+    set_size((new (_data) page_img_format_t<PagePtr>(page))->size());
 }
 
 template <class PagePtr>
 void page_img_format_log::undo(PagePtr) {
     // we don't have to do anything for UNDO
     // because this is a page creation!
+    // CS TODO: then why do we need an undo method????
 }
 template <class PagePtr>
 void page_img_format_log::redo(PagePtr page) {
@@ -903,7 +858,6 @@ operator<<(ostream& o, const logrec_t& l)
 template <class PagePtr>
 void page_set_to_be_deleted_log::construct(const PagePtr p)
 {
-    fill(p, 0);
 }
 
 
@@ -927,7 +881,11 @@ void create_store_log::construct(PageID root_pid, StoreID snum)
     memcpy(data_ssx(), &snum, sizeof(StoreID));
     memcpy(data_ssx() + sizeof(StoreID), &root_pid, sizeof(PageID));
     PageID stpage_pid(stnode_page::stpid);
-    fill(stpage_pid, snum, 0, sizeof(StoreID) + sizeof(PageID));
+    // CS TODO: eventlog cleanup
+    // fill(stpage_pid, snum, 0, sizeof(StoreID) + sizeof(PageID));
+    header._pid = stpage_pid;
+    header._stid = snum;
+    set_size(sizeof(StoreID) + sizeof(PageID));
 }
 
 template <class PagePtr>
@@ -947,7 +905,10 @@ void append_extent_log::construct(extent_id_t ext)
 {
     memcpy(data_ssx(), &ext, sizeof(extent_id_t));
     PageID stpage_pid(stnode_page::stpid);
-    fill(stpage_pid, 0, 0, sizeof(extent_id_t));
+    // CS TODO: eventlog cleanup
+    // fill(stpage_pid, 0, 0, sizeof(extent_id_t));
+    header._pid = stpage_pid;
+    set_size(sizeof(extent_id_t));
 }
 
 template <class PagePtr>

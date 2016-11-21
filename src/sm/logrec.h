@@ -204,14 +204,6 @@ public:
 	t_max_logrec = 50
     };
 
-    void             fill(
-                            const PageID  pid,
-                            StoreID         store,
-                            uint16_t        tag,
-                            smsize_t       length);
-    void             fill_xct_attr(
-                            const tid_t&   tid,
-                            const lsn_t&   last_lsn);
     bool             is_page_update() const;
     bool             is_redo() const;
     bool             is_skip() const;
@@ -228,8 +220,6 @@ public:
     template <class PagePtr>
     void             redo(PagePtr);
 
-    void init_header(kind_t type);
-
     static u_char get_logrec_cat(kind_t type);
 
     void redo();
@@ -237,27 +227,28 @@ public:
     template <class PagePtr>
     void             undo(PagePtr);
 
+    void init_header(kind_t);
+
     template <class PagePtr>
-    void fill(const PagePtr p, smsize_t length)
+    void init_page_info(const PagePtr p)
     {
-        fill(p->pid(), p->store(), p->tag(), length);
+        header._page_tag = p->tag();
+        header._pid = p->pid();
+        header._stid = p->store();
     }
 
-    void fill(PageID pid, uint16_t tag, smsize_t length)
-    {
-        fill(pid, 0, tag, length);
-    }
+    void set_size(size_t l);
 
-    void fill(smsize_t length)
-    {
-        fill(0, 0, 0, length);
-    }
+    void init_xct_info();
+
+    void set_xid_prev(tid_t tid, lsn_t last);
 
     enum {
         max_sz = 3 * sizeof(generic_page),
         hdr_non_ssx_sz = sizeof(baseLogHeader) + sizeof(xidChainLogHeader),
         hdr_single_sys_xct_sz = sizeof(baseLogHeader),
-        // max_data_sz is conservative. we don't allow the last 16 bytes to be used (anyway very rarely used)
+        // max_data_sz is conservative.
+        // we don't allow the last 16 bytes to be used (anyway very rarely used)
         max_data_sz = max_sz - hdr_non_ssx_sz - sizeof(lsn_t)
     };
 

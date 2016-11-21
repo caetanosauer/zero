@@ -40,9 +40,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     struct comment_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_comment;
     void construct (const char* msg);
-
-    template <class Ptr> void redo(Ptr);
-    template <class Ptr> void undo(Ptr);
     };
 
     struct compensate_log : public logrec_t {
