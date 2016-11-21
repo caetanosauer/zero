@@ -254,30 +254,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     template <class Ptr> void redo(Ptr);
     };
 
-    struct btree_foster_merge_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_foster_merge;
-    template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, const w_keystr_t& high, const w_keystr_t& chain_high, PageID foster_pid0, lsn_t foster_emlsn, const int16_t prefix_len, const int32_t move_count, const smsize_t record_buffer_len, const cvec_t& record_data);
-    template <class Ptr> void redo(Ptr);
-    };
-
-    struct btree_foster_rebalance_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_foster_rebalance;
-    template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, const w_keystr_t& fence, PageID new_pid0, lsn_t pid0_emlsn, const w_keystr_t& high, const w_keystr_t& chain_high, const int16_t prefix_len, const int32_t move_count, const smsize_t record_data_len, const cvec_t& record_data);
-    template <class Ptr> void redo(Ptr);
-    };
-
-    struct btree_foster_rebalance_norec_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_foster_rebalance_norec;
-    template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, const w_keystr_t& fence);
-    template <class Ptr> void redo(Ptr);
-    };
-
-    struct btree_foster_deadopt_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_foster_deadopt;
-    template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, PageID deadopted_pid, lsn_t deadopted_emlsn, int32_t foster_slot, const w_keystr_t& low, const w_keystr_t& high);
-    template <class Ptr> void redo(Ptr);
-    };
-
     struct btree_split_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_btree_split;
     template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, uint16_t move_count, const w_keystr_t& new_high_fence, const w_keystr_t& new_chain);

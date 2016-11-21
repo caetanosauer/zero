@@ -74,14 +74,6 @@
 		return "btree_ghost_reserve";
 	case t_btree_foster_adopt :
 		return "btree_foster_adopt";
-	case t_btree_foster_merge :
-		return "btree_foster_merge";
-	case t_btree_foster_rebalance :
-		return "btree_foster_rebalance";
-	case t_btree_foster_rebalance_norec :
-		return "btree_foster_rebalance_norec";
-	case t_btree_foster_deadopt :
-		return "btree_foster_deadopt";
 	case t_btree_split :
 		return "btree_split";
 	case t_btree_compress_page :

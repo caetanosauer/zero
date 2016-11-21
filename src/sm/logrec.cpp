@@ -168,10 +168,6 @@ u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_btree_ghost_reclaim : return t_redo|t_single_sys_xct;
 	case t_btree_ghost_reserve : return t_redo|t_single_sys_xct;
 	case t_btree_foster_adopt : return t_redo|t_multi|t_single_sys_xct;
-	case t_btree_foster_merge : return t_redo|t_multi|t_single_sys_xct;
-	case t_btree_foster_rebalance : return t_redo|t_multi|t_single_sys_xct;
-	case t_btree_foster_rebalance_norec : return t_redo|t_multi|t_single_sys_xct;
-	case t_btree_foster_deadopt : return t_redo|t_multi|t_single_sys_xct;
 	case t_btree_split : return t_redo|t_multi|t_single_sys_xct;
 	case t_btree_compress_page : return t_redo|t_single_sys_xct;
 	case t_tick_sec : return t_status;

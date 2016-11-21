@@ -112,18 +112,6 @@
 	case t_btree_foster_adopt :
 		((btree_foster_adopt_log *) this)->redo(page);
 		break;
-	case t_btree_foster_merge :
-		((btree_foster_merge_log *) this)->redo(page);
-		break;
-	case t_btree_foster_rebalance :
-		((btree_foster_rebalance_log *) this)->redo(page);
-		break;
-	case t_btree_foster_rebalance_norec :
-		((btree_foster_rebalance_norec_log *) this)->redo(page);
-		break;
-	case t_btree_foster_deadopt :
-		((btree_foster_deadopt_log *) this)->redo(page);
-		break;
 	case t_btree_split :
 		((btree_split_log *) this)->redo(page);
 		break;

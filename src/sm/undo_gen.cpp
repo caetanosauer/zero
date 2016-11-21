@@ -112,18 +112,6 @@
 	case t_btree_foster_adopt :
 		W_FATAL(eINTERNAL);
 		break;
-	case t_btree_foster_merge :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_btree_foster_rebalance :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_btree_foster_rebalance_norec :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_btree_foster_deadopt :
-		W_FATAL(eINTERNAL);
-		break;
 	case t_btree_split :
 		W_FATAL(eINTERNAL);
 		break;
