@@ -79,9 +79,6 @@
 	case t_restore_end :
 		((restore_end_log *) this)->redo(page);
 		break;
-	case t_page_set_to_be_deleted :
-		((page_set_to_be_deleted_log *) this)->redo(page);
-		break;
 	case t_page_img_format :
 		((page_img_format_log *) this)->redo(page);
 		break;

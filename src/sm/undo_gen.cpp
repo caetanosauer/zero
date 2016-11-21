@@ -79,9 +79,6 @@
 	case t_restore_end :
 		W_FATAL(eINTERNAL);
 		break;
-	case t_page_set_to_be_deleted :
-		((page_set_to_be_deleted_log *) this)->undo(page);
-		break;
 	case t_page_img_format :
 		((page_img_format_log *) this)->undo(page);
 		break;

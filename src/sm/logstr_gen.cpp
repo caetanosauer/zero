@@ -52,8 +52,6 @@
 		return "restore_segment";
 	case t_restore_end :
 		return "restore_end";
-	case t_page_set_to_be_deleted :
-		return "page_set_to_be_deleted";
 	case t_page_img_format :
 		return "page_img_format";
 	case t_page_evict :

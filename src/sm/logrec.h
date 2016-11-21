@@ -178,7 +178,7 @@ public:
 	t_restore_begin = 24,
 	t_restore_segment = 25,
 	t_restore_end = 26,
-	t_page_set_to_be_deleted = 27,
+	// t_page_set_to_be_deleted = 27,
 	t_page_img_format = 28,
 	t_page_evict = 29,
 	t_btree_norec_alloc = 30,

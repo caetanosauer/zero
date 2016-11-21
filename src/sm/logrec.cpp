@@ -157,7 +157,6 @@ u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_restore_begin : return t_redo|t_logical|t_single_sys_xct;
 	case t_restore_segment : return t_redo|t_logical|t_single_sys_xct;
 	case t_restore_end : return t_redo|t_logical|t_single_sys_xct;
-	case t_page_set_to_be_deleted : return t_redo | t_undo;
 	case t_page_img_format : return t_redo | t_undo;
 	case t_page_evict : return t_redo|t_single_sys_xct;
 	case t_btree_norec_alloc : return t_redo|t_multi|t_single_sys_xct;
@@ -855,27 +854,6 @@ operator<<(ostream& o, const logrec_t& l)
     return o;
 }
 
-template <class PagePtr>
-void page_set_to_be_deleted_log::construct(const PagePtr p)
-{
-}
-
-
-template <class PagePtr>
-void page_set_to_be_deleted_log::redo(PagePtr page)
-{
-    rc_t rc = page->set_to_be_deleted(false); // no log
-    if (rc.is_error()) {
-        W_FATAL(rc.err_num());
-    }
-}
-
-template <class PagePtr>
-void page_set_to_be_deleted_log::undo(PagePtr page)
-{
-    page->unset_to_be_deleted();
-}
-
 void create_store_log::construct(PageID root_pid, StoreID snum)
 {
     memcpy(data_ssx(), &snum, sizeof(StoreID));
@@ -1121,7 +1099,3 @@ template void page_evict_log::template construct<btree_page_h*>(btree_page_h* p,
                                 general_recordid_t child_slot, lsn_t child_lsn);
 
 template void page_img_format_log::template construct<btree_page_h*>(btree_page_h*);
-
-template void page_set_to_be_deleted_log::template construct<btree_page_h*>(btree_page_h*);
-
-template void page_set_to_be_deleted_log::template construct<fixable_page_h*>(fixable_page_h*);

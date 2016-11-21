@@ -182,13 +182,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     template <class Ptr> void redo(Ptr);
     };
 
-    struct page_set_to_be_deleted_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_page_set_to_be_deleted;
-    template <class PagePtr> void construct (const PagePtr page);
-    template <class Ptr> void redo(Ptr);
-    template <class Ptr> void undo(Ptr);
-    };
-
     struct page_img_format_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_page_img_format;
     template <class PagePtr> void construct (const PagePtr page);

@@ -133,13 +133,16 @@ bool fixable_page_h::is_to_be_deleted() {
 }
 
 rc_t fixable_page_h::set_to_be_deleted (bool log_it) {
-    w_assert1(is_latched());
-    if ((_pp->page_flags & t_to_be_deleted) == 0) {
-        if (log_it) {
-            W_DO(Logger::log<page_set_to_be_deleted_log> (this));
-        }
-        _pp->page_flags ^= t_to_be_deleted;
-    }
+    // CS TODO: implement page deletion properly
+    //
+    w_assert0(false);
+    // w_assert1(is_latched());
+    // if ((_pp->page_flags & t_to_be_deleted) == 0) {
+    //     if (log_it) {
+    //         W_DO(Logger::log<page_set_to_be_deleted_log> (this));
+    //     }
+    //     _pp->page_flags ^= t_to_be_deleted;
+    // }
     return RCOK;
 }
 
