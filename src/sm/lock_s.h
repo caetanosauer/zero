@@ -21,7 +21,6 @@ extern uint32_t OKVL_INIT_STR_UNIQUEFIER_LEN;
 
 #include "w_defines.h"
 #include "w_key.h"
-#include "w_hashing.h"
 #include "w_okvl.h"
 
 /**
@@ -90,6 +89,9 @@ public:
     lockid_t&         operator=(const lockid_t& i);
 private:
     void _init_for_str(StoreID stid, const unsigned char *keystr, int16_t keylen);
+
+    // CS TODO replace with std::hash
+    uint64_t hash64(uint32_t seed, const unsigned char *str, int16_t len);
 };
 
 
@@ -118,6 +120,17 @@ inline NORET lockid_t::lockid_t()
 // use fixed seed for repeatability and easier debugging
 const uint32_t LOCKID_T_HASH_SEED = 0xEE5C61DD;
 
+// CS: copied from old w_hashing.h
+inline uint64_t lockid_t::hash64(uint32_t seed, const unsigned char *str, int16_t len)
+{
+    // simple iterative multiply-sum method on byte-by-byte (safe on every architecture)
+    w_assert1(len >= 0);
+    uint64_t ret = 0;
+    for (int16_t i = 0; i < len; ++i) {
+        ret = seed * ret + str[i];
+    }
+    return ret;
+}
 
 inline void
 lockid_t::_init_for_str(StoreID stid, const unsigned char *keystr, int16_t keylen)
@@ -131,7 +144,7 @@ lockid_t::_init_for_str(StoreID stid, const unsigned char *keystr, int16_t keyle
             keylen = OKVL_INIT_STR_PREFIX_LEN;
         }
     }
-    l[1] = w_hashing::uhash::hash64(LOCKID_T_HASH_SEED, keystr, keylen);
+    l[1] = hash64(LOCKID_T_HASH_SEED, keystr, keylen);
 }
 
 inline

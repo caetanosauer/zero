@@ -69,7 +69,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "bf_tree.h"
 #include "restart.h"
 #include "sm_options.h"
-#include "suppress_unused.h"
 #include "tid_t.h"
 #include "log_carray.h"
 #include "log_lsn_tracker.h"

@@ -2,7 +2,6 @@
 #define TATAS_H
 
 #include "AtomicCounter.hpp"
-#include "os_interface.h"
 #include "w_defines.h"
 
 #if MUTRACE_ENABLED_H

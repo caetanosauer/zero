@@ -415,7 +415,7 @@ rc_t partition_t::scan_for_size(bool must_be_skip)
     // is found; then check for must_be_skip
     W_DO(open_for_read());
 
-    os_stat_t stat;
+    struct stat stat;
     auto ret = ::fstat(_fhdl_rd, &stat);
     CHECK_ERRNO(ret);
     size_t fsize = stat.st_size;

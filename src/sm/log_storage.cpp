@@ -18,7 +18,6 @@
 #include <cstdio>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <os_interface.h>
 #include <atomic>
 #include <thread>
 #include <chrono>

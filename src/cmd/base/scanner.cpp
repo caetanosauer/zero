@@ -5,6 +5,8 @@
 #include <restart.h>
 #include <vol.h>
 
+#include <dirent.h>
+
 #define PARSE_LSN(a,b) \
     LogArchiver::ArchiveDirectory::parseLSN(a, b);
 
@@ -56,12 +58,12 @@ BlockScanner::BlockScanner(const po::variables_map& options,
 void BlockScanner::findFirstFile()
 {
     pnum = numeric_limits<int>::max();
-    os_dir_t dir = os_opendir(logdir);
+    DIR* dir = opendir(logdir);
     if (!dir) {
         cerr << "Error: could not open recovery log dir: " << logdir << endl;
         W_COERCE(RC(fcOS));
     }
-    os_dirent_t* entry = os_readdir(dir);
+    struct dirent* entry = readdir(dir);
     const char * PREFIX = "log.";
 
     while (entry != NULL) {
@@ -72,9 +74,9 @@ void BlockScanner::findFirstFile()
                 pnum = p;
             }
         }
-        entry = os_readdir(dir);
+        entry = readdir(dir);
     }
-    os_closedir(dir);
+    closedir(dir);
 }
 
 string BlockScanner::getNextFile()

@@ -157,7 +157,7 @@ rc_t LogArchiver::ReaderThread::openPartition()
     fd = ::open(fname.c_str(), flags, 0744 /*mode*/);
     CHECK_ERRNO(fd);
 
-    os_stat_t stat;
+    struct stat stat;
     auto ret = ::fstat(fd, &stat);
     CHECK_ERRNO(ret);
     if (stat.st_size == 0) { return RC(eEOF); }
@@ -464,7 +464,7 @@ lsn_t LogArchiver::ArchiveDirectory::parseLSN(const char* str, bool end)
 
 size_t LogArchiver::ArchiveDirectory::getFileSize(int fd)
 {
-    os_stat_t stat;
+    struct stat stat;
     auto ret = ::fstat(fd, &stat);
     CHECK_ERRNO(ret);
     return stat.st_size;

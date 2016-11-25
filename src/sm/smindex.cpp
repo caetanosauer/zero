@@ -10,7 +10,6 @@
 #include "sm.h"
 #include "xct.h"
 #include "btree.h"
-#include "suppress_unused.h"
 #include "vol.h"
 
 /*==============================================================*
