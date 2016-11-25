@@ -58,6 +58,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <cstdlib>
 #include <cstring>
 #include <w_stream.h>
+#include <w_debug.h>
 #include <w_base.h>
 #include <w_minmax.h>
 #include "basics.h"
@@ -771,6 +772,90 @@ bool w_keystr_t::copy_from_vec(const cvec_t &vect) {
     vect.copy_to(_data, vect.size());
     _strlen = vect.size();
     return true;
+}
+
+/////////////////////////////////////////////////////
+//
+// CS: THIS IS USED ONLY IN UNIT TESTS
+//
+// "result" is a vector with size() no larger than
+// maxsize, whose contents are taken from the part
+// of *this that's left after you skip the first
+// "offset" bytes of *this.
+// CALLER provides result, which is reset() right
+// away, and re-used each time this is called.
+//
+// The general idea is that this allows you to take
+// a vector of arbitrary configuration (in the context
+// of writes, say) and break it up into vectors of
+// "maxsize" sizes so that you can limit the sizes of
+// writes.
+/////////////////////////////////////////////////////
+void
+vec_t::mkchunk(
+    int                maxsize,
+    int                offset, // # skipped
+    vec_t            &result // provided by the caller
+) const
+{
+    int i;
+
+    w_assert1( _base[0].ptr != zero_location );
+
+    DBG(<<"offset " << offset << " in vector :");
+    result.reset();
+
+    // return a vector representing the next
+    // maxsize bytes starting at the given offset
+    // from the data represented by the input vector
+    int        first_chunk=0, first_chunk_offset=0, first_chunk_len=0;
+    {
+        // find first_chunk
+        int skipped=0, skipping;
+
+        for(i=0; i<this->count(); i++) {
+            skipping = this->len(i);
+            if(skipped + skipping > offset) {
+                // found
+                first_chunk = i;
+                first_chunk_offset = offset - skipped;
+                first_chunk_len = skipping - first_chunk_offset;
+                if(first_chunk_len > maxsize) {
+                    first_chunk_len = maxsize;
+                }
+
+        DBG(<<"put " << W_ADDR(this->ptr(i)) <<
+            "+" << first_chunk_offset << ", " << first_chunk_len);
+
+                result.put((char*)this->ptr(i)+first_chunk_offset,first_chunk_len);
+                break;
+            }
+            skipped += skipping;
+        }
+        if(first_chunk_len == 0) return;
+    }
+
+    if(first_chunk_len < maxsize) {
+        // find next chunks up to the last
+        int used, is_using ;
+
+        used = first_chunk_len;
+        for(i=first_chunk+1; i<this->count(); i++) {
+            is_using = this->len(i);
+            if(used + is_using <= maxsize) {
+                // use the whole thing
+                used += is_using;
+
+                DBG(<<"put " << W_ADDR(this->ptr(i)) << ", " << is_using);
+                result.put(this->ptr(i),is_using);
+            } else {
+                // gotta use part
+                result.put(this->ptr(i),maxsize-used);
+                used = maxsize;
+                break;
+            }
+        }
+    }
 }
 
 /**\endcond skip */
