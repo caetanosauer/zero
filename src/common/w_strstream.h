@@ -86,20 +86,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * 
  */
 
-#ifdef W_USE_COMPAT_STRSTREAM
-#include "w_compat_strstream.h"
-#else
 #include <strstream>
-#endif
 #include <cstring>
-
-#if defined(W_USE_COMPAT_STRSTREAM)
-/* #define instead of typedef so everything is hidden, and not available
-   or conflicting with other users. */
-#define    istrstream       shore_compat::istrstream
-#define    ostrstream       shore_compat::ostrstream
-#define    strstreambuf     shore_compat::strstreambuf
-#endif
 
 /**\brief Input string stream based on shore_compat::istrstream
  */
@@ -250,13 +238,6 @@ public:
         _buf_size = 0;
     }
 };
-
-#ifdef W_USE_COMPAT_STRSTREAM
-#undef istrstream
-#undef ostrstream
-#undef strstreambuf
-#endif
-
 
 
 /*<std-footer incl-file-exclusion='W_STRSTREAM_H'>  -- do not edit anything below this line -- */
