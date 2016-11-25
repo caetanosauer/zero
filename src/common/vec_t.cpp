@@ -57,7 +57,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define VEC_T_C
 #include <cstdlib>
 #include <cstring>
-#include <w_stream.h>
 #include <w_debug.h>
 #include <w_base.h>
 #include <w_minmax.h>

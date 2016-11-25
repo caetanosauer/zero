@@ -561,7 +561,7 @@ sub translate {
 
         # code for operator << to ostream
         printf(CODEOUTP 
-            "\to << setw(W_$class) << \"$def \" << t.$def << endl;\n");
+            "\to << \"$def \" << t.$def << endl;\n");
         }
         if ($maxw < length($def)) {  $maxw = length($def); }
 

@@ -111,7 +111,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
   */
 #include "w.h"
 #include <cstddef>
-#include <w_stream.h>
 
 #include "basics.h"
 #include "vec_t.h"

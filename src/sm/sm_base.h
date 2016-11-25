@@ -68,7 +68,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <cstdlib>
 #include <cstring>
 #include <climits>
-#include <w_stream.h>
 #include <w.h>
 #include <vec_t.h>
 #include <latch.h>

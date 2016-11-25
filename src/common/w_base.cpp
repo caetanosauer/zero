@@ -130,11 +130,9 @@ w_base_t::assert_failed(
 
 typedef ios::fmtflags  fmtflags;
 
-#include <w_strstream.h>
-
 /* name is local to this file */
-static uint64_t    
-__strtou8(        
+static uint64_t
+__strtou8(
     const char *str,
     char **endptr,
     int     base,

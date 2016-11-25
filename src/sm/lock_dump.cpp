@@ -12,7 +12,6 @@
 #include "lock_core.h"
 #include "lock_raw.h"
 
-#include "w_strstream.h"
 #include <sstream>
 #include <AtomicCounter.hpp>
 

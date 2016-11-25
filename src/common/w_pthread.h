@@ -57,31 +57,31 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define W_PTHREAD_H
 
 #include <pthread.h>
-#include <w_strstream.h>
 #include <string.h>
+#include <sstream>
 
 #define DO_PTHREAD_BARRIER(x) \
 {   int res = x; \
     if(res && res != PTHREAD_BARRIER_SERIAL_THREAD) { \
-       w_ostrstream S; \
+       std::stringstream S; \
        S << "Unexpected result from " << #x << " " << res << " "; \
        char buf[100]; \
        (void) strerror_r(res, &buf[0], sizeof(buf)); \
        S << buf << ends; \
-       W_FATAL_MSG(fcINTERNAL, << S.c_str()); \
+       W_FATAL_MSG(fcINTERNAL, << S.str()); \
     }  \
 }
 #define DO_PTHREAD(x) \
 {   int res = x; \
     if(res) { \
-       w_ostrstream S; \
+       std::stringstream S; \
        S << "Unexpected result from " << #x << " " << res << " "; \
        char buf[100]; \
        void * xxrs; \
        xxrs = (void *) strerror_r(res, &buf[0], sizeof(buf));     \
        (void) xxrs; \
        S << buf << ends; \
-       W_FATAL_MSG(fcINTERNAL, << S.c_str()); \
+       W_FATAL_MSG(fcINTERNAL, << S.str()); \
     }  \
 }
 #define DO_PTHREAD_TIMED(x) \

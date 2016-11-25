@@ -31,6 +31,7 @@
  */
 
 #include "field.h"
+#include <iostream>
 
 /*********************************************************************
  *
@@ -91,62 +92,12 @@ void  field_desc_t::print_desc(ostream & os)
  *
  *  @fn:    load_value_from_file
  *
- *  @brief: Return a string with the value of the specific type and value. 
+ *  @brief: Return a string with the value of the specific type and value.
  *          Used for debugging purposes.
- *  
+ *
  *  @note:  Deprecated
  *
  *********************************************************************/
-
-/** DEPRECATED: slow */
-bool field_value_t::load_value_from_file(ifstream & is,
-                                         const char delim)
-{
-    assert (_pfield_desc);
-
-    char* string = new char [10*_pfield_desc->fieldmaxsize()];
-    is.get(string, 10*_pfield_desc->fieldmaxsize(), delim);
-    if (strlen(string) == 0) {
-        delete [] string;
-        return false;
-    }
-
-    if (strcmp(string, "(null)") == 0) {
-        assert(_pfield_desc->allow_null());
-        _null_flag = true;
-        delete [] string;
-        return true;
-    }
-
-    _null_flag = false;
-
-    switch (_pfield_desc->type()) {
-    case SQL_BIT:       _value._bit = atoi(string); break;
-    case SQL_SMALLINT:  _value._smallint = atoi(string); break;
-    case SQL_CHAR:      _value._char = atoi(string); break;
-    case SQL_INT:       _value._int = atoi(string); break;
-    case SQL_FLOAT:     _value._float = atof(string); break;
-    case SQL_LONG:     _value._float = atol(string); break;
-    case SQL_TIME:      break;
-    case SQL_VARCHAR:   {
-        if (string[0] == '\"') string[strlen(string)-1] = '\0';
-        set_var_string_value(string+1, strlen(string)-1);
-        break;
-    }
-    case SQL_FIXCHAR:  {
-        if (string[0] == '\"') string[strlen(string)-1] = '\0';
-        set_fixed_string_value(string+1, strlen(string)-1);
-        break;
-    } 
-    case SQL_NUMERIC:
-    case SQL_SNUMERIC:
-        set_fixed_string_value(string, strlen(string));
-        break;
-    }
-    delete [] string;
-    return true;
-}
-
 
 /*********************************************************************
  *
@@ -156,7 +107,7 @@ bool field_value_t::load_value_from_file(ifstream & is,
  *
  *********************************************************************/
 
-void  field_value_t::print_value(ostream & os)
+void  field_value_t::print_value(std::ostream & os)
 {
     assert (_pfield_desc);
 

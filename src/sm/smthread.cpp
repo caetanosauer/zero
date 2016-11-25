@@ -11,8 +11,6 @@
 
 #include <sm_base.h>
 
-#include <w_strstream.h>
-
 SmthreadFunc::~SmthreadFunc()
 {
 }

@@ -586,8 +586,7 @@ latch_t::is_mine() const {
 
 // NOTE: this is not safe, but it can be used by unit tests
 // and for debugging
-#include <w_stream.h>
-ostream &latch_t::print(ostream &out) const
+std::ostream &latch_t::print(std::ostream &out) const
 {
     out <<    "latch(" << this << ") ";
     out << " held in " << latch_mode_str[int(mode())] << " mode ";

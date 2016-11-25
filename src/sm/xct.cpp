@@ -17,7 +17,6 @@
 #include "xct.h"
 #include "lock_x.h"
 #include "lock_lil.h"
-#include <w_strstream.h>
 
 #include <sm.h>
 #include "tls.h"
@@ -1132,8 +1131,8 @@ xct_t::_pre_abort()
     // forward processing, thereby reserving something
     // for aborting, even if this is a read-only xct.
     {
-        w_ostrstream s;
-        s << "aborting... ";
+        // w_ostrstream s;
+        // s << "aborting... ";
         // TODO, bug... commenting this out, it appears
         // Single Page Recovery when collecting log records
         // it might have bugs dealing with this log record (before txn aborting)
@@ -1355,10 +1354,10 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
 
 #if X_LOG_COMMENT_ON
     if(and_compensate) {
-        w_ostrstream s;
-        s << "release_anchor at "
-            << debugmsg;
-        W_COERCE(Logger::log<comment_log>(s.c_str()));
+        // w_ostrstream s;
+        // s << "release_anchor at "
+        //     << debugmsg;
+        // W_COERCE(Logger::log<comment_log>(s.c_str()));
     }
 #endif
     DBGX(

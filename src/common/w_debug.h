@@ -62,8 +62,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <w_base.h>
 #endif /* W_BASE_H */
 
-#include <w_stream.h>
-
 /**\file w_debug.h
  *\ingroup MACROS
  *

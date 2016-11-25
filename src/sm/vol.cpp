@@ -9,7 +9,6 @@
 #define SM_SOURCE
 #define VOL_C
 
-#include "w_stream.h"
 #include <boost/concept_check.hpp>
 #include "sm_base.h"
 #include "stnode_page.h"

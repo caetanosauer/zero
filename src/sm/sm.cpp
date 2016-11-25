@@ -1127,15 +1127,6 @@ ss_m::_save_work(sm_save_point_t& sp)
 
     W_DO(x->save_point(sp));
     sp._tid = x->tid();
-#if W_DEBUG_LEVEL > 4
-    {
-        w_ostrstream s;
-        s << "save_point @ " << (void *)(&sp)
-            << " " << sp
-            << " created for tid " << x->tid();
-        fprintf(stderr,  "%s\n", s.c_str());
-    }
-#endif
     return RCOK;
 }
 
@@ -1147,15 +1138,6 @@ ss_m::_rollback_work(const sm_save_point_t& sp)
 {
     w_assert3(xct() != 0);
     xct_t* x = xct();
-#if W_DEBUG_LEVEL > 4
-    {
-        w_ostrstream s;
-        s << "rollback_work for " << (void *)(&sp)
-            << " " << sp
-            << " in tid " << x->tid();
-        fprintf(stderr,  "%s\n", s.c_str());
-    }
-#endif
     if (sp._tid != x->tid())  {
         return RC(eBADSAVEPOINT);
     }
@@ -1296,9 +1278,7 @@ void dump_all_sm_stats()
 {
     static sm_stats_info_t s;
     W_COERCE(ss_m::gather_stats(s));
-    w_ostrstream o;
-    o << s << endl;
-    fprintf(stderr, "%s\n", o.c_str());
+    std::cerr << s << endl;
 }
 #endif
 

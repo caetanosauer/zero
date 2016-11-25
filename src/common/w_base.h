@@ -79,8 +79,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /* end configuration definitions                       */
 /*******************************************************/
 
-#include <w_stream.h>
-
 #ifndef W_WORKAROUND_H
 #include "w_workaround.h"
 #endif
@@ -181,7 +179,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define w_assert0_msg(x, msg)                                           \
 do {                                                                    \
     if(!(x)) {                                                          \
-        stringstream s;                                                 \
+        std::stringstream s;                                                 \
         s << #x ;                                                       \
         s << " (detail: " << msg << ")";                                \
         w_base_t::assert_failed(s.str().c_str(), __FILE__, __LINE__);   \
@@ -354,12 +352,6 @@ public:
      */
     static uint64_t    strtou8(const char *, char ** end=0, int base=0);
 
-    // Input to an instream
-    static istream&    _scan_uint8(istream& i, uint64_t &, 
-                bool chew_white,
-                bool is_signed,
-                bool& rangerr);
-
     static bool        is_finite(const f8_t x);
     static bool        is_infinite(const f8_t x);
     static bool        is_nan(const f8_t x);
@@ -377,11 +369,6 @@ public:
     static uint16_t    w_htons(uint16_t);
     static uint32_t    w_ntohl(uint32_t);
     static uint32_t    w_htonl(uint32_t);
-
-    ///  standard streams
-    friend ostream&        operator<<(
-        ostream&            o,
-        const w_base_t&            obj);
 
     /// print a message and abort
     static void            assert_failed(
@@ -401,27 +388,8 @@ public:
     NegInf=0x100, eqNegInf, gtNegInf, geNegInf, ltNegInf, leNegInf,
     PosInf=0x400, eqPosInf, gtPosInf, gePosInf, ltPosInf, lePosInf
     };
-    
+
 };
-
-
-/* XXX compilers+environment that need this operator defined */
-
-/**\def w_reset_strstream(s)
- *\brief Allow a ostrstream to be reused.  
- */
-
-/* This works for the shore w_strstream.   But, wait, why
-   is it different for visual c++?  It doesn't need to be?
-   It is different so you can reset an ordinary strstream 
-   with it also.    A better solution for w_strstreams and
-   strstreams would be something overloaded instead of a macro. */
-
-#define    w_reset_strstream(s)        \
-    do {                \
-        s.clear();        \
-        s.seekp(ios::beg);    \
-    } while (0)
 
 
 /*--------------------------------------------------------------*

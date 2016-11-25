@@ -76,7 +76,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <algorithm>
 #include <sstream>
-#include <w_strstream.h>
 
 // files and stuff
 #include <sys/types.h>

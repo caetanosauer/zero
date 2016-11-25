@@ -40,7 +40,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * and we want to be able to link, in any case
  */
 
-#include <w_stream.h>
 #include <iostream>
 #include <cstring>
 #include <cstdlib>
