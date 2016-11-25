@@ -258,7 +258,7 @@ public:
             int       timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD,
             bool                sys_xct = false,
             bool                single_log_sys_xct = false,
-            const tid_t&        tid = tid_t::null,
+            const tid_t&        tid = 0,
             const lsn_t&        last_lsn = lsn_t::null,
             const lsn_t&        undo_nxt = lsn_t::null,
             bool                loser_xct = false

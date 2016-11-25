@@ -159,7 +159,7 @@ void  xct_t::release_xlist_mutex()
  *          multi-thread access
  *
  *********************************************************************/
-tid_t                                 xct_t::_nxt_tid = tid_t::null;
+tid_t                                 xct_t::_nxt_tid = 0;
 
 /*********************************************************************
  *
@@ -169,7 +169,7 @@ tid_t                                 xct_t::_nxt_tid = tid_t::null;
  *  2nd column, page 10.
  *
  *********************************************************************/
-tid_t                                xct_t::_oldest_tid = tid_t::null;
+tid_t                                xct_t::_oldest_tid = 0;
 
 inline bool   xct_t::should_consume_rollback_resv(int t) const
 {
@@ -282,7 +282,7 @@ xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
             )
     :
     _core(new xct_core(
-                given_tid == tid_t::null ? _nxt_tid.atomic_incr() : given_tid,
+                given_tid == 0 ? ++_nxt_tid : given_tid,
                 xct_active, timeout)),
     __stats(stats),
     __saved_lockid_t(0),
@@ -314,9 +314,8 @@ xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
 #endif
 {
     w_assert3(state() == xct_active);
-    if (given_tid != tid_t::null) {
-        // tid is given if transaction is being built during restart
-        _nxt_tid.atomic_assign_max(given_tid);
+    if (given_tid != 0 && _nxt_tid < given_tid) {
+        _nxt_tid = given_tid;
     }
 
     w_assert1(tid() == _core->_tid);
@@ -351,7 +350,7 @@ xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
 
     w_assert3(state() == xct_active);
 
-    if (given_tid == tid_t::null) {
+    if (given_tid == 0) {
         smthread_t::attach_xct(this);
     }
     else {
@@ -636,7 +635,7 @@ xct_t::youngest_tid()
 void
 xct_t::update_youngest_tid(const tid_t &t)
 {
-    _nxt_tid.atomic_assign_max(t);
+    if (_nxt_tid < t) _nxt_tid = t;
 }
 
 
@@ -656,7 +655,7 @@ xct_t::put_in_order() {
     {
         // make sure that _xlist is in order
         w_list_i<xct_t, queue_based_lock_t> i(_xlist);
-        tid_t t = tid_t::null;
+        tid_t t = 0;
         xct_t* xd;
         while ((xd = i.next()))  {
             if (t >= xd->_tid)
@@ -727,7 +726,7 @@ xct_t::_teardown(bool is_chaining) {
 
     _xlink.detach();
     if(is_chaining) {
-        _tid = _core->_tid = _nxt_tid.atomic_incr();
+        _tid = _core->_tid = ++_nxt_tid;
         _core->_lock_info->set_tid(_tid); // WARNING: duplicated in
         // lock_x and in core
         _xlist.put_in_order(this);

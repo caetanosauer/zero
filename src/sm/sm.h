@@ -427,7 +427,7 @@ class key_ranges_map;
  */
 class sm_save_point_t : public lsn_t {
 public:
-    NORET            sm_save_point_t(): _tid(0,0) {};
+    sm_save_point_t(): _tid(0) {};
     friend ostream& operator<<(ostream& o, const sm_save_point_t& p) {
         return o << p._tid << ':' << (const lsn_t&) p;
     }

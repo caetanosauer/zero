@@ -14,7 +14,6 @@ set(common_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/basics.cpp # cleanup unused parts; move used parts elsewhere
   ${CMAKE_CURRENT_SOURCE_DIR}/latch.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/lsn.cpp # unify with FL's new lsn_t
-  ${CMAKE_CURRENT_SOURCE_DIR}/tid_t.cpp # throw away and use simple int
   ${CMAKE_CURRENT_SOURCE_DIR}/vec_t.cpp)
 
 add_library(common STATIC ${common_SRCS})

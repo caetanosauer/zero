@@ -225,7 +225,7 @@ restart_m::redo_log_pass()
             if (r.pid() == 0 && r.type() != logrec_t::t_alloc_page &&
                     r.type() != logrec_t::t_dealloc_page)
             {
-                if (!r.is_single_sys_xct() && r.tid() != tid_t::null)
+                if (!r.is_single_sys_xct() && r.tid() != 0)
                 {
                     // Regular transaction with a valid txn id
                     xct_t *xd = xct_t::look_up(r.tid());

@@ -189,7 +189,7 @@ void chkpt_t::scan_log(lsn_t scan_start)
             continue;
         }
 
-        if (!r.tid().is_null()) {
+        if (!r.tid() == 0) {
             if (r.tid() > get_highest_tid()) {
                 set_highest_tid(r.tid());
             }
@@ -355,7 +355,7 @@ void chkpt_t::scan_log(lsn_t scan_start)
 
 void chkpt_t::init()
 {
-    highest_tid = tid_t::null;
+    highest_tid = 0;
     last_scan_start = lsn_t::null;
     buf_tab.clear();
     xct_tab.clear();

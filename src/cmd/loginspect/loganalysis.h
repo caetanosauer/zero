@@ -6,16 +6,6 @@
 
 #include <unordered_set>
 
-// Hash function for TID
-namespace std {
-    template<> struct hash<tid_t> {
-        size_t operator()(const tid_t& t) const
-        {
-            return hash<uint64_t>()(t.as_int64());
-        }
-    };
-}
-
 class LogAnalysis : public LogScannerCommand
 {
 public:

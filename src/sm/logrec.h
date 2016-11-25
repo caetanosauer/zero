@@ -255,7 +255,7 @@ public:
        static_assert(hdr_non_ssx_sz == 40);
        static_assert(hdr_single_sys_xct_sz == 40 - 16);
 
-       const tid_t&   tid() const;
+       tid_t   tid() const;
        StoreID        stid() const;
        PageID         pid() const;
        PageID         pid2() const;
@@ -536,11 +536,10 @@ logrec_t::set_page_prev_lsn(const lsn_t &lsn)
     header._page_prv = lsn;
 }
 
-inline const tid_t&
-logrec_t::tid() const
+inline tid_t logrec_t::tid() const
 {
     if (is_single_sys_xct()) {
-        return tid_t::null;
+        return tid_t {0};
     }
     return xidInfo._xid;
 }

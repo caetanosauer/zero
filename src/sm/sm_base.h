@@ -99,7 +99,6 @@ class log_core;
 class lock_m;
 class LogArchiver;
 
-class tid_t;
 class option_t;
 class rid_t;
 class lsn_t;
