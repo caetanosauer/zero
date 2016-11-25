@@ -35,7 +35,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/log_carray.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_storage.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logrec.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/page_cleaner.cpp

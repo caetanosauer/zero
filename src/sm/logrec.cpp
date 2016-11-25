@@ -16,7 +16,6 @@
 #include "alloc_cache.h"
 #include "vol.h"
 #include "restore.h"
-#include "log_spr.h"
 #include <sstream>
 #include "logrec_support.h"
 #include "btree_page_h.h"
