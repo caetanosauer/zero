@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-kits -- Benchmark implementations for Shore-MT
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -77,7 +77,7 @@ void  field_desc_t::print_desc(ostream & os)
 	os << "Type: SNUMERIC \t size: " << _size << endl;
 	break;
     }
-} 
+}
 
 
 
@@ -166,7 +166,7 @@ void  field_value_t::print_value(std::ostream & os)
  *
  *  @fn:    get_debug_str
  *
- *  @brief: Return a string with the value of the specific type and value. 
+ *  @brief: Return a string with the value of the specific type and value.
  *          Used for debugging purposes.
  *
  *********************************************************************/
