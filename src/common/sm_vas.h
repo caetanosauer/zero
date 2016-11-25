@@ -119,7 +119,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #undef SM_SOURCE
 #include "sm.h"
-#include "kvl_t.h" // define kvl_t for lock_base_t
 #include "lock_s.h" // define lock_base_t
 
 /*<std-footer incl-file-exclusion='SM_VAS_H'>  -- do not edit anything below this line -- */

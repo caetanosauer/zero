@@ -8,7 +8,6 @@
 #include "w_defines.h"
 
 #include "btree.h"
-#include "kvl_t.h"
 #include "btree_verify.h"
 #include "w_okvl.h"
 #include "xct.h"

@@ -1,28 +1,25 @@
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR})
 
 set(common_SRCS
-  ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.cpp # new stats infrastructure
   ${CMAKE_CURRENT_SOURCE_DIR}/worker_thread.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/w_debug.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/latches.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/rand48.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/block_alloc.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/rand48.cpp # used only in tls_rng, clean & throw away
+  ${CMAKE_CURRENT_SOURCE_DIR}/block_alloc.cpp # unifiy all mem mgmt code (2 below too)
   ${CMAKE_CURRENT_SOURCE_DIR}/dynarray.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/mem_block.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/gethrtime.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_compat_strstream.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/stime.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_base.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_listm.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/tls.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_findprime.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/basics.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/bitmap.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/gethrtime.cpp # used in vol.cpp fake disk latency -- clean up & throw away
+  ${CMAKE_CURRENT_SOURCE_DIR}/w_compat_strstream.cpp # throw away (also w_strstream.h)
+  ${CMAKE_CURRENT_SOURCE_DIR}/w_base.cpp # cleanup and remove if possible (lots of std numeric stuff)
+  ${CMAKE_CURRENT_SOURCE_DIR}/w_listm.cpp # remove all uses and throw away
+  ${CMAKE_CURRENT_SOURCE_DIR}/tls.cpp # cleanup (at least macros) and leave only memory manager stuff
+  ${CMAKE_CURRENT_SOURCE_DIR}/w_findprime.cpp # used in bf tree hashtable -> move or replace with std
+  ${CMAKE_CURRENT_SOURCE_DIR}/basics.cpp # cleanup unused parts; move used parts elsewhere
   ${CMAKE_CURRENT_SOURCE_DIR}/latch.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/kvl_t.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/lsn.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/tid_t.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/vec_mkchunk.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/lsn.cpp # unify with FL's new lsn_t
+  ${CMAKE_CURRENT_SOURCE_DIR}/tid_t.cpp # throw away and use simple int
+  ${CMAKE_CURRENT_SOURCE_DIR}/vec_mkchunk.cpp # remove / move to vec_t.cpp / move to test_vectors
   ${CMAKE_CURRENT_SOURCE_DIR}/vec_t.cpp)
 
 add_library(common STATIC ${common_SRCS})

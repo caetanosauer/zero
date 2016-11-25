@@ -8,7 +8,6 @@
 #include "block_alloc.h"
 
 #include "sm_base.h"
-#include "kvl_t.h"
 #include "lock_s.h"
 #include "lock_x.h"
 #include "lock_core.h"
