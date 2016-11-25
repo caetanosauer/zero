@@ -12,7 +12,6 @@ set(common_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/w_base.cpp # cleanup and remove if possible (lots of std numeric stuff)
   ${CMAKE_CURRENT_SOURCE_DIR}/w_listm.cpp # remove all uses and throw away
   ${CMAKE_CURRENT_SOURCE_DIR}/tls.cpp # cleanup (at least macros) and leave only memory manager stuff
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_findprime.cpp # used in bf tree hashtable -> move or replace with std
   ${CMAKE_CURRENT_SOURCE_DIR}/basics.cpp # cleanup unused parts; move used parts elsewhere
   ${CMAKE_CURRENT_SOURCE_DIR}/latch.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/lsn.cpp # unify with FL's new lsn_t
