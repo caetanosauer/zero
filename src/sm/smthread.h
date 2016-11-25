@@ -78,11 +78,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "latches.h"
 #include "logrec.h"
 
-// CS TODO get rid of this (move random numbe gen. to kits)
-#include "rand48.h"
-#include "tls.h" // for rand()
-static __thread rand48 tls_rng = RAND48_INITIALIZER;
-
 class xct_t;
 class lockid_t;
 
@@ -485,9 +480,6 @@ private:
 public:
     /** Tells how many transactions are nested. */
     static inline size_t get_tcb_depth() { return tcb()._depth; }
-
-    // CS: copied from sthread_t, used by kits tpcc (TODO: get rid of it)
-    static int rand() { return tls_rng.rand(); } // returns an int in [0, 2**31)
 };
 
 inline xct_t* xct()

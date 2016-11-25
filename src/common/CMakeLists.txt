@@ -5,7 +5,6 @@ set(common_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/worker_thread.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/w_debug.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/latches.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/rand48.cpp # used only in tls_rng, clean & throw away
   ${CMAKE_CURRENT_SOURCE_DIR}/block_alloc.cpp # unifiy all mem mgmt code (2 below too)
   ${CMAKE_CURRENT_SOURCE_DIR}/dynarray.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/mem_block.cpp

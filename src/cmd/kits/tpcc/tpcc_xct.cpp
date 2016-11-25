@@ -660,7 +660,7 @@ w_rc_t ShoreTPCCEnv::run_one_xct(Request* prequest)
 
     // if BASELINE TPC-C MIX
     if (prequest->type() == XCT_MIX) {
-        prequest->set_type(random_xct_type(smthread_t::rand()%100));
+        prequest->set_type(random_xct_type(URand(0,99)));
     }
 
     switch (prequest->type()) {
