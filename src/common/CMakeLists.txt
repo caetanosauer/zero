@@ -9,7 +9,6 @@ set(common_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/block_alloc.cpp # unifiy all mem mgmt code (2 below too)
   ${CMAKE_CURRENT_SOURCE_DIR}/dynarray.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/mem_block.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/gethrtime.cpp # used in vol.cpp fake disk latency -- clean up & throw away
   ${CMAKE_CURRENT_SOURCE_DIR}/w_base.cpp # cleanup and remove if possible (lots of std numeric stuff)
   ${CMAKE_CURRENT_SOURCE_DIR}/w_listm.cpp # remove all uses and throw away
   ${CMAKE_CURRENT_SOURCE_DIR}/tls.cpp # cleanup (at least macros) and leave only memory manager stuff

@@ -16,7 +16,6 @@
 #include "vol.h"
 #include "log_core.h"
 #include "sm_options.h"
-#include "gethrtime.h"
 
 #include "alloc_cache.h"
 #include "restore.h"
@@ -37,6 +36,19 @@
     if (n == -1) { \
         W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
     }
+
+/*
+ * replacement for solaris gethrtime(), which is based in any case
+ * on this clock:
+ */
+int64_t gethrtime()
+{
+    struct timespec tsp;
+    long e = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tsp);
+    w_assert0(e == 0);
+    // tsp.tv_sec is time_t
+    return (tsp.tv_sec * 1000* 1000 * 1000) + tsp.tv_nsec; // nanosecs
+}
 
 vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
              : _fd(-1),
