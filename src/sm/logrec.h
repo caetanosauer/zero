@@ -228,6 +228,10 @@ public:
     template <class PagePtr>
     void             redo(PagePtr);
 
+    void init_header(kind_t type);
+
+    static u_char get_logrec_cat(kind_t type);
+
     void redo();
 
     template <class PagePtr>

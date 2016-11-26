@@ -84,6 +84,7 @@ struct RawLock;            // Lock information gathering
 #define LOG_INSERT(type, args, rlsn)            \
     do {                                              \
         new (logrec) type;                \
+        logrec->init_header(type::TYPE); \
         reinterpret_cast<type*>(logrec)->construct args ; \
         W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
     } while(0)

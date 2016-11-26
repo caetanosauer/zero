@@ -9,8 +9,7 @@ void sysevent::log(logrec_t::kind_t kind)
     // this should use TLS allocator, so it's fast
     // (see macro DEFINE_SM_ALLOC in allocator.h and logrec.cpp)
     logrec_t* lr = new logrec_t();
-    lr->header._type = kind;
-    lr->header._cat = 0 | logrec_t::t_status;
+    lr->init_header(kind);
     lr->fill(0, 0, 0);
     W_COERCE(smlevel_0::log->insert(*lr, NULL));
     delete lr;
@@ -19,8 +18,7 @@ void sysevent::log(logrec_t::kind_t kind)
 void sysevent::log_page_read(PageID shpid, uint32_t count)
 {
     logrec_t* lr = new logrec_t();
-    lr->header._type = logrec_t::t_page_read;
-    lr->header._cat = 0 | logrec_t::t_status;
+    lr->init_header(logrec_t::t_page_read);
 
     memcpy(lr->data(), &shpid, sizeof(PageID));
     memcpy(lr->_data + sizeof(PageID), &count, sizeof(uint32_t));
@@ -32,8 +30,7 @@ void sysevent::log_page_read(PageID shpid, uint32_t count)
 void sysevent::log_page_write(PageID shpid, lsn_t lsn, uint32_t count)
 {
     logrec_t* lr = new logrec_t();
-    lr->header._type = logrec_t::t_page_write;
-    lr->header._cat = 0 | logrec_t::t_status;
+    lr->init_header(logrec_t::t_page_write);
 
     char* pos = lr->_data;
 
@@ -60,6 +57,7 @@ void sysevent::log_page_write(PageID shpid, lsn_t lsn, uint32_t count)
 void sysevent::log_alloc_page(PageID pid, lsn_t& prev_page_lsn)
 {
     alloc_page_log* lr = new alloc_page_log();
+    lr->init_header(logrec_t::t_alloc_page);
     lr->construct(pid);
     lr->set_page_prev_lsn(prev_page_lsn);
     W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
@@ -69,6 +67,7 @@ void sysevent::log_alloc_page(PageID pid, lsn_t& prev_page_lsn)
 void sysevent::log_dealloc_page(PageID pid, lsn_t& prev_page_lsn)
 {
     dealloc_page_log* lr = new dealloc_page_log();
+    lr->init_header(logrec_t::t_dealloc_page);
     lr->construct(pid);
     lr->set_page_prev_lsn(prev_page_lsn);
     W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
@@ -78,6 +77,7 @@ void sysevent::log_dealloc_page(PageID pid, lsn_t& prev_page_lsn)
 void sysevent::log_create_store(PageID root, StoreID stid, lsn_t& prev_page_lsn)
 {
     create_store_log* lr = new create_store_log();
+    lr->init_header(logrec_t::t_create_store);
     lr->construct(root, stid);
     lr->set_page_prev_lsn(prev_page_lsn);
     W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
@@ -87,6 +87,7 @@ void sysevent::log_create_store(PageID root, StoreID stid, lsn_t& prev_page_lsn)
 void sysevent::log_append_extent(extent_id_t ext, lsn_t& prev_page_lsn)
 {
     append_extent_log* lr = new append_extent_log();
+    lr->init_header(logrec_t::t_append_extent);
     lr->construct(ext);
     lr->set_page_prev_lsn(prev_page_lsn);
     W_COERCE(smlevel_0::log->insert(*lr, &prev_page_lsn));
@@ -96,6 +97,7 @@ void sysevent::log_append_extent(extent_id_t ext, lsn_t& prev_page_lsn)
 void sysevent::log_xct_latency_dump(unsigned long nsec)
 {
     xct_latency_dump_log* lr = new xct_latency_dump_log();
+    lr->init_header(logrec_t::t_xct_latency_dump);
     lr->construct(nsec);
     W_COERCE(smlevel_0::log->insert(*lr, nullptr));
     delete lr;

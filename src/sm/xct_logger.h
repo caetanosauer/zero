@@ -30,7 +30,9 @@ public:
 
         logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec;
+        logrec->init_header(Logrec::TYPE);
         reinterpret_cast<Logrec*>(logrec)->construct(args...);
+        w_assert1(logrec->valid_header());
 
         // If it's a log for piggy-backed SSX, we call log->insert without updating _last_log
         // because this is a single log independent from other logs in outer transaction.
@@ -63,7 +65,9 @@ public:
 
         logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec;
+        logrec->init_header(Logrec::TYPE);
         reinterpret_cast<Logrec*>(logrec)->construct(p, args...);
+        w_assert1(logrec->valid_header());
 
         // set page LSN chain
         logrec->set_page_prev_lsn(p->get_page_lsn());
@@ -101,7 +105,9 @@ public:
 
         logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec;
+        logrec->init_header(Logrec::TYPE);
         reinterpret_cast<Logrec*>(logrec)->construct(p, p2, args...);
+        w_assert1(logrec->valid_header());
 
         // set page LSN chain
         logrec->set_page_prev_lsn(p->get_page_lsn());
