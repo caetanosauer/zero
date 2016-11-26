@@ -50,7 +50,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
 
 w_rc_t bf_tree_m::_get_replacement_block()
 {
-    get_cleaner()->wakeup();
+    wakeup_cleaner();
 
     uint32_t evicted_count, unswizzled_count;
 
@@ -93,7 +93,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         uint32_t& unswizzled_count,
         uint32_t preferred_count)
 {
-    get_cleaner()->wakeup();
+    wakeup_cleaner();
 
     if (preferred_count == 0) {
         preferred_count = EVICT_BATCH_RATIO * _block_cnt + 1;
@@ -128,7 +128,7 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         }
         if (idx == _eviction_current_frame - 1) {
             // Wake up and wait for cleaner
-            get_cleaner()->wakeup(true);
+            wakeup_cleaner(true);
             if (rounds > 0 && evicted_count == 0) {
                 DBG(<< "Eviction stuck! Nonleafs: " << nonleaf_count
                         << " dirty: " << dirty_count);
@@ -157,10 +157,14 @@ w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count,
         }
         w_assert1(cb.latch().held_by_me());
 
+        // CS TODO this should also be true if write elision is on
+        bool ignore_dirty = _no_db_mode;
+
         // now we hold an EX latch -- check if leaf and not dirty
         btree_page_h p;
         p.fix_nonbufferpool_page(_buffer + idx);
-        if (p.tag() != t_btree_p || !p.is_leaf() || cb.is_dirty()
+        if (p.tag() != t_btree_p || !p.is_leaf()
+                || (cb.is_dirty() && !ignore_dirty)
                 || !cb._used || p.pid() == p.root() || p.get_foster() != 0)
         {
             cb.latch().latch_release();

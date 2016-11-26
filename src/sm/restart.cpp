@@ -637,6 +637,18 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn)
     return RCOK;
 }
 
+void grow_buffer(char*& buffer, size_t& buffer_capacity, size_t pos, logrec_t*& lr)
+{
+    DBGOUT1(<< "Doubling SPR buffer capacity");
+    buffer_capacity *= 2;
+    char* tmp = new char[buffer_capacity];
+    memcpy(tmp, buffer, buffer_capacity/2);
+    delete[] buffer;
+    buffer = tmp;
+    lr = (logrec_t*) (buffer + pos);
+    w_assert1(lr->length() <= buffer_capacity - pos);
+}
+
 rc_t restart_m::_collect_spr_logs(
     const PageID& pid,         // In: page ID of the page to work on
     const lsn_t& current_lsn,  // In: known last write to the page, where recovery starts
@@ -656,6 +668,7 @@ rc_t restart_m::_collect_spr_logs(
     size_t pos = 0;
 
     lsn_t nxt = emlsn;
+    bool left_early = false;
     while (current_lsn < nxt && nxt != lsn_t::null) {
 
         // STEP 1: Fecth log record and copy it into buffer
@@ -665,20 +678,14 @@ rc_t restart_m::_collect_spr_logs(
 
         if ((rc.is_error()) && (eEOF == rc.err_num())) {
             // EOF -- scan finished
+            left_early = true;
             break;
         }
         else { W_DO(rc); }
         w_assert0(lsn == nxt);
 
         if (sizeof(logrec_t) > buffer_capacity - pos) {
-            DBGOUT1(<< "Doubling SPR buffer capacity");
-            buffer_capacity *= 2;
-            char* tmp = new char[buffer_capacity];
-            memcpy(tmp, buffer, buffer_capacity/2);
-            delete[] buffer;
-            buffer = tmp;
-            lr = (logrec_t*) (buffer + pos);
-            w_assert1(lr->length() <= buffer_capacity - pos);
+            grow_buffer(buffer, buffer_capacity, pos, lr);
         }
 
         lr_offsets.push_front(pos);
@@ -704,15 +711,38 @@ rc_t restart_m::_collect_spr_logs(
 
         // In the cases below, the scan can stop since the page is initialized
         // with this log record
-        // CS: I think the condition below should be == and not != (like split)
-        if (lr->type() == logrec_t::t_btree_norec_alloc && pid != lr->pid()) {
-            break;
-        }
-        if (lr->type() == logrec_t::t_btree_split && pid == lr->pid()) {
-            break;
-        }
-        if (lr->type() == logrec_t::t_page_img_format) {
-            break;
+        if (lr->has_page_img(pid)) { break; }
+    }
+
+    if (left_early && ss_m::logArchiver) {
+        // Reached EOF when scanning log backwards looking for current_lsn.
+        // This means that the log record we're looking for is not in the recovery
+        // log anymore and has probably been archived already.
+        // Note that we should only get here if write elision is active, because
+        // otherwise the log recycler in log_storage should now allow deletion
+        // of old log files as long as they might be needed for restart recovery.
+
+        // What we have to do now is fetch the log records between current_lsn and
+        // nxt (both exclusive intervals) from the log archive and add them into
+        // the buffer as well.
+        LogArchiver::ArchiveScanner logScan(ss_m::logArchiver->getDirectory());
+        auto merger = logScan.open(pid, pid, current_lsn, 0);
+
+        logrec_t* lr {nullptr};
+        auto insert_iter = lr_offsets.begin();
+        while (merger->next(lr)) {
+            // Log records after nxt have already been collected above
+            if (lr->lsn() > nxt) { break; }
+
+            // copy log record into end of buffer
+            if (lr->length() > buffer_capacity - pos) {
+                grow_buffer(buffer, buffer_capacity, pos, lr);
+            }
+            ::memcpy(buffer + pos, lr, lr->length());
+
+            // Since now we are scanning forward, we don't always call push_front
+            lr_offsets.insert(insert_iter, pos);
+            pos += lr->length();
         }
     }
 
@@ -737,8 +767,9 @@ rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer,
                     << ") LSN=" << p.lsn() << ", log=" << *lr);
 
             w_assert1(pid == lr->pid() || pid == lr->pid2());
-            w_assert1(pid != lr->pid() || (lr->page_prev_lsn() == lsn_t::null ||
-                        lr->page_prev_lsn() == p.lsn()));
+            w_assert1(lr->has_page_img(pid) || pid != lr->pid()
+                    || (lr->page_prev_lsn() == lsn_t::null
+                    || lr->page_prev_lsn() == p.lsn()));
 
             w_assert1(pid != lr->pid2() || (lr->page2_prev_lsn() == lsn_t::null ||
                         lr->page2_prev_lsn() == p.lsn()));

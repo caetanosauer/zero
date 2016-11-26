@@ -416,7 +416,6 @@ unsigned log_storage::delete_old_partitions(bool chkpt_only, partition_number_t 
             }
         }
     }
-    // CS TODO: talk to log archiver!
 
     list<shared_ptr<partition_t>> to_be_deleted;
     vector<lsn_t> old_chkpts;

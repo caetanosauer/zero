@@ -310,6 +310,17 @@ public:
                             }
     void                 corrupt();
 
+    // Tells whether this log record restores a full page image, meaning
+    // that the previous history is not needed during log replay.
+    bool has_page_img(PageID page_id)
+    {
+        return
+        // CS TODO: I think the condition for norec_alloc should be == and not !=
+            (type() == logrec_t::t_btree_norec_alloc && page_id != pid())
+            || (type() == logrec_t::t_btree_split && page_id == pid())
+            || (type() == logrec_t::t_page_img_format);
+    }
+
     friend ostream& operator<<(ostream&, const logrec_t&);
 
 protected:

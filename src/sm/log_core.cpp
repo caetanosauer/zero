@@ -252,8 +252,8 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
     }
 
     auto p = _storage->get_partition(ll.hi());
+    if(!p) { return RC(eEOF); }
     W_DO(p->open_for_read());
-    w_assert1(p);
 
     logrec_t* rp;
     lsn_t prev_lsn = lsn_t::null;
@@ -271,9 +271,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
             ll = lsn_t(ll.hi() + 1, 0);
 
             p = _storage->get_partition(ll.hi());
-            if(!p) {
-                return RC(eEOF);
-            }
+            if(!p) { return RC(eEOF); }
 
             // re-read
             DBGOUT3(<< "fetch @ lsn: " << ll);

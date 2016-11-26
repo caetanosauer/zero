@@ -61,10 +61,14 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
 {
     string dbfile = options.get_string_option("sm_dbfile", "db");
     bool truncate = options.get_bool_option("sm_format", false);
-    _readonly = options.get_bool_option("sm_vol_readonly", false);
     _log_page_reads = options.get_bool_option("sm_vol_log_reads", false);
     _use_o_sync = options.get_bool_option("sm_vol_o_sync", true);
     _use_o_direct = options.get_bool_option("sm_vol_o_direct", false);
+    _readonly = options.get_bool_option("sm_vol_readonly", false);
+
+    if (options.get_bool_option("sm_no_db", false)) {
+        _readonly = true;
+    }
 
     spinlock_write_critical_section cs(&_mutex);
 

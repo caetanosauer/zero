@@ -196,6 +196,10 @@ void Command::setupSMOptions(po::options_description& options)
          will be ignored (uses write elision and single-page recovery)")
     ("sm_vol_o_direct", po::value<bool>(),
         "Whether to open volume (i.e., db file) with O_DIRECT")
+    ("sm_no_db", po::value<bool>()->implicit_value(true)->default_value(false),
+        "No-database mode, a.k.a. log-structured mode, a.k.a. extreme write elision: \
+         DB file is written and all fetched pages are rebuilt \
+         using single-page recovery from scratch")
     ("sm_restart_instant", po::value<bool>(),
         "Enable instant restart")
     ("sm_restart_log_based_redo", po::value<bool>(),

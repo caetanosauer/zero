@@ -103,7 +103,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     std::string replacement_policy =
         options.get_string_option("sm_bufferpool_replacement_policy", "clock");
 
-    ::memset (this, 0, sizeof(bf_tree_m));
+    _no_db_mode = options.get_bool_option("sm_no_db", false);
 
     _block_cnt = nbufpages;
     _enable_swizzling = bufferpool_swizzle;
@@ -238,7 +238,7 @@ bf_tree_m::~bf_tree_m()
 
 page_cleaner_base* bf_tree_m::get_cleaner()
 {
-    if (!ss_m::vol || !ss_m::vol->caches_ready()) {
+    if (_no_db_mode || !ss_m::vol || !ss_m::vol->caches_ready()) {
         // No volume manager initialized -- no point in starting cleaner
         return nullptr;
     }
@@ -256,6 +256,12 @@ page_cleaner_base* bf_tree_m::get_cleaner()
     }
 
     return _cleaner;
+}
+
+void bf_tree_m::wakeup_cleaner(bool wait)
+{
+    auto cleaner = get_cleaner();
+    if (cleaner) { cleaner->wakeup(wait); }
 }
 
 ///////////////////////////////////   Initialization and Release END ///////////////////////////////////

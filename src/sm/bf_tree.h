@@ -338,6 +338,7 @@ public:
     size_t get_size() { return _block_cnt; }
 
     page_cleaner_base* get_cleaner();
+    void wakeup_cleaner(bool wait = false);
 
     /**
      * Tries to unswizzle the given child page from the parent page.  If, for
@@ -492,6 +493,8 @@ private:
     bool                 _enable_swizzling;
 
     bool _cleaner_decoupled;
+
+    bool _no_db_mode;
 };
 
 /**

@@ -82,9 +82,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "eventlog.h"
 
 
-bool         smlevel_0::shutdown_clean = false;
-bool         smlevel_0::shutting_down = false;
-
 
 #ifdef USE_TLS_ALLOCATOR
     sm_tls_allocator smlevel_0::allocator;
@@ -94,11 +91,13 @@ bool         smlevel_0::shutting_down = false;
 
 memalign_allocator<char, smlevel_0::IO_ALIGN> smlevel_0::aligned_allocator;
 
+
+bool         smlevel_0::shutdown_clean = false;
+bool         smlevel_0::shutting_down = false;
             //controlled by AutoTurnOffLogging:
 bool        smlevel_0::lock_caching_default = true;
 bool        smlevel_0::logging_enabled = true;
 bool        smlevel_0::do_prefetch = false;
-
 bool        smlevel_0::statistics_enabled = true;
 
 /*

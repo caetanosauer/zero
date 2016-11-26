@@ -130,6 +130,8 @@ chkpt_m::chkpt_m(const sm_options& options, lsn_t last_chkpt_lsn)
         _chkpt_thread = new chkpt_thread_t(interval);
         W_COERCE(_chkpt_thread->fork());
     }
+
+    _no_db_mode = options.get_bool_option("sm_no_db", false);
 }
 
 chkpt_m::~chkpt_m()

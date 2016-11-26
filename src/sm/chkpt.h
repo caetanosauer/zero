@@ -162,7 +162,7 @@ class chkpt_thread_t;
  *********************************************************************/
 class chkpt_m : public smlevel_0 {
 public:
-    chkpt_m(const sm_options&, lsn_t last_chkpt_lsni = lsn_t::null);
+    chkpt_m(const sm_options&, lsn_t last_chkpt_lsn = lsn_t::null);
     virtual ~chkpt_m();
 
 public:
@@ -182,7 +182,7 @@ public:
      */
     lsn_t get_min_active_lsn() {
         lsn_t min = _last_end_lsn;
-        if (!_min_rec_lsn.is_null() && _min_rec_lsn < min) {
+        if (!_no_db_mode && !_min_rec_lsn.is_null() && _min_rec_lsn < min) {
             min = _min_rec_lsn;
         }
         if (!_min_xct_lsn.is_null() && _min_xct_lsn < min) {
@@ -203,6 +203,8 @@ private:
     lsn_t _min_rec_lsn;
     lsn_t _min_xct_lsn;
     lsn_t _last_end_lsn;
+
+    bool _no_db_mode;
 };
 
 /*<std-footer incl-file-exclusion='CHKPT_H'>  -- do not edit anything below this line -- */
