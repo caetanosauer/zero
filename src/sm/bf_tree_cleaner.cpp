@@ -11,7 +11,7 @@
 #include "alloc_cache.h"
 #include "stnode_page.h"
 #include "vol.h"
-#include "eventlog.h"
+#include "xct_logger.h"
 #include "sm.h"
 #include "stopwatch.h"
 #include "xct.h"
@@ -169,7 +169,7 @@ void bf_tree_cleaner::log_and_flush(size_t wpos)
     flush_workspace(0, wpos);
 
     PageID pid = _workspace[0].pid;
-    sysevent::log_page_write(pid, _clean_lsn, wpos);
+    Logger::log_sys<page_write_log>(pid, _clean_lsn, wpos);
 
     _clean_lsn = smlevel_0::log->curr_lsn();
 }

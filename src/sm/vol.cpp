@@ -19,7 +19,6 @@
 #include "alloc_cache.h"
 #include "restore.h"
 #include "logarchiver.h"
-#include "eventlog.h"
 #include "restart.h"
 #include "xct_logger.h"
 
@@ -546,7 +545,7 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
                     // page is loaded in buffer pool already
                     w_assert1(buf->pid == first_page + i);
                     if (_log_page_reads) {
-                        sysevent::log_page_read(first_page + i);
+                        Logger::log_sys<page_read_log>(first_page + i, 1);
                     }
                     _restore_mgr->unpin();
                     return RCOK;
@@ -566,7 +565,7 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
     CHECK_ERRNO(read_count);
 
     if (_log_page_reads) {
-        sysevent::log_page_read(first_page, cnt);
+        Logger::log_sys<page_read_log>(first_page, cnt);
     }
 
     return RCOK;

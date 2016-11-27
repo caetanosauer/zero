@@ -6,7 +6,9 @@
 #include "sm_base.h"
 
 #include "stnode_page.h"
-#include "eventlog.h"
+#include "xct_logger.h"
+
+constexpr PageID stnode_page::stpid = 1;
 
 stnode_cache_t::stnode_cache_t(bool create)
 {
@@ -93,7 +95,7 @@ rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum, bool redo)
     _stnode_page.set_root(snum, root_pid);
 
     if (!redo) {
-        sysevent::log_create_store(root_pid, snum, prev_page_lsn);
+        Logger::log_page_chain<create_store_log>(prev_page_lsn, root_pid, snum);
     }
 
     return RCOK;
@@ -106,7 +108,7 @@ rc_t stnode_cache_t::sx_append_extent(extent_id_t ext, bool redo)
     _stnode_page.set_last_extent(ext);
 
     if (!redo) {
-        sysevent::log_append_extent(ext, prev_page_lsn);
+        Logger::log_page_chain<append_extent_log>(prev_page_lsn, ext);
     }
 
     return RCOK;
@@ -141,7 +143,7 @@ rc_t stnode_cache_t::write_page(lsn_t rec_lsn)
     lsn_t emlsn = get_page_lsn();
     W_DO(smlevel_0::vol->read_page_verify(stnode_page::stpid, buf, emlsn));
     W_DO(smlevel_0::vol->write_page(stnode_page::stpid, buf));
-    sysevent::log_page_write(stnode_page::stpid, rec_lsn, 1);
+    Logger::log_sys<page_write_log>(stnode_page::stpid, rec_lsn, 1);
 
     delete[] buf;
     return RCOK;

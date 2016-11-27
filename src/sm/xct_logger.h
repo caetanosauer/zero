@@ -143,6 +143,59 @@ public:
         return RCOK;
     }
 
+    /*
+     * log_sys is used for system log records (e.g., checkpoints, clock
+     * ticks, reads & writes, recovery events, debug stuff, stats, etc.)
+     *
+     * The difference to the other logging methods is that no xct or page
+     * is involved and the logrec buffer is obtained with the 'new' operator.
+     */
+    template <class Logrec, class... Args>
+    static rc_t log_sys(const Args&... args)
+    {
+        // this should use TLS allocator, so it's fast
+        // (see macro DEFINE_SM_ALLOC in allocator.h and logrec.cpp)
+        logrec_t* logrec = new logrec_t;
+
+        new (logrec) Logrec;
+        logrec->init_header(Logrec::TYPE);
+        logrec->init_xct_info();
+        reinterpret_cast<Logrec*>(logrec)->construct(args...);
+        w_assert1(logrec->valid_header());
+        w_assert1(logrec->cat() == logrec_t::t_system);
+
+        W_DO(ss_m::log->insert(*logrec, nullptr));
+
+        delete logrec;
+        return RCOK;
+    }
+
+    /*
+     * log_page_chain is used for in-memory data structures that do not
+     * maintain data directly in a page but must use chained log records
+     * to keep track of their versions and dirty states. Used by
+     * stnode_cache and alloc_cache
+     */
+    template <class Logrec, class... Args>
+    static rc_t log_page_chain(lsn_t prev_page_lsn, const Args&... args)
+    {
+        // this should use TLS allocator, so it's fast
+        // (see macro DEFINE_SM_ALLOC in allocator.h and logrec.cpp)
+        logrec_t* logrec = new logrec_t;
+
+        new (logrec) Logrec;
+        logrec->init_header(Logrec::TYPE);
+        logrec->init_xct_info();
+        reinterpret_cast<Logrec*>(logrec)->construct(args...);
+        w_assert1(logrec->valid_header());
+
+        logrec->set_page_prev_lsn(prev_page_lsn);
+        W_DO(ss_m::log->insert(*logrec, nullptr));
+
+        delete logrec;
+        return RCOK;
+    }
+
     static void _update_page_lsns(PagePtr page, lsn_t new_lsn)
     {
         page->update_page_lsn(new_lsn);

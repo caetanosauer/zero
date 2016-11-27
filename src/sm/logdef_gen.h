@@ -268,22 +268,27 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
     struct tick_sec_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_tick_sec;
+        void construct();
     };
 
     struct tick_msec_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_tick_msec;
+        void construct();
     };
 
     struct benchmark_start_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_benchmark_start;
+        void construct();
     };
 
     struct page_write_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_page_write;
+        void construct(PageID pid, lsn_t lsn, uint32_t count);
     };
 
     struct page_read_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_page_read;
+        void construct(PageID pid, uint32_t count);
     };
 
 #endif

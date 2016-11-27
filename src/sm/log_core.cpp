@@ -68,7 +68,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "log_core.h"
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
-#include "eventlog.h"
+#include "xct_logger.h"
 
 #include "bf_tree.h"
 
@@ -120,10 +120,10 @@ public:
             }
             ::usleep(interval_usec);
             if (msec) {
-                sysevent::log(logrec_t::t_tick_msec);
+                Logger::log_sys<tick_msec_log>();
             }
             else {
-                sysevent::log(logrec_t::t_tick_sec);
+                Logger::log_sys<tick_sec_log>();
             }
         }
     }
@@ -450,7 +450,7 @@ rc_t log_core::init()
 {
     // Consider this the beginning of log analysis so that
     // we can factor in the time it takes to load the fetch buffers
-    sysevent::log(logrec_t::t_loganalysis_begin);
+    Logger::log_sys<loganalysis_begin_log>();
     if (_ticker) {
         _ticker->fork();
     }

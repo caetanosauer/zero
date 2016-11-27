@@ -9,7 +9,7 @@
 
 #include "alloc_cache.h"
 #include "smthread.h"
-#include "eventlog.h"
+#include "xct_logger.h"
 
 const size_t alloc_cache_t::extent_size = alloc_page::bits_held;
 
@@ -148,7 +148,7 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, bool redo)
 
         // Entry in page_lsns array is updated by the log insertion
         extent_id_t ext = pid / extent_size;
-        sysevent::log_alloc_page(pid, page_lsns[ext * extent_size]);
+        Logger::log_page_chain<alloc_page_log>(page_lsns[ext * extent_size], pid);
     }
 
     return RCOK;
@@ -164,7 +164,7 @@ rc_t alloc_cache_t::sx_deallocate_page(PageID pid, bool redo)
     if (!redo) {
         // Entry in page_lsns array is updated by the log insertion
         extent_id_t ext = pid / extent_size;
-        sysevent::log_dealloc_page(pid, page_lsns[ext * extent_size]);
+        Logger::log_page_chain<dealloc_page_log>(page_lsns[ext * extent_size], pid);
     }
 
     return RCOK;
@@ -206,7 +206,7 @@ rc_t alloc_cache_t::write_dirty_pages(lsn_t rec_lsn)
         // it back
         W_DO(smlevel_0::vol->read_page_verify(alloc_pid, buf, page_lsn));
         W_DO(smlevel_0::vol->write_page(alloc_pid, buf));
-        sysevent::log_page_write(alloc_pid, rec_lsn, 1);
+        Logger::log_sys<page_write_log>(alloc_pid, rec_lsn, 1);
     }
 
     if (buf) { delete[] buf; }

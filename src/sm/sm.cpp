@@ -79,12 +79,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "allocator.h"
 #include "log_core.h"
-#include "eventlog.h"
 
 
 bool         smlevel_0::shutdown_clean = false;
 bool         smlevel_0::shutting_down = false;
-
 
 #ifdef USE_TLS_ALLOCATOR
     sm_tls_allocator smlevel_0::allocator;

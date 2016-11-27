@@ -319,8 +319,8 @@ protected:
     enum category_t {
     /** should not happen. */
     t_bad_cat   = 0x00,
-    /** No property. */
-    t_status    = 0x01,
+    /** System log record: not transaction- or page-related; no undo/redo */
+    t_system    = 0x01,
     /** log with UNDO action? */
     t_undo      = 0x02,
     /** log with REDO action? */

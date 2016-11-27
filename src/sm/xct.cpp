@@ -27,7 +27,6 @@
 #include "lock_raw.h"
 #include "log_lsn_tracker.h"
 #include "log_core.h"
-#include "eventlog.h"
 #include "xct_logger.h"
 
 #include "allocator.h"
@@ -976,7 +975,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
     _latency_count++;
     // dump average latency every 100 commits
     if (_latency_count % 100 == 0) {
-        sysevent::log_xct_latency_dump(_accum_latency / _latency_count);
+        Logger::log_sys<xct_latency_dump_log>(_accum_latency / _latency_count);
         _accum_latency = 0;
         _latency_count = 0;
     }
