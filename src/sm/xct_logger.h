@@ -170,6 +170,26 @@ public:
         return RCOK;
     }
 
+    template <class Logrec, class... Args>
+    static rc_t log_sys(lsn_t& lsn_ret, const Args&... args)
+    {
+        // this should use TLS allocator, so it's fast
+        // (see macro DEFINE_SM_ALLOC in allocator.h and logrec.cpp)
+        logrec_t* logrec = new logrec_t;
+
+        new (logrec) Logrec;
+        logrec->init_header(Logrec::TYPE);
+        logrec->init_xct_info();
+        reinterpret_cast<Logrec*>(logrec)->construct(args...);
+        w_assert1(logrec->valid_header());
+        w_assert1(logrec->cat() == logrec_t::t_system);
+
+        W_DO(ss_m::log->insert(*logrec, &lsn_ret));
+
+        delete logrec;
+        return RCOK;
+    }
+
     /*
      * log_page_chain is used for in-memory data structures that do not
      * maintain data directly in a page but must use chained log records

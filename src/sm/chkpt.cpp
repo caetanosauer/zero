@@ -75,19 +75,9 @@ struct RawLock;            // Lock information gathering
 #include "vol.h"
 #include "thread_wrapper.h"
 #include <algorithm>
-
 #include "stopwatch.h"
-
-#include "logdef_gen.h"
 #include "logrec_support.h"
-
-#define LOG_INSERT(type, args, rlsn)            \
-    do {                                              \
-        new (logrec) type;                \
-        logrec->init_header(type::TYPE); \
-        reinterpret_cast<type*>(logrec)->construct args ; \
-        W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
-    } while(0)
+#include "xct_logger.h"
 
 
 /*********************************************************************
@@ -484,8 +474,8 @@ void chkpt_t::serialize()
     if (!bkp_path.empty()) {
         vector<string> backup_paths;
         backup_paths.push_back(bkp_path);
-        LOG_INSERT(chkpt_backup_tab_log, (backup_paths.size(),
-                    (const string*)(&backup_paths[0])), 0);
+        Logger::log_sys<chkpt_backup_tab_log>(backup_paths.size(),
+                    (const string*)(&backup_paths[0]));
     }
 
     //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
@@ -505,9 +495,9 @@ void chkpt_t::serialize()
         rec_lsn.push_back(it->second.rec_lsn);
         page_lsn.push_back(it->second.page_lsn);
          if(pid.size()==chunk || &*it==&*buf_tab.rbegin()) {
-            LOG_INSERT(chkpt_bf_tab_log, (pid.size(), (const PageID*)(&pid[0]),
+             Logger::log_sys<chkpt_bf_tab_log>(pid.size(), (const PageID*)(&pid[0]),
                                                     (const lsn_t*)(&rec_lsn[0]),
-                                                    (const lsn_t*)(&page_lsn[0])), 0);
+                                                    (const lsn_t*)(&page_lsn[0]));
             pid.clear();
             rec_lsn.clear();
             page_lsn.clear();
@@ -533,11 +523,11 @@ void chkpt_t::serialize()
         last_lsn.push_back(it->second.last_lsn);
         first_lsn.push_back(it->second.first_lsn);
         if(tid.size()==chunk || &*it==&*xct_tab.rbegin()) {
-            LOG_INSERT(chkpt_xct_tab_log, (get_highest_tid(), tid.size(),
+            Logger::log_sys<chkpt_xct_tab_log>(get_highest_tid(), tid.size(),
                                         (const tid_t*)(&tid[0]),
                                         (const smlevel_0::xct_state_t*)(&state[0]),
                                         (const lsn_t*)(&last_lsn[0]),
-                                        (const lsn_t*)(&first_lsn[0])), 0);
+                                        (const lsn_t*)(&first_lsn[0]));
             tid.clear();
             state.clear();
             last_lsn.clear();
@@ -552,19 +542,19 @@ void chkpt_t::serialize()
             lock_mode.push_back(jt->lock_mode);
             lock_hash.push_back(jt->lock_hash);
             if(lock_mode.size() == chunk) {
-                LOG_INSERT(chkpt_xct_lock_log, (it->first,
+                Logger::log_sys<chkpt_xct_lock_log>(it->first,
                                       lock_mode.size(),
                                       (const okvl_mode*)(&lock_mode[0]),
-                                      (const uint32_t*)(&lock_hash[0])), 0);
+                                      (const uint32_t*)(&lock_hash[0]));
                 lock_mode.clear();
                 lock_hash.clear();
             }
         }
         if(lock_mode.size() > 0) {
-            LOG_INSERT(chkpt_xct_lock_log, (it->first,
+            Logger::log_sys<chkpt_xct_lock_log>(it->first,
                         lock_mode.size(),
                         (const okvl_mode*)(&lock_mode[0]),
-                        (const uint32_t*)(&lock_hash[0])), 0);
+                        (const uint32_t*)(&lock_hash[0]));
             lock_mode.clear();
             lock_hash.clear();
         }
@@ -573,11 +563,11 @@ void chkpt_t::serialize()
     // In case the transaction table was empty, we insert a xct_tab_log anyway,
     // because we want to save the highest tid.
     if(xct_tab.size() == 0) {
-        LOG_INSERT(chkpt_xct_tab_log, (get_highest_tid(), tid.size(),
+        Logger::log_sys<chkpt_xct_tab_log>(get_highest_tid(), tid.size(),
                                         (const tid_t*)(&tid[0]),
                                         (const smlevel_0::xct_state_t*)(&state[0]),
                                         (const lsn_t*)(&last_lsn[0]),
-                                        (const lsn_t*)(&first_lsn[0])), 0);
+                                        (const lsn_t*)(&first_lsn[0]));
     }
 
     delete logrec;
@@ -705,7 +695,7 @@ void chkpt_m::take()
     // Insert chkpt_begin log record.
     logrec_t* logrec = new logrec_t;
     lsn_t begin_lsn;
-    LOG_INSERT(chkpt_begin_log, (lsn_t::null), &begin_lsn);
+    Logger::log_sys<chkpt_begin_log>(begin_lsn, lsn_t::null);
     W_COERCE(ss_m::log->flush_all());
 
     // Collect checkpoint information from log
