@@ -84,6 +84,7 @@ int64_t w_findprime(int64_t min)
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////
 
 bf_tree_m::bf_tree_m(const sm_options& options)
+    : _cleaner(nullptr)
 {
     // sm_bufboolsize given in MB -- default 8GB
     long bufpoolsize = options.get_int_option("sm_bufpoolsize", 8192) * 1024 * 1024;
