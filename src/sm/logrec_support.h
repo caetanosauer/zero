@@ -278,7 +278,7 @@ struct xct_list_t {
     xct_list_t(const xct_t* list[], int count)
     {
         w_assert1(count <= max);
-        for (uint i = 0; i < count; i++)  {
+        for (int i = 0; i < count; i++)  {
             xrec[i].tid = list[i]->tid();
         }
     }

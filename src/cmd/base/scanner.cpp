@@ -247,6 +247,7 @@ void LogArchiveScanner::run()
             new LogArchiver::ArchiveScanner::RunScanner(
                     runBegin,
                     runEnd,
+                    1, // level (CS TODO)
                     0, // first PID
                     0, // last PID
                     0,            // file offset

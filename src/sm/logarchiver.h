@@ -210,6 +210,92 @@ public:
         bool isActive() { return control.activated; }
     };
 
+    // forward declaration
+    class ArchiveIndex;
+
+    /** \brief Encapsulates all file and I/O operations on the log archive
+     *
+     * The directory object serves the following purposes:
+     * - Inspecting the existing archive files at startup in order to determine
+     *   the last LSN persisted (i.e., from where to resume archiving) and to
+     *   delete incomplete or already merged (TODO) files that can result from
+     *   a system crash.
+     * - Support run generation by providing operations to open a new run,
+     *   append blocks of data to the current run, and closing the current run
+     *   by renaming its file with the given LSN boundaries.
+     * - Support scans by opening files given their LSN boundaries (which are
+     *   determined by the archive index), reading arbitrary blocks of data
+     *   from them, and closing them.
+     * - In the near future, it should also support the new (i.e.,
+     *   instant-restore-enabled) asynchronous merge daemon (TODO).
+     * - Support auxiliary file-related operations that are used, e.g., in
+     *   tests and experiments.  Currently, the only such operation is
+     *   parseLSN.
+     *
+     * \author Caetano Sauer
+     */
+    class ArchiveDirectory {
+    public:
+        ArchiveDirectory(const sm_options& options);
+        virtual ~ArchiveDirectory();
+
+        struct RunFileStats {
+            lsn_t beginLSN;
+            lsn_t endLSN;
+            unsigned level;
+        };
+
+        lsn_t getStartLSN() const { return startLSN; }
+        lsn_t getLastLSN() const { return lastLSN; }
+        ArchiveIndex* getIndex() { return archIndex; }
+        size_t getBlockSize() const { return blockSize; }
+        std::string getArchDir() const { return archdir; }
+        unsigned getMaxLevel() const { return maxLevel; }
+
+        // run generation methods
+        rc_t append(char* data, size_t length);
+        rc_t closeCurrentRun(lsn_t runEndLSN, unsigned level);
+
+        // run scanning methods
+        rc_t openForScan(int& fd, lsn_t runBegin, lsn_t runEnd, unsigned level);
+        rc_t readBlock(int fd, char* buf, size_t& offset, size_t readSize = 0);
+        rc_t closeScan(int& fd);
+
+        rc_t listFiles(std::vector<std::string>& list, int level = -1);
+        rc_t listFileStats(std::list<RunFileStats>& list, int level = -1);
+        void deleteAllRuns();
+
+        static bool parseRunFileName(string fname, RunFileStats& fstats);
+        static size_t getFileSize(int fd);
+    private:
+        ArchiveIndex* archIndex;
+        std::string archdir;
+        lsn_t startLSN;
+        lsn_t lastLSN;
+        int appendFd;
+        int mergeFd;
+        off_t appendPos;
+        size_t blockSize;
+        unsigned maxLevel;
+
+        fs::path archpath;
+
+        // closeCurrentRun needs mutual exclusion because it is called by both
+        // the writer thread and the archiver thread in processFlushRequest
+        pthread_mutex_t mutex;
+
+        fs::path make_run_path(lsn_t begin, lsn_t end, unsigned level = 1) const;
+        fs::path make_current_run_path() const;
+        rc_t openNewRun();
+
+    public:
+        const static string RUN_PREFIX;
+        const static string CURR_RUN_FILE;
+        const static string CURR_MERGE_FILE;
+        const static string run_regex;
+        const static string current_regex;
+    };
+
     /** \brief Simple implementation of a (naive) log archive index.
      *
      * No caching and one single mutex for all operations.  When log archiver
@@ -229,24 +315,24 @@ public:
             PageID pidEnd;
             lsn_t runBegin;
             lsn_t runEnd;
+            unsigned level;
             size_t offset;
             size_t runIndex;
         };
 
         void init();
 
-        void newBlock(PageID firstPID);
-        void newBlock(const vector<pair<PageID, size_t> >& buckets);
+        void newBlock(PageID firstPID, unsigned level);
+        void newBlock(const vector<pair<PageID, size_t> >& buckets, unsigned level);
 
-        rc_t finishRun(lsn_t first, lsn_t last, int fd, off_t);
+        rc_t finishRun(lsn_t first, lsn_t last, int fd, off_t offset, unsigned level);
         void probe(std::vector<ProbeResult>& probes,
                 PageID startPID, PageID endPID, lsn_t startLSN);
 
         rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
-        rc_t loadRunInfo(const char* fname);
-        void appendNewEntry(/*PageID lastPID*/);
+        rc_t loadRunInfo(int fd, const ArchiveDirectory::RunFileStats&);
+        void appendNewEntry(unsigned level);
 
-        void setLastFinished(int f) { lastFinished = f; }
         size_t getBucketSize() { return bucketSize; }
 
         void dumpIndex(ostream& out);
@@ -281,12 +367,17 @@ public:
             }
         };
 
-        size_t blockSize;
-        std::vector<RunInfo> runs;
         pthread_mutex_t mutex;
-        char* writeBuffer;
-        char* readBuffer;
-        int lastFinished;
+        size_t blockSize;
+
+        // Run information for each level of the index
+        std::vector<std::vector<RunInfo>> runs;
+
+        // Last finished run on each level -- this is required because runs are
+        // generated asynchronously, so that a new one may be appended to the
+        // index before the last one is finished. Thus, when calling finishRun(),
+        // we cannot simply take the last run in the vector.
+        std::vector<int> lastFinished;
 
         /** Whether this index uses variable-sized buckets, i.e., entries in
          * the index refer to fixed ranges of page ID for which the amount of
@@ -298,96 +389,15 @@ public:
          */
         size_t bucketSize;
 
-        size_t findRun(lsn_t lsn);
+        unsigned maxLevel;
+
+        size_t findRun(lsn_t lsn, unsigned level);
         void probeInRun(ProbeResult&);
         // binary search
         size_t findEntry(RunInfo* run, PageID pid,
                 int from = -1, int to = -1);
         rc_t serializeRunInfo(RunInfo&, int fd, off_t);
-        rc_t deserializeRunInfo(RunInfo&, const char* fname);
 
-    };
-
-    /** \brief Encapsulates all file and I/O operations on the log archive
-     *
-     * The directory object serves the following purposes:
-     * - Inspecting the existing archive files at startup in order to determine
-     *   the last LSN persisted (i.e., from where to resume archiving) and to
-     *   delete incomplete or already merged (TODO) files that can result from
-     *   a system crash.
-     * - Support run generation by providing operations to open a new run,
-     *   append blocks of data to the current run, and closing the current run
-     *   by renaming its file with the given LSN boundaries.
-     * - Support scans by opening files given their LSN boundaries (which are
-     *   determined by the archive index), reading arbitrary blocks of data
-     *   from them, and closing them.
-     * - In the near future, it should also support the new (i.e.,
-     *   instant-restore-enabled) asynchronous merge daemon (TODO).
-     * - Support auxiliary file-related operations that are used, e.g., in
-     *   tests and experiments.  Currently, the only such operation is
-     *   parseLSN.
-     *
-     * \author Caetano Sauer
-     */
-    class ArchiveDirectory {
-    public:
-        ArchiveDirectory(const sm_options& options);
-        virtual ~ArchiveDirectory();
-
-        struct RunFileStats {
-            lsn_t beginLSN;
-            lsn_t endLSN;
-            size_t fileSize;
-            unsigned level;
-        };
-
-        lsn_t getStartLSN() { return startLSN; }
-        lsn_t getLastLSN() { return lastLSN; }
-        ArchiveIndex* getIndex() { return archIndex; }
-        size_t getBlockSize() { return blockSize; }
-        std::string getArchDir() { return archdir; }
-
-        // run generation methods
-        rc_t append(char* data, size_t length);
-        rc_t closeCurrentRun(lsn_t runEndLSN);
-
-        // run scanning methods
-        rc_t openForScan(int& fd, lsn_t runBegin, lsn_t runEnd);
-        rc_t readBlock(int fd, char* buf, size_t& offset, size_t readSize = 0);
-        rc_t closeScan(int& fd);
-
-        rc_t listFiles(std::vector<std::string>& list);
-        rc_t listFileStats(std::list<RunFileStats>& list);
-        void deleteAllRuns();
-
-        static bool parseRunFileName(string fname, RunFileStats& fstats);
-        static size_t getFileSize(int fd);
-    private:
-        ArchiveIndex* archIndex;
-        std::string archdir;
-        lsn_t startLSN;
-        lsn_t lastLSN;
-        int appendFd;
-        int mergeFd;
-        off_t appendPos;
-        size_t blockSize;
-
-        fs::path archpath;
-
-        // closeCurrentRun needs mutual exclusion because it is called by both
-        // the writer thread and the archiver thread in processFlushRequest
-        pthread_mutex_t mutex;
-
-        fs::path make_run_path(lsn_t begin, lsn_t end, unsigned level = 1) const;
-        fs::path make_current_run_path() const;
-        rc_t openNewRun();
-
-    public:
-        const static string RUN_PREFIX;
-        const static string CURR_RUN_FILE;
-        const static string CURR_MERGE_FILE;
-        const static string run_regex;
-        const static string current_regex;
     };
 
     /** \brief Asynchronous writer thread to produce run files on disk
@@ -404,6 +414,7 @@ public:
         ArchiveDirectory* directory;
         lsn_t maxLSNInRun;
         run_number_t currentRun;
+        unsigned level;
 
     public:
         virtual void run();
@@ -419,10 +430,10 @@ public:
             maxLSNInRun = lsn_t::null;
         }
 
-        WriterThread(AsyncRingBuffer* writebuf, ArchiveDirectory* directory)
+        WriterThread(AsyncRingBuffer* writebuf, ArchiveDirectory* directory, unsigned level)
             :
               BaseThread(writebuf),
-              directory(directory), maxLSNInRun(lsn_t::null), currentRun(0)
+              directory(directory), maxLSNInRun(lsn_t::null), currentRun(0), level(level)
         {
         }
 
@@ -460,7 +471,7 @@ public:
      */
     class BlockAssembly {
     public:
-        BlockAssembly(ArchiveDirectory* directory);
+        BlockAssembly(ArchiveDirectory* directory, unsigned level = 1);
         virtual ~BlockAssembly();
 
         bool start(run_number_t run);
@@ -500,6 +511,8 @@ public:
         vector<pair<PageID, size_t> > buckets;
         // number of the nex bucket to be indexed
         size_t nextBucket;
+
+        unsigned level;
     public:
         struct BlockHeader {
             lsn_t lsn;
@@ -534,6 +547,7 @@ public:
         struct RunScanner {
             const lsn_t runBegin;
             const lsn_t runEnd;
+            const unsigned level;
             const PageID firstPID;
             const PageID lastPID;
 
@@ -548,7 +562,7 @@ public:
             ArchiveDirectory* directory;
             LogScanner* scanner;
 
-            RunScanner(lsn_t b, lsn_t e, PageID f, PageID l, off_t o,
+            RunScanner(lsn_t b, lsn_t e, unsigned level, PageID f, PageID l, off_t o,
                     ArchiveDirectory* directory, size_t readSize = 0);
             ~RunScanner();
 
@@ -776,7 +790,7 @@ public:
         virtual ~MergerDaemon()
         {}
 
-        rc_t runSync(size_t fanin, size_t maxRunSize);
+        rc_t runSync(unsigned level, unsigned fanin);
         rc_t join(bool terminate);
 
     private:

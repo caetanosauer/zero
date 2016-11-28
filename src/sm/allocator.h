@@ -109,7 +109,7 @@ struct memalign_allocator
         return p;
     }
 
-    void deallocate(pointer p, size_t)
+    void deallocate(pointer p, size_t = 1)
     {
         free(p);
     }

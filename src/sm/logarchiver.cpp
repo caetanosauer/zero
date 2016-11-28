@@ -294,7 +294,7 @@ void LogArchiver::WriterThread::run()
              * that all pending blocks are written out before shutdown.
              */
             DBGTHRD(<< "Finished flag set on writer thread");
-            W_COERCE(directory->closeCurrentRun(maxLSNInRun));
+            W_COERCE(directory->closeCurrentRun(maxLSNInRun, level));
             return; // finished is set on buf
         }
 
@@ -312,7 +312,7 @@ void LogArchiver::WriterThread::run()
              *  bound on the next run, which allows us to verify whether
              *  holes exist in the archive.
              */
-            W_COERCE(directory->closeCurrentRun(maxLSNInRun));
+            W_COERCE(directory->closeCurrentRun(maxLSNInRun, level));
             w_assert1(directory->getLastLSN() == maxLSNInRun);
             currentRun = run;
             maxLSNInRun = lsn_t::null;
@@ -442,7 +442,6 @@ bool LogArchiver::ArchiveDirectory::parseRunFileName(string fname, RunFileStats&
     boost::smatch res;
     if (!boost::regex_match(fname, res, run_rx)) { return false; }
 
-    std::cout << "MATCHED level = " << res[1] << " b = " << res[2] << " e = "  << res[3] << std::endl;
     fstats.level = std::stoi(res[1]);
 
     std::stringstream is;
@@ -451,6 +450,8 @@ bool LogArchiver::ArchiveDirectory::parseRunFileName(string fname, RunFileStats&
     is.clear();
     is.str(res[3]);
     is >> fstats.endLSN;
+
+    return true;
 }
 
 size_t LogArchiver::ArchiveDirectory::getFileSize(int fd)
@@ -486,6 +487,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
         }
     }
 
+    maxLevel = 0;
     archpath = archdir;
     fs::directory_iterator it(archpath), eod;
     boost::regex current_rx(current_regex, boost::regex::perl);
@@ -507,6 +509,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
                 DBGTHRD("Highest LSN found so far in archdir: " << currLSN);
                 highestLSN = currLSN;
             }
+            if (fstats.level > maxLevel) { maxLevel = fstats.level; }
         }
         else if (boost::regex_match(fname, current_rx)) {
             DBGTHRD(<< "Found unfinished log archive run. Deleting");
@@ -551,12 +554,13 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
     archIndex = new ArchiveIndex(blockSize, startLSN, bucketSize);
 
     {
-        std::vector<std::string> runFiles;
-        listFiles(runFiles);
-        std::vector<std::string>::const_iterator it;
-        for(it=runFiles.begin(); it!=runFiles.end(); ++it) {
-            std::string fname = archdir + "/" + *it;
-            W_COERCE(archIndex->loadRunInfo(fname.c_str()));
+        int fd;
+        std::list<RunFileStats> runFiles;
+        listFileStats(runFiles);
+        for(auto f : runFiles) {
+            W_COERCE(openForScan(fd, f.beginLSN, f.endLSN, f.level));
+            W_COERCE(archIndex->loadRunInfo(fd, f));
+            W_COERCE(closeScan(fd));
         }
 
         // sort runinfo vector by lsn
@@ -585,37 +589,35 @@ LogArchiver::ArchiveDirectory::~ArchiveDirectory()
     DO_PTHREAD(pthread_mutex_destroy(&mutex));
 }
 
-rc_t LogArchiver::ArchiveDirectory::listFiles(std::vector<std::string>& list)
+rc_t LogArchiver::ArchiveDirectory::listFiles(std::vector<std::string>& list,
+        int level)
 {
     list.clear();
 
     fs::directory_iterator it(archpath), eod;
-    boost::regex run_rx(run_regex, boost::regex::perl);
     for (; it != eod; it++) {
         string fname = it->path().filename().string();
-        if (boost::regex_match(fname, run_rx)) {
-            list.push_back(fname);
+        RunFileStats fstats;
+        if (parseRunFileName(fname, fstats)) {
+            if (level < 0 || level == fstats.level) {
+                list.push_back(fname);
+            }
         }
     }
 
     return RCOK;
 }
 
-rc_t LogArchiver::ArchiveDirectory::listFileStats(list<RunFileStats>& list)
+rc_t LogArchiver::ArchiveDirectory::listFileStats(list<RunFileStats>& list,
+        int level)
 {
     list.clear();
     vector<string> fnames;
-    listFiles(fnames);
+    listFiles(fnames, level);
 
     RunFileStats stats;
     for (size_t i = 0; i < fnames.size(); i++) {
         parseRunFileName(fnames[i], stats);
-
-        int fd;
-        openForScan(fd, stats.beginLSN, stats.endLSN);
-        stats.fileSize = getFileSize(fd);
-        closeScan(fd);
-
         list.push_back(stats);
     }
 
@@ -662,7 +664,7 @@ fs::path LogArchiver::ArchiveDirectory::make_current_run_path() const
     return archpath / fs::path(CURR_RUN_FILE);
 }
 
-rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
+rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
 {
     CRITICAL_SECTION(cs, mutex);
 
@@ -683,10 +685,10 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
                 // and make sure data is written aligned to block boundary
                 appendPos -= appendPos % blockSize;
                 appendPos += blockSize;
-                archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
+                archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos, level);
             }
 
-            fs::path new_path = make_run_path(lastLSN, runEndLSN);
+            fs::path new_path = make_run_path(lastLSN, runEndLSN, level);
             fs::rename(make_current_run_path(), new_path);
 
             DBGTHRD(<< "Closing current output run: " << new_path.string());
@@ -719,9 +721,9 @@ rc_t LogArchiver::ArchiveDirectory::append(char* data, size_t length)
 }
 
 rc_t LogArchiver::ArchiveDirectory::openForScan(int& fd, lsn_t runBegin,
-        lsn_t runEnd)
+        lsn_t runEnd, unsigned level)
 {
-    fs::path fpath = make_run_path(runBegin, runEnd);
+    fs::path fpath = make_run_path(runBegin, runEnd, level);
 
     // Using direct I/O
     int flags = O_RDONLY | O_DIRECT;
@@ -968,14 +970,14 @@ bool LogArchiver::selection()
     return true;
 }
 
-LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
+LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory, unsigned level)
     : dest(NULL), maxLSNInBlock(lsn_t::null), maxLSNLength(0),
-    lastRun(-1), bucketSize(0), nextBucket(0)
+    lastRun(-1), bucketSize(0), nextBucket(0), level(level)
 {
     archIndex = directory->getIndex();
     blockSize = directory->getBlockSize();
     writebuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT);
-    writer = new WriterThread(writebuf, directory);
+    writer = new WriterThread(writebuf, directory, level);
     writer->fork();
 
     if (archIndex) {
@@ -1033,7 +1035,7 @@ bool LogArchiver::BlockAssembly::start(run_number_t run)
 
     if (run != lastRun) {
         if (archIndex && lastRun >= 0) {
-            archIndex->appendNewEntry();
+            archIndex->appendNewEntry(level);
         }
         nextBucket = 0;
         fpos = 0;
@@ -1086,10 +1088,10 @@ void LogArchiver::BlockAssembly::finish()
 
     if (archIndex) {
         if (bucketSize == 0) {
-            archIndex->newBlock(firstPID);
+            archIndex->newBlock(firstPID, level);
         }
         else {
-            archIndex->newBlock(buckets);
+            archIndex->newBlock(buckets, level);
         }
     }
     firstPID = 0;
@@ -1155,6 +1157,7 @@ LogArchiver::ArchiveScanner::open(PageID startPID, PageID endPID,
         RunScanner* runScanner = new RunScanner(
                 probes[i].runBegin,
                 probes[i].runEnd,
+                probes[i].level,
                 probes[i].pidBegin,
                 probes[i].pidEnd,
                 probes[i].offset,
@@ -1176,11 +1179,10 @@ LogArchiver::ArchiveScanner::open(PageID startPID, PageID endPID,
     return merger;
 }
 
-LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
-        PageID f, PageID l, off_t o, ArchiveDirectory* directory,
-        size_t readSize)
-: runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
-    fd(-1), blockCount(0), readSize(readSize), directory(directory)
+LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e, unsigned level,
+        PageID f, PageID l, off_t o, ArchiveDirectory* directory, size_t readSize)
+    : runBegin(b), runEnd(e), level(level), firstPID(f), lastPID(l), offset(o),
+        fd(-1), blockCount(0), readSize(readSize), directory(directory)
 {
     if (readSize == 0) {
         readSize = directory->getBlockSize();
@@ -1224,7 +1226,7 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
     size_t blockSize = directory->getBlockSize();
 
     if (fd < 0) {
-        W_COERCE(directory->openForScan(fd, runBegin, runEnd));
+        W_COERCE(directory->openForScan(fd, runBegin, runEnd, level));
 
         if (directory->getIndex()) {
             directory->getIndex()->getBlockCounts(fd, NULL, &blockCount);
@@ -1659,7 +1661,7 @@ bool LogArchiver::processFlushRequest()
             }
 
             // Forcibly close current run to guarantee that LSN is persisted
-            W_COERCE(directory->closeCurrentRun(flushReqLSN));
+            W_COERCE(directory->closeCurrentRun(flushReqLSN, 1 /* level */));
             blkAssemb->resetWriter();
 
             /* Now we know that the requested LSN has been processed by the
@@ -2016,33 +2018,24 @@ tryagain:
 
 LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize, lsn_t startLSN,
         size_t bucketSize)
-    : blockSize(blockSize), lastFinished(-1),
-    bucketSize(bucketSize)
+    : blockSize(blockSize), bucketSize(bucketSize), maxLevel(0)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
-    writeBuffer = new char[blockSize];
-    // Using direct I/O
-    int res = posix_memalign((void**) &readBuffer, IO_ALIGN, blockSize);
-    w_assert0(res == 0);
-    // readBuffer = new char[blockSize];
 
-    // last run in the array is always the one being currently generated
+    // last run at level 1 is always the one being currently generated
     RunInfo r;
     r.firstLSN = startLSN;
-    runs.push_back(r);
+    runs.resize(2);
+    runs[1].push_back(r);
+    lastFinished.resize(2);
+    lastFinished[1] = -1;
 }
 
 LogArchiver::ArchiveIndex::~ArchiveIndex()
 {
-    DO_PTHREAD(pthread_mutex_destroy(&mutex));
-    delete[] writeBuffer;
-
-    // Using direct I/O
-    free(readBuffer);
-    // delete[] readBuffer;
 }
 
-void LogArchiver::ArchiveIndex::newBlock(PageID firstPID)
+void LogArchiver::ArchiveIndex::newBlock(PageID firstPID, unsigned level)
 {
     CRITICAL_SECTION(cs, mutex);
 
@@ -2050,13 +2043,13 @@ void LogArchiver::ArchiveIndex::newBlock(PageID firstPID)
     w_assert1(runs.size() > 0);
 
     BlockEntry e;
-    e.offset = blockSize * runs.back().entries.size();
+    e.offset = blockSize * runs[level].back().entries.size();
     e.pid = firstPID;
-    runs.back().entries.push_back(e);
+    runs[level].back().entries.push_back(e);
 }
 
 void LogArchiver::ArchiveIndex::newBlock(const vector<pair<PageID, size_t> >&
-        buckets)
+        buckets, unsigned level)
 {
     CRITICAL_SECTION(cs, mutex);
 
@@ -2069,26 +2062,29 @@ void LogArchiver::ArchiveIndex::newBlock(const vector<pair<PageID, size_t> >&
         e.offset = buckets[i].second;
         w_assert1(e.offset == 0 || e.offset > prevOffset);
         prevOffset = e.offset;
-        runs.back().entries.push_back(e);
+        runs[level].back().entries.push_back(e);
     }
 }
 
 rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
-        off_t offset)
+        off_t offset, unsigned level)
 {
     CRITICAL_SECTION(cs, mutex);
     w_assert1(offset % blockSize == 0);
 
     // check if it isn't an empty run (from truncation)
-    if (offset > 0 && lastFinished < (int) runs.size()) {
-        lastFinished++;
-        w_assert1(lastFinished == 0 || first == runs[lastFinished-1].lastLSN);
-        w_assert1(lastFinished < (int) runs.size());
+    int& lf = lastFinished[level];
+    if (offset > 0 && lf < (int) runs[level].size()) {
+        lf++;
+        w_assert1(lf == 0 || first == runs[level][lf-1].lastLSN);
+        w_assert1(lf < (int) runs[level].size());
 
-        runs[lastFinished].firstLSN = first;
-        runs[lastFinished].lastLSN = last;
-        W_DO(serializeRunInfo(runs[lastFinished], fd, offset));
+        runs[level][lf].firstLSN = first;
+        runs[level][lf].lastLSN = last;
+        W_DO(serializeRunInfo(runs[level][lf], fd, offset));
     }
+
+    if (level > maxLevel) { maxLevel = level; }
 
     return RCOK;
 }
@@ -2105,6 +2101,9 @@ rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
     int remaining = run.entries.size();
     int i = 0;
     size_t currEntry = 0;
+
+    // CS TODO RAII
+    char * writeBuffer = new char[blockSize];
 
     while (remaining > 0) {
         int j = 0;
@@ -2133,76 +2132,20 @@ rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
         i++;
     }
 
-    return RCOK;
-}
+    delete[] writeBuffer;
 
-rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
-        const char* fname)
-{
-    // CS TODO ArchiveDirectory should abstract file name and FS operations
-    // Assumption: mutex is held by caller
-    int fd;
-    // Using direct I/O
-    int flags = O_RDONLY | O_DIRECT;
-    fd = ::open(fname, flags, 0744);
-    CHECK_ERRNO(fd);
-
-    auto fname_str = string(fname);
-    fname_str = fname_str.substr(fname_str.rfind(LogArchiver::ArchiveDirectory::RUN_PREFIX));
-
-    ArchiveDirectory::RunFileStats fstats;
-    ArchiveDirectory::parseRunFileName(fname_str, fstats);
-    run.firstLSN = fstats.beginLSN;
-    run.lastLSN = fstats.endLSN;
-
-    size_t indexBlockCount = 0;
-    size_t dataBlockCount = 0;
-    W_DO(getBlockCounts(fd, &indexBlockCount, &dataBlockCount));
-
-    off_t offset = dataBlockCount * blockSize;
-    w_assert1(dataBlockCount == 0 || offset > 0);
-    size_t lastOffset = 0;
-
-    while (indexBlockCount > 0) {
-        auto bytesRead = ::pread(fd, readBuffer, blockSize, offset);
-        CHECK_ERRNO(bytesRead);
-        if (bytesRead != blockSize) { return RC(stSHORTIO); }
-
-        BlockHeader* h = (BlockHeader*) readBuffer;
-
-        unsigned j = 0;
-        size_t bpos = sizeof(BlockHeader);
-        while(j < h->entries)
-        {
-            BlockEntry* e = (BlockEntry*)(readBuffer + bpos);
-            w_assert1(lastOffset == 0 || e->offset > lastOffset);
-            run.entries.push_back(*e);
-
-            lastOffset = e->offset;
-            bpos += sizeof(BlockEntry);
-            j++;
-        }
-        indexBlockCount--;
-        offset += blockSize;
-
-        // if (indexBlockCount == 0) {
-        //     // read lasPID from last block
-        //     run.lastPID = *((PageID*) (readBuffer + bpos));
-        // }
-    }
-
-    auto ret = ::close(fd);
-    CHECK_ERRNO(ret);
     return RCOK;
 }
 
 void LogArchiver::ArchiveIndex::init()
 {
-    std::sort(runs.begin(), runs.end());
-    lastFinished = runs.size() - 2;
+    for (unsigned l = 0; l < runs.size(); l++) {
+        lastFinished[l] = runs[l].size() - 2;
+        std::sort(runs[l].begin(), runs[l].end());
+    }
 }
 
-void LogArchiver::ArchiveIndex::appendNewEntry()
+void LogArchiver::ArchiveIndex::appendNewEntry(unsigned level)
 {
     CRITICAL_SECTION(cs, mutex);
 
@@ -2211,15 +2154,64 @@ void LogArchiver::ArchiveIndex::appendNewEntry()
     // }
 
     RunInfo newRun;
-    runs.push_back(newRun);
+    runs[level].push_back(newRun);
 }
 
-rc_t LogArchiver::ArchiveIndex::loadRunInfo(const char* fname)
+rc_t LogArchiver::ArchiveIndex::loadRunInfo(int fd, const ArchiveDirectory::RunFileStats& fstats)
 {
-    RunInfo r;
-    W_DO(deserializeRunInfo(r, fname));
+    RunInfo run;
+    {
+        memalign_allocator<char, IO_ALIGN> alloc;
+        char* readBuffer = alloc.allocate(blockSize);
 
-    runs.push_back(r);
+        size_t indexBlockCount = 0;
+        size_t dataBlockCount = 0;
+        W_DO(getBlockCounts(fd, &indexBlockCount, &dataBlockCount));
+
+        off_t offset = dataBlockCount * blockSize;
+        w_assert1(dataBlockCount == 0 || offset > 0);
+        size_t lastOffset = 0;
+
+        while (indexBlockCount > 0) {
+            auto bytesRead = ::pread(fd, readBuffer, blockSize, offset);
+            CHECK_ERRNO(bytesRead);
+            if (bytesRead != blockSize) { return RC(stSHORTIO); }
+
+            BlockHeader* h = (BlockHeader*) readBuffer;
+
+            unsigned j = 0;
+            size_t bpos = sizeof(BlockHeader);
+            while(j < h->entries)
+            {
+                BlockEntry* e = (BlockEntry*)(readBuffer + bpos);
+                w_assert1(lastOffset == 0 || e->offset > lastOffset);
+                run.entries.push_back(*e);
+
+                lastOffset = e->offset;
+                bpos += sizeof(BlockEntry);
+                j++;
+            }
+            indexBlockCount--;
+            offset += blockSize;
+
+            // if (indexBlockCount == 0) {
+            //     // read lasPID from last block
+            //     run.lastPID = *((PageID*) (readBuffer + bpos));
+            // }
+        }
+
+        alloc.deallocate(readBuffer);
+    }
+
+    run.firstLSN = fstats.beginLSN;
+    run.lastLSN = fstats.endLSN;
+
+    if (fstats.level > maxLevel) {
+        maxLevel = fstats.level;
+        // level 0 reserved, so add 1
+        runs.resize(maxLevel+1);
+    }
+    runs[fstats.level].push_back(run);
 
     return RCOK;
 }
@@ -2260,7 +2252,7 @@ rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
     return RCOK;
 }
 
-size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
+size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn, unsigned level)
 {
     // Assumption: mutex is held by caller
     if (lsn == lsn_t::null) {
@@ -2272,24 +2264,25 @@ size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
      * CS: requests are more likely to access the last runs, so
      * we do a linear search instead of binary search.
      */
-    w_assert1(lastFinished >= 0);
+    auto& lf = lastFinished[level];
+    w_assert1(lf >= 0);
 
-    if(lsn >= runs[lastFinished].lastLSN) {
-        return lastFinished + 1;
+    if(lsn >= runs[level][lf].lastLSN) {
+        return lf + 1;
     }
 
-    int result = lastFinished;
-    while (result > 0 && runs[result].firstLSN > lsn) {
+    int result = lf;
+    while (result > 0 && runs[level][result].firstLSN > lsn) {
         result--;
     }
 
     // skip empty runs
-    while (runs[result].entries.size() == 0 && result <= lastFinished) {
+    while (runs[level][result].entries.size() == 0 && result <= lf) {
         result++;
     }
 
     // caller must check if returned index is valid
-    return result >= 0 ? result : runs.size();
+    return result >= 0 ? result : runs[level].size();
 }
 
 size_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
@@ -2351,11 +2344,12 @@ void LogArchiver::ArchiveIndex::probeInRun(ProbeResult& res)
 {
     // Assmuptions: mutex is held; run index and pid are set in given result
     size_t index = res.runIndex;
-    w_assert1((int) index <= lastFinished);
-    RunInfo* run = &runs[index];
+    auto level = res.level;
+    w_assert1((int) index <= lastFinished[level]);
+    RunInfo* run = &runs[level][index];
 
-    res.runBegin = runs[index].firstLSN;
-    res.runEnd = runs[index].lastLSN;
+    res.runBegin = runs[level][index].firstLSN;
+    res.runEnd = runs[level][index].lastLSN;
 
     size_t entryBegin = 0;
     if (res.pidBegin == 0) {
@@ -2379,35 +2373,48 @@ void LogArchiver::ArchiveIndex::probe(std::vector<ProbeResult>& probes,
 {
     CRITICAL_SECTION(cs, mutex);
 
-    size_t index = findRun(startLSN);
     probes.clear();
+    unsigned level = maxLevel;
 
-    ProbeResult res;
-    while ((int) index <= lastFinished) {
-        if (runs[index].entries.size() > 0) {
-            res.pidBegin = startPID;
-            res.pidEnd = endPID;
-            res.runIndex = index;
-            probeInRun(res);
-            probes.push_back(res);
+    // Start collecting runs on the max level, which has the largest runs
+    // and therefore requires the least random reads
+    while (level > 0) {
+        size_t index = findRun(startLSN, level);
+
+        ProbeResult res;
+        res.level = level;
+        while ((int) index <= lastFinished[level]) {
+            if (runs[level][index].entries.size() > 0) {
+                res.pidBegin = startPID;
+                res.pidEnd = endPID;
+                res.runIndex = index;
+                probeInRun(res);
+                probes.push_back(res);
+            }
+            index++;
         }
-        index++;
-    }
 
+        // Now go to the next level, starting on the last LSN covered
+        // by the current level
+        startLSN = res.runEnd;
+        level--;
+    }
 }
 
 void LogArchiver::ArchiveIndex::dumpIndex(ostream& out)
 {
-    for (size_t i = 0; i < runs.size(); i++) {
-        size_t offset = 0, prevOffset = 0;
-        for (size_t j = 0; j < runs[i].entries.size(); j++) {
-            offset = runs[i].entries[j].offset;
-            out << "run " << i << " entry " << j <<
-                " pid " << runs[i].entries[j].pid <<
-                " offset " << offset <<
-                " delta " << offset - prevOffset <<
-                endl;
-            prevOffset = offset;
+    for (auto r : runs) {
+        for (size_t i = 0; i < r.size(); i++) {
+            size_t offset = 0, prevOffset = 0;
+            for (size_t j = 0; j < r[i].entries.size(); j++) {
+                offset = r[i].entries[j].offset;
+                out << "run " << i << " entry " << j <<
+                    " pid " << r[i].entries[j].pid <<
+                    " offset " << offset <<
+                    " delta " << offset - prevOffset <<
+                    endl;
+                prevOffset = offset;
+            }
         }
     }
 }
@@ -2431,7 +2438,7 @@ bool runComp(const RunFileStats& a, const RunFileStats& b)
 // order, and only for all available runs at once. It fits the purposes of our
 // restore experiments, but it should be fixed in the future. See comments in
 // the header file.
-rc_t LogArchiver::MergerDaemon::runSync(size_t fanin, size_t maxRunSize)
+rc_t LogArchiver::MergerDaemon::runSync(unsigned level, unsigned fanin)
 {
     list<RunFileStats> stats;
     indir->listFileStats(stats);
@@ -2448,14 +2455,14 @@ rc_t LogArchiver::MergerDaemon::runSync(size_t fanin, size_t maxRunSize)
         size_t accumSize = 0, i = 0;
 
         // pick runs until getting fan-in or maxRunSize
-        while (i < fanin && iter != stats.end() &&
-                (maxRunSize == 0 || accumSize + iter->fileSize <= maxRunSize))
-        {
-            accumSize += iter->fileSize;
-            iter++;
-            i++;
-        }
-        w_assert0(maxRunSize == 0 || accumSize <= maxRunSize);
+        // while (i < fanin && iter != stats.end() &&
+        //         (maxRunSize == 0 || accumSize + iter->fileSize <= maxRunSize))
+        // {
+        //     accumSize += iter->fileSize;
+        //     iter++;
+        //     i++;
+        // }
+        // w_assert0(maxRunSize == 0 || accumSize <= maxRunSize);
 
         // if (i == 0) {
         //     iter++;
@@ -2490,7 +2497,7 @@ rc_t LogArchiver::MergerDaemon::doMerge(int runNumber,
         ERROUT(<< "Merging " << iter->beginLSN << "-" << iter->endLSN);
         ArchiveScanner::RunScanner* runScanner =
             new ArchiveScanner::RunScanner(
-                iter->beginLSN, iter->endLSN, 0, 0, 0 /* offset */, indir);
+                iter->beginLSN, iter->endLSN, iter->level, 0, 0, 0 /* offset */, indir);
 
         merger.addInput(runScanner);
         iter++;
