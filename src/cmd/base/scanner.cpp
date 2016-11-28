@@ -7,9 +7,9 @@
 
 #include <dirent.h>
 
-#define PARSE_LSN(a,b) \
-    LogArchiver::ArchiveDirectory::parseLSN(a, b);
+using RunFileStats = LogArchiver::ArchiveDirectory::RunFileStats;
 
+const auto& parseRunFileName = LogArchiver::ArchiveDirectory::parseRunFileName;
 
 void BaseScanner::handle(logrec_t* lr)
 {
@@ -192,8 +192,11 @@ LogArchiveScanner::LogArchiveScanner(const po::variables_map& options)
 
 bool runCompare (string a, string b)
 {
-    lsn_t lsn_a = PARSE_LSN(a.c_str(), false);
-    lsn_t lsn_b = PARSE_LSN(b.c_str(), false);
+    RunFileStats fstats;
+    parseRunFileName(a, fstats);
+    lsn_t lsn_a = fstats.beginLSN;
+    parseRunFileName(b, fstats);
+    lsn_t lsn_b = fstats.beginLSN;
     return lsn_a < lsn_b;
 }
 
@@ -220,17 +223,20 @@ void LogArchiveScanner::run()
         runFiles.push_back(restrictFile);
     }
 
-    runBegin = PARSE_LSN(runFiles[0].c_str(), false);
-    runEnd = PARSE_LSN(runFiles[0].c_str(), true);
+    RunFileStats fstats;
+    parseRunFileName(runFiles[0], fstats);
+    runBegin = fstats.beginLSN;
+    runEnd = fstats.endLSN;
     std::vector<std::string>::const_iterator it;
     for(size_t i = 0; i < runFiles.size(); i++) {
         if (i > 0) {
             // begin of run i must be equal to end of run i-1
-            runBegin = PARSE_LSN(runFiles[i].c_str(), false);
+            parseRunFileName(runFiles[i], fstats);
+            runBegin = fstats.beginLSN;
             if (runBegin != runEnd) {
                 throw runtime_error("Hole found in run boundaries!");
             }
-            runEnd = PARSE_LSN(runFiles[i].c_str(), true);
+            runEnd = fstats.endLSN;
         }
 
         if (openFileCallback) {

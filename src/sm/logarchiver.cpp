@@ -34,7 +34,7 @@ const string LogArchiver::ArchiveDirectory::RUN_PREFIX = "archive_";
 const string LogArchiver::ArchiveDirectory::CURR_RUN_FILE = "current_run";
 const string LogArchiver::ArchiveDirectory::CURR_MERGE_FILE = "current_merge";
 const string LogArchiver::ArchiveDirectory::run_regex =
-    "^archive_[1-9][0-9]*\\.[0-9]+-[1-9][0-9]*\\.[0-9]+$";
+    "^archive_([1-9][0-9]*)_([1-9][0-9]*\\.[0-9]+)-([1-9][0-9]*\\.[0-9]+)$";
 const string LogArchiver::ArchiveDirectory::current_regex = "current_run|current_merge";
 
 // CS: Aligning with the Linux standard FS block size
@@ -436,30 +436,21 @@ LogArchiver::~LogArchiver()
     }
 }
 
-/**
- * Extracts one LSN from a run's file name.
- * If end == true, get the end LSN (the upper bound), otherwise
- * get the begin LSN.
- */
-lsn_t LogArchiver::ArchiveDirectory::parseLSN(const char* str, bool end)
+bool LogArchiver::ArchiveDirectory::parseRunFileName(string fname, RunFileStats& fstats)
 {
-    char delim = end ? '-' : '_';
-    const char* hpos = strrchr(str, delim) + 1;
-    const char* lpos = strchr(hpos, '.') + 1;
+    boost::regex run_rx(run_regex, boost::regex::perl);
+    boost::smatch res;
+    if (!boost::regex_match(fname, res, run_rx)) { return false; }
 
-    // the highest 48-bit integer has 15 digits
-    char* hstr = new char[15];
-    memset(hstr, 0, 15);
-    strncpy(hstr, hpos, lpos - hpos - 1);
-    char* lstr = (char*) lpos;
-    if (!end) {
-        lstr = new char[15];
-        memset(lstr, 0, 15);
-        const char* lend = strchr(lpos, '-');
-        strncpy(lstr, lpos, lend - lpos);
-    }
-    // use atol to avoid overflow in atoi, which generates signed int
-    return lsn_t(atol(hstr), atol(lstr));
+    std::cout << "MATCHED level = " << res[1] << " b = " << res[2] << " e = "  << res[3] << std::endl;
+    fstats.level = std::stoi(res[1]);
+
+    std::stringstream is;
+    is.str(res[2]);
+    is >> fstats.beginLSN;
+    is.clear();
+    is.str(res[3]);
+    is >> fstats.endLSN;
 }
 
 size_t LogArchiver::ArchiveDirectory::getFileSize(int fd)
@@ -497,21 +488,21 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
 
     archpath = archdir;
     fs::directory_iterator it(archpath), eod;
-    boost::regex run_rx(run_regex, boost::regex::perl);
     boost::regex current_rx(current_regex, boost::regex::perl);
     lsn_t highestLSN = lsn_t::null;
 
     for (; it != eod; it++) {
         fs::path fpath = it->path();
         string fname = fpath.filename().string();
+        RunFileStats fstats;
 
-        if (boost::regex_match(fname, run_rx)) {
+        if (parseRunFileName(fname, fstats)) {
             if (reformat) {
                 fs::remove(fpath);
                 continue;
             }
             // parse lsn from file name
-            lsn_t currLSN = parseLSN(fname.c_str());
+            lsn_t currLSN = fstats.endLSN;
             if (currLSN > highestLSN) {
                 DBGTHRD("Highest LSN found so far in archdir: " << currLSN);
                 highestLSN = currLSN;
@@ -618,8 +609,7 @@ rc_t LogArchiver::ArchiveDirectory::listFileStats(list<RunFileStats>& list)
 
     RunFileStats stats;
     for (size_t i = 0; i < fnames.size(); i++) {
-        stats.beginLSN = parseLSN(fnames[i].c_str(), false);
-        stats.endLSN = parseLSN(fnames[i].c_str(), true);
+        parseRunFileName(fnames[i], stats);
 
         int fd;
         openForScan(fd, stats.beginLSN, stats.endLSN);
@@ -660,9 +650,11 @@ rc_t LogArchiver::ArchiveDirectory::openNewRun()
     return RCOK;
 }
 
-fs::path LogArchiver::ArchiveDirectory::make_run_path(lsn_t begin, lsn_t end) const
+fs::path LogArchiver::ArchiveDirectory::make_run_path(lsn_t begin, lsn_t end, unsigned level)
+    const
 {
-    return archpath / fs::path(RUN_PREFIX + begin.str() + "-" + end.str());
+    return archpath / fs::path(RUN_PREFIX + std::to_string(level) + "_" + begin.str()
+            + "-" + end.str());
 }
 
 fs::path LogArchiver::ArchiveDirectory::make_current_run_path() const
@@ -2147,6 +2139,7 @@ rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
 rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
         const char* fname)
 {
+    // CS TODO ArchiveDirectory should abstract file name and FS operations
     // Assumption: mutex is held by caller
     int fd;
     // Using direct I/O
@@ -2154,8 +2147,13 @@ rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run,
     fd = ::open(fname, flags, 0744);
     CHECK_ERRNO(fd);
 
-    run.firstLSN = ArchiveDirectory::parseLSN(fname, false /* end */);
-    run.lastLSN = ArchiveDirectory::parseLSN(fname, true /* end */);
+    auto fname_str = string(fname);
+    fname_str = fname_str.substr(fname_str.rfind(LogArchiver::ArchiveDirectory::RUN_PREFIX));
+
+    ArchiveDirectory::RunFileStats fstats;
+    ArchiveDirectory::parseRunFileName(fname_str, fstats);
+    run.firstLSN = fstats.beginLSN;
+    run.lastLSN = fstats.endLSN;
 
     size_t indexBlockCount = 0;
     size_t dataBlockCount = 0;

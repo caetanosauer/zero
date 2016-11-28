@@ -338,6 +338,7 @@ public:
             lsn_t beginLSN;
             lsn_t endLSN;
             size_t fileSize;
+            unsigned level;
         };
 
         lsn_t getStartLSN() { return startLSN; }
@@ -359,7 +360,7 @@ public:
         rc_t listFileStats(std::list<RunFileStats>& list);
         void deleteAllRuns();
 
-        static lsn_t parseLSN(const char* str, bool end = true);
+        static bool parseRunFileName(string fname, RunFileStats& fstats);
         static size_t getFileSize(int fd);
     private:
         ArchiveIndex* archIndex;
@@ -372,19 +373,21 @@ public:
         size_t blockSize;
 
         fs::path archpath;
-        const static string RUN_PREFIX;
-        const static string CURR_RUN_FILE;
-        const static string CURR_MERGE_FILE;
-        const static string run_regex;
-        const static string current_regex;
 
         // closeCurrentRun needs mutual exclusion because it is called by both
         // the writer thread and the archiver thread in processFlushRequest
         pthread_mutex_t mutex;
 
-        fs::path make_run_path(lsn_t begin, lsn_t end) const;
+        fs::path make_run_path(lsn_t begin, lsn_t end, unsigned level = 1) const;
         fs::path make_current_run_path() const;
         rc_t openNewRun();
+
+    public:
+        const static string RUN_PREFIX;
+        const static string CURR_RUN_FILE;
+        const static string CURR_MERGE_FILE;
+        const static string run_regex;
+        const static string current_regex;
     };
 
     /** \brief Asynchronous writer thread to produce run files on disk
