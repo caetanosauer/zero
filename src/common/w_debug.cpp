@@ -68,7 +68,7 @@ char*       _w_debug::re_error_str = "Bad regular expression";
 // decipher mixed-up debugging output for those cases.
 //
 
-w_debug::w_debug(const char *n, const char *f)
+w_debug::w_debug(const char* /*n*/, const char* /*f*/)
 {
 #ifdef USE_REGEX
     //re_ready = false;

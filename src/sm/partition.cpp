@@ -418,7 +418,7 @@ rc_t partition_t::scan_for_size(bool must_be_skip)
     struct stat stat;
     auto ret = ::fstat(_fhdl_rd, &stat);
     CHECK_ERRNO(ret);
-    size_t fsize = stat.st_size;
+    off_t fsize = stat.st_size;
 
     if (fsize == 0) {
         _size = 0;

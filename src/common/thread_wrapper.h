@@ -20,7 +20,7 @@ public:
     {
     }
 
-    ~thread_wrapper_t()
+    virtual ~thread_wrapper_t()
     {
         thread_ptr.reset();
     }

@@ -205,7 +205,7 @@ void LogArchiveScanner::run()
     BaseScanner::initialize();
 
     // CS TODO no option for archiver block size
-    size_t blockSize = LogArchiver::DFT_BLOCK_SIZE;
+    // size_t blockSize = LogArchiver::DFT_BLOCK_SIZE;
     // size_t blockSize = options["sm_archiver_block_size"].as<int>();
     sm_options opt;
     opt.set_string_option("sm_archdir", archdir);

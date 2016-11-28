@@ -161,7 +161,7 @@ rc_t LogArchiver::ReaderThread::openPartition()
     auto ret = ::fstat(fd, &stat);
     CHECK_ERRNO(ret);
     if (stat.st_size == 0) { return RC(eEOF); }
-    size_t partSize = stat.st_size;
+    off_t partSize = stat.st_size;
 
     /*
      * The size of the file must be at least the offset of endLSN, otherwise
@@ -2452,7 +2452,7 @@ rc_t LogArchiver::MergerDaemon::runSync(unsigned level, unsigned fanin)
     list<RunFileStats>::iterator iter = stats.begin();
     while (iter != stats.end()) {
         list<RunFileStats>::iterator begin = iter;
-        size_t accumSize = 0, i = 0;
+        // size_t accumSize = 0, i = 0;
 
         // pick runs until getting fan-in or maxRunSize
         // while (i < fanin && iter != stats.end() &&

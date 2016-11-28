@@ -416,7 +416,7 @@ void chkpt_begin_log::construct(const lsn_t &lastMountLSN)
 }
 
 template <class PagePtr>
-void page_evict_log::construct (const PagePtr p,
+void page_evict_log::construct (const PagePtr /*p*/,
                                 general_recordid_t child_slot, lsn_t child_lsn)
 {
     new (data_ssx()) page_evict_t(child_lsn, child_slot);

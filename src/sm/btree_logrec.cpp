@@ -321,7 +321,7 @@ void btree_ghost_reclaim_log::redo(PagePtr page)
 
 template <class PagePtr>
 void btree_ghost_reserve_log::construct (
-    const PagePtr p, const w_keystr_t& key, int element_length) {
+    const PagePtr /*p*/, const w_keystr_t& key, int element_length) {
     // ghost creation is single-log system transaction. so, use data_ssx()
     set_size((new (data_ssx()) btree_ghost_reserve_t(key, element_length))->size());
     w_assert0(is_single_sys_xct());
@@ -379,7 +379,7 @@ void btree_norec_alloc_log::redo(PagePtr p) {
 }
 
 template <class PagePtr>
-void btree_foster_adopt_log::construct(const PagePtr p, const PagePtr p2,
+void btree_foster_adopt_log::construct(const PagePtr /*p*/, const PagePtr p2,
     PageID new_child_pid, lsn_t new_child_emlsn, const w_keystr_t& new_child_key) {
     set_size((new (data_ssx()) btree_foster_adopt_t(
         p2->pid(), new_child_pid, new_child_emlsn, new_child_key))->size());
@@ -456,7 +456,7 @@ void btree_split_log::redo(PagePtr p)
 
 template <class PagePtr>
 void btree_compress_page_log::construct(
-        const PagePtr page,
+        const PagePtr /*page*/,
         const w_keystr_t& low,
         const w_keystr_t& high,
         const w_keystr_t& chain)

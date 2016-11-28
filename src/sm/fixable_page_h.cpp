@@ -132,7 +132,7 @@ bool fixable_page_h::is_to_be_deleted() {
     return (_pp->page_flags&t_to_be_deleted) != 0;
 }
 
-rc_t fixable_page_h::set_to_be_deleted (bool log_it) {
+rc_t fixable_page_h::set_to_be_deleted (bool /*log_it*/) {
     // CS TODO: implement page deletion properly
     //
     w_assert0(false);

@@ -762,7 +762,7 @@ xct_t::change_state(state_t new_state)
     w_assert2((new_state > _core->_state) ||
             (_core->_state == xct_chaining && new_state == xct_active));
 
-    state_t old_state = _core->_state;
+    // state_t old_state = _core->_state;
     _core->_state = new_state;
     switch(new_state) {
         case xct_aborting: _core->_xct_aborting = true; break;
