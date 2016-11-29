@@ -2474,81 +2474,68 @@ bool runComp(const RunFileStats& a, const RunFileStats& b)
 // the header file.
 rc_t LogArchiver::MergerDaemon::runSync(unsigned level, unsigned fanin)
 {
-    list<RunFileStats> stats;
-    indir->listFileStats(stats);
+    list<RunFileStats> stats, statsNext;
+    indir->listFileStats(stats, level);
+    indir->listFileStats(statsNext, level+1);
 
     // sort list by LSN, since only contiguous runs are merged
     stats.sort(runComp);
+    statsNext.sort(runComp);
 
-    LogArchiver::BlockAssembly blkAssemb(outdir);
+    // grab first LSN which is missing from next level
+    lsn_t nextLSN = stats.front().beginLSN;
+    if (statsNext.size() > 0) {
+        nextLSN = statsNext.back().endLSN;
+    }
+    w_assert1(nextLSN < stats.back().endLSN);
 
-    int runNumber = 0;
-    list<RunFileStats>::iterator iter = stats.begin();
-    while (iter != stats.end()) {
-        list<RunFileStats>::iterator begin = iter;
-        // size_t accumSize = 0, i = 0;
-
-        // pick runs until getting fan-in or maxRunSize
-        // while (i < fanin && iter != stats.end() &&
-        //         (maxRunSize == 0 || accumSize + iter->fileSize <= maxRunSize))
-        // {
-        //     accumSize += iter->fileSize;
-        //     iter++;
-        //     i++;
-        // }
-        // w_assert0(maxRunSize == 0 || accumSize <= maxRunSize);
-
-        // if (i == 0) {
-        //     iter++;
-        //     i++;
-        //     continue;
-        // }
-
-        // if (i == 1 || (minRunSize > 0 && accumSize < minRunSize)) {
-        //     // output too small or only one input -- don't merge
-        //     continue;
-        // }
-
-        // now do the merge
-        W_DO(doMerge(runNumber++, begin, iter, blkAssemb));
+    // collect 'fanin' runs in the current level starting from nextLSN
+    auto begin = stats.begin();
+    while (begin->endLSN <= nextLSN) { begin++; }
+    auto end = begin;
+    unsigned count = 0;
+    while (count < fanin && end != stats.end()) {
+        end++;
+        count++;
+    }
+    if (count < 2) {
+        ERROUT(<< "Not enough runs to merge");
+        return RCOK;
     }
 
-    blkAssemb.shutdown();
+    {
+        ArchiveScanner::RunMerger merger;
+        LogArchiver::BlockAssembly blkAssemb(outdir, level+1);
 
-    return RCOK;
-}
+        ERROUT(<< "doMerge");
+        list<RunFileStats>::const_iterator iter = begin;
+        while (iter != end) {
+            ERROUT(<< "Merging " << iter->beginLSN << "-" << iter->endLSN);
+            ArchiveScanner::RunScanner* runScanner =
+                new ArchiveScanner::RunScanner(
+                        iter->beginLSN, iter->endLSN, iter->level, 0, 0, 0 /* offset */, indir);
 
-rc_t LogArchiver::MergerDaemon::doMerge(int runNumber,
-        list<RunFileStats>::const_iterator begin,
-        list<RunFileStats>::const_iterator end,
-        LogArchiver::BlockAssembly& blkAssemb)
-{
-    ArchiveScanner::RunMerger merger;
-
-    ERROUT(<< "doMerge");
-    list<RunFileStats>::const_iterator iter = begin;
-    while (iter != end) {
-        ERROUT(<< "Merging " << iter->beginLSN << "-" << iter->endLSN);
-        ArchiveScanner::RunScanner* runScanner =
-            new ArchiveScanner::RunScanner(
-                iter->beginLSN, iter->endLSN, iter->level, 0, 0, 0 /* offset */, indir);
-
-        merger.addInput(runScanner);
-        iter++;
-    }
-
-    if (merger.heapSize() > 0) {
-        logrec_t* lr;
-        blkAssemb.start(runNumber);
-        while (merger.next(lr)) {
-            if (!blkAssemb.add(lr)) {
-                blkAssemb.finish();
-                blkAssemb.start(runNumber);
-                blkAssemb.add(lr);
-            }
+            merger.addInput(runScanner);
+            iter++;
         }
-        blkAssemb.finish();
+
+        constexpr int runNumber = 0;
+        if (merger.heapSize() > 0) {
+            logrec_t* lr;
+            blkAssemb.start(runNumber);
+            while (merger.next(lr)) {
+                if (!blkAssemb.add(lr)) {
+                    blkAssemb.finish();
+                    blkAssemb.start(runNumber);
+                    blkAssemb.add(lr);
+                }
+            }
+            blkAssemb.finish();
+        }
+
+        blkAssemb.shutdown();
     }
 
     return RCOK;
 }
+

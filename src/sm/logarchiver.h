@@ -801,10 +801,6 @@ public:
         ArchiveDirectory* outdir;
         rc_t asyncRC;
 
-        rc_t doMerge(int runNumber,
-            list<ArchiveDirectory::RunFileStats>::const_iterator begin,
-            list<ArchiveDirectory::RunFileStats>::const_iterator end,
-            LogArchiver::BlockAssembly& blkAssemb);
     };
 
 public:

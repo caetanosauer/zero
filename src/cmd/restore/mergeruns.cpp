@@ -17,8 +17,8 @@ void MergeRuns::setupOptions()
             "Directory containing the runs to be merged")
         ("outdir", po::value<string>(&outdir)->default_value(""),
             "Directory where the merged runs will be stored (empty for same as indir)")
-        ("maxRunSize", po::value<size_t>(&maxRunSize)->default_value(0),
-            "Maximum size of a merged run (0 for any)")
+        ("level", po::value<size_t>(&level)->default_value(1),
+            "Level whose runs will be merged (a run in level+1 will be created)")
         ("fanin", po::value<size_t>(&fanin)->required(),
             "Merge fan-in (required, larger than 1)")
     ;
@@ -54,5 +54,5 @@ void MergeRuns::run()
     }
 
     LogArchiver::MergerDaemon merge(in, out);
-    W_COERCE(merge.runSync(fanin, maxRunSize));
+    W_COERCE(merge.runSync(level, fanin));
 }
