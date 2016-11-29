@@ -72,11 +72,12 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->commit_xct());
     return RCOK;
 }
+
 sm_options make_options() {
     sm_options options;
     // MUCH larger than usual testcases
     options.set_int_option("sm_locktablesize", 1 << 13);
-    options.set_int_option("sm_bufpoolsize", SM_PAGESIZE / 1024 * 1024);
+    options.set_int_option("sm_bufpoolsize", 80); // 80 MB
     options.set_int_option("sm_rawlock_lockpool_initseg", 1 << 7);
     options.set_int_option("sm_rawlock_lockpool_segsize", 1 << 14);
     return options;

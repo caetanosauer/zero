@@ -9,7 +9,9 @@
 #include "bf_tree.h"
 #include "bf_tree_cleaner.h"
 #include "base/command.h"
-#include "btree_logrec.h"
+#include "xct_logger.h"
+#include "thread_wrapper.h"
+
 #include <chrono>
 #include <random>
 #include <thread>
@@ -49,13 +51,9 @@ void setup_options()
     ;
 }
 
-lsn_t log_update(const btree_page_h& page)
+void log_update(btree_page_h& page)
 {
-    static logrec_t* lr = new logrec_t;
-    static lsn_t ret;
-    new (lr) btree_overwrite_log(page, fake_key, "old", "new", 100, 3);
-    W_COERCE(smlevel_0::log->insert(*lr, &ret));
-    return ret;
+    Logger::log<btree_overwrite_log>(&page, fake_key, "old", "new", 100, 3);
 }
 
 PageID get_next_pid_trace()
@@ -79,15 +77,9 @@ PageID get_next_pid_random()
     return distr(generator);
 }
 
-class page_dirtier_thread : public smthread_t
+class page_dirtier_thread : public thread_wrapper_t
 {
 public:
-    page_dirtier_thread() :
-        smthread_t(t_regular, "page_dirtier")
-    {}
-
-    virtual ~page_dirtier_thread() {}
-
     template<bool UseTrace> PageID get_next_pid();
 
     virtual void run()
@@ -121,8 +113,7 @@ public:
 
             btree_page_h p;
             W_COERCE(p.fix_direct(pid, LATCH_EX));
-            lsn_t lsn = log_update(p);
-            p.update_page_lsn(lsn);
+            log_update(p);
 
             // this_thread::sleep_for(sleep_duration);
 
@@ -173,15 +164,9 @@ void load_trace()
     }
 }
 
-class main_thread_t : public smthread_t
+class main_thread_t : public thread_wrapper_t
 {
 public:
-    main_thread_t() :
-        smthread_t(t_regular, "bf_stresser")
-    {}
-
-    virtual ~main_thread_t() {}
-
     virtual void run ()
     {
         sm_opt.set_bool_option("sm_format", true);
@@ -239,9 +224,6 @@ int main(int argc, char** argv)
     setup_options();
     po::store(po::parse_command_line(argc, argv, options_desc), options);
     po::notify(options);
-
-    sthread_t::initialize_sthreads_package();
-    smthread_t::init_fingerprint_map();
 
     fake_key.construct_regularkey("k0", 2);
 

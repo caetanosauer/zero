@@ -59,6 +59,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define PARTITION_H
 #include "w_defines.h"
 
+#include "sm_base.h" // for partition_number_t (CS TODO)
 #include "logrec.h"
 #include <mutex>
 

@@ -19,7 +19,6 @@
 #include "alloc_cache.h"
 #include "restore.h"
 #include "logarchiver.h"
-#include "eventlog.h"
 #include "restart.h"
 #include "xct_logger.h"
 
@@ -200,9 +199,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
     lsn_t failureLSN = lsn_t::null;
     if (!redo) {
         // Create and insert logrec manually to get its LSN
-        new (_logrec_buf) restore_begin_log();
-        W_DO(ss_m::log->insert(*((logrec_t*) _logrec_buf), &failureLSN));
-        W_DO(ss_m::log->flush(failureLSN));
+        failureLSN = Logger::log_sys<restore_begin_log>();
     }
 
     _restore_mgr->setFailureLSN(failureLSN);
@@ -344,7 +341,7 @@ rc_t vol_t::sx_add_backup(const string& path, lsn_t backupLSN, bool redo)
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        W_DO(Logger::log<add_backup_log>(path, backupLSN));
+        Logger::log<add_backup_log>(path, backupLSN);
         W_DO(ssx.end_sys_xct(RCOK));
     }
 
@@ -377,7 +374,7 @@ rc_t vol_t::deallocate_page(const PageID& pid, bool redo)
 
 size_t vol_t::num_used_pages() const
 {
-    return _alloc_cache->get_last_allocated_pid();
+    return _alloc_cache->get_last_allocated_pid() + 1;
 }
 
 rc_t vol_t::create_store(PageID& root_pid, StoreID& snum)
@@ -550,7 +547,7 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
                     // page is loaded in buffer pool already
                     w_assert1(buf->pid == first_page + i);
                     if (_log_page_reads) {
-                        sysevent::log_page_read(first_page + i);
+                        Logger::log_sys<page_read_log>(first_page + i, 1);
                     }
                     _restore_mgr->unpin();
                     return RCOK;
@@ -570,7 +567,7 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
     CHECK_ERRNO(read_count);
 
     if (_log_page_reads) {
-        sysevent::log_page_read(first_page, cnt);
+        Logger::log_sys<page_read_log>(first_page, cnt);
     }
 
     return RCOK;

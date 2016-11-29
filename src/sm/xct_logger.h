@@ -2,6 +2,7 @@
 #define XCT_LOGGER_H
 
 #include "sm.h"
+#include "xct.h"
 #include "btree_page_h.h"
 #include "logdef_gen.h"
 #include "log_core.h"
@@ -22,11 +23,11 @@ public:
      */
     // CS TODO we need a new page-lsn update mechanism!
     template <class Logrec, class... Args>
-    static rc_t log(const Args&... args)
+    static lsn_t log(const Args&... args)
     {
         xct_t* xd = smthread_t::xct();
         bool should_log = smlevel_0::log && smlevel_0::logging_enabled && xd;
-        if (!should_log)  { return RCOK; }
+        if (!should_log)  { return lsn_t::null; }
 
         logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec;
@@ -40,27 +41,26 @@ public:
         if (xd->is_piggy_backed_single_log_sys_xct()) {
             w_assert1(logrec->is_single_sys_xct());
             lsn_t lsn;
-            W_DO( ss_m::log->insert(*logrec, &lsn) );
+            W_COERCE( ss_m::log->insert(*logrec, &lsn) );
             w_assert1(lsn != lsn_t::null);
             DBGOUT3(<< " SSX logged: " << logrec->type() << "\n new_lsn= " << lsn);
-            return RCOK;
+            return lsn;
         }
 
         lsn_t lsn;
-        W_DO(ss_m::log->insert(*logrec, &lsn));
+        logrec->set_xid_prev(xd->tid(), xd->last_lsn());
+        W_COERCE(ss_m::log->insert(*logrec, &lsn));
+        W_COERCE(xd->update_last_logrec(logrec, lsn));
 
-        logrec->set_xid_prev(xd->tid(), lsn);
-        W_DO(xd->update_last_logrec(logrec, lsn));
-
-        return RCOK;
+        return lsn;
     }
 
     template <class Logrec, class... Args>
-    static rc_t log(PagePtr p, const Args&... args)
+    static lsn_t log(PagePtr p, const Args&... args)
     {
         xct_t* xd = smthread_t::xct();
         bool should_log = smlevel_0::log && smlevel_0::logging_enabled && xd;
-        if (!should_log)  { return RCOK; }
+        if (!should_log)  { return lsn_t::null; }
 
         logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec;
@@ -78,29 +78,29 @@ public:
         if (xd->is_piggy_backed_single_log_sys_xct()) {
             w_assert1(logrec->is_single_sys_xct());
             lsn_t lsn;
-            W_DO( ss_m::log->insert(*logrec, &lsn) );
+            W_COERCE( ss_m::log->insert(*logrec, &lsn) );
             w_assert1(lsn != lsn_t::null);
             _update_page_lsns(p, lsn);
             DBGOUT3(<< " SSX logged: " << logrec->type() << "\n new_lsn= " << lsn);
-            return RCOK;
+            return lsn;
         }
 
-        lsn_t lsn;
-        W_DO(ss_m::log->insert(*logrec, &lsn));
 
-        logrec->set_xid_prev(xd->tid(), lsn);
-        W_DO(xd->update_last_logrec(logrec, lsn));
+        lsn_t lsn;
+        logrec->set_xid_prev(xd->tid(), xd->last_lsn());
+        W_COERCE(ss_m::log->insert(*logrec, &lsn));
+        W_COERCE(xd->update_last_logrec(logrec, lsn));
         _update_page_lsns(p, lsn);
 
-        return RCOK;
+        return lsn;
     }
 
     template <class Logrec, class... Args>
-    static rc_t log(PagePtr p, PagePtr p2, const Args&... args)
+    static lsn_t log(PagePtr p, PagePtr p2, const Args&... args)
     {
         xct_t* xd = smthread_t::xct();
         bool should_log = smlevel_0::log && smlevel_0::logging_enabled && xd;
-        if (!should_log)  { return RCOK; }
+        if (!should_log)  { return lsn_t::null; }
 
         logrec_t* logrec = _get_logbuf(xd);
         new (logrec) Logrec;
@@ -124,23 +124,78 @@ public:
         if (xd->is_piggy_backed_single_log_sys_xct()) {
             w_assert1(logrec->is_single_sys_xct());
             lsn_t lsn;
-            W_DO( ss_m::log->insert(*logrec, &lsn) );
+            W_COERCE( ss_m::log->insert(*logrec, &lsn) );
             w_assert1(lsn != lsn_t::null);
             _update_page_lsns(p, lsn);
             _update_page_lsns(p2, lsn);
             DBGOUT3(<< " SSX logged: " << logrec->type() << "\n new_lsn= " << lsn);
-            return RCOK;
+            return lsn;
         }
 
-        lsn_t lsn;
-        W_DO(ss_m::log->insert(*logrec, &lsn));
 
-        logrec->set_xid_prev(xd->tid(), lsn);
-        W_DO(xd->update_last_logrec(logrec, lsn));
+        lsn_t lsn;
+        logrec->set_xid_prev(xd->tid(), xd->last_lsn());
+        W_COERCE(ss_m::log->insert(*logrec, &lsn));
+        W_COERCE(xd->update_last_logrec(logrec, lsn));
         _update_page_lsns(p, lsn);
         _update_page_lsns(p2, lsn);
 
-        return RCOK;
+        return lsn;
+    }
+
+    /*
+     * log_sys is used for system log records (e.g., checkpoints, clock
+     * ticks, reads & writes, recovery events, debug stuff, stats, etc.)
+     *
+     * The difference to the other logging methods is that no xct or page
+     * is involved and the logrec buffer is obtained with the 'new' operator.
+     */
+    template <class Logrec, class... Args>
+    static lsn_t log_sys(const Args&... args)
+    {
+        // this should use TLS allocator, so it's fast
+        // (see macro DEFINE_SM_ALLOC in allocator.h and logrec.cpp)
+        logrec_t* logrec = new logrec_t;
+
+        new (logrec) Logrec;
+        logrec->init_header(Logrec::TYPE);
+        logrec->init_xct_info();
+        reinterpret_cast<Logrec*>(logrec)->construct(args...);
+        w_assert1(logrec->valid_header());
+        w_assert1(logrec->cat() == logrec_t::t_system);
+
+        lsn_t lsn;
+        W_COERCE(ss_m::log->insert(*logrec, &lsn));
+
+        delete logrec;
+        return lsn;
+    }
+
+    /*
+     * log_page_chain is used for in-memory data structures that do not
+     * maintain data directly in a page but must use chained log records
+     * to keep track of their versions and dirty states. Used by
+     * stnode_cache and alloc_cache
+     */
+    template <class Logrec, class... Args>
+    static lsn_t log_page_chain(lsn_t prev_page_lsn, const Args&... args)
+    {
+        // this should use TLS allocator, so it's fast
+        // (see macro DEFINE_SM_ALLOC in allocator.h and logrec.cpp)
+        logrec_t* logrec = new logrec_t;
+
+        new (logrec) Logrec;
+        logrec->init_header(Logrec::TYPE);
+        logrec->init_xct_info();
+        reinterpret_cast<Logrec*>(logrec)->construct(args...);
+        w_assert1(logrec->valid_header());
+
+        lsn_t lsn;
+        logrec->set_page_prev_lsn(prev_page_lsn);
+        W_COERCE(ss_m::log->insert(*logrec, &lsn));
+
+        delete logrec;
+        return lsn;
     }
 
     static void _update_page_lsns(PagePtr page, lsn_t new_lsn)

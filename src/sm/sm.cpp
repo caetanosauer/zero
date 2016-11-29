@@ -79,8 +79,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "allocator.h"
 #include "log_core.h"
-#include "eventlog.h"
-
 
 
 #ifdef USE_TLS_ALLOCATOR

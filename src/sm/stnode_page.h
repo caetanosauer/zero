@@ -50,7 +50,7 @@ public:
         / sizeof(stnode_t);
 
     // Page ID used by the stnode page
-    static const PageID stpid = 1;
+    static const PageID stpid;
 
     stnode_t get(size_t index) const {
         w_assert1(index < max);

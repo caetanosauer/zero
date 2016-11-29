@@ -9,6 +9,7 @@
 #include "w_defines.h"
 #include "w_base.h"
 #include "sm_vas.h"
+#include "thread_wrapper.h"
 #include "gtest/gtest.h"
 
 #if W_DEBUG_LEVEL > 3
@@ -704,7 +705,7 @@ private:
 
 };
 
-class transact_thread_t : public smthread_t {
+class transact_thread_t : public thread_wrapper_t {
 public:
     transact_thread_t(StoreID* stid_list, void (*runfunct)(StoreID*));
     ~transact_thread_t();

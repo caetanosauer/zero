@@ -5,7 +5,6 @@
 #include "w_debug.h"
 
 #include <iostream>
-#include "w_strstream.h"
 #include "gtest/gtest.h"
 
 const char *d = "dddddddddd";
@@ -38,7 +37,7 @@ void V(const vec_t &a, int b, int c, vec_t &d)
 }
 
 std::string P(const char *s) {
-    w_istrstream anon(s);
+    std::stringstream anon(s);
     vec_t    t;
     anon >> t;
     std::string ret = tostr (t);
@@ -50,9 +49,9 @@ TEST(VectorTest, Misc) {
     vec_t test;
     vec_t tout;
 
-#define TD(i,j) test.put(&d[i], j); 
+#define TD(i,j) test.put(&d[i], j);
 #define TB(i,j) test.put(&b[i], j);
-#define TA(i,j) test.put(&a[i], j); 
+#define TA(i,j) test.put(&a[i], j);
 #define TC(i,j) test.put(&c[i], j);
 
     TA(0,10);

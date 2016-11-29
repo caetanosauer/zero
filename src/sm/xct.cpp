@@ -27,7 +27,6 @@
 #include "lock_raw.h"
 #include "log_lsn_tracker.h"
 #include "log_core.h"
-#include "eventlog.h"
 #include "xct_logger.h"
 
 #include "allocator.h"
@@ -615,7 +614,8 @@ rc_t
 xct_t::group_commit(const xct_t *list[], int listlen)
 {
     // Log the whole bunch.
-    return Logger::log<xct_end_group_log>(list, listlen);
+    Logger::log<xct_end_group_log>(list, listlen);
+    return RCOK;
 }
 
 rc_t
@@ -849,25 +849,26 @@ xct_t::_pre_commit(uint32_t flags)
         change_state(xct_freeing_space);
         rc_t rc = RCOK;
         if (!is_sys_xct()) { // system transaction has nothing to free, so this log is not needed
-            rc = Logger::log<xct_freeing_space_log>();
+            Logger::log<xct_freeing_space_log>();
         }
 
         // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
         // chkpt_serial_m::read_release();
 
-        if(rc.is_error()) {
+        // CS TODO exceptions!
+        // if(rc.is_error()) {
             // Log insert failed.
             // restore the state.
             // Do this by hand; we'll fail the asserts if we
             // use change_state.
-            _core->_state = old_state;
-            return rc;
-        }
+            // _core->_state = old_state;
+            // return rc;
+        // }
 
         // We should always be able to insert this log
         // record, what with log reservations.
         if(individual && !is_single_log_sys_xct()) { // is commit record fused?
-            W_COERCE(Logger::log<xct_end_log>());
+            Logger::log<xct_end_log>();
         }
         // now we have xct_end record though it might not be flushed yet. so,
         // let's do ELR
@@ -976,7 +977,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
     _latency_count++;
     // dump average latency every 100 commits
     if (_latency_count % 100 == 0) {
-        sysevent::log_xct_latency_dump(_accum_latency / _latency_count);
+        Logger::log_sys<xct_latency_dump_log>(_accum_latency / _latency_count);
         _accum_latency = 0;
         _latency_count = 0;
     }
@@ -1196,12 +1197,10 @@ xct_t::_abort()
         // chkpt_serial_m::read_acquire();
 
         change_state(xct_freeing_space);
-        rc_t rc = Logger::log<xct_freeing_space_log>();
+        Logger::log<xct_freeing_space_log>();
 
         // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
         // chkpt_serial_m::read_release();
-
-        W_DO(rc);
 
         if (_xct_chain_len > 0) {
             // we need to flush only if it's chained or prepared xct
@@ -1220,12 +1219,10 @@ xct_t::_abort()
 
         // Log transaction abort for both cases: 1) normal abort, 2) UNDO
         change_state(xct_ended);
-        rc =  Logger::log<xct_abort_log>();
+        Logger::log<xct_abort_log>();
 
         // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
         // chkpt_serial_m::read_release();
-
-        W_DO(rc);
     }  else  {
         change_state(xct_ended);
     }
@@ -1357,7 +1354,7 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
         // w_ostrstream s;
         // s << "release_anchor at "
         //     << debugmsg;
-        // W_COERCE(Logger::log<comment_log>(s.c_str()));
+        // Logger::log<comment_log>(s.c_str());
     }
 #endif
     DBGX(
@@ -1403,7 +1400,7 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
                    // return all other errors  from the
                    // above log->compensate(...)
 
-                   W_COERCE(Logger::log<compensate_log>(_anchor));
+                   Logger::log<compensate_log>(_anchor);
                    INC_TSTAT(compensate_records);
                }
             // }
@@ -1580,7 +1577,7 @@ xct_t::_compensate(const lsn_t& lsn, bool undoable)
         // undone (and we *really* want to compensate around it)
         */
 
-        W_COERCE(Logger::log<compensate_log>(lsn));
+        Logger::log<compensate_log>(lsn);
         INC_TSTAT(compensate_records);
     }
 }

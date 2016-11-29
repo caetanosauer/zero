@@ -1,5 +1,4 @@
 #include "w_defines.h"
-#include "w_stream.h"
 #include <cstddef>
 #include "w.h"
 #include "gtest/gtest.h"
@@ -16,7 +15,7 @@ w_rc_t _testing2()
     RC_AUGMENT(rc);
 
     // This constitutes a check on THIS rc
-    if (rc.is_error())  {; } 
+    if (rc.is_error())  {; }
 
     return rc;
 }
@@ -36,7 +35,7 @@ w_rc_t _testing()
     RC_AUGMENT(rc);
 
     // This constitutes a check on THIS rc
-    if (rc.is_error())  {; } 
+    if (rc.is_error())  {; }
 
     return rc;
 }

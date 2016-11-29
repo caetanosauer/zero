@@ -1,6 +1,5 @@
 #include "w_defines.h"
 
-#include "w_stream.h"
 #include <cstddef>
 #include "w.h"
 #include "w_bitvector.h"
@@ -110,25 +109,25 @@ TEST(BitvectorTest, All) {
     w.set_bit(200);
     n=w.words_overlap(tmp, v);
 #if defined(ARCH_LP64)
-    EXPECT_EQ(n, 4); 
+    EXPECT_EQ(n, 4);
 #else
-    EXPECT_EQ(n, 8); 
+    EXPECT_EQ(n, 8);
 #endif
 
     w.set_bit(255);
     n=w.words_overlap(tmp, v);
 #if defined(ARCH_LP64)
-    EXPECT_EQ(n, 4); 
+    EXPECT_EQ(n, 4);
 #else
-    EXPECT_EQ(n, 8); 
+    EXPECT_EQ(n, 8);
 #endif
 
     w.set_bit(72);
     n=w.words_overlap(tmp, v);
 #if defined(ARCH_LP64)
-    EXPECT_EQ(n, 4); 
+    EXPECT_EQ(n, 4);
 #else
-    EXPECT_EQ(n, 8); 
+    EXPECT_EQ(n, 8);
 #endif
 
     // Is all of w found in v?

@@ -58,7 +58,7 @@ logrec_t::cat_str() const
     case t_logical | t_cpsn:
         return "l--c";
 
-    case t_status:
+    case t_system:
         return "s---";
 
     case t_undo:
@@ -129,33 +129,39 @@ logrec_t::get_type_str(kind_t type)
 u_char logrec_t::get_logrec_cat(kind_t type)
 {
     switch (type) {
-	case t_comment : return t_status;
+	case t_comment : return t_system;
+	case t_tick_sec : return t_system;
+	case t_tick_msec : return t_system;
+	case t_benchmark_start : return t_system;
+	case t_page_write : return t_system;
+	case t_page_read : return t_system;
+	case t_skip : return t_system;
+	case t_chkpt_begin : return t_system;
+	case t_chkpt_bf_tab : return t_system;
+	case t_chkpt_xct_tab : return t_system;
+	case t_chkpt_xct_lock : return t_system;
+	case t_chkpt_restore_tab : return t_system;
+	case t_chkpt_backup_tab : return t_system;
+	case t_chkpt_end : return t_system;
+	case t_loganalysis_begin : return t_system;
+	case t_loganalysis_end : return t_system;
+	case t_redo_done : return t_system;
+	case t_undo_done : return t_system;
+	case t_restore_begin : return t_system;
+	case t_restore_segment : return t_system;
+	case t_restore_end : return t_system;
+	case t_xct_latency_dump : return t_system;
+
 	case t_compensate : return t_logical;
-	case t_skip : return t_status;
-	case t_chkpt_begin : return t_status;
-	case t_chkpt_bf_tab : return t_status;
-	case t_chkpt_xct_tab : return t_status;
-	case t_chkpt_xct_lock : return t_status;
-	case t_chkpt_restore_tab : return t_redo;
-	case t_chkpt_backup_tab : return t_redo;
-	case t_chkpt_end : return t_status;
 	case t_add_backup : return t_redo|t_single_sys_xct;
-	case t_xct_abort : return t_status;
-	case t_xct_freeing_space : return t_status;
-	case t_xct_end : return t_status;
-	case t_xct_end_group : return t_status;
-	case t_xct_latency_dump : return t_status;
+	case t_xct_abort : return t_logical;
+	case t_xct_freeing_space : return t_logical;
+	case t_xct_end : return t_logical;
+	case t_xct_end_group : return t_logical;
 	case t_alloc_page : return t_redo|t_single_sys_xct;
 	case t_dealloc_page : return t_redo|t_single_sys_xct;
 	case t_create_store : return t_redo|t_single_sys_xct;
 	case t_append_extent : return t_redo|t_single_sys_xct;
-	case t_loganalysis_begin : return t_status;
-	case t_loganalysis_end : return t_status;
-	case t_redo_done : return t_status;
-	case t_undo_done : return t_status;
-	case t_restore_begin : return t_redo|t_logical|t_single_sys_xct;
-	case t_restore_segment : return t_redo|t_logical|t_single_sys_xct;
-	case t_restore_end : return t_redo|t_logical|t_single_sys_xct;
 	case t_page_img_format : return t_redo | t_undo;
 	case t_page_evict : return t_redo|t_single_sys_xct;
 	case t_btree_norec_alloc : return t_redo|t_multi|t_single_sys_xct;
@@ -169,11 +175,7 @@ u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_btree_foster_adopt : return t_redo|t_multi|t_single_sys_xct;
 	case t_btree_split : return t_redo|t_multi|t_single_sys_xct;
 	case t_btree_compress_page : return t_redo|t_single_sys_xct;
-	case t_tick_sec : return t_status;
-	case t_tick_msec : return t_status;
-	case t_benchmark_start : return t_status;
-	case t_page_write : return t_status;
-	case t_page_read : return t_status;
+
         default: w_assert0(false); return t_bad_cat;
     }
 }
@@ -214,12 +216,13 @@ void logrec_t::init_xct_info()
     if (!is_single_sys_xct()) { // prv does not exist in single-log system transaction
         set_xid_prev(lsn_t::null);
     }
+    set_tid(0);
 }
 
 void logrec_t::set_xid_prev(tid_t tid, lsn_t last)
 {
     if (!is_single_sys_xct()) {
-        xidInfo._xid = tid;
+        set_tid(tid);
         if(xid_prev().valid()) {
             w_assert2(is_cpsn());
         } else {
@@ -746,6 +749,42 @@ void page_img_format_log::redo(PagePtr page) {
     // REDO is simply applying the image
     page_img_format_t<PagePtr>* dp = (page_img_format_t<PagePtr>*) _data;
     dp->apply(page);
+}
+
+void tick_sec_log::construct()
+{
+}
+
+void tick_msec_log::construct()
+{
+}
+
+void benchmark_start_log::construct()
+{
+}
+
+void page_read_log::construct(PageID pid, uint32_t count)
+{
+    memcpy(data(), &pid, sizeof(PageID));
+    memcpy(_data + sizeof(PageID), &count, sizeof(uint32_t));
+    set_size(sizeof(PageID) + sizeof(uint32_t));
+}
+
+void page_write_log::construct(PageID pid, lsn_t lsn, uint32_t count)
+{
+    char* pos = _data;
+
+    memcpy(pos, &pid, sizeof(PageID));
+    pos += sizeof(PageID);
+
+    memcpy(pos, &lsn, sizeof(lsn_t));
+    pos += sizeof(lsn_t);
+
+    memcpy(pos, &count, sizeof(uint32_t));
+    pos += sizeof(uint32_t);
+
+
+    set_size(pos - _data);
 }
 
 

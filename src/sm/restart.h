@@ -56,9 +56,6 @@ public:
         smthread_t::set_lock_timeout(timeout_t::WAIT_FOREVER);
         working = false;
     };
-    ~restart_thread_t()
-    {
-    };
 
     // Main body of the child thread
     void run();
