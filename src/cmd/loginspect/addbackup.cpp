@@ -32,7 +32,7 @@ void AddBackup::run()
     ss >> backupLSN;
 
     sys_xct_section_t ssx(true);
-    W_COERCE(Logger::log<add_backup_log>(backupPath, backupLSN));
+    Logger::log<add_backup_log>(backupPath, backupLSN);
     W_COERCE(ssx.end_sys_xct(RCOK));
 
     W_COERCE(log->flush_all());

@@ -695,7 +695,7 @@ void chkpt_m::take()
     // Insert chkpt_begin log record.
     logrec_t* logrec = new logrec_t;
     lsn_t begin_lsn;
-    Logger::log_sys<chkpt_begin_log>(begin_lsn, lsn_t::null);
+    begin_lsn = Logger::log_sys<chkpt_begin_log>(lsn_t::null);
     W_COERCE(ss_m::log->flush_all());
 
     // Collect checkpoint information from log
