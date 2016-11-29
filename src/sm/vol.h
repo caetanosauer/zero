@@ -190,10 +190,6 @@ private:
     /** Whether to generate page read log records */
     bool _log_page_reads;
 
-    /** Buffer to create restore_begin lorec manually
-     *  (128 bytes are enough since it contains only vid) */
-    char _logrec_buf[128];
-
     /** Wheter to open file with O_SYNC */
     bool _use_o_sync;
 

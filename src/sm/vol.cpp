@@ -195,9 +195,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
     lsn_t failureLSN = lsn_t::null;
     if (!redo) {
         // Create and insert logrec manually to get its LSN
-        new (_logrec_buf) restore_begin_log();
-        W_DO(ss_m::log->insert(*((logrec_t*) _logrec_buf), &failureLSN));
-        W_DO(ss_m::log->flush(failureLSN));
+        failureLSN = Logger::log_sys<restore_begin_log>();
     }
 
     _restore_mgr->setFailureLSN(failureLSN);
