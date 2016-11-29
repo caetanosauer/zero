@@ -87,7 +87,7 @@ TEST (TreeBufferpoolTest, AlignmentCheck) {
 }
 
 w_rc_t test_bf_init(ss_m* /*ssm*/, test_volume_t */*test_volume*/) {
-    g_me()->sleep(200);
+    ::usleep(200000); // CS TODO WHY?????????
     bf_tree_m &pool(*smlevel_0::bf);
     pool.debug_dump(std::cout);
     return RCOK;

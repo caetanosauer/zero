@@ -4,6 +4,7 @@
 #include "btree.h"
 #include "btcursor.h"
 #include "xct.h"
+#include "thread_wrapper.h"
 #include <sys/time.h>
 
 btree_test_env *test_env;
@@ -19,26 +20,26 @@ w_rc_t read_single(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(xct_t::elr_none);
-    EXPECT_EQ (xct_t::elr_none, g_xct()->get_elr_mode());
+    xct()->set_elr_mode(xct_t::elr_none);
+    EXPECT_EQ (xct_t::elr_none, xct()->get_elr_mode());
     W_DO(test_env->btree_insert(stid, "a1", "data"));
     W_DO(test_env->commit_xct());
 
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(xct_t::elr_s);
-    EXPECT_EQ (xct_t::elr_s, g_xct()->get_elr_mode());
+    xct()->set_elr_mode(xct_t::elr_s);
+    EXPECT_EQ (xct_t::elr_s, xct()->get_elr_mode());
     W_DO(test_env->btree_insert(stid, "a2", "data"));
     W_DO(test_env->commit_xct());
 
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(xct_t::elr_sx);
-    EXPECT_EQ (xct_t::elr_sx, g_xct()->get_elr_mode());
+    xct()->set_elr_mode(xct_t::elr_sx);
+    EXPECT_EQ (xct_t::elr_sx, xct()->get_elr_mode());
     W_DO(test_env->btree_insert(stid, "a3", "data"));
     W_DO(test_env->commit_xct());
 
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(xct_t::elr_clv);
-    EXPECT_EQ (xct_t::elr_clv, g_xct()->get_elr_mode());
+    xct()->set_elr_mode(xct_t::elr_clv);
+    EXPECT_EQ (xct_t::elr_clv, xct()->get_elr_mode());
     W_DO(test_env->btree_insert(stid, "a4", "data"));
     W_DO(test_env->commit_xct());
 
@@ -53,22 +54,22 @@ w_rc_t read_single(ss_m* ssm, test_volume_t *test_volume) {
     std::string data;
 
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(xct_t::elr_none);
+    xct()->set_elr_mode(xct_t::elr_none);
     W_DO(test_env->btree_lookup(stid, "a1", data));
     W_DO(test_env->commit_xct());
 
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(xct_t::elr_s);
+    xct()->set_elr_mode(xct_t::elr_s);
     W_DO(test_env->btree_lookup(stid, "a2", data));
     W_DO(test_env->commit_xct());
 
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(xct_t::elr_sx);
+    xct()->set_elr_mode(xct_t::elr_sx);
     W_DO(test_env->btree_lookup(stid, "a3", data));
     W_DO(test_env->commit_xct());
 
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(xct_t::elr_clv);
+    xct()->set_elr_mode(xct_t::elr_clv);
     W_DO(test_env->btree_lookup(stid, "a4", data));
     W_DO(test_env->commit_xct());
 
@@ -113,7 +114,7 @@ w_rc_t read_write_single(ss_m* ssm, test_volume_t *test_volume) {
         xct_t::elr_mode_t mode = modes[i];
 
         W_DO(test_env->begin_xct());
-        g_xct()->set_elr_mode(mode);
+        xct()->set_elr_mode(mode);
         W_DO(test_env->btree_insert(stid, "a4", "data4"));
         W_DO(test_env->btree_lookup(stid, "a2", data));
         W_DO(test_env->btree_remove(stid, "a4"));
@@ -140,10 +141,10 @@ TEST (ElrTest, ReadWriteSingle) {
 // global variable used in following testcases
 xct_t::elr_mode_t s_elr_mode = xct_t::elr_none;
 
-class lookup_thread_t : public smthread_t {
+class lookup_thread_t : public thread_wrapper_t {
 public:
         lookup_thread_t(StoreID stid, const char* key)
-                : smthread_t(t_regular, "lookup_thread_t"),
+                :
                 _stid(stid), _key(key), _read(false), _exitted(false) {}
         ~lookup_thread_t()  {}
         void run() {
@@ -153,8 +154,8 @@ public:
             rc_t rc;
             rc = ss_m::begin_xct();
             EXPECT_FALSE(rc.is_error()) << rc;
-            g_xct()->set_elr_mode(s_elr_mode);
-            g_xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);
+            xct()->set_elr_mode(s_elr_mode);
+            xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);
 
             report_time();
             std::cout << ":thread:looking up " << _key << ".." << std::endl;
@@ -214,7 +215,7 @@ w_rc_t read_write_multi_no_elr_same(ss_m* ssm, test_volume_t *test_volume) {
 
     // xct1: insert a tuple to root page
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(s_elr_mode);
+    xct()->set_elr_mode(s_elr_mode);
     W_DO(test_env->btree_insert(stid, "a4", "data"));
 
     // xct2: read it
@@ -265,7 +266,7 @@ w_rc_t read_write_multi_sx_elr_same(ss_m* ssm, test_volume_t *test_volume) {
 
     // xct1: insert a tuple to root page
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(s_elr_mode);
+    xct()->set_elr_mode(s_elr_mode);
     W_DO(test_env->btree_insert(stid, "a4", "data"));
 
     // xct2: read it
@@ -325,7 +326,7 @@ w_rc_t read_write_multi_no_elr_different(ss_m* ssm, test_volume_t *test_volume) 
 
     // xct1: insert a tuple to root page
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(s_elr_mode);
+    xct()->set_elr_mode(s_elr_mode);
     W_DO(test_env->btree_insert(stid, "a5", "data"));
 
     // xct2: read irrelevant tuple, but in same page
@@ -367,7 +368,7 @@ w_rc_t read_write_multi_sx_elr_different(ss_m* ssm, test_volume_t *test_volume) 
 
     // xct1: insert a tuple to root page
     W_DO(test_env->begin_xct());
-    g_xct()->set_elr_mode(s_elr_mode);
+    xct()->set_elr_mode(s_elr_mode);
     W_DO(test_env->btree_insert(stid, "a4", "data"));
 
     // xct2: read irrelevant tuple, but in same page

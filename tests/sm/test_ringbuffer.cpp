@@ -1,5 +1,6 @@
 #include "ringbuffer.h"
 #include "w_debug.h"
+#include "thread_wrapper.h"
 
 #include <cstdlib>
 
@@ -9,7 +10,7 @@ size_t bcount = 16;
 int produce_count = 100;
 AsyncRingBuffer * buf = new AsyncRingBuffer(bsize, bcount);
 
-class producer_t : public smthread_t {
+class producer_t : public thread_wrapper_t {
     void run() {
         for (int i = 0; i < produce_count; i++) {
             char* b = buf->producerRequest();
@@ -22,7 +23,7 @@ class producer_t : public smthread_t {
     }
 };
 
-class consumer_t : public smthread_t {
+class consumer_t : public thread_wrapper_t {
     void run() {
         char* b = buf->consumerRequest();
         while (b) {

@@ -9,8 +9,7 @@
 #include "xct.h"
 #include <sys/time.h>
 
-#include "smthread.h"
-#include "sthread.h"
+#include "thread_wrapper.h"
 #include "lock_x.h"
 #include "lock.h"
 #include "lock_core.h"
@@ -42,10 +41,10 @@ rc_t _prep(ss_m* ssm, test_volume_t *test_volume, StoreID &stid) {
     return RCOK;
 }
 
-class access_thread_t : public smthread_t {
+class access_thread_t : public thread_wrapper_t {
 public:
         access_thread_t(StoreID stid, const char* key, bool write)
-                : smthread_t(t_regular, "access_thread_t"),
+                :
                 _stid(stid), _key(key), _write(write), _done(false), _exitted(false) {
             _thid = next_thid++;
         }
@@ -81,9 +80,9 @@ public:
             ::gettimeofday(&_start,NULL);
             _rc = ss_m::begin_xct();
             EXPECT_FALSE(_rc.is_error()) << _rc;
-            g_xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);
+            xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);
             report_time();
-            std::cout << ":T" << _thid << " begins. fingerprint=" << get_fingerprint_map() << std::endl;
+            // std::cout << ":T" << _thid << " begins. fingerprint=" << get_fingerprint_map() << std::endl;
         }
         void _commit() {
             _rc = ss_m::commit_xct();
@@ -494,19 +493,21 @@ w_rc_t indirect_conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t3._exitted);
     EXPECT_TRUE(t4._exitted);
     if (!t2._exitted || !t3._exitted || !t4._exitted) {
+        // CS TODO smthread_unblock was removed in the sthread cleanup
+        // (it was only used by unit tests)
         cout << "oops! the bug was reproduced!" << endl;
-        if (!t2._exitted) {
-            rc_t rc = t2.smthread_unblock(eDEADLOCK);
-            cout << "killed t2. rc=" << rc << endl;
-        }
-        if (!t3._exitted) {
-            rc_t rc = t3.smthread_unblock(eDEADLOCK);
-            cout << "killed t3. rc=" << rc << endl;
-        }
-        if (!t4._exitted) {
-            rc_t rc = t4.smthread_unblock(eDEADLOCK);
-            cout << "killed t4. rc=" << rc << endl;
-        }
+        // if (!t2._exitted) {
+        //     rc_t rc = t2.smthread_unblock(eDEADLOCK);
+        //     cout << "killed t2. rc=" << rc << endl;
+        // }
+        // if (!t3._exitted) {
+        //     rc_t rc = t3.smthread_unblock(eDEADLOCK);
+        //     cout << "killed t3. rc=" << rc << endl;
+        // }
+        // if (!t4._exitted) {
+        //     rc_t rc = t4.smthread_unblock(eDEADLOCK);
+        //     cout << "killed t4. rc=" << rc << endl;
+        // }
         ::usleep (LONGTIME_USEC);
     }
 

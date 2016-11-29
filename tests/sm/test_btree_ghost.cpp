@@ -7,8 +7,7 @@
 
 // lots of non-sense to do REDO from testcase.
 #include "sm_base.h"
-#include "sm_base.h"
-#include "logrec.h"
+#include "xct_logger.h"
 
 btree_test_env *test_env;
 
@@ -135,7 +134,7 @@ w_rc_t ghost_reserve_xct(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->begin_sys_xct(true));
     btree_page_h root_p;
     W_DO (root_p.fix_root (stid, LATCH_EX));
-    log_btree_ghost_reserve(root_p, key, 10);
+    Logger::log<btree_ghost_reserve_log>(&root_p, key, 10);
     W_DO(ssm->commit_sys_xct());
     W_DO(ssm->commit_xct());
     EXPECT_EQ (2, root_p.nrecs()); // we don't applied yet!
@@ -148,7 +147,9 @@ w_rc_t ghost_reserve_xct(ss_m* ssm, test_volume_t *test_volume) {
     W_DO (root_p.fix_root (stid, LATCH_EX));
     // TODO should use restart_m to do this.
     // currently directly use btree_ghost_reserve_log to test REDO
-    btree_ghost_reserve_log logs (root_p, key, 10);
+    btree_ghost_reserve_log logs;
+    logs.init_header(btree_ghost_reserve_log::TYPE);
+    logs.construct(&root_p, key, 10);
     logs.redo (&root_p);
     EXPECT_EQ (3, root_p.nrecs());
     EXPECT_FALSE (root_p.is_ghost(0));

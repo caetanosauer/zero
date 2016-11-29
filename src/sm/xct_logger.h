@@ -2,6 +2,7 @@
 #define XCT_LOGGER_H
 
 #include "sm.h"
+#include "xct.h"
 #include "btree_page_h.h"
 #include "logdef_gen.h"
 #include "log_core.h"

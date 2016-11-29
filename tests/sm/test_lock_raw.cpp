@@ -1,8 +1,7 @@
 #include "btree_test_env.h"
 #include "gtest/gtest.h"
-#include "sthread.h"
+#include "thread_wrapper.h"
 #include "sm_options.h"
-#include "sthread.h"
 #include "lock_raw.h"
 #include "lock_core.h"
 #include "sm_base.h"
@@ -153,9 +152,9 @@ TEST (LockRawTest, ParallelStandaloneWriteCatchup) {
 
 btree_test_env *test_env;
 int next_thid = 0;
-class lock_worker_t : public smthread_t {
+class lock_worker_t : public thread_wrapper_t {
 public:
-    lock_worker_t() : smthread_t(t_regular, "lock_worker_t"), _running(true) {
+    lock_worker_t() : _running(true) {
         _thid = next_thid++;
     }
     virtual void run() {
@@ -173,7 +172,7 @@ public:
                 hack[2] = rand.nextInt32();
                 hack[3] = rand.nextInt32();
                 out[j] = NULL;
-                _rc = smlevel_0::lm->lock(lockid.hash(), ALL_S_GAP_S, true, true, true, g_xct(), 100, out + j);
+                _rc = smlevel_0::lm->lock(lockid.hash(), ALL_S_GAP_S, true, true, true, xct(), 100, out + j);
                 EXPECT_FALSE(_rc.is_error());
                 EXPECT_TRUE(out[j] != NULL);
             }
@@ -220,10 +219,10 @@ const int APPEND_COUNT = 1000;
 const int APPEND_COUNT = 10000;
 #endif // W_DEBUG_LEVEL>0
 
-class append_worker_t : public smthread_t {
+class append_worker_t : public thread_wrapper_t {
 public:
     append_worker_t()
-        : smthread_t(t_regular, "append_worker_t"), _running(true) {
+        : _running(true) {
         _thid = next_thid++;
     }
     virtual void run() {

@@ -22,10 +22,10 @@ const int TEST_STORE_ID = 2;
 const int TEST_STORE_ID2 = 3;
 const int TEST_STORE_ID3 = 4;
 
-class lock_thread_t : public smthread_t {
+class lock_thread_t : public thread_wrapper_t {
 public:
         lock_thread_t(StoreID store, okvl_mode::element_lock_mode store_mode)
-                : smthread_t(t_regular, "lock_thread_t"),
+                :
                 _store(store), _store_mode(store_mode),
                 _done(false), _exitted(false) {
             _thid = next_thid++;
@@ -76,7 +76,7 @@ public:
             ::gettimeofday(&_start,NULL);
             _rc = ss_m::begin_xct();
             EXPECT_FALSE(_rc.is_error()) << _rc;
-            g_xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);
+            xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);
             report_time();
             std::cout << ":T" << _thid << " begins." << std::endl;
         }
