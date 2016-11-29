@@ -138,6 +138,9 @@ void verifyVolumesEqual(string pathExp, string pathAct)
             }
         }
     }
+
+    volExp.shutdown();
+    volAct.shutdown();
 }
 
 rc_t singlePageTest(ss_m* ssm, test_volume_t* test_volume)

@@ -25,7 +25,7 @@ public:
     vol_t(const sm_options&, chkpt_t* chkpt_info = nullptr);
     virtual ~vol_t();
 
-    void shutdown(bool abrupt);
+    void shutdown(bool abrupt = false);
 
     size_t      num_used_pages() const;
 

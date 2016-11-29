@@ -719,6 +719,9 @@ rc_t LogArchiver::ArchiveDirectory::append(char* data, size_t length)
     w_assert1(length + sizeof(baseLogHeader) <= blockSize);
     memcpy(data + length, &SKIP_LOGREC, sizeof(baseLogHeader));
 
+    // beginning of block must be a valid log record
+    w_assert1(reinterpret_cast<logrec_t*>(data)->valid_header());
+
     INC_TSTAT(la_block_writes);
     auto ret = ::pwrite(appendFd, data, length + sizeof(baseLogHeader),
                 appendPos);
@@ -1077,6 +1080,8 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
         nextBucket = shpid / bucketSize + 1;
     }
 
+    w_assert1(pos > 0 || fpos % blockSize == 0);
+
     memcpy(dest + pos, lr, lr->length());
     pos += lr->length();
     fpos += lr->length();
@@ -1177,9 +1182,9 @@ LogArchiver::ArchiveScanner::open(PageID startPID, PageID endPID,
 }
 
 LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e, unsigned level,
-        PageID f, PageID l, off_t o, ArchiveDirectory* directory, size_t readSize)
+        PageID f, PageID l, off_t o, ArchiveDirectory* directory, size_t rSize)
     : runBegin(b), runEnd(e), level(level), firstPID(f), lastPID(l), offset(o),
-        fd(-1), blockCount(0), readSize(readSize), directory(directory)
+        fd(-1), blockCount(0), readSize(rSize), directory(directory)
 {
     if (readSize == 0) {
         readSize = directory->getBlockSize();
