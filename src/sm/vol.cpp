@@ -372,7 +372,7 @@ rc_t vol_t::deallocate_page(const PageID& pid, bool redo)
 
 size_t vol_t::num_used_pages() const
 {
-    return _alloc_cache->get_last_allocated_pid();
+    return _alloc_cache->get_last_allocated_pid() + 1;
 }
 
 rc_t vol_t::create_store(PageID& root_pid, StoreID& snum)
