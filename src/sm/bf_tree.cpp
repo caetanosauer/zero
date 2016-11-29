@@ -106,6 +106,8 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     _no_db_mode = options.get_bool_option("sm_no_db", false);
 
+    _root_pages.fill(0);
+
     _block_cnt = nbufpages;
     _enable_swizzling = bufferpool_swizzle;
     // if (strcmp(replacement_policy.c_str(), "clock") == 0) {

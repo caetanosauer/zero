@@ -45,7 +45,7 @@ public:
 
     /// max # \ref stnode_t's on a single stnode_page; thus, the
     /// maximum number of stores per volume
-    static const size_t max =
+    static constexpr size_t max =
         (page_sz - sizeof(generic_page_header) - sizeof(extent_id_t))
         / sizeof(stnode_t);
 

@@ -15,6 +15,8 @@
 #include <iosfwd>
 #include "page_cleaner.h"
 
+#include <array>
+
 class sm_options;
 class lsn_t;
 struct bf_tree_cb_t; // include bf_tree_cb.h in implementation codes
@@ -449,7 +451,7 @@ private:
     bf_idx               _block_cnt;
 
     // CS TODO: concurrency???
-    bf_idx _root_pages[stnode_page::max];
+    std::array<bf_idx, stnode_page::max> _root_pages;
 
     /** Array of control blocks. array size is _block_cnt. index 0 is never used (means NULL). */
     bf_tree_cb_t*        _control_blocks;
