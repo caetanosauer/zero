@@ -217,12 +217,13 @@ void logrec_t::init_xct_info()
     if (!is_single_sys_xct()) { // prv does not exist in single-log system transaction
         set_xid_prev(lsn_t::null);
     }
+    set_tid(0);
 }
 
 void logrec_t::set_xid_prev(tid_t tid, lsn_t last)
 {
     if (!is_single_sys_xct()) {
-        xidInfo._xid = tid;
+        set_tid(tid);
         if(xid_prev().valid()) {
             w_assert2(is_cpsn());
         } else {

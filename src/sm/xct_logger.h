@@ -47,10 +47,11 @@ public:
             return RCOK;
         }
 
+        logrec->set_xid_prev(xd->tid(), xd->last_lsn());
+
         lsn_t lsn;
         W_DO(ss_m::log->insert(*logrec, &lsn));
 
-        logrec->set_xid_prev(xd->tid(), lsn);
         W_DO(xd->update_last_logrec(logrec, lsn));
 
         return RCOK;
@@ -86,10 +87,11 @@ public:
             return RCOK;
         }
 
+        logrec->set_xid_prev(xd->tid(), xd->last_lsn());
+
         lsn_t lsn;
         W_DO(ss_m::log->insert(*logrec, &lsn));
 
-        logrec->set_xid_prev(xd->tid(), lsn);
         W_DO(xd->update_last_logrec(logrec, lsn));
         _update_page_lsns(p, lsn);
 
@@ -133,10 +135,11 @@ public:
             return RCOK;
         }
 
+        logrec->set_xid_prev(xd->tid(), xd->last_lsn());
+
         lsn_t lsn;
         W_DO(ss_m::log->insert(*logrec, &lsn));
 
-        logrec->set_xid_prev(xd->tid(), lsn);
         W_DO(xd->update_last_logrec(logrec, lsn));
         _update_page_lsns(p, lsn);
         _update_page_lsns(p2, lsn);
