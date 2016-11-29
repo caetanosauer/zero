@@ -246,11 +246,12 @@ public:
         };
 
         lsn_t getStartLSN() const { return startLSN; }
-        lsn_t getLastLSN() const { return lastLSN; }
         ArchiveIndex* getIndex() { return archIndex; }
         size_t getBlockSize() const { return blockSize; }
         std::string getArchDir() const { return archdir; }
         unsigned getMaxLevel() const { return maxLevel; }
+
+        lsn_t getLastLSN();
 
         // run generation methods
         rc_t append(char* data, size_t length);
@@ -261,8 +262,8 @@ public:
         rc_t readBlock(int fd, char* buf, size_t& offset, size_t readSize = 0);
         rc_t closeScan(int& fd);
 
-        rc_t listFiles(std::vector<std::string>& list, int level = -1);
-        rc_t listFileStats(std::list<RunFileStats>& list, int level = -1);
+        void listFiles(std::vector<std::string>& list, int level = -1);
+        void listFileStats(std::list<RunFileStats>& list, int level = -1);
         void deleteAllRuns();
 
         static bool parseRunFileName(string fname, RunFileStats& fstats);
@@ -271,7 +272,6 @@ public:
         ArchiveIndex* archIndex;
         std::string archdir;
         lsn_t startLSN;
-        lsn_t lastLSN;
         int appendFd;
         int mergeFd;
         off_t appendPos;
@@ -332,6 +332,9 @@ public:
         rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
         rc_t loadRunInfo(int fd, const ArchiveDirectory::RunFileStats&);
         void appendNewEntry(unsigned level);
+
+        lsn_t getLastLSN(unsigned level);
+        lsn_t getFirstLSN(unsigned level);
 
         size_t getBucketSize() { return bucketSize; }
 

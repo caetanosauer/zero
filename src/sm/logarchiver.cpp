@@ -454,6 +454,13 @@ bool LogArchiver::ArchiveDirectory::parseRunFileName(string fname, RunFileStats&
     return true;
 }
 
+lsn_t LogArchiver::ArchiveDirectory::getLastLSN()
+{
+    // CS TODO index mandatory
+    w_assert0(archIndex);
+    return archIndex->getLastLSN(1 /* level */);
+}
+
 size_t LogArchiver::ArchiveDirectory::getFileSize(int fd)
 {
     struct stat stat;
@@ -547,9 +554,6 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
         startLSN = lsn_t(1,0);
     }
 
-    // lastLSN is the end LSN of the last generated initial run
-    lastLSN = startLSN;
-
     // create/load index
     archIndex = new ArchiveIndex(blockSize, startLSN, bucketSize);
 
@@ -589,29 +593,30 @@ LogArchiver::ArchiveDirectory::~ArchiveDirectory()
     DO_PTHREAD(pthread_mutex_destroy(&mutex));
 }
 
-rc_t LogArchiver::ArchiveDirectory::listFiles(std::vector<std::string>& list,
+void LogArchiver::ArchiveDirectory::listFiles(std::vector<std::string>& list,
         int level)
 {
     list.clear();
 
+    // CS TODO unify with listFileStats
     fs::directory_iterator it(archpath), eod;
     for (; it != eod; it++) {
         string fname = it->path().filename().string();
         RunFileStats fstats;
         if (parseRunFileName(fname, fstats)) {
-            if (level < 0 || level == fstats.level) {
+            if (level < 0 || level == static_cast<int>(fstats.level)) {
                 list.push_back(fname);
             }
         }
     }
-
-    return RCOK;
 }
 
-rc_t LogArchiver::ArchiveDirectory::listFileStats(list<RunFileStats>& list,
+void LogArchiver::ArchiveDirectory::listFileStats(list<RunFileStats>& list,
         int level)
 {
     list.clear();
+    if (level > static_cast<int>(maxLevel)) { return; }
+
     vector<string> fnames;
     listFiles(fnames, level);
 
@@ -620,8 +625,6 @@ rc_t LogArchiver::ArchiveDirectory::listFileStats(list<RunFileStats>& list,
         parseRunFileName(fnames[i], stats);
         list.push_back(stats);
     }
-
-    return RCOK;
 }
 
 /**
@@ -677,6 +680,10 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned le
             return RCOK;
         }
 
+        // CS TODO from now on, archiveIndex is mandatory
+        // CS TODO unify ArchiveDirectory and ArchiveIndex
+        w_assert0(archIndex);
+        lsn_t lastLSN = archIndex->getLastLSN(level);
         if (lastLSN != runEndLSN) {
             // register index information and write it on end of file
             if (archIndex && appendPos > 0) {
@@ -698,8 +705,6 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned le
         CHECK_ERRNO(ret);
         appendFd = -1;
     }
-
-    lastLSN = runEndLSN;
 
     openNewRun();
 
@@ -1034,7 +1039,7 @@ bool LogArchiver::BlockAssembly::start(run_number_t run)
     pos = sizeof(BlockHeader);
 
     if (run != lastRun) {
-        if (archIndex && lastRun >= 0) {
+        if (archIndex) {
             archIndex->appendNewEntry(level);
         }
         nextBucket = 0;
@@ -2023,12 +2028,12 @@ LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize, lsn_t startLSN,
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
 
     // last run at level 1 is always the one being currently generated
-    RunInfo r;
-    r.firstLSN = startLSN;
-    runs.resize(2);
-    runs[1].push_back(r);
-    lastFinished.resize(2);
-    lastFinished[1] = -1;
+    // RunInfo r;
+    // r.firstLSN = startLSN;
+    // runs.resize(2);
+    // runs[1].push_back(r);
+    // lastFinished.resize(2);
+    // lastFinished[1] = -1;
 }
 
 LogArchiver::ArchiveIndex::~ArchiveIndex()
@@ -2084,8 +2089,6 @@ rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
         W_DO(serializeRunInfo(runs[level][lf], fd, offset));
     }
 
-    if (level > maxLevel) { maxLevel = level; }
-
     return RCOK;
 }
 
@@ -2140,7 +2143,6 @@ rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
 void LogArchiver::ArchiveIndex::init()
 {
     for (unsigned l = 0; l < runs.size(); l++) {
-        lastFinished[l] = runs[l].size() - 2;
         std::sort(runs[l].begin(), runs[l].end());
     }
 }
@@ -2154,7 +2156,37 @@ void LogArchiver::ArchiveIndex::appendNewEntry(unsigned level)
     // }
 
     RunInfo newRun;
+    if (level > maxLevel) {
+        maxLevel = level;
+        runs.resize(maxLevel+1);
+        lastFinished.resize(maxLevel+1, -1);
+    }
     runs[level].push_back(newRun);
+}
+
+lsn_t LogArchiver::ArchiveIndex::getLastLSN(unsigned level)
+{
+    CRITICAL_SECTION(cs, mutex);
+
+    if (level > maxLevel) { return lsn_t::null; }
+
+    if (lastFinished[level] < 0) {
+        // No runs exist in the given level. If a previous level exists, it
+        // must be the first LSN in that level; otherwise, it's simply 1.0
+        if (level == 0) { return lsn_t(1,0); }
+        return getFirstLSN(level - 1);
+    }
+
+    return runs[level][lastFinished[level]].lastLSN;
+}
+
+lsn_t LogArchiver::ArchiveIndex::getFirstLSN(unsigned level)
+{
+    if (level <= 1) { return lsn_t(1,0); }
+    // If no runs exist at this level, recurse down to previous level;
+    if (lastFinished[level] < 0) { return getFirstLSN(level-1); }
+
+    return runs[level][0].firstLSN;
 }
 
 rc_t LogArchiver::ArchiveIndex::loadRunInfo(int fd, const ArchiveDirectory::RunFileStats& fstats)
@@ -2210,8 +2242,10 @@ rc_t LogArchiver::ArchiveIndex::loadRunInfo(int fd, const ArchiveDirectory::RunF
         maxLevel = fstats.level;
         // level 0 reserved, so add 1
         runs.resize(maxLevel+1);
+        lastFinished.resize(maxLevel+1);
     }
     runs[fstats.level].push_back(run);
+    lastFinished[fstats.level] = runs[fstats.level].size() - 1;
 
     return RCOK;
 }
