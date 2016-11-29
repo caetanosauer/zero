@@ -95,7 +95,8 @@ rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum, bool redo)
     _stnode_page.set_root(snum, root_pid);
 
     if (!redo) {
-        Logger::log_page_chain<create_store_log>(prev_page_lsn, root_pid, snum);
+        prev_page_lsn =
+            Logger::log_page_chain<create_store_log>(prev_page_lsn, root_pid, snum);
     }
 
     return RCOK;
