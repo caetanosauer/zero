@@ -57,8 +57,8 @@ protected:
  */
 class DummyBackupReader : public BackupReader {
 public:
-    DummyBackupReader(size_t segmentSize)
-        : BackupReader(segmentSize * sizeof(generic_page)),
+    DummyBackupReader(size_t segmentSize, unsigned threads)
+        : BackupReader(segmentSize * sizeof(generic_page) * threads),
         segmentSize(segmentSize)
     {
     }
@@ -67,10 +67,11 @@ public:
     {
     }
 
-    virtual char* fix(unsigned, unsigned = 0)
+    virtual char* fix(unsigned, unsigned thread)
     {
-        memset(buffer, 0, segmentSize * sizeof(generic_page));
-        return buffer;
+        char* b = buffer + (thread * segmentSize * sizeof(generic_page));
+        memset(b, 0, segmentSize * sizeof(generic_page));
+        return b;
     }
 
     virtual void unfix(unsigned)

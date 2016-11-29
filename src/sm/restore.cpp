@@ -368,7 +368,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
          * BackupReader object is still used for the restore workspace, which
          * is basically the buffer on which pages are restored.
          */
-        backup = new DummyBackupReader(segmentSize);
+        backup = new DummyBackupReader(segmentSize, restoreThreadCount);
     }
 
     scheduler = new RestoreScheduler(options, this);
