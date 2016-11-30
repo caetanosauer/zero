@@ -178,7 +178,7 @@ public:
      * stnode_cache and alloc_cache
      */
     template <class Logrec, class... Args>
-    static lsn_t log_page_chain(lsn_t prev_page_lsn, const Args&... args)
+    static void log_page_chain(lsn_t& prev_page_lsn, const Args&... args)
     {
         // this should use TLS allocator, so it's fast
         // (see macro DEFINE_SM_ALLOC in allocator.h and logrec.cpp)
@@ -195,7 +195,7 @@ public:
         W_COERCE(ss_m::log->insert(*logrec, &lsn));
 
         delete logrec;
-        return lsn;
+        prev_page_lsn = lsn;
     }
 
     static void _update_page_lsns(PagePtr page, lsn_t new_lsn)
