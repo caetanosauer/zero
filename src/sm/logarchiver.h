@@ -322,7 +322,6 @@ public:
 
         void init();
 
-        void newBlock(PageID firstPID, unsigned level);
         void newBlock(const vector<pair<PageID, size_t> >& buckets, unsigned level);
 
         rc_t finishRun(lsn_t first, lsn_t last, int fd, off_t offset, unsigned level);

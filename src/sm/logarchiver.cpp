@@ -477,7 +477,9 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
     blockSize = DFT_BLOCK_SIZE;
         // options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
     size_t bucketSize =
-        options.get_int_option("sm_archiver_bucket_size", 0);
+        options.get_int_option("sm_archiver_bucket_size", 128);
+    w_assert0(bucketSize > 0);
+
     bool reformat = options.get_bool_option("sm_format", false);
 
     if (archdir.empty()) {
@@ -980,14 +982,12 @@ LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory, unsigned 
     lastRun(-1), bucketSize(0), nextBucket(0), level(level)
 {
     archIndex = directory->getIndex();
+    w_assert0(archIndex);
     blockSize = directory->getBlockSize();
+    bucketSize = archIndex->getBucketSize();
     writebuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT);
     writer = new WriterThread(writebuf, directory, level);
     writer->fork();
-
-    if (archIndex) {
-        bucketSize = archIndex->getBucketSize();
-    }
 }
 
 LogArchiver::BlockAssembly::~BlockAssembly()
@@ -1047,9 +1047,7 @@ bool LogArchiver::BlockAssembly::start(run_number_t run)
         lastRun = run;
     }
 
-    if (bucketSize > 0) {
-        buckets.clear();
-    }
+    buckets.clear();
 
     return true;
 }
@@ -1072,7 +1070,7 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
         maxLSNLength = lr->length();
     }
 
-    if (bucketSize > 0 && lr->pid() / bucketSize >= nextBucket) {
+    if (lr->pid() / bucketSize >= nextBucket) {
         PageID shpid = (lr->pid() / bucketSize) * bucketSize;
         buckets.push_back(
                 pair<PageID, size_t>(shpid, fpos));
@@ -1091,14 +1089,8 @@ void LogArchiver::BlockAssembly::finish()
             " in run " << (int) lastRun << " with end " << pos);
     w_assert0(dest);
 
-    if (archIndex) {
-        if (bucketSize == 0) {
-            archIndex->newBlock(firstPID, level);
-        }
-        else {
-            archIndex->newBlock(buckets, level);
-        }
-    }
+    w_assert0(archIndex);
+    archIndex->newBlock(buckets, level);
     firstPID = 0;
 
     // write block header info
@@ -1198,12 +1190,8 @@ LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e, unsigned l
     w_assert0(res == 0);
     // buffer = new char[directory->getBlockSize()];
 
-    if (directory->getIndex()) {
-        bucketSize = directory->getIndex()->getBucketSize();
-    }
-    else {
-        bucketSize = 0;
-    }
+    w_assert0(directory->getIndex());
+    bucketSize = directory->getIndex()->getBucketSize();
 
     // bpos at the end of block triggers reading of the first block
     // when calling next()
@@ -2038,19 +2026,6 @@ LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize, lsn_t startLSN,
 
 LogArchiver::ArchiveIndex::~ArchiveIndex()
 {
-}
-
-void LogArchiver::ArchiveIndex::newBlock(PageID firstPID, unsigned level)
-{
-    CRITICAL_SECTION(cs, mutex);
-
-    w_assert1(bucketSize == 0);
-    w_assert1(runs.size() > 0);
-
-    BlockEntry e;
-    e.offset = blockSize * runs[level].back().entries.size();
-    e.pid = firstPID;
-    runs[level].back().entries.push_back(e);
 }
 
 void LogArchiver::ArchiveIndex::newBlock(const vector<pair<PageID, size_t> >&
