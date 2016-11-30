@@ -638,8 +638,8 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     // only one thread may set _backup_write_fd (i.e., open file) above.
 
     // Maximum LSN which is guaranteed to be reflected in the backup
-    // lsn_t backupLSN = ss_m::logArchiver->getDirectory()->getLastLSN();
-    // DBG1(<< "Taking backup until LSN " << backupLSN);
+    lsn_t backupLSN = ss_m::logArchiver->getDirectory()->getLastLSN();
+    DBG1(<< "Taking backup until LSN " << backupLSN);
 
     // Instantiate special restore manager for taking backup
     RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
@@ -650,6 +650,7 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
         lsn_t currLSN = smlevel_0::log->durable_lsn();
         restore.setFailureLSN(currLSN);
         DBGTHRD(<< "Taking sharp backup until " << currLSN);
+        backupLSN = currLSN;
     }
 
     restore.start();
@@ -663,7 +664,7 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     // W_DO(vhdr.write(_backup_write_fd));
 
     // At this point, new backup is fully written
-    // add_backup(path, backupLSN);
+    W_DO(sx_add_backup(path, backupLSN));
     {
         // critical section to guarantee visibility of the fd update
         spinlock_write_critical_section cs(&_mutex);
