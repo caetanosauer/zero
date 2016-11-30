@@ -387,11 +387,9 @@ ss_m::_destruct_once()
     // retire chkpt thread (calling take() directly still possible)
     chkpt->retire_thread();
 
-    // now it's safe to do the clean_up
-    // The code for distributed txn (prepared xcts has been deleted, the input paramter
-    // in cleanup() is not used
-    int nprepared = xct_t::cleanup(false /* don't dispose of prepared xcts */);
-    (void) nprepared; // Used only for debugging assert
+    // remove all transactions, aborting them in case of clean shutdown
+    xct_t::cleanup(shutdown_clean);
+    w_assert1(xct_t::num_active_xcts() == 0);
 
     // log truncation requires clean shutdown
     bool truncate = _options.get_bool_option("sm_truncate_log", false);
@@ -425,10 +423,6 @@ ss_m::_destruct_once()
 
     ERROUT(<< "Terminating log archiver");
     if (logArchiver) { logArchiver->shutdown(); }
-
-    nprepared = xct_t::cleanup(true /* now dispose of prepared xcts */);
-    w_assert1(nprepared == 0);
-    w_assert1(xct_t::num_active_xcts() == 0);
 
     ERROUT(<< "Terminating other services");
     lm->assert_empty(); // no locks should be left

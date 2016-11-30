@@ -433,16 +433,10 @@ xct_t::~xct_t()
  * Clean up existing transactions at ssm shutdown.
  * -- called from ~ss_m, so this should never be
  * subject to multiple threads using the xct list.
- *
- * Must abort the transactions as if they had been
- * called through ssm API to preserve assertions deep
- * in the ssm regarding update-threads.
  */
-int
-xct_t::cleanup(bool /*dispose_prepared*/)
+void xct_t::cleanup(bool allow_abort)
 {
     bool        changed_list;
-    int         nprepared = 0;
     xct_t*      xd;
     W_COERCE(acquire_xlist_mutex());
     do {
@@ -459,15 +453,8 @@ xct_t::cleanup(bool /*dispose_prepared*/)
             release_xlist_mutex();
             switch(xd->state()) {
             case xct_active: {
-                                 smthread_t::attach_xct(xd);
-                    /*
-                     *  We usually want to shutdown cleanly. For debugging
-                     *  purposes, it is sometimes desirable to simply quit.
-                     *
-                     *  NB:  if a vas has multiple threads running on behalf
-                     *  of a tx at this point, it's going to run into trouble.
-                     */
-                    if (shutdown_clean) {
+                    smthread_t::attach_xct(xd);
+                    if (allow_abort) {
                         W_COERCE( xd->abort() );
                     } else {
                         W_COERCE( xd->dispose() );
@@ -496,8 +483,8 @@ xct_t::cleanup(bool /*dispose_prepared*/)
             W_COERCE(acquire_xlist_mutex());
         } // xd not null
     } while (xd && changed_list);
+
     release_xlist_mutex();
-    return nprepared;
 }
 
 

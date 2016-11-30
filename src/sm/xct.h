@@ -279,8 +279,7 @@ public:
      */
 public:
     static void                 dump(ostream &o);
-    static int                  cleanup(bool dispose_prepared=false);
-                                 // returns # prepared txs not disposed-of
+    static void                  cleanup(bool shutdown_clean = true);
 
 
     bool                        is_instrumented() {
