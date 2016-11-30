@@ -150,7 +150,6 @@ public:
 
 private:
         void   do_construct();
-        w_rc_t do_init();
 
         btree_test_env *_env;
         sm_options      _options; // run-time options
@@ -182,23 +181,11 @@ testdriver_thread_t::do_construct()
                  SM_PAGESIZE / 1024 * default_bufferpool_size_in_pages);
     }
 
-    if(_options.get_bool_option("sm_testenv_init_vol", true)) {
-        _options.set_bool_option("sm_format", true);
-    }
+    _options.set_bool_option("sm_format", _functor->_need_init);
     _options.set_bool_option("sm_shutdown_clean", false);
     _options.set_int_option("sm_cleaner_interval_msec", 0);
-}
 
-rc_t
-testdriver_thread_t::do_init()
-{
-    if(_options.get_bool_option("sm_testenv_init_vol", true)) {
-        if (_functor->_need_init) {
-            _functor->_test_volume._device_name = device_name;
-        }
-    }
-
-    return RCOK;
+    _functor->_test_volume._device_name = device_name;
 }
 
 void testdriver_thread_t::run()
@@ -213,12 +200,6 @@ void testdriver_thread_t::run()
         rc_t rc = ss_m::config_info(config_info);
         if(rc.is_error()) {
             cerr << "Could not get storage manager configuration info: " << rc << endl;
-            _retval = 1;
-            return;
-        }
-        rc = do_init();
-        if(rc.is_error()) {
-            cerr << "Init failed: " << rc << endl;
             _retval = 1;
             return;
         }
@@ -593,6 +574,7 @@ int btree_test_env::runCrashTest (crash_test_base *context,
                     enable_swizzling,
                     additional_int_params, additional_bool_params, additional_string_params));
 }
+
 int btree_test_env::runCrashTest (crash_test_base *context, bool use_locks, const sm_options &options) {
     _use_locks = use_locks;
 
