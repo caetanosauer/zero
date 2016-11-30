@@ -11,6 +11,7 @@
 constexpr PageID stnode_page::stpid = 1;
 
 stnode_cache_t::stnode_cache_t(bool create)
+    : prev_page_lsn(lsn_t::null)
 {
     int res= posix_memalign((void**) &_stnode_page, sizeof(generic_page),
             sizeof(generic_page));
@@ -18,12 +19,15 @@ stnode_cache_t::stnode_cache_t(bool create)
 
     if (create) {
         memset(&_stnode_page, 0, sizeof(generic_page));
-        prev_page_lsn = lsn_t::null;
+        _stnode_page.pid = stnode_page::stpid;
+        _stnode_page.lsn = lsn_t::null;
+        Logger::log_page_chain<stnode_format_log>(prev_page_lsn);
     }
     else {
         fixable_page_h p;
         W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX,
                     false, create));
+        w_assert1(p.pid() == stnode_page::stpid);
         memcpy(&_stnode_page, p.get_generic_page(), sizeof(stnode_page));
         prev_page_lsn = p.lsn();
         p.unfix(true /* evict */);

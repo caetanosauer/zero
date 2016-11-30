@@ -159,6 +159,7 @@ u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_xct_end : return t_logical;
 	case t_xct_end_group : return t_logical;
 	case t_alloc_page : return t_redo|t_single_sys_xct;
+	case t_stnode_format : return t_redo|t_single_sys_xct;
 	case t_dealloc_page : return t_redo|t_single_sys_xct;
 	case t_create_store : return t_redo|t_single_sys_xct;
 	case t_append_extent : return t_redo|t_single_sys_xct;
@@ -1032,7 +1033,7 @@ const char *logrec_accounting_impl_t::type_str(int _type) {
     switch (_type)  {
 #        include "logstr_gen.cpp"
     default:
-      return 0;
+      return "UNKNOWN";
     }
 }
 

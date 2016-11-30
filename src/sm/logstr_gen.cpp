@@ -36,6 +36,8 @@
 		return "dealloc_page";
 	case t_create_store :
 		return "create_store";
+	case t_stnode_format :
+		return "stnode_format";
 	case t_append_extent :
 		return "append_extent";
 	case t_loganalysis_begin :

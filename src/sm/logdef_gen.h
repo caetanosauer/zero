@@ -132,6 +132,22 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     template <class Ptr> void redo(Ptr);
     };
 
+    struct stnode_format_log : public logrec_t {
+        static constexpr kind_t TYPE = logrec_t::t_stnode_format;
+        void construct ()
+        {
+            header._pid = stnode_page::stpid;
+            header._stid = 0;
+        }
+        template <class Ptr> void redo(Ptr p)
+        {
+            auto stpage = p->get_generic_page();
+            if (stpage->pid != stnode_page::stpid) {
+                stpage->pid = stnode_page::stpid;
+            }
+        }
+    };
+
     struct create_store_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_create_store;
     void construct (PageID root_pid, StoreID snum);

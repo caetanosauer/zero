@@ -52,6 +52,9 @@
 	case t_dealloc_page :
 		W_FATAL(eINTERNAL);
 		break;
+	case t_stnode_format :
+		W_FATAL(eINTERNAL);
+		break;
 	case t_create_store :
 		W_FATAL(eINTERNAL);
 		break;

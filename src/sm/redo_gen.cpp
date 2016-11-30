@@ -52,6 +52,9 @@
 	case t_dealloc_page :
 		((dealloc_page_log *) this)->redo(page);
 		break;
+	case t_stnode_format :
+		((stnode_format_log *) this)->redo(page);
+		break;
 	case t_create_store :
 		((create_store_log *) this)->redo(page);
 		break;
