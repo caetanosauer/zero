@@ -44,6 +44,8 @@ typedef uint32_t               smsize_t;
 typedef uint32_t    PageID;
 typedef uint32_t    StoreID;
 
+// Used in log archive
+typedef int32_t run_number_t;
 
 /* Type of a record# on a page  in SM (sans page,store,volume info) */
 typedef int16_t slotid_t;

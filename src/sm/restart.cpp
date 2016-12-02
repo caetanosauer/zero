@@ -65,6 +65,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "stopwatch.h"
 #include "xct_logger.h"
 #include "bf_tree.h"
+#include "logarchive_scanner.h"
 
 #include <fcntl.h>              // Performance reporting
 #include <unistd.h>

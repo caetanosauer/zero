@@ -6,6 +6,7 @@
 #include "thread_wrapper.h"
 #include "sm_base.h"
 #include "logarchiver.h"
+#include "logarchive_scanner.h"
 
 #include <queue>
 #include <map>

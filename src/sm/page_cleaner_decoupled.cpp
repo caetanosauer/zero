@@ -5,6 +5,7 @@
 #include "bf_tree_cb.h"
 #include "log_core.h"
 #include "xct_logger.h"
+#include "logarchive_scanner.h"
 
 page_cleaner_decoupled::page_cleaner_decoupled(
         bf_tree_m* _bufferpool, const sm_options& _options)

@@ -24,8 +24,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/eventlog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/fixable_page_h.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/logarchiver.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/mem_mgmt.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_dump.cpp
@@ -34,8 +32,14 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_x.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_carray.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_core.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/log_consumer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_storage.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logarchiver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logarchive_writer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logarchive_index.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logarchive_scanner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/mem_mgmt.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logrec.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/page_cleaner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/page_cleaner_decoupled.cpp

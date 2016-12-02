@@ -1,10 +1,10 @@
 #include "scanner.h"
 
+#include <logarchive_scanner.h>
 #include <chkpt.h>
 #include <sm.h>
 #include <restart.h>
 #include <vol.h>
-
 #include <dirent.h>
 
 // CS TODO isolate this to log archive code
