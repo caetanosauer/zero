@@ -254,7 +254,7 @@ public:
         lsn_t getLastLSN();
 
         // run generation methods
-        rc_t append(char* data, size_t length);
+        rc_t append(char* data, size_t length, unsigned level);
         rc_t closeCurrentRun(lsn_t runEndLSN, unsigned level);
 
         // run scanning methods
@@ -272,9 +272,8 @@ public:
         ArchiveIndex* archIndex;
         std::string archdir;
         lsn_t startLSN;
-        int appendFd;
-        int mergeFd;
-        off_t appendPos;
+        std::vector<int> appendFd;
+        std::vector<off_t> appendPos;
         size_t blockSize;
         unsigned maxLevel;
 
@@ -286,7 +285,7 @@ public:
 
         fs::path make_run_path(lsn_t begin, lsn_t end, unsigned level = 1) const;
         fs::path make_current_run_path() const;
-        rc_t openNewRun();
+        rc_t openNewRun(unsigned level);
 
     public:
         const static string RUN_PREFIX;

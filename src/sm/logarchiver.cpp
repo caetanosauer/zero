@@ -329,7 +329,7 @@ void LogArchiver::WriterThread::run()
         size_t actualBlockSize= blockEnd - sizeof(BlockAssembly::BlockHeader);
         memmove(src, src + sizeof(BlockAssembly::BlockHeader), actualBlockSize);
 
-        W_COERCE(directory->append(src, actualBlockSize));
+        W_COERCE(directory->append(src, actualBlockSize, level));
 
         DBGTHRD(<< "Wrote out block " << (void*) src
                 << " with max LSN " << blockLSN);
@@ -470,7 +470,6 @@ size_t LogArchiver::ArchiveDirectory::getFileSize(int fd)
 }
 
 LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
-    : appendFd(-1), mergeFd(-1), appendPos(0)
 {
     archdir = options.get_string_option("sm_archdir", "archive");
     // CS TODO: archiver currently only works with 1MB blocks
@@ -584,7 +583,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(const sm_options& options)
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
 
     // ArchiveDirectory invariant is that current_run file always exists
-    openNewRun();
+    openNewRun(1);
 }
 
 LogArchiver::ArchiveDirectory::~ArchiveDirectory()
@@ -640,9 +639,9 @@ void LogArchiver::ArchiveDirectory::listFileStats(list<RunFileStats>& list,
  * We assume the rename operation is atomic, even in case of OS crashes.
  *
  */
-rc_t LogArchiver::ArchiveDirectory::openNewRun()
+rc_t LogArchiver::ArchiveDirectory::openNewRun(unsigned level)
 {
-    if (appendFd >= 0) {
+    if (appendFd.size() > level && appendFd[level] >= 0) {
         return RC(fcINTERNAL);
     }
 
@@ -650,10 +649,12 @@ rc_t LogArchiver::ArchiveDirectory::openNewRun()
     std::string fname = archdir + "/" + CURR_RUN_FILE;
     auto fd = ::open(fname.c_str(), flags, 0744 /*mode*/);
     CHECK_ERRNO(fd);
-    DBGTHRD(<< "Opened new output run");
+    DBGTHRD(<< "Opened new output run in level " << level);
 
-    appendFd = fd;
-    appendPos = 0;
+    appendFd.resize(level+1, -1);
+    appendFd[level] = fd;
+    appendPos.resize(level+1, 0);
+    appendPos[level] = 0;
     return RCOK;
 }
 
@@ -673,12 +674,12 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned le
 {
     CRITICAL_SECTION(cs, mutex);
 
-    if (appendFd >= 0) {
-        if (appendPos == 0 && runEndLSN == lsn_t::null) {
+    if (appendFd[level] >= 0) {
+        if (appendPos[level] == 0 && runEndLSN == lsn_t::null) {
             // nothing was appended -- just close file and return
-            auto ret = ::close(appendFd);
+            auto ret = ::close(appendFd[level]);
             CHECK_ERRNO(ret);
-            appendFd = -1;
+            appendFd[level] = -1;
             return RCOK;
         }
 
@@ -688,13 +689,13 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned le
         lsn_t lastLSN = archIndex->getLastLSN(level);
         if (lastLSN != runEndLSN) {
             // register index information and write it on end of file
-            if (archIndex && appendPos > 0) {
+            if (archIndex && appendPos[level] > 0) {
                 // take into account space for skip log record
-                appendPos += sizeof(baseLogHeader);
+                appendPos[level] += sizeof(baseLogHeader);
                 // and make sure data is written aligned to block boundary
-                appendPos -= appendPos % blockSize;
-                appendPos += blockSize;
-                archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos, level);
+                appendPos[level] -= appendPos[level] % blockSize;
+                appendPos[level] += blockSize;
+                archIndex->finishRun(lastLSN, runEndLSN, appendFd[level], appendPos[level], level);
             }
 
             fs::path new_path = make_run_path(lastLSN, runEndLSN, level);
@@ -703,17 +704,17 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned le
             DBGTHRD(<< "Closing current output run: " << new_path.string());
         }
 
-        auto ret = ::close(appendFd);
+        auto ret = ::close(appendFd[level]);
         CHECK_ERRNO(ret);
-        appendFd = -1;
+        appendFd[level] = -1;
     }
 
-    openNewRun();
+    openNewRun(level);
 
     return RCOK;
 }
 
-rc_t LogArchiver::ArchiveDirectory::append(char* data, size_t length)
+rc_t LogArchiver::ArchiveDirectory::append(char* data, size_t length, unsigned level)
 {
     // make sure there is always a skip log record at the end
     w_assert1(length + sizeof(baseLogHeader) <= blockSize);
@@ -723,10 +724,10 @@ rc_t LogArchiver::ArchiveDirectory::append(char* data, size_t length)
     w_assert1(reinterpret_cast<logrec_t*>(data)->valid_header());
 
     INC_TSTAT(la_block_writes);
-    auto ret = ::pwrite(appendFd, data, length + sizeof(baseLogHeader),
-                appendPos);
+    auto ret = ::pwrite(appendFd[level], data, length + sizeof(baseLogHeader),
+                appendPos[level]);
     CHECK_ERRNO(ret);
-    appendPos += length;
+    appendPos[level] += length;
     return RCOK;
 }
 
