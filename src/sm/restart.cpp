@@ -725,7 +725,7 @@ rc_t restart_m::_collect_spr_logs(
         // What we have to do now is fetch the log records between current_lsn and
         // nxt (both exclusive intervals) from the log archive and add them into
         // the buffer as well.
-        LogArchiver::ArchiveScanner logScan(ss_m::logArchiver->getDirectory());
+        ArchiveScanner logScan(ss_m::logArchiver->getDirectory());
         auto merger = logScan.open(pid, pid, current_lsn, 0);
 
         logrec_t* lr {nullptr};
