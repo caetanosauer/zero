@@ -55,14 +55,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 */
 
 #include "w_defines.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
-
-#define SM_SOURCE
-#define SM_C
-
 #include "w.h"
 #include "sm_base.h"
+#include "btree.h"
 #include "chkpt.h"
 #include "sm.h"
 #include "vol.h"
@@ -76,7 +71,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "stopwatch.h"
 #include "alloc_cache.h"
 #include "btree_page.h"
-
 #include "allocator.h"
 #include "log_core.h"
 

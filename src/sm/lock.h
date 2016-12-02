@@ -7,6 +7,7 @@
 
 #include "w_defines.h"
 
+#include "sm_base.h"
 #include "w_okvl.h"
 #include "w_okvl_inl.h"
 #include "lock_s.h"

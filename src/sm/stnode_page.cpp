@@ -2,9 +2,8 @@
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
 
-#define SM_SOURCE
 #include "sm_base.h"
-
+#include "vol.h"
 #include "stnode_page.h"
 #include "xct_logger.h"
 

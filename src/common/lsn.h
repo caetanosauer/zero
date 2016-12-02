@@ -53,10 +53,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #ifndef LSN_H
 #define LSN_H
 
+#include <iostream>
+
 #include "w_defines.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
-
 #include "w_base.h"
 
 /* FRJ: Major changes to lsn_t
@@ -319,6 +318,8 @@ public:
     static const lsn_t null;
     static const lsn_t max;
 
+    friend std::ostream& operator<<(std::ostream&, const lsn_t&);
+
 private:
     lsndata_t        _data;
 
@@ -341,12 +342,12 @@ private:
                 return to_rba(data); }
 };
 
-inline ostream& operator<<(ostream& o, const lsn_t& l)
+inline std::ostream& operator<<(std::ostream& o, const lsn_t& l)
 {
     return o << l.file() << '.' << l.rba();
 }
 
-inline istream& operator>>(istream& i, lsn_t& l)
+inline std::istream& operator>>(std::istream& i, lsn_t& l)
 {
     sm_diskaddr_t d;
     char c;

@@ -71,9 +71,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <w.h>
 #include <vec_t.h>
 #include <latch.h>
-#if defined(SM_SOURCE)
-/* Do not force this on VASs */
-#endif /* SM_SOURCE */
 #include <smthread.h>
 #include <tid_t.h>
 #include "smstats.h"
@@ -510,23 +507,6 @@ operator<<(ostream& o, const smlevel_0::store_deleting_t value);
 
 #if defined(__GNUC__) && __GNUC_MINOR__ > 6
 ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state);
-#endif
-
-#if defined(SM_SOURCE)
-#    include <fixable_page_h.h>
-#    include <vol.h>
-
-#    if defined(FILE_C) || defined(SMFILE_C)
-#    define BTREE_H
-#    endif
-#    include <btree.h>
-
-#    include <btcursor.h>
-
-#    include <lock.h>
-#    include <logrec.h>
-#    include <xct.h>
-#    include <logarchiver.h>
 #endif
 
 /**\endcond skip */

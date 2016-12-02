@@ -3,13 +3,8 @@
  */
 
 #include "w_defines.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
-
-#define SM_SOURCE
-#define SMTHREAD_C
-
-#include <sm_base.h>
+#include "xct.h"
+#include "sm_base.h"
 
 SmthreadFunc::~SmthreadFunc()
 {

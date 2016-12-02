@@ -1,20 +1,16 @@
 /*
  * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
+#include <string>
+#include <algorithm>
 
 #include "w_defines.h"
-
-#define SM_SOURCE
-#define BTREE_C
-
 #include "sm_base.h"
-
 #include "vec_t.h"
 #include "btree_page_h.h"
 #include "btree_impl.h"
 #include "w_key.h"
-#include <string>
-#include <algorithm>
+#include "bf_tree.h"
 #include "restart.h"
 #include "log_core.h"
 #include "xct_logger.h"

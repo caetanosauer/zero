@@ -8,9 +8,8 @@
  * Implementation of lock-related internal functions in btree_impl.h.
  */
 
-#define SM_SOURCE
-#define BTREE_C
-
+#include "lock_s.h"
+#include "lock.h"
 #include "sm_base.h"
 #include "bf_tree.h"
 #include "btree_page_h.h"

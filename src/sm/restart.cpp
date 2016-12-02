@@ -55,13 +55,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 */
 
 #include "w_defines.h"
-
-#define SM_SOURCE
-#define RESTART_C
-
 #include "sm_base.h"
 #include "w_heap.h"
-#include "sm_base.h"
 #include "sm_base.h"
 #include "btree_impl.h"         // Lock re-acquisition
 #include "restart.h"
@@ -69,6 +64,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm.h"                 // Check system shutdown status
 #include "stopwatch.h"
 #include "xct_logger.h"
+#include "bf_tree.h"
 
 #include <fcntl.h>              // Performance reporting
 #include <unistd.h>
