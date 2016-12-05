@@ -54,6 +54,7 @@ sm_options btree_test_env::make_sm_options(
             const std::vector<std::pair<const char*, const char*> > &additional_string_params) {
     sm_options options;
     options.set_bool_option("sm_truncate", true);
+    options.set_bool_option("sm_restart_instant", false);
     options.set_int_option("sm_bufpoolsize", SM_PAGESIZE / 1024 * bufferpool_size_in_pages);
     options.set_int_option("sm_locktablesize", locktable_size);
     // Most testcases make little locks. to speed them up, use small number here.
