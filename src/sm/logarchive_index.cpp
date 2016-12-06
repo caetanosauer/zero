@@ -71,6 +71,8 @@ size_t ArchiveDirectory::getFileSize(int fd)
 
 ArchiveDirectory::ArchiveDirectory(const sm_options& options)
 {
+    DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
+
     archdir = options.get_string_option("sm_archdir", "archive");
     // CS TODO: archiver currently only works with 1MB blocks
     blockSize = DFT_BLOCK_SIZE;
@@ -99,7 +101,10 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
     archpath = archdir;
     fs::directory_iterator it(archpath), eod;
     boost::regex current_rx(current_regex, boost::regex::perl);
-    lsn_t highestLSN = lsn_t::null;
+
+    // create/load index
+    archIndex = new ArchiveIndex(blockSize, bucketSize);
+    int fd;
 
     for (; it != eod; it++) {
         fs::path fpath = it->path();
@@ -111,12 +116,11 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
                 fs::remove(fpath);
                 continue;
             }
-            // parse lsn from file name
-            lsn_t currLSN = fstats.endLSN;
-            if (currLSN > highestLSN) {
-                DBGTHRD(<< "Highest LSN found so far in archdir: " << currLSN);
-                highestLSN = currLSN;
-            }
+
+            W_COERCE(openForScan(fd, fstats.beginLSN, fstats.endLSN, fstats.level));
+            W_COERCE(archIndex->loadRunInfo(fd, fstats));
+            W_COERCE(closeScan(fd));
+
             if (fstats.level > maxLevel) { maxLevel = fstats.level; }
         }
         else if (boost::regex_match(fname, current_rx)) {
@@ -128,14 +132,14 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
             W_FATAL(fcINTERNAL);
         }
     }
-    startLSN = highestLSN;
+    archIndex->init();
+    lsn_t startLSN = archIndex->getLastLSN();
 
     // no runs found in archive log -- start from first available log file
-    if (startLSN.hi() == 0 && smlevel_0::log) {
-        int nextPartition = startLSN.hi();
-
+    if (archIndex->getRunCount(1 /*level*/) == 0) {
+        // CS TODO: get this info from log manager directly
+        int nextPartition = 0;
         int max = smlevel_0::log->durable_lsn().hi();
-
         while (nextPartition <= max) {
             string fname = smlevel_0::log->make_log_name(nextPartition);
             if (fs::exists(fname)) { break; }
@@ -147,30 +151,15 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
                 << "Could not find partition files in log manager");
         }
 
-        startLSN = lsn_t(nextPartition, 0);
-    }
-
-    // nothing worked -- start from 1.0 and hope for the best
-    if (startLSN.hi() == 0) {
-        startLSN = lsn_t(1,0);
-    }
-
-    // create/load index
-    archIndex = new ArchiveIndex(blockSize, bucketSize);
-
-    {
-        int fd;
-        std::list<RunFileStats> runFiles;
-        listFileStats(runFiles);
-        for(auto f : runFiles) {
-            W_COERCE(openForScan(fd, f.beginLSN, f.endLSN, f.level));
-            W_COERCE(archIndex->loadRunInfo(fd, f));
+        // create empty run to fill the missing LSN gap
+        if (nextPartition > 1) {
+            startLSN = lsn_t(nextPartition, 0);
+            openNewRun(1);
+            closeCurrentRun(startLSN, 1);
+            W_COERCE(openForScan(fd, lsn_t(1,0), startLSN, 1));
+            RunFileStats fstats = {lsn_t(1,0), startLSN, 1};
+            W_COERCE(archIndex->loadRunInfo(fd, fstats));
             W_COERCE(closeScan(fd));
-        }
-
-        // sort runinfo vector by lsn
-        if (runFiles.size() > 0) {
-            archIndex->init();
         }
     }
 
@@ -180,17 +169,13 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
     SKIP_LOGREC._type = logrec_t::t_skip;
     SKIP_LOGREC._cat = 1; // t_status is protected...
 
-    DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
-
     // ArchiveDirectory invariant is that current_run file always exists
     openNewRun(1);
 }
 
 ArchiveDirectory::~ArchiveDirectory()
 {
-    if(archIndex) {
-        delete archIndex;
-    }
+    if(archIndex) { delete archIndex; }
     DO_PTHREAD(pthread_mutex_destroy(&mutex));
 }
 
@@ -530,7 +515,9 @@ lsn_t ArchiveIndex::getLastLSN(unsigned level)
 {
     CRITICAL_SECTION(cs, mutex);
 
-    if (level > maxLevel) { return lsn_t::null; }
+    if (level > maxLevel) {
+        return level == 1 ? lsn_t(1,0) : lsn_t::null;
+    }
 
     if (lastFinished[level] < 0) {
         // No runs exist in the given level. If a previous level exists, it

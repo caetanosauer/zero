@@ -24,7 +24,7 @@ LogArchiver::LogArchiver(
     shutdownFlag(false), control(&shutdownFlag), selfManaged(false),
     flushReqLSN(lsn_t::null)
 {
-    nextActLSN = directory->getStartLSN();
+    nextActLSN = directory->getIndex()->getLastLSN();
 }
 
 LogArchiver::LogArchiver(const sm_options& options)
@@ -45,9 +45,10 @@ LogArchiver::LogArchiver(const sm_options& options)
             "sm_archiver_slow_log_grace_period", DFT_GRACE_PERIOD);
 
     directory = new ArchiveDirectory(options);
-    nextActLSN = directory->getStartLSN();
+    nextActLSN = directory->getIndex()->getLastLSN();
+    w_assert1(nextActLSN.hi() > 0);
 
-    consumer = new LogConsumer(directory->getStartLSN(), blockSize);
+    consumer = new LogConsumer(directory->getIndex()->getLastLSN(), blockSize);
     heap = new ArchiverHeap(workspaceSize);
     blkAssemb = new BlockAssembly(directory);
 }

@@ -729,7 +729,7 @@ rc_t restart_m::_collect_spr_logs(
 
         logrec_t* lr {nullptr};
         auto insert_iter = lr_offsets.begin();
-        while (merger->next(lr)) {
+        while (merger && merger->next(lr)) {
             // Log records after nxt have already been collected above
             if (lr->lsn() > nxt) { break; }
 

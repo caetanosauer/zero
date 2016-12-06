@@ -47,7 +47,6 @@ public:
         unsigned level;
     };
 
-    lsn_t getStartLSN() const { return startLSN; }
     ArchiveIndex* getIndex() { return archIndex; }
     size_t getBlockSize() const { return blockSize; }
     std::string getArchDir() const { return archdir; }
@@ -73,7 +72,6 @@ public:
 private:
     ArchiveIndex* archIndex;
     std::string archdir;
-    lsn_t startLSN;
     std::vector<int> appendFd;
     std::vector<off_t> appendPos;
     size_t blockSize;
@@ -133,10 +131,14 @@ public:
     rc_t loadRunInfo(int fd, const ArchiveDirectory::RunFileStats&);
     void appendNewEntry(unsigned level);
 
-    lsn_t getLastLSN(unsigned level);
+    lsn_t getLastLSN(unsigned level = 1);
     lsn_t getFirstLSN(unsigned level);
 
     size_t getBucketSize() { return bucketSize; }
+    size_t getRunCount(unsigned level) {
+        if (level > maxLevel) { return 0; }
+        return runs[level].size();
+    }
 
     void dumpIndex(ostream& out);
 
