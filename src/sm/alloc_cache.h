@@ -8,6 +8,8 @@
 #include "w_defines.h"
 #include "alloc_page.h"
 #include "latch.h"
+#include "stnode_page.h"
+#include <map>
 #include <vector>
 #include <unordered_set>
 

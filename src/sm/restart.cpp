@@ -55,13 +55,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 */
 
 #include "w_defines.h"
-
-#define SM_SOURCE
-#define RESTART_C
-
 #include "sm_base.h"
 #include "w_heap.h"
-#include "sm_base.h"
 #include "sm_base.h"
 #include "btree_impl.h"         // Lock re-acquisition
 #include "restart.h"
@@ -69,6 +64,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm.h"                 // Check system shutdown status
 #include "stopwatch.h"
 #include "xct_logger.h"
+#include "bf_tree.h"
+#include "logarchive_scanner.h"
 
 #include <fcntl.h>              // Performance reporting
 #include <unistd.h>
@@ -727,7 +724,7 @@ rc_t restart_m::_collect_spr_logs(
         // What we have to do now is fetch the log records between current_lsn and
         // nxt (both exclusive intervals) from the log archive and add them into
         // the buffer as well.
-        LogArchiver::ArchiveScanner logScan(ss_m::logArchiver->getDirectory());
+        ArchiveScanner logScan(ss_m::logArchiver->getDirectory());
         auto merger = logScan.open(pid, pid+1, current_lsn, 0);
 
         logrec_t* lr {nullptr};

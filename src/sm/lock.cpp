@@ -1,12 +1,8 @@
 /*
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
-
+#include "lock.h"
 #include "w_defines.h"
-
-#define SM_SOURCE
-#define LOCK_C
-
 #include "sm_base.h"
 #include "lock_x.h"
 #include "lock_core.h"

@@ -34,9 +34,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#ifndef W_BASE_H
 #include <w_base.h>
-#endif
 
 /* sizes-in-bytes for all persistent data in the SM. */
 typedef uint32_t               smsize_t;
@@ -46,9 +44,8 @@ typedef uint32_t               smsize_t;
 typedef uint32_t    PageID;
 typedef uint32_t    StoreID;
 
-#ifndef SM_SOURCE
-#endif
-
+// Used in log archive
+typedef int32_t run_number_t;
 
 /* Type of a record# on a page  in SM (sans page,store,volume info) */
 typedef int16_t slotid_t;

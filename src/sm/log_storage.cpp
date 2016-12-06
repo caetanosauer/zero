@@ -2,18 +2,10 @@
  * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
-#include "w_defines.h"
-
 // CS TODO: this has to come before sm_base because w_base.h defines
 // a macro called "align", which is probably the name of a function
 // or something inside boost regex
 #include <boost/regex.hpp>
-
-#define SM_SOURCE
-#define LOG_STORAGE_C
-
-#include "sm_base.h"
-#include "chkpt.h"
 
 #include <cstdio>
 #include <sys/types.h>
@@ -22,10 +14,13 @@
 #include <thread>
 #include <chrono>
 
+#include "w_defines.h"
+#include "sm_base.h"
+#include "bf_tree.h"
+#include "chkpt.h"
 #include "log_storage.h"
 #include "log_core.h"
 #include "latches.h"
-
 #include "logdef_gen.h"
 
 const string log_storage::log_prefix = "log.";

@@ -9,7 +9,8 @@ const std::string DummyBackupReader::IMPL_NAME = "dummy";
 const std::string BackupOnDemandReader::IMPL_NAME = "ondemand";
 const std::string BackupPrefetcher::IMPL_NAME = "prefetcher";
 
-const size_t IO_ALIGN = LogArchiver::IO_ALIGN;
+// CS TODO see comments in logarchiver.cpp
+const size_t IO_ALIGN = 512;
 
 // Time (in usec) for which to wait until a segment is requested/prefetched
 const unsigned WAIT_TIME = 500;

@@ -290,7 +290,7 @@ private:
 };
 
 RestoreMgr::RestoreMgr(const sm_options& options,
-        LogArchiver::ArchiveDirectory* archive, vol_t* volume, bool useBackup,
+        ArchiveDirectory* archive, vol_t* volume, bool useBackup,
         bool takeBackup)
     :
     archive(archive), volume(volume), numRestoredPages(0),
@@ -494,7 +494,7 @@ bool RestoreMgr::requestRestore(const PageID& pid, generic_page* addr)
 }
 
 void RestoreMgr::restoreSegment(char* workspace,
-        LogArchiver::ArchiveScanner::RunMerger* merger, PageID firstPage, unsigned thread_id)
+        ArchiveScanner::RunMerger* merger, PageID firstPage, unsigned thread_id)
 {
     INC_TSTAT(restore_invocations);
     stopwatch_t timer;
@@ -617,7 +617,7 @@ void RestoreMgr::restoreSegment(char* workspace,
 
 void RestoreMgr::restoreLoop(unsigned id)
 {
-    LogArchiver::ArchiveScanner logScan(archive);
+    ArchiveScanner logScan(archive);
 
     stopwatch_t timer;
 
@@ -650,7 +650,7 @@ void RestoreMgr::restoreLoop(unsigned id)
 
         lsn_t backupLSN = volume->get_backup_lsn();
 
-        LogArchiver::ArchiveScanner::RunMerger* merger =
+        ArchiveScanner::RunMerger* merger =
             logScan.open(startPID, endPID, backupLSN, 0);
 
         DBG3(<< "RunMerger opened with " << merger->heapSize() << " runs"

@@ -22,6 +22,7 @@ extern uint32_t OKVL_INIT_STR_UNIQUEFIER_LEN;
 #include "w_defines.h"
 #include "w_key.h"
 #include "w_okvl.h"
+#include "basics.h"
 
 /**
  * \brief The means of identifying a desired or held lock

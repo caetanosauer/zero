@@ -26,6 +26,15 @@ void init()
     elem.put(someString, 12);
 }
 
+// stnode page is always dirty when system is initialized, so we clean it
+// here so that it doesn't mess up with the assertions
+void cleanMetadataPages()
+{
+    lsn_t dur_lsn = ss_m::log->curr_lsn();
+    W_COERCE(smlevel_0::vol->get_stnode_cache()->write_page(dur_lsn));
+    ss_m::log->flush_all();
+}
+
 void flushLog()
 {
     W_COERCE(smlevel_0::log->flush_all(true));
@@ -107,6 +116,7 @@ lsn_t generateCLR(unsigned tid, lsn_t lsn)
 
 rc_t emptyChkpt(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     chkpt_t chkpt;
     chkpt.scan_log();
 
@@ -122,6 +132,7 @@ rc_t emptyChkpt(ss_m*, test_volume_t*)
 
 rc_t oneUpdateDirtyUncommitted(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn = makeUpdate(1, 1, "key1");
 
     chkpt_t chkpt;
@@ -139,6 +150,7 @@ rc_t oneUpdateDirtyUncommitted(ss_m*, test_volume_t*)
 
 rc_t twoUpdatesDirtyUncommitted(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 1, "key2");
 
@@ -159,6 +171,7 @@ rc_t twoUpdatesDirtyUncommitted(ss_m*, test_volume_t*)
 
 rc_t twoUpdatesDirtyCommitted(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 1, "key2");
     commitXct(1);
@@ -179,6 +192,7 @@ rc_t twoUpdatesDirtyCommitted(ss_m*, test_volume_t*)
 
 rc_t twoUpdatesDirtyAborting(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 1, "key2");
     lsn_t clr1 = generateCLR(1, lsn2);
@@ -202,6 +216,7 @@ rc_t twoUpdatesDirtyAborting(ss_m*, test_volume_t*)
 
 rc_t twoUpdatesDirtyAborted(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 1, "key2");
     generateCLR(1, lsn2);
@@ -224,6 +239,7 @@ rc_t twoUpdatesDirtyAborted(ss_m*, test_volume_t*)
 
 rc_t twoXcts(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 2, "key2");
     lsn_t lsn3 = makeUpdate(2, 3, "key1");
@@ -252,6 +268,7 @@ rc_t twoXcts(ss_m*, test_volume_t*)
 
 rc_t twoXctsOneCommitted(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 2, "key2");
     lsn_t lsn3 = makeUpdate(2, 3, "key1");
@@ -278,6 +295,7 @@ rc_t twoXctsOneCommitted(ss_m*, test_volume_t*)
 
 rc_t onePageClean(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 2, "key2");
     Logger::log_sys<page_write_log>(1, lsn2);
@@ -300,6 +318,7 @@ rc_t onePageClean(ss_m*, test_volume_t*)
 
 rc_t twoPagesCleanTwoDirty(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 2, "key1");
     lsn_t lsn3 = makeUpdate(1, 2, "key2");
@@ -331,6 +350,7 @@ rc_t twoPagesCleanTwoDirty(ss_m*, test_volume_t*)
 
 rc_t pagesDirtiedTwice(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 2, "key1");
     lsn_t lsn3 = makeUpdate(1, 2, "key2");
@@ -365,6 +385,7 @@ rc_t pagesDirtiedTwice(ss_m*, test_volume_t*)
 
 rc_t cleanerLostUpdate(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     // Update before page_write log record but after the last update
     // captured by the cleaner
     makeUpdate(1, 1, "key1");

@@ -5,6 +5,7 @@
 #include "bf_tree_cb.h"
 #include "log_core.h"
 #include "xct_logger.h"
+#include "logarchive_scanner.h"
 
 page_cleaner_decoupled::page_cleaner_decoupled(
         bf_tree_m* _bufferpool, const sm_options& _options)
@@ -28,9 +29,9 @@ void page_cleaner_decoupled::do_work()
 
     ERROUT(<< "Cleaner thread activated from " << _clean_lsn);
 
-    LogArchiver::ArchiveScanner logScan(smlevel_0::logArchiver->getDirectory());
+    ArchiveScanner logScan(smlevel_0::logArchiver->getDirectory());
     // CS TODO block size
-    LogArchiver::ArchiveScanner::RunMerger* merger = logScan.open(0, 0,
+    ArchiveScanner::RunMerger* merger = logScan.open(0, 0,
             _clean_lsn, 1048576);
 
     generic_page* page = nullptr;

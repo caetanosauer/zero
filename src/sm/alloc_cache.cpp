@@ -3,10 +3,9 @@
  */
 
 #include "w_defines.h"
-#define SM_SOURCE
 
 #include "sm_base.h"
-
+#include "vol.h"
 #include "alloc_cache.h"
 #include "smthread.h"
 #include "xct_logger.h"

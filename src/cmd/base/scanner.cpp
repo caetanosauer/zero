@@ -1,15 +1,18 @@
 #include "scanner.h"
 
+#include <logarchive_scanner.h>
 #include <chkpt.h>
 #include <sm.h>
 #include <restart.h>
 #include <vol.h>
-
 #include <dirent.h>
 
-using RunFileStats = LogArchiver::ArchiveDirectory::RunFileStats;
+// CS TODO isolate this to log archive code
+const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
 
-const auto& parseRunFileName = LogArchiver::ArchiveDirectory::parseRunFileName;
+using RunFileStats = ArchiveDirectory::RunFileStats;
+
+const auto& parseRunFileName = ArchiveDirectory::parseRunFileName;
 
 void BaseScanner::handle(logrec_t* lr)
 {
@@ -39,7 +42,7 @@ BlockScanner::BlockScanner(const po::variables_map& options,
     logdir = options["logdir"].as<string>().c_str();
     // blockSize = options["sm_archiver_block_size"].as<int>();
     // CS TODO no option for archiver block size
-    blockSize = LogArchiver::DFT_BLOCK_SIZE;
+    blockSize = DFT_BLOCK_SIZE;
     logScanner = new LogScanner(blockSize);
     currentBlock = new char[blockSize];
 
@@ -210,8 +213,8 @@ void LogArchiveScanner::run()
     sm_options opt;
     opt.set_string_option("sm_archdir", archdir);
     // opt.set_int_option("sm_archiver_block_size", blockSize);
-    LogArchiver::ArchiveDirectory* directory = new
-        LogArchiver::ArchiveDirectory(opt);
+    ArchiveDirectory* directory = new
+        ArchiveDirectory(opt);
 
     std::vector<std::string> runFiles;
 
@@ -243,8 +246,8 @@ void LogArchiveScanner::run()
             openFileCallback(runFiles[i].c_str());
         }
 
-        LogArchiver::ArchiveScanner::RunScanner* rs =
-            new LogArchiver::ArchiveScanner::RunScanner(
+        ArchiveScanner::RunScanner* rs =
+            new ArchiveScanner::RunScanner(
                     runBegin,
                     runEnd,
                     1, // level (CS TODO)
@@ -290,7 +293,7 @@ void MergeScanner::run()
 
     // CS TODO blockSize not used anymore
     // CS TODO no option for archiver block size
-    size_t blockSize = LogArchiver::DFT_BLOCK_SIZE;
+    size_t blockSize = DFT_BLOCK_SIZE;
     // size_t blockSize = options["sm_archiver_block_size"].as<int>();
     size_t bucketSize = options["sm_archiver_bucket_size"].as<int>();
     sm_options opt;
@@ -298,11 +301,11 @@ void MergeScanner::run()
     // opt.set_int_option("sm_archiver_block_size", blockSize);
     opt.set_int_option("sm_archiver_bucket_size", bucketSize);
 
-    LogArchiver::ArchiveDirectory* directory = new
-        LogArchiver::ArchiveDirectory(opt);
-    LogArchiver::ArchiveScanner logScan(directory);
+    ArchiveDirectory* directory = new
+        ArchiveDirectory(opt);
+    ArchiveScanner logScan(directory);
 
-    LogArchiver::ArchiveScanner::RunMerger* merger =
+    ArchiveScanner::RunMerger* merger =
         logScan.open(0, 0, lsn_t::null, blockSize);
 
     logrec_t* lr;
