@@ -342,6 +342,8 @@ public:
     page_cleaner_base* get_cleaner();
     void wakeup_cleaner(bool wait = false);
 
+    bool is_no_db_mode() const { return _no_db_mode; }
+
     /**
      * Tries to unswizzle the given child page from the parent page.  If, for
      * some reason, unswizzling was impossible or troublesome, gives up and

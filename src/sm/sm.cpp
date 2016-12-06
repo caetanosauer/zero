@@ -410,15 +410,17 @@ ss_m::_destruct_once()
         ERROUT(<< "SM performing clean shutdown");
 
         W_COERCE(log->flush_all());
-        bf->get_cleaner()->wakeup(true);
+        bf->wakeup_cleaner(true);
         // CS TODO: two wakeups are necessary when using the async collector
-        bf->get_cleaner()->wakeup(true);
+        bf->wakeup_cleaner(true);
         smthread_t::check_actual_pin_count(0);
 
         // Force alloc and stnode pages
         lsn_t dur_lsn = smlevel_0::log->durable_lsn();
-        W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
-        W_COERCE(vol->get_stnode_cache()->write_page(dur_lsn));
+        if (!bf->is_no_db_mode()) {
+            W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
+            W_COERCE(vol->get_stnode_cache()->write_page(dur_lsn));
+        }
 
         if (truncate) { W_COERCE(_truncate_log(truncate_archive)); }
         else { chkpt->take(); }
@@ -432,9 +434,7 @@ ss_m::_destruct_once()
     delete chkpt; chkpt = 0;
 
     ERROUT(<< "Terminating log archiver");
-    if (logArchiver) {
-        logArchiver->shutdown();
-    }
+    if (logArchiver) { logArchiver->shutdown(); }
 
     nprepared = xct_t::cleanup(true /* now dispose of prepared xcts */);
     w_assert1(nprepared == 0);
