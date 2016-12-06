@@ -58,6 +58,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
+#include <fstream>
+#include <algorithm>
+#include <new>
 
 #define SM_SOURCE
 #define CHKPT_C
@@ -66,7 +69,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "chkpt.h"
 #include "btree_logrec.h"       // Lock re-acquisition
 #include "bf_tree.h"
-#include <new>
 #include "sm.h"
 #include "lock_raw.h"      // Lock information gathering
 #include "w_okvl_inl.h"    // Lock information gathering
@@ -74,7 +76,6 @@ struct RawLock;            // Lock information gathering
 #include "restart.h"
 #include "vol.h"
 #include "thread_wrapper.h"
-#include <algorithm>
 #include "stopwatch.h"
 #include "logrec_support.h"
 #include "xct_logger.h"

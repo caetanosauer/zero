@@ -71,8 +71,6 @@ class xct_t;
 #include "generic_page.h" // logrec size == 3 * page size
 #include "allocator.h"
 
-#include <boost/static_assert.hpp>
-
 struct baseLogHeader
 {
     uint16_t            _len;  // length of the log record
@@ -253,8 +251,8 @@ public:
         max_data_sz = max_sz - hdr_non_ssx_sz - sizeof(lsn_t)
     };
 
-       static_assert(hdr_non_ssx_sz == 40);
-       static_assert(hdr_single_sys_xct_sz == 40 - 16);
+       static_assert(hdr_non_ssx_sz == 40, "Wrong logrec header size");
+       static_assert(hdr_single_sys_xct_sz == 40 - 16, "Wrong logrec header size");
 
        tid_t   tid() const;
        StoreID        stid() const;
