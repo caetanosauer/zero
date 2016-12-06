@@ -244,11 +244,12 @@ u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_xct_latency_dump : return t_system;
 
 	case t_compensate : return t_logical;
-	case t_add_backup : return t_redo|t_single_sys_xct;
 	case t_xct_abort : return t_logical;
 	case t_xct_freeing_space : return t_logical;
 	case t_xct_end : return t_logical;
 	case t_xct_end_group : return t_logical;
+	case t_add_backup : return t_logical;
+
 	case t_alloc_page : return t_redo|t_single_sys_xct;
 	case t_stnode_format : return t_redo|t_single_sys_xct;
 	case t_dealloc_page : return t_redo|t_single_sys_xct;
@@ -374,7 +375,7 @@ void logrec_t::redo(PagePtr page)
 		W_FATAL(eINTERNAL);
 		break;
 	case t_add_backup :
-		((add_backup_log *) this)->redo(page);
+		W_FATAL(eINTERNAL);
 		break;
 	case t_xct_abort :
 		W_FATAL(eINTERNAL);
@@ -903,7 +904,7 @@ void chkpt_backup_tab_log::construct(int cnt,
 template <class PagePtr>
 void chkpt_backup_tab_log::redo(PagePtr)
 {
-    // CS TODO
+    // CS TODO should not be a redo logrec!
     chkpt_backup_tab_t* tab = (chkpt_backup_tab_t*) _data;
     std::vector<string> paths;
     tab->read(paths);
@@ -926,6 +927,7 @@ void chkpt_restore_tab_log::construct()
 template <class PagePtr>
 void chkpt_restore_tab_log::redo(PagePtr)
 {
+    // CS TODO should not be a redo logrec!
     // CS TODO: disabled for now
     return;
 

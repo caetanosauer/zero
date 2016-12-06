@@ -7,11 +7,6 @@
 #include "logdef_gen.h"
 #include "log_core.h"
 
-/*
- * Ideally, PagePtr would be a template argument of the log method, but that would mess
- * up template argument deduction in all the calls to thw three different versions.
- */
-template <class PagePtr>
 class XctLogger
 {
 public:
@@ -36,6 +31,9 @@ public:
         reinterpret_cast<Logrec*>(logrec)->construct(args...);
         w_assert1(logrec->valid_header());
 
+        // REDO log records always pertain to a page and must therefore use log_p
+        w_assert1(!logrec->is_redo());
+
         // If it's a log for piggy-backed SSX, we call log->insert without updating _last_log
         // because this is a single log independent from other logs in outer transaction.
         if (xd->is_piggy_backed_single_log_sys_xct()) {
@@ -55,8 +53,8 @@ public:
         return lsn;
     }
 
-    template <class Logrec, class... Args>
-    static lsn_t log(PagePtr p, const Args&... args)
+    template <class Logrec, class PagePtr, class... Args>
+    static lsn_t log_p(PagePtr p, const Args&... args)
     {
         xct_t* xd = smthread_t::xct();
         bool should_log = smlevel_0::log && smlevel_0::logging_enabled && xd;
@@ -95,8 +93,8 @@ public:
         return lsn;
     }
 
-    template <class Logrec, class... Args>
-    static lsn_t log(PagePtr p, PagePtr p2, const Args&... args)
+    template <class Logrec, class PagePtr, class... Args>
+    static lsn_t log_p(PagePtr p, PagePtr p2, const Args&... args)
     {
         xct_t* xd = smthread_t::xct();
         bool should_log = smlevel_0::log && smlevel_0::logging_enabled && xd;
@@ -198,6 +196,7 @@ public:
         prev_page_lsn = lsn;
     }
 
+    template <class PagePtr>
     static void _update_page_lsns(PagePtr page, lsn_t new_lsn)
     {
         page->update_page_lsn(new_lsn);
@@ -214,7 +213,6 @@ public:
 
 // CS TODO this is a temporary alias -- at some point the SM should have its
 // own generic Logger template argument
-#include "btree_page_h.h"
-using Logger = XctLogger<btree_page_h*>;
+using Logger = XctLogger;
 
 #endif
