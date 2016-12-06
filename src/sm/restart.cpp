@@ -637,7 +637,7 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn)
     return RCOK;
 }
 
-void grow_buffer(char*& buffer, size_t& buffer_capacity, size_t pos, logrec_t*& lr)
+void grow_buffer(char*& buffer, size_t& buffer_capacity, size_t pos, logrec_t** lr)
 {
     DBGOUT1(<< "Doubling SPR buffer capacity");
     buffer_capacity *= 2;
@@ -645,8 +645,10 @@ void grow_buffer(char*& buffer, size_t& buffer_capacity, size_t pos, logrec_t*& 
     memcpy(tmp, buffer, buffer_capacity/2);
     delete[] buffer;
     buffer = tmp;
-    lr = (logrec_t*) (buffer + pos);
-    w_assert1(lr->length() <= buffer_capacity - pos);
+    if (lr) {
+        *lr = (logrec_t*) (buffer + pos);
+        w_assert1((*lr)->length() <= buffer_capacity - pos);
+    }
 }
 
 rc_t restart_m::_collect_spr_logs(
@@ -685,7 +687,7 @@ rc_t restart_m::_collect_spr_logs(
         w_assert0(lsn == nxt);
 
         if (sizeof(logrec_t) > buffer_capacity - pos) {
-            grow_buffer(buffer, buffer_capacity, pos, lr);
+            grow_buffer(buffer, buffer_capacity, pos, &lr);
         }
 
         lr_offsets.push_front(pos);
@@ -726,7 +728,7 @@ rc_t restart_m::_collect_spr_logs(
         // nxt (both exclusive intervals) from the log archive and add them into
         // the buffer as well.
         LogArchiver::ArchiveScanner logScan(ss_m::logArchiver->getDirectory());
-        auto merger = logScan.open(pid, pid, current_lsn, 0);
+        auto merger = logScan.open(pid, pid+1, current_lsn, 0);
 
         logrec_t* lr {nullptr};
         auto insert_iter = lr_offsets.begin();
@@ -736,7 +738,7 @@ rc_t restart_m::_collect_spr_logs(
 
             // copy log record into end of buffer
             if (lr->length() > buffer_capacity - pos) {
-                grow_buffer(buffer, buffer_capacity, pos, lr);
+                grow_buffer(buffer, buffer_capacity, pos, nullptr);
             }
             ::memcpy(buffer + pos, lr, lr->length());
 
