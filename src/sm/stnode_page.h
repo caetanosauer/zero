@@ -120,37 +120,19 @@ public:
     /// Returns the StoreID of all allocated stores in the volume.
     void get_used_stores(std::vector<StoreID>&) const;
 
-    rc_t sx_create_store(PageID root_pid, StoreID& snum, bool redo = false);
+    rc_t sx_create_store(PageID root_pid, StoreID& snum, bool redo = false) const;
 
-    rc_t sx_append_extent(extent_id_t ext, bool redo = false);
+    rc_t sx_append_extent(extent_id_t ext, bool redo = false) const;
 
-    void dump(ostream& out);
+    void dump(std::ostream& out) const;
 
-    extent_id_t get_last_extent() {
-        return _stnode_page.get_last_extent();
-    }
-
-    lsn_t get_page_lsn();
-
-    rc_t write_page(lsn_t rec_lsn);
+    extent_id_t get_last_extent() const;
 
 private:
-    /// all operations in this object except get_root_pid are protected by this latch
-    mutable queue_based_lock_t _latch;
-
-    // stnode page is used here not as a mirror of the page image on disk,
-    // but simply as an in-memory data structure. As in alloc_cache_t,
-    // decoupled propagation and checkpoints will take care of maintaining
-    // the page on disk.
-    stnode_page _stnode_page;
-
-    /// Required to maintain per-page log chain (see comments on alloc_cache.h)
-    lsn_t prev_page_lsn;
-
     /// Returns the first StoreID that can be used for a new store in
     /// this volume or stnode_page::max if all available stores of
     /// this volume are already allocated.
-    StoreID get_min_unused_stid() const;
+    StoreID get_min_unused_stid(stnode_page* spage) const;
 
 };
 

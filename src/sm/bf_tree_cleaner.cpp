@@ -90,7 +90,6 @@ void bf_tree_cleaner::do_work()
     if (!ignore_metadata) {
         lsn_t dur_lsn = smlevel_0::log->durable_lsn();
         W_COERCE(smlevel_0::vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
-        W_COERCE(smlevel_0::vol->get_stnode_cache()->write_page(dur_lsn));
     }
 
     // synchronize with asynchronous collector

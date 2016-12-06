@@ -418,7 +418,6 @@ ss_m::_destruct_once()
         // Force alloc and stnode pages
         lsn_t dur_lsn = smlevel_0::log->durable_lsn();
         W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
-        W_COERCE(vol->get_stnode_cache()->write_page(dur_lsn));
 
         if (truncate) { W_COERCE(_truncate_log(truncate_archive)); }
         else { chkpt->take(); }

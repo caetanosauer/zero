@@ -1262,15 +1262,11 @@ operator<<(ostream& o, const logrec_t& l)
     return o;
 }
 
-void create_store_log::construct(PageID root_pid, StoreID snum)
+template <class PagePtr>
+void create_store_log::construct(PagePtr page, PageID root_pid, StoreID snum)
 {
     memcpy(data_ssx(), &snum, sizeof(StoreID));
     memcpy(data_ssx() + sizeof(StoreID), &root_pid, sizeof(PageID));
-    PageID stpage_pid(stnode_page::stpid);
-    // CS TODO: eventlog cleanup
-    // fill(stpage_pid, snum, 0, sizeof(StoreID) + sizeof(PageID));
-    header._pid = stpage_pid;
-    header._stid = snum;
     set_size(sizeof(StoreID) + sizeof(PageID));
 }
 
@@ -1287,13 +1283,10 @@ void create_store_log::redo(PagePtr page)
     stpage->set_root(snum, root_pid);
 }
 
-void append_extent_log::construct(extent_id_t ext)
+template <class PagePtr>
+void append_extent_log::construct(PagePtr, extent_id_t ext)
 {
     memcpy(data_ssx(), &ext, sizeof(extent_id_t));
-    PageID stpage_pid(stnode_page::stpid);
-    // CS TODO: eventlog cleanup
-    // fill(stpage_pid, 0, 0, sizeof(extent_id_t));
-    header._pid = stpage_pid;
     set_size(sizeof(extent_id_t));
 }
 
@@ -1499,3 +1492,6 @@ template void page_evict_log::template construct<btree_page_h*>(btree_page_h* p,
                                 general_recordid_t child_slot, lsn_t child_lsn);
 
 template void page_img_format_log::template construct<btree_page_h*>(btree_page_h*);
+
+template void create_store_log::template construct<fixable_page_h*>(fixable_page_h*, PageID, StoreID);
+template void append_extent_log::template construct<fixable_page_h*>(fixable_page_h*, extent_id_t);
