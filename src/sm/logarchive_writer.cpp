@@ -17,6 +17,8 @@ BlockAssembly::BlockAssembly(ArchiveDirectory* directory, unsigned level)
     writebuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT);
     writer = new WriterThread(writebuf, directory, level);
     writer->fork();
+
+    spaceToReserve = directory->getSkipLogrecSize();
 }
 
 BlockAssembly::~BlockAssembly()
@@ -85,7 +87,7 @@ bool BlockAssembly::add(logrec_t* lr)
 {
     w_assert0(dest);
 
-    size_t available = blockSize - (pos + sizeof(baseLogHeader));
+    size_t available = blockSize - (pos + spaceToReserve);
     if (lr->length() > available) {
         return false;
     }

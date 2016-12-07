@@ -127,6 +127,9 @@ private:
     size_t nextBucket;
 
     unsigned level;
+
+    // Amount of space to reserve in each block (e.g., for skip log record)
+    size_t spaceToReserve;
 public:
     struct BlockHeader {
         lsn_t lsn;

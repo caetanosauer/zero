@@ -28,7 +28,7 @@ const size_t IO_ALIGN = 512;
 // CS TODO
 const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
 
-baseLogHeader SKIP_LOGREC;
+skip_log SKIP_LOGREC;
 
 // TODO proper exception mechanism
 #define CHECK_ERRNO(n) \
@@ -133,41 +133,29 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
         }
     }
     archIndex->init();
-    lsn_t startLSN = archIndex->getLastLSN();
 
     // no runs found in archive log -- start from first available log file
     if (archIndex->getRunCount(1 /*level*/) == 0) {
-        // CS TODO: get this info from log manager directly
-        int nextPartition = 0;
-        int max = smlevel_0::log->durable_lsn().hi();
-        while (nextPartition <= max) {
-            string fname = smlevel_0::log->make_log_name(nextPartition);
-            if (fs::exists(fname)) { break; }
-            nextPartition++;
-        }
+        std::vector<partition_number_t> partitions;
+        smlevel_0::log->get_storage()->list_partitions(partitions);
 
-        if (nextPartition > max) {
-            W_FATAL_MSG(fcINTERNAL,
-                << "Could not find partition files in log manager");
-        }
-
-        // create empty run to fill the missing LSN gap
-        if (nextPartition > 1) {
-            startLSN = lsn_t(nextPartition, 0);
-            openNewRun(1);
-            closeCurrentRun(startLSN, 1);
-            W_COERCE(openForScan(fd, lsn_t(1,0), startLSN, 1));
-            RunFileStats fstats = {lsn_t(1,0), startLSN, 1};
-            W_COERCE(archIndex->loadRunInfo(fd, fstats));
-            W_COERCE(closeScan(fd));
+        if (partitions.size() > 0) {
+            auto nextPartition = partitions[0];
+            if (nextPartition > 1) {
+                // create empty run to fill in the missing gap
+                auto startLSN = lsn_t(nextPartition, 0);
+                openNewRun(1);
+                closeCurrentRun(startLSN, 1);
+                W_COERCE(openForScan(fd, lsn_t(1,0), startLSN, 1));
+                RunFileStats fstats = {lsn_t(1,0), startLSN, 1};
+                W_COERCE(archIndex->loadRunInfo(fd, fstats));
+                W_COERCE(closeScan(fd));
+            }
         }
     }
 
-    // CS TODO this should be initialized statically, but whatever...
-    memset(&SKIP_LOGREC, 0, sizeof(baseLogHeader));
-    SKIP_LOGREC._len = sizeof(baseLogHeader);
-    SKIP_LOGREC._type = logrec_t::t_skip;
-    SKIP_LOGREC._cat = 1; // t_status is protected...
+    SKIP_LOGREC.init_header(logrec_t::t_skip);
+    SKIP_LOGREC.construct();
 
     // ArchiveDirectory invariant is that current_run file always exists
     openNewRun(1);
@@ -276,7 +264,7 @@ rc_t ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
             // register index information and write it on end of file
             if (archIndex && appendPos[level] > 0) {
                 // take into account space for skip log record
-                appendPos[level] += sizeof(baseLogHeader);
+                appendPos[level] += SKIP_LOGREC.length();
                 // and make sure data is written aligned to block boundary
                 appendPos[level] -= appendPos[level] % blockSize;
                 appendPos[level] += blockSize;
@@ -302,14 +290,14 @@ rc_t ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
 rc_t ArchiveDirectory::append(char* data, size_t length, unsigned level)
 {
     // make sure there is always a skip log record at the end
-    w_assert1(length + sizeof(baseLogHeader) <= blockSize);
-    memcpy(data + length, &SKIP_LOGREC, sizeof(baseLogHeader));
+    w_assert1(length + SKIP_LOGREC.length() <= blockSize);
+    memcpy(data + length, &SKIP_LOGREC, SKIP_LOGREC.length());
 
     // beginning of block must be a valid log record
     w_assert1(reinterpret_cast<logrec_t*>(data)->valid_header());
 
     INC_TSTAT(la_block_writes);
-    auto ret = ::pwrite(appendFd[level], data, length + sizeof(baseLogHeader),
+    auto ret = ::pwrite(appendFd[level], data, length + SKIP_LOGREC.length(),
                 appendPos[level]);
     CHECK_ERRNO(ret);
     appendPos[level] += length;
@@ -388,6 +376,11 @@ void ArchiveDirectory::deleteAllRuns()
             fs::remove(it->path());
         }
     }
+}
+
+size_t ArchiveDirectory::getSkipLogrecSize() const
+{
+    return SKIP_LOGREC.length();
 }
 
 ArchiveIndex::ArchiveIndex(size_t blockSize, size_t bucketSize)

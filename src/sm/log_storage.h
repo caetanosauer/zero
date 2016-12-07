@@ -93,6 +93,8 @@ public:
 
     shared_ptr<partition_t>       get_partition(partition_number_t n) const;
 
+    void list_partitions(std::vector<partition_number_t>& vec) const;
+
     // used by partition_t
     skip_log*       get_skip_log()  { return _skip_log; }
 

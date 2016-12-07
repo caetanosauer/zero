@@ -67,8 +67,11 @@ public:
     void listFileStats(std::list<RunFileStats>& list, int level = -1);
     void deleteAllRuns();
 
+    size_t getSkipLogrecSize() const;
+
     static bool parseRunFileName(string fname, RunFileStats& fstats);
     static size_t getFileSize(int fd);
+
 private:
     ArchiveIndex* archIndex;
     std::string archdir;

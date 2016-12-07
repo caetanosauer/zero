@@ -13,6 +13,7 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <algorithm>
 
 #include "w_defines.h"
 #include "sm_base.h"
@@ -460,6 +461,19 @@ shared_ptr<partition_t> log_storage::curr_partition() const
 {
     spinlock_read_critical_section cs(&_partition_map_latch);
     return _curr_partition;
+}
+
+void log_storage::list_partitions(std::vector<partition_number_t>& vec) const
+{
+    vec.clear();
+    {
+        spinlock_read_critical_section cs(&_partition_map_latch);
+
+        for (auto p : _partitions) {
+            vec.push_back(p.first);
+        }
+    }
+    std::sort(vec.begin(), vec.end());
 }
 
 string log_storage::make_log_name(partition_number_t pnum) const
