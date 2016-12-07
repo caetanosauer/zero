@@ -40,7 +40,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * and we want to be able to link, in any case
  */
 
-#include <w_stream.h>
 #include <iostream>
 #include <cstring>
 #include <cstdlib>
@@ -69,7 +68,7 @@ char*       _w_debug::re_error_str = "Bad regular expression";
 // decipher mixed-up debugging output for those cases.
 //
 
-w_debug::w_debug(const char *n, const char *f)
+w_debug::w_debug(const char* /*n*/, const char* /*f*/)
 {
 #ifdef USE_REGEX
     //re_ready = false;

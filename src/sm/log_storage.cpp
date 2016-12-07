@@ -2,45 +2,38 @@
  * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
-#include "w_defines.h"
-
 // CS TODO: this has to come before sm_base because w_base.h defines
 // a macro called "align", which is probably the name of a function
 // or something inside boost regex
 #include <boost/regex.hpp>
 
-#define SM_SOURCE
-#define LOG_STORAGE_C
-
-#include "sm_base.h"
-#include "chkpt.h"
-
 #include <cstdio>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <os_interface.h>
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <algorithm>
 
+#include "w_defines.h"
+#include "sm_base.h"
+#include "bf_tree.h"
+#include "chkpt.h"
 #include "log_storage.h"
 #include "log_core.h"
-#include "srwlock.h"
+#include "latches.h"
+#include "logdef_gen.h"
 
-// needed for skip_log (TODO fix this)
-#include "logdef_gen.cpp"
-
-typedef smlevel_0::fileoff_t fileoff_t;
 const string log_storage::log_prefix = "log.";
 const string log_storage::log_regex = "log\\.[1-9][0-9]*";
 const string log_storage::chkpt_prefix = "chkpt_";
 const string log_storage::chkpt_regex = "chkpt_[1-9][0-9]*\\.[0-9][0-9]*";
 
-class partition_recycler_t : public smthread_t
+class partition_recycler_t : public thread_wrapper_t
 {
 public:
     partition_recycler_t(log_storage* storage, bool chkpt_only = false)
-        : smthread_t(t_regular, "partition_recycler"), storage(storage),
+        : storage(storage),
         chkpt_only(chkpt_only), retire(false)
     {}
 
@@ -77,9 +70,12 @@ public:
  * from the various prime methods of the old log_core.
  */
 log_storage::log_storage(const sm_options& options)
-    :
-        _skip_log(new skip_log)
 {
+    // CS TODO: log record refactoring
+    _skip_log = new skip_log;
+    _skip_log->init_header(logrec_t::t_skip);
+    _skip_log->construct();
+
     std::string logdir = options.get_string_option("sm_logdir", "log");
     if (logdir.empty()) {
         cerr << "ERROR: sm_logdir must be set to enable logging." << endl;
@@ -98,7 +94,7 @@ log_storage::log_storage(const sm_options& options)
         }
     }
 
-    fileoff_t psize = fileoff_t(options.get_int_option("sm_log_partition_size", 1024));
+    off_t psize = off_t(options.get_int_option("sm_log_partition_size", 1024));
     // option given in MB -> convert to B
     psize = psize * 1024 * 1024;
     // round to next multiple of the log buffer segment size
@@ -416,7 +412,6 @@ unsigned log_storage::delete_old_partitions(bool chkpt_only, partition_number_t 
             }
         }
     }
-    // CS TODO: talk to log archiver!
 
     list<shared_ptr<partition_t>> to_be_deleted;
     vector<lsn_t> old_chkpts;
@@ -466,6 +461,19 @@ shared_ptr<partition_t> log_storage::curr_partition() const
 {
     spinlock_read_critical_section cs(&_partition_map_latch);
     return _curr_partition;
+}
+
+void log_storage::list_partitions(std::vector<partition_number_t>& vec) const
+{
+    vec.clear();
+    {
+        spinlock_read_critical_section cs(&_partition_map_latch);
+
+        for (auto p : _partitions) {
+            vec.push_back(p.first);
+        }
+    }
+    std::sort(vec.begin(), vec.end());
 }
 
 string log_storage::make_log_name(partition_number_t pnum) const

@@ -3,8 +3,10 @@
 #ifndef RESTORE_H
 #define RESTORE_H
 
+#include "thread_wrapper.h"
 #include "sm_base.h"
 #include "logarchiver.h"
+#include "logarchive_scanner.h"
 
 #include <queue>
 #include <map>
@@ -35,7 +37,7 @@ public:
      * in which restored segments are written to a backup file, also specified
      * in vol_t with the take_backup() method.
      */
-    RestoreMgr(const sm_options&, LogArchiver::ArchiveDirectory*, vol_t*,
+    RestoreMgr(const sm_options&, ArchiveDirectory*, vol_t*,
             bool useBackup, bool takeBackup = false);
     virtual ~RestoreMgr();
 
@@ -124,7 +126,7 @@ public:
 protected:
     RestoreBitmap* bitmap;
     RestoreScheduler* scheduler;
-    LogArchiver::ArchiveDirectory* archive;
+    ArchiveDirectory* archive;
     vol_t* volume;
 
     // CS TODO: get rid of this annoying dependence on smthread_t
@@ -255,7 +257,7 @@ protected:
      * less than the segment size when the last segment is restored.
      */
     void restoreSegment(char* workspace,
-            LogArchiver::ArchiveScanner::RunMerger* merger,
+            ArchiveScanner::RunMerger* merger,
             PageID firstPage, unsigned thread_id);
 
     /** \brief Concludes restore of a segment
@@ -284,7 +286,7 @@ protected:
 };
 
 // TODO get rid of smthread_t and use std::thread
-struct RestoreThread : smthread_t
+struct RestoreThread : thread_wrapper_t
 {
     RestoreThread(RestoreMgr* mgr, unsigned id) : mgr(mgr), id(id) {};
     RestoreMgr* mgr;

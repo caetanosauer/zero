@@ -7,16 +7,14 @@
 #include "w_okvl_inl.h"
 #include "w_debug.h"
 #include "critical_section.h"
-#include "sthread.h"
 #include "sm_options.h"
 
 #include "sm_base.h"
-#include "sthread.h"
 #include "log_core.h"
 #include "log_lsn_tracker.h"
 
 // Following includes are to have the ability to handle on_demand UNDO for Restart operation
-#include "sm_base.h"
+#include "smthread.h"
 #include "lock.h"
 #include "xct.h"
 #include "restart.h"
@@ -404,7 +402,7 @@ w_error_codes RawLockQueue::wait_for(RawLock* new_lock, int32_t timeout_in_ms) {
                     << max_sleep_count << "new_lock=" << *new_lock);
             }
             struct timespec ts;
-            sthread_t::timeout_to_timespec(INTERVAL, ts);
+            smthread_t::timeout_to_timespec(INTERVAL, ts);
             int ret = ::pthread_cond_timedwait(&xct->lock_wait_cond,
                                                 &xct->lock_wait_mutex, &ts); // A22
             atomic_synchronize();
@@ -672,7 +670,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                             // Acquire latch before checking the loser status
                             try
                             {
-                                w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, WAIT_SPECIFIED_BY_XCT);
+                                w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, timeout_t::WAIT_SPECIFIED_BY_XCT);
                                 if (latch_rc.is_error())
                                 {
                                     // Failed to acquire latch on the transaction
@@ -721,9 +719,9 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                                 // The current running thread has the user transaction so
                                 // it cannot attach to the loser transaction without detach from the
                                 // user transaction first
-                                xct_t* user_xd = g_xct();
+                                xct_t* user_xd = smthread_t::xct();
                                 if (user_xd) {
-                                    me()->detach_xct(user_xd);
+                                    smthread_t::detach_xct(user_xd);
                                 }
 
                                 // The blocker txn is a loser transaction and it is not in the middle of rolling back
@@ -732,7 +730,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                                          << ", detached from user transaction, start UNDO of loser transaction");
 
                                 // Attach to the loser transaction
-                                me()->attach_xct(xd);
+                                smthread_t::attach_xct(xd);
                                 W_COERCE(xd->abort());
 
                                 // Done with rollback of loser transaction, destroy it
@@ -743,7 +741,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
 
                                 // Re-attach to the original user transaction
                                 if (user_xd) {
-                                    me()->attach_xct(user_xd);
+                                    smthread_t::attach_xct(user_xd);
                                 }
 
                                 // Notify caller an on_demand UNDO has been performed

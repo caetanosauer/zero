@@ -66,6 +66,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <mutex>
 #include <condition_variable>
 
+#include "logdef_gen.h"
+
 typedef    smlevel_0::partition_number_t partition_number_t;
 typedef std::map<partition_number_t, shared_ptr<partition_t>> partition_map_t;
 
@@ -73,12 +75,9 @@ typedef std::map<partition_number_t, shared_ptr<partition_t>> partition_map_t;
 #include <boost/filesystem.hpp>
 namespace fs = boost::filesystem;
 
-class skip_log;
 class partition_recycler_t;
 
 class log_storage {
-
-    typedef smlevel_0::fileoff_t fileoff_t;
 
     // use friend mechanism until better interface is implemented
     friend class partition_t;
@@ -94,10 +93,12 @@ public:
 
     shared_ptr<partition_t>       get_partition(partition_number_t n) const;
 
+    void list_partitions(std::vector<partition_number_t>& vec) const;
+
     // used by partition_t
     skip_log*       get_skip_log()  { return _skip_log; }
 
-    fileoff_t get_partition_size() const { return _partition_size; }
+    off_t get_partition_size() const { return _partition_size; }
 
     string make_log_name(partition_number_t pnum) const;
     fs::path make_log_path(partition_number_t pnum) const;
@@ -112,7 +113,7 @@ private:
     shared_ptr<partition_t> create_partition(partition_number_t pnum);
 
     fs::path _logpath;
-    fileoff_t _partition_size;
+    off_t _partition_size;
 
     partition_map_t _partitions;
     shared_ptr<partition_t> _curr_partition;

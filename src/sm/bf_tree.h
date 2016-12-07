@@ -16,6 +16,8 @@
 #include "page_cleaner.h"
 #include "page_evictioner.h"
 
+#include <array>
+
 class sm_options;
 class lsn_t;
 struct bf_tree_cb_t; // include bf_tree_cb.h in implementation codes
@@ -274,7 +276,12 @@ public:
     size_t get_size() { return _block_cnt; }
 
     page_cleaner_base* get_cleaner();
+
+    void wakeup_cleaner(bool wait = false);
+
     page_evictioner_base* get_evictioner();
+
+    bool is_no_db_mode() const { return _no_db_mode; }
 
     /**
      * Tries to unswizzle the given child page from the parent page.  If, for
@@ -385,7 +392,7 @@ private:
     bf_idx               _block_cnt;
 
     // CS TODO: concurrency???
-    bf_idx _root_pages[stnode_page::max];
+    std::array<bf_idx, stnode_page::max> _root_pages;
 
     /** Array of control blocks. array size is _block_cnt. index 0 is never used (means NULL). */
     bf_tree_cb_t*        _control_blocks;
@@ -432,6 +439,8 @@ private:
     bool                 _enable_swizzling;
 
     bool _cleaner_decoupled;
+
+    bool _no_db_mode;
 };
 
 /**
@@ -479,7 +488,7 @@ private:
 // Thread that fetches pages into the buffer for warming up.
 // Instead of reading a contiguous chunk, it iterates over all
 // B-trees so that higher levels are loaded first.
-class WarmupThread : public smthread_t {
+class WarmupThread : public thread_wrapper_t {
 public:
     WarmupThread() {};
     virtual ~WarmupThread() {}

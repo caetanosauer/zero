@@ -4,11 +4,6 @@
 #include "boost/date_time/gregorian/gregorian.hpp"
 #include "boost/date_time/posix_time/posix_time.hpp"
 
-#define SM_SOURCE
-
-#include "sm_base.h"
-#include "logrec.h"
-
 class sysevent_timer {
 public:
 
@@ -36,18 +31,6 @@ public:
         // TODO implement
         return "";
     };
-};
-
-class sysevent {
-public:
-    static void log(logrec_t::kind_t kind);
-    static void log_page_read(PageID shpid, uint32_t cnt = 1);
-    static void log_page_write(PageID shpid, lsn_t lsn, uint32_t cnt = 1);
-    static void log_alloc_page(PageID pid, lsn_t& prev_page_lsn);
-    static void log_dealloc_page(PageID pid, lsn_t& prev_page_lsn);
-    static void log_create_store(PageID root, StoreID stid, lsn_t& prev_page_lsn);
-    static void log_append_extent(extent_id_t ext, lsn_t& prev_page_lsn);
-    static void log_xct_latency_dump(unsigned long nsec);
 };
 
 #endif

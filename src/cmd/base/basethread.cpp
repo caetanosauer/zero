@@ -14,8 +14,7 @@
 sm_options basethread_t::_options;
 
 basethread_t::basethread_t()
-    : smthread_t(t_regular, "loginspect"), finished(false),
-    current_xct(NULL)
+    : finished(false), current_xct(NULL)
 {
     DO_PTHREAD(pthread_mutex_init(&running_mutex, NULL));
 }
@@ -37,8 +36,6 @@ void basethread_t::after_run()
 
 void basethread_t::start_base()
 {
-    sthread_t::initialize_sthreads_package();
-    smthread_t::init_fingerprint_map();
 }
 
 void basethread_t::start_buffer()
@@ -130,7 +127,7 @@ void basethread_t::print_stats()
 void basethread_t::begin_xct()
 {
     assert(current_xct == NULL);
-    timeout_in_ms timeout = WAIT_SPECIFIED_BY_THREAD;
+    int timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD;
     current_xct = new xct_t(NULL, timeout, false, false, false);
     smlevel_0::log->get_oldest_lsn_tracker()
         ->enter(reinterpret_cast<uintptr_t>(current_xct),

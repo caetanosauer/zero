@@ -1,12 +1,8 @@
 /*
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
-
+#include "lock.h"
 #include "w_defines.h"
-
-#define SM_SOURCE
-#define LOCK_C
-
 #include "sm_base.h"
 #include "lock_x.h"
 #include "lock_core.h"
@@ -58,7 +54,7 @@ lil_global_table* lock_m::get_lil_global_table() {
 
 okvl_mode lock_m::get_granted_mode(uint32_t hash, xct_t* xd)
 {
-    if (!xd) { xd = g_xct(); }
+    if (!xd) { xd = smthread_t::xct(); }
     w_assert1(xd);
 
     if (xd == NULL) {
@@ -67,39 +63,39 @@ okvl_mode lock_m::get_granted_mode(uint32_t hash, xct_t* xd)
     return xd->raw_lock_xct()->private_hash_map.get_granted_mode(hash);
 }
 
-timeout_in_ms lock_m::_convert_timeout(timeout_in_ms timeout) {
-    xct_t*                 xd = g_xct();
+int lock_m::_convert_timeout(int timeout) {
+    xct_t*                 xd = smthread_t::xct();
 
     return _convert_timeout(timeout, xd);
 }
 
-timeout_in_ms lock_m::_convert_timeout(timeout_in_ms timeout, xct_t* xd) {
+int lock_m::_convert_timeout(int timeout, xct_t* xd) {
     w_assert1(NULL != xd);
 
     switch (timeout) {
-        case WAIT_SPECIFIED_BY_XCT:
+        case timeout_t::WAIT_SPECIFIED_BY_XCT:
             timeout = xd->timeout_c();
             break;
             // DROP THROUGH to WAIT_SPECIFIED_BY_THREAD ...
             // (whose default is WAIT_FOREVER)
 
-        case WAIT_SPECIFIED_BY_THREAD:
-            timeout = me()->lock_timeout();
+        case timeout_t::WAIT_SPECIFIED_BY_THREAD:
+            timeout = smthread_t::lock_timeout();
             break;
 
         default:
             break;
     }
 
-    w_assert9(timeout >= 0 || timeout == WAIT_FOREVER);
+    w_assert9(timeout >= 0 || timeout == timeout_t::WAIT_FOREVER);
     return timeout;
 }
 
 rc_t lock_m::lock(uint32_t hash, const okvl_mode &m,
         bool check, bool wait, bool acquire,
-        xct_t* xd, timeout_in_ms timeout, RawLock** out)
+        xct_t* xd, int timeout, RawLock** out)
 {
-    if (!xd) { xd = g_xct(); }
+    if (!xd) { xd = smthread_t::xct(); }
 
     w_assert0(xd);
     w_assert1(wait || out != NULL);
@@ -133,9 +129,9 @@ rc_t lock_m::lock(uint32_t hash, const okvl_mode &m,
     return rc;
 }
 
-rc_t lock_m::retry_lock(RawLock** lock, bool acquire, timeout_in_ms timeout) {
+rc_t lock_m::retry_lock(RawLock** lock, bool acquire, int timeout) {
     w_assert1(lock != NULL && *lock != NULL);
-    xct_t*                 xd = g_xct();
+    xct_t*                 xd = smthread_t::xct();
     timeout = _convert_timeout(timeout);
     RawXct* xct = xd->raw_lock_xct();
     w_rc_t                 rc; // == RCOK

@@ -7,10 +7,8 @@
 #include "logcat.h"
 #include "verifylog.h"
 #include "truncatelog.h"
-#include "logstats.h"
 #include "propstats.h"
 #include "logpagestats.h"
-#include "dbinspect.h"
 #include "loganalysis.h"
 #include "dbscan.h"
 #include "addbackup.h"
@@ -50,9 +48,7 @@ void Command::init()
     REGISTER_COMMAND("addbackup", AddBackup);
     REGISTER_COMMAND("xctlatency", XctLatency);
     REGISTER_COMMAND("agglog", AggLog);
-    REGISTER_COMMAND("logstats", LogStats);
     REGISTER_COMMAND("logpagestats", LogPageStats);
-    REGISTER_COMMAND("dbinspect", DBInspect);
     REGISTER_COMMAND("loganalysis", LogAnalysis);
     REGISTER_COMMAND("kits", KitsCommand);
     REGISTER_COMMAND("propstats", PropStats);
@@ -200,10 +196,17 @@ void Command::setupSMOptions(po::options_description& options)
          will be ignored (uses write elision and single-page recovery)")
     ("sm_vol_o_direct", po::value<bool>(),
         "Whether to open volume (i.e., db file) with O_DIRECT")
+    ("sm_no_db", po::value<bool>()->implicit_value(true)->default_value(false),
+        "No-database mode, a.k.a. log-structured mode, a.k.a. extreme write elision: \
+         DB file is written and all fetched pages are rebuilt \
+         using single-page recovery from scratch")
     ("sm_restart_instant", po::value<bool>(),
         "Enable instant restart")
     ("sm_restart_log_based_redo", po::value<bool>(),
         "Perform non-instant restart with log-based redo instead of page-based")
+    ("sm_restart_prioritize_archive", po::value<bool>(),
+        "When performing single-page recovery, fetch as much as possible from \
+        log archive and minimize random reads in the recovery log")
     ("sm_rawlock_gc_interval_ms", po::value<int>(),
         "Garbage Collection Interval in ms")
     ("sm_rawlock_lockpool_segsize", po::value<int>(),

@@ -2,23 +2,22 @@
 #define TATAS_H
 
 #include "AtomicCounter.hpp"
-#include "os_interface.h"
 #include "w_defines.h"
 
 #if MUTRACE_ENABLED_H
 #include <MUTrace/mutrace.h>
 #endif // MUTRACE_ENABLED_H
 
-/**\brief A test-and-test-and-set spinlock. 
+/**\brief A test-and-test-and-set spinlock.
  *
- * This lock is good for short, uncontended critical sections. 
- * If contention is high, use an mcs_lock. 
+ * This lock is good for short, uncontended critical sections.
+ * If contention is high, use an mcs_lock.
  * Long critical sections should use pthread_mutex_t.
  *
  * Tradeoffs are:
  *  - test-and-test-and-set locks: low-overhead but not scalable
  *  - queue-based locks: higher overhead but scalable
- *  - pthread mutexes : very high overhead and blocks, but frees up 
+ *  - pthread mutexes : very high overhead and blocks, but frees up
  *  cpu for other threads when number of cpus is fewer than number of threads
  *
  *  \sa REFSYNC
@@ -32,7 +31,7 @@ struct tatas_lock {
         uint64_t           bits;
 #elif SIZEOF_PTHREAD_T==0
 #error  Configuration could not determine size of pthread_t. Fix configure.ac.
-#else 
+#else
 #error  Configuration determined size of pthread_t is unexpected. Fix sthread.h.
 #endif
     } holder_type_t;
@@ -64,7 +63,7 @@ public:
         return success;
     }
 
-    /// Acquire the lock, spinning as long as necessary. 
+    /// Acquire the lock, spinning as long as necessary.
 #ifdef MUTRACE_ENABLED_H
     MUTRACE_PROFILE_MUTEX_LOCK_VOID(tatas_lock, void, acquire, try_lock)
 #else
@@ -101,9 +100,9 @@ public:
     }
 
     /// True if this thread is the lock holder
-    bool is_mine() const { return 
+    bool is_mine() const { return
         pthread_equal(_holder.handle, pthread_self()) ? true : false; }
-#undef CASFUNC 
+#undef CASFUNC
 };
 /** Scoped objects to automatically acquire tatas_lock. */
 class tataslock_critical_section {

@@ -427,7 +427,7 @@ class key_ranges_map;
  */
 class sm_save_point_t : public lsn_t {
 public:
-    NORET            sm_save_point_t(): _tid(0,0) {};
+    sm_save_point_t(): _tid(0) {};
     friend ostream& operator<<(ostream& o, const sm_save_point_t& p) {
         return o << p._tid << ':' << (const lsn_t&) p;
     }
@@ -611,7 +611,7 @@ private:
     // Used for cosntructing xct object depending on chosen implementation
     static xct_t* _new_xct(
             sm_stats_info_t* stats,
-            timeout_in_ms timeout,
+            int timeout,
             bool sys_xct,
             bool single_log_sys_xct = false);
 
@@ -638,10 +638,10 @@ public:
      * will use the timeout given.
      * The default timeout is the one associated with this thread.
      *
-     * \sa timeout_in_ms
+     * \sa int
      */
     static rc_t           begin_xct(
-        timeout_in_ms            timeout = WAIT_SPECIFIED_BY_THREAD);
+        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Begin an instrumented transaction.
      *\ingroup SSMXCT
@@ -663,11 +663,11 @@ public:
      * will use the timeout given.
      * The default timeout is the one associated with this thread.
      *
-     * \sa timeout_in_ms
+     * \sa int
      */
     static rc_t           begin_xct(
         sm_stats_info_t*         stats,  // allocated by caller
-        timeout_in_ms            timeout = WAIT_SPECIFIED_BY_THREAD);
+        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Begin a transaction and return the transaction id.
      *\ingroup SSMXCT
@@ -681,11 +681,11 @@ public:
      * will use the timeout given.
      * The default timeout is the one associated with this thread.
      *
-     * \sa timeout_in_ms
+     * \sa int
      */
     static rc_t           begin_xct(
         tid_t&                   tid,
-        timeout_in_ms            timeout = WAIT_SPECIFIED_BY_THREAD);
+        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**
      * \brief Being a new system transaction which might be a nested transaction.
@@ -702,7 +702,7 @@ public:
     static rc_t           begin_sys_xct(
         bool single_log_sys_xct = false,
         sm_stats_info_t*         stats = NULL,
-        timeout_in_ms            timeout = WAIT_SPECIFIED_BY_THREAD);
+        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Commit a transaction.
      *\ingroup SSMXCT
@@ -883,7 +883,7 @@ public:
      * \details
      * It is assumed that the currently running thread is an smthread_t.
      */
-    static void           attach_xct(xct_t *x) { me()->attach_xct(x); }
+    static void           attach_xct(xct_t *x) { smthread_t::attach_xct(x); }
 
     /**\brief Detach any attached from the currently-running smthread_t.
      *\ingroup SSMXCT
@@ -892,8 +892,8 @@ public:
      * This allow the running thread to attach a different
      * transaction and to perform work in its behalf.
      */
-    static void           detach_xct() { xct_t *x = me()->xct();
-                                        if(x) me()->detach_xct(x); }
+    static void           detach_xct() { xct_t *x = smthread_t::xct();
+                                        if(x) smthread_t::detach_xct(x); }
 
     /**\brief Get the transaction structure for a given a transaction id.
      *\ingroup SSMXCT
@@ -937,7 +937,7 @@ public:
      * be used in conjunction with xct_reserve_log_space to
      * pre-allocate the needed amount of log space before retrying.
      */
-    static smlevel_0::fileoff_t        xct_log_space_needed();
+    static off_t        xct_log_space_needed();
 
     /**\brief Require the specified amount of log space to be
      * available for this transaction before continuing.
@@ -951,54 +951,54 @@ public:
      * run out of space, because that tends to free up log space and
      * avoids wasting work).
      */
-    static rc_t            xct_reserve_log_space(fileoff_t amt);
+    static rc_t            xct_reserve_log_space(off_t amt);
 
 
-    /**\brief Collect transaction information in a virtual table.
-     * \ingroup SSMVTABLE
-     * \details
-     * @param[out] v  The virtual table to populate.
-     * @param[in] names_too  If true, make the
-     *            first row of the table a list of the attribute names.
-     *
-     * All attribute values will be strings.
-     * The virtual table v can be printed with its output operator
-     * operator\<\< for ostreams.
-     *
-     * \attention Not atomic. Can yield stale data.
-     */
-    static rc_t            xct_collect(vtable_t&v, bool names_too=true);
+    // /**\brief Collect transaction information in a virtual table.
+    //  * \ingroup SSMVTABLE
+    //  * \details
+    //  * @param[out] v  The virtual table to populate.
+    //  * @param[in] names_too  If true, make the
+    //  *            first row of the table a list of the attribute names.
+    //  *
+    //  * All attribute values will be strings.
+    //  * The virtual table v can be printed with its output operator
+    //  * operator\<\< for ostreams.
+    //  *
+    //  * \attention Not atomic. Can yield stale data.
+    //  */
+    // static rc_t            xct_collect(vtable_t&v, bool names_too=true);
 
-    /**\brief Collect lock table information in a virtual table.
-     * \ingroup SSMVTABLE
-     * \details
-     * @param[out] v  The virtual table to populate.
-     * @param[in] names_too  If true, make the
-     *            first row of the table a list of the attribute names.
-     *
-     * All attribute values will be strings.
-     * The virtual table v can be printed with its output operator
-     * operator<< for ostreams.
-     *
-     * \attention Not atomic. Can yield stale data.
-     * Cannot be used in a multi-threaded-transaction context.
-     */
-    static rc_t            lock_collect(vtable_t&v, bool names_too=true);
+    // /**\brief Collect lock table information in a virtual table.
+    //  * \ingroup SSMVTABLE
+    //  * \details
+    //  * @param[out] v  The virtual table to populate.
+    //  * @param[in] names_too  If true, make the
+    //  *            first row of the table a list of the attribute names.
+    //  *
+    //  * All attribute values will be strings.
+    //  * The virtual table v can be printed with its output operator
+    //  * operator<< for ostreams.
+    //  *
+    //  * \attention Not atomic. Can yield stale data.
+    //  * Cannot be used in a multi-threaded-transaction context.
+    //  */
+    // static rc_t            lock_collect(vtable_t&v, bool names_too=true);
 
-    /**\brief Collect thread information in a virtual table.
-     * \ingroup SSMVTABLE
-     * \details
-     * @param[out] v  The virtual table to populate.
-     * @param[in] names_too  If true, make the
-     *            first row of the table a list of the attribute names.
-     *
-     * All attribute values will be strings.
-     * The virtual table v can be printed with its output operator
-     * operator<< for ostreams.
-     *
-     * \attention Not thread-safe. Can yield stale data.
-     */
-    static rc_t            thread_collect(vtable_t&v, bool names_too=true);
+    // /**\brief Collect thread information in a virtual table.
+    //  * \ingroup SSMVTABLE
+    //  * \details
+    //  * @param[out] v  The virtual table to populate.
+    //  * @param[in] names_too  If true, make the
+    //  *            first row of the table a list of the attribute names.
+    //  *
+    //  * All attribute values will be strings.
+    //  * The virtual table v can be printed with its output operator
+    //  * operator<< for ostreams.
+    //  *
+    //  * \attention Not thread-safe. Can yield stale data.
+    //  */
+    // static rc_t            thread_collect(vtable_t&v, bool names_too=true);
 
     /**\brief Take a checkpoint.
      * \ingroup SSMAPIDEBUG
@@ -1352,13 +1352,13 @@ public:
      * lockid_t.
      * @param[in]  m  Desired lock mode.  Values: EX, SH.
      * @param[in]  check_only  if true, the lock goes away right after grant. default false.
-     * @param[in]  timeout  Milliseconds willing to block.  See timeout_in_ms.
+     * @param[in]  timeout  Milliseconds willing to block.  See int.
      */
     static rc_t            lock(
         const lockid_t&         n,
         const okvl_mode&           m,
         bool                    check_only = false,
-        timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
+        int           timeout = timeout_t::WAIT_SPECIFIED_BY_XCT
     );
 
     static rc_t            activate_archiver();
@@ -1385,7 +1385,7 @@ private:
     static rc_t         _begin_xct(
         sm_stats_info_t*      stats,  // allocated by caller
         tid_t&                tid,
-        timeout_in_ms         timeout,
+        int         timeout,
         bool sys_xct = false,
         bool single_log_sys_xct = false);
 

@@ -7,6 +7,7 @@
 #include <boost/filesystem.hpp>
 namespace fs = boost::filesystem;
 
+#include "thread_wrapper.h"
 #include "shore_env.h"
 #include "tpcb/tpcb_env.h"
 #include "tpcb/tpcb_client.h"
@@ -17,12 +18,10 @@ namespace fs = boost::filesystem;
 
 int MAX_THREADS = 1000;
 
-class CrashThread : public smthread_t
+class CrashThread : public thread_wrapper_t
 {
 public:
-    CrashThread(unsigned delay)
-        : smthread_t(t_regular, "CrashThread"),
-        delay(delay)
+    CrashThread(unsigned delay) : delay(delay)
     {
     }
 
@@ -39,12 +38,11 @@ private:
     unsigned delay;
 };
 
-class FailureThread : public smthread_t
+class FailureThread : public thread_wrapper_t
 {
 public:
     FailureThread(unsigned delay, bool* flag)
-        : smthread_t(t_regular, "FailureThread"),
-        delay(delay), flag(flag)
+        : delay(delay), flag(flag)
     {
     }
 

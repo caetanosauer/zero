@@ -375,8 +375,7 @@ rc_t btree_impl::_ux_verify_volume(
         btree_page_h page;
         page.fix_nonbufferpool_page(&buf);
         if (page.tag() == t_btree_p && !page.is_to_be_deleted()) {
-            // TODO FIX AFTER PID REFACTORING (use root PID instead of store id)
-            verification_context *context = result.get_or_create_context(1, hash_bits);
+            verification_context *context = result.get_or_create_context(page.root(), hash_bits);
             W_DO (_ux_verify_feed_page (page, *context));
 
             if (page.pid() == page.root()) {
@@ -397,7 +396,7 @@ verify_volume_result::verify_volume_result ()
 }
 verify_volume_result::~verify_volume_result()
 {
-    for (std::map<StoreID, verification_context*>::iterator iter = _results.begin();
+    for (std::map<PageID, verification_context*>::iterator iter = _results.begin();
          iter != _results.end(); ++iter) {
         verification_context *context = iter->second;
         delete context;
@@ -406,21 +405,21 @@ verify_volume_result::~verify_volume_result()
 }
 verification_context*
 verify_volume_result::get_or_create_context (
-    StoreID store_id, int hash_bits)
+    PageID root_pid, int hash_bits)
 {
-    verification_context *context = get_context(store_id);
+    verification_context *context = get_context(root_pid);
     if (context != NULL) {
         return context;
     } else {
         // this store_id is first seen. let's create
         context = new verification_context (hash_bits);
-        _results.insert(std::pair<StoreID, verification_context*>(store_id, context));
+        _results.insert(std::pair<PageID, verification_context*>(root_pid, context));
         return context;
     }
 }
-verification_context* verify_volume_result::get_context (StoreID store_id)
+verification_context* verify_volume_result::get_context (PageID root_pid)
 {
-    std::map<StoreID, verification_context*>::const_iterator iter = _results.find(store_id);
+    std::map<PageID, verification_context*>::const_iterator iter = _results.find(root_pid);
     if (iter != _results.end()) {
         return iter->second;
     } else {

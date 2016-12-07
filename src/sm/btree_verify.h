@@ -69,10 +69,10 @@ class verify_volume_result {
 public:
     verify_volume_result ();
     ~verify_volume_result();
-    verification_context* get_or_create_context (StoreID store_id, int hash_bits);
-    verification_context* get_context (StoreID store_id);
+    verification_context* get_or_create_context (PageID root_pid, int hash_bits);
+    verification_context* get_context (PageID root_pid);
 
-    std::map<StoreID, verification_context*> _results;
+    std::map<PageID, verification_context*> _results;
 };
 
 #endif // BTREE_VERIFY_H

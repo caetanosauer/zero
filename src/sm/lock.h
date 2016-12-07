@@ -7,9 +7,9 @@
 
 #include "w_defines.h"
 
+#include "sm_base.h"
 #include "w_okvl.h"
 #include "w_okvl_inl.h"
-#include "kvl_t.h"
 #include "lock_s.h"
 
 class xct_lock_info_t;
@@ -32,8 +32,6 @@ public:
 
     NORET                        lock_m(const sm_options &options);
     NORET                        ~lock_m();
-
-    int                          collect(vtable_t&, bool names_too);
 
     /**
     * \brief Unsafely check that the lock table is empty for debugging
@@ -77,12 +75,12 @@ public:
     rc_t lock(uint32_t hash, const okvl_mode &m,
             bool check, bool wait, bool acquire,
             xct_t* = NULL,
-            timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT,
+            int timeout = timeout_t::WAIT_SPECIFIED_BY_XCT,
             RawLock** out = NULL);
 
     /** @copydoc RawLockQueue::retry_acquire() */
     rc_t                        retry_lock(RawLock** lock, bool check_only,
-                                           timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT);
+                                           int timeout = timeout_t::WAIT_SPECIFIED_BY_XCT);
 
     /**
      * Take an intent lock on the given store.
@@ -106,8 +104,8 @@ public:
     void        deallocate_xct(RawXct* xct);
 
 private:
-    timeout_in_ms               _convert_timeout(timeout_in_ms timeout);
-    timeout_in_ms               _convert_timeout(timeout_in_ms timeout, xct_t* xd);
+    int               _convert_timeout(int timeout);
+    int               _convert_timeout(int timeout, xct_t* xd);
     lock_core_m*                core() const { return _core; }
 
     lock_core_m*                _core;

@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -78,8 +78,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #endif
 /* end configuration definitions                       */
 /*******************************************************/
-
-#include <w_stream.h>
 
 #ifndef W_WORKAROUND_H
 #include "w_workaround.h"
@@ -181,13 +179,13 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define w_assert0_msg(x, msg)                                           \
 do {                                                                    \
     if(!(x)) {                                                          \
-        stringstream s;                                                 \
+        std::stringstream s;                                                 \
         s << #x ;                                                       \
         s << " (detail: " << msg << ")";                                \
         w_base_t::assert_failed(s.str().c_str(), __FILE__, __LINE__);   \
  }                                                                      \
 }while(0)                                                               \
-     
+
 #ifndef W_DEBUG_LEVEL
 #define W_DEBUG_LEVEL 0
 #endif
@@ -235,16 +233,16 @@ do {                                                                    \
 /*
  * The whole idea here is to gradually move assert3's, which have
  * not been established to be useful in an mt-environment, to anoter
- * assert level. 
+ * assert level.
  * First: make them 9. Then gradually move them to level 2->5, based
  * on the cost and frequency of usefulness.
  * Make them 2 if you want them for a 'normal' debug system.
 */
-/// changing an assert to an assert9 turns it off. 
+/// changing an assert to an assert9 turns it off.
 //#define w_assert9(x)    /**/
 #define w_assert9(x)    if (false) { (void)(x); }
 
-/**\brief  Cast to treat an enum as integer value.  
+/**\brief  Cast to treat an enum as integer value.
  *
  * This is used when
  * a operator<< doesn't exist for the enum.  The use of the macro
@@ -253,7 +251,7 @@ do {                                                                    \
  */
 #define    W_ENUM(x)    ((int)(x))
 
-/**\brief  Cast to treat a pointer as a non-(char *) value.  
+/**\brief  Cast to treat a pointer as a non-(char *) value.
  *
  * This is used when
  * a operator<< is used on a pointer.   Without this cast, some values
@@ -275,13 +273,13 @@ public:
     typedef unsigned long    u_long;
     // typedef w_rc_t        rc_t;
 
-    /* 
+    /*
      * For statistics that are always 64-bit numbers
      */
-    typedef uint64_t         large_stat_t; 
+    typedef uint64_t         large_stat_t;
 
-    /* 
-     * For statistics that are 64-bit numbers 
+    /*
+     * For statistics that are 64-bit numbers
      * only when #defined LARGEFILE_AWARE
      */
 // ARCH_LP64 and LARGEFILE_AWARE are determined by configure
@@ -339,26 +337,20 @@ public:
      *  two exceptions: the only bases supported are 0, 8, 10, 16;
      *  ::errno is not set
      */
-    /**\brief Convert string to 8-byte integer  
+    /**\brief Convert string to 8-byte integer
      *
      * strtoi8 acts like strto[u]ll with the following
      *  two exceptions: the only bases supported are 0, 8, 10, 16;
      *  ::errno is not set
      */
     static int64_t    strtoi8(const char *, char ** end=0 , int base=0);
-    /**\brief Convert string to 8-byte unsigned integer.  
+    /**\brief Convert string to 8-byte unsigned integer.
      *
      * strtou8 acts like strto[u]ll with the following
      *  two exceptions: the only bases supported are 0, 8, 10, 16;
      *  ::errno is not set
      */
     static uint64_t    strtou8(const char *, char ** end=0, int base=0);
-
-    // Input to an instream
-    static istream&    _scan_uint8(istream& i, uint64_t &, 
-                bool chew_white,
-                bool is_signed,
-                bool& rangerr);
 
     static bool        is_finite(const f8_t x);
     static bool        is_infinite(const f8_t x);
@@ -378,11 +370,6 @@ public:
     static uint32_t    w_ntohl(uint32_t);
     static uint32_t    w_htonl(uint32_t);
 
-    ///  standard streams
-    friend ostream&        operator<<(
-        ostream&            o,
-        const w_base_t&            obj);
-
     /// print a message and abort
     static void            assert_failed(
         const char*            desc,
@@ -392,36 +379,17 @@ public:
     /// dump core
     static    void        abort();
 
-    /**\brief Comparison Operators 
+    /**\brief Comparison Operators
      * \enum CompareOp
-     * */ 
+     * */
     enum CompareOp {
     badOp=0x0, eqOp=0x1, gtOp=0x2, geOp=0x3, ltOp=0x4, leOp=0x5,
     /* for internal use only: */
     NegInf=0x100, eqNegInf, gtNegInf, geNegInf, ltNegInf, leNegInf,
     PosInf=0x400, eqPosInf, gtPosInf, gePosInf, ltPosInf, lePosInf
     };
-    
+
 };
-
-
-/* XXX compilers+environment that need this operator defined */
-
-/**\def w_reset_strstream(s)
- *\brief Allow a ostrstream to be reused.  
- */
-
-/* This works for the shore w_strstream.   But, wait, why
-   is it different for visual c++?  It doesn't need to be?
-   It is different so you can reset an ordinary strstream 
-   with it also.    A better solution for w_strstreams and
-   strstreams would be something overloaded instead of a macro. */
-
-#define    w_reset_strstream(s)        \
-    do {                \
-        s.clear();        \
-        s.seekp(ios::beg);    \
-    } while (0)
 
 
 /*--------------------------------------------------------------*
@@ -462,7 +430,7 @@ w_base_t::is_little_endian()
     return ! is_big_endian();
 }
 
-/**\brief Class that adds virtual destructor to w_base_t. 
+/**\brief Class that adds virtual destructor to w_base_t.
  */
 class w_vbase_t : public w_base_t {
 public:
@@ -475,30 +443,30 @@ public:
 #include <w_rc.h>
 
 template<bool B> struct CompileTimeAssertion;
-/** \brief Compile-time assertion trick. 
+/** \brief Compile-time assertion trick.
  * \details
  * See compile_time_assert.
  */
 template<> struct CompileTimeAssertion<true> { void reference() {} };
 
-/** \brief Compile-time assertion trick. 
+/** \brief Compile-time assertion trick.
  * \details
- * If the assertion fails 
+ * If the assertion fails
  * you will get a compile error.
  * The problem is that you will also get an unused variable
  * complaint if warnings are turned on, so we make a bogus
  * reference to the named structure.
  *
- * This is used by macros 
- * - ASSERT_FITS_IN_LONGLONG 
- * - ASSERT_FITS_IN_POINTER 
+ * This is used by macros
+ * - ASSERT_FITS_IN_LONGLONG
+ * - ASSERT_FITS_IN_POINTER
  *   which are enabled only if built with some
  *   debug level 1 or above (e.g., configure --with-debug-level1)
  *   This enables us to continue to build a --disable-lp64 system even
  *   though it's known yet fully supported (not safe).
  *
  */
-template<typename T> struct compile_time_assert 
+template<typename T> struct compile_time_assert
 {
     compile_time_assert() {
         CompileTimeAssertion<sizeof(long) == 8> assert_8byte_long;
@@ -510,15 +478,15 @@ template<typename T> struct compile_time_assert
 #define ASSERT_FITS_IN_LONGLONG(T) {                \
     CompileTimeAssertion<sizeof(int64_t) >= sizeof(T)> assert__##T##__fits_in_longlong; \
     assert__##T##__fits_in_longlong.reference(); \
-    }                    
+    }
 #define ASSERT_FITS_IN_POINTER(T) {                \
     CompileTimeAssertion<sizeof(void*) >= sizeof(T)> assert__##T##__fits_in_pointer; \
     assert__##T##__fits_in_pointer.reference(); \
-    }                    
+    }
 #else
 
-#define ASSERT_FITS_IN_POINTER(T) 
-#define ASSERT_FITS_IN_LONGLONG(T) 
+#define ASSERT_FITS_IN_POINTER(T)
+#define ASSERT_FITS_IN_LONGLONG(T)
 #endif
 /*<std-footer incl-file-exclusion='W_BASE_H'>  -- do not edit anything below this line -- */
 

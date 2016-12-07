@@ -55,47 +55,37 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 */
 
 #include "w_defines.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
-
-#define SM_SOURCE
-#define SM_C
-
 #include "w.h"
 #include "sm_base.h"
+#include "btree.h"
 #include "chkpt.h"
 #include "sm.h"
 #include "vol.h"
 #include "bf_tree.h"
 #include "restart.h"
 #include "sm_options.h"
-#include "suppress_unused.h"
 #include "tid_t.h"
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
 #include "bf_tree.h"
 #include "stopwatch.h"
 #include "alloc_cache.h"
-
+#include "btree_page.h"
 #include "allocator.h"
-#include "plog_xct.h"
 #include "log_core.h"
-#include "eventlog.h"
-
-
-bool         smlevel_0::shutdown_clean = false;
-bool         smlevel_0::shutting_down = false;
 
 
 sm_tls_allocator smlevel_0::allocator;
 
 memalign_allocator<char, smlevel_0::IO_ALIGN> smlevel_0::aligned_allocator;
 
+
+bool         smlevel_0::shutdown_clean = false;
+bool         smlevel_0::shutting_down = false;
             //controlled by AutoTurnOffLogging:
 bool        smlevel_0::lock_caching_default = true;
 bool        smlevel_0::logging_enabled = true;
 bool        smlevel_0::do_prefetch = false;
-
 bool        smlevel_0::statistics_enabled = true;
 
 /*
@@ -113,7 +103,6 @@ BackupManager* smlevel_0::bk = 0;
 vol_t* smlevel_0::vol = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_core* smlevel_0::log = 0;
-log_core* smlevel_0::clog = 0;
 LogArchiver* smlevel_0::logArchiver = 0;
 
 lock_m* smlevel_0::lm = 0;
@@ -127,13 +116,6 @@ restart_m* smlevel_0::recovery = 0;
 btree_m* smlevel_0::bt = 0;
 
 ss_m* smlevel_top::SSM = 0;
-
-smlevel_0::xct_impl_t smlevel_0::xct_impl
-#ifndef USE_ATOMIC_COMMIT
-    = smlevel_0::XCT_TRADITIONAL;
-#else
-    = smlevel_0::XCT_PLOG;
-#endif
 
 /*
  *  Class ss_m code
@@ -150,8 +132,6 @@ static queue_based_block_lock_t ssm_once_mutex;
 ss_m::ss_m(const sm_options &options)
 {
     _options = options;
-
-    sthread_t::initialize_sthreads_package();
 
     // Start the store during ss_m constructor if caller is asking for it
     bool started = startup();
@@ -222,7 +202,7 @@ ss_m::_construct_once()
 {
     stopwatch_t timer;
 
-    smthread_t::init_fingerprint_map();
+    // smthread_t::init_fingerprint_map();
 
     if (_instance_cnt++)  {
         cerr << "ss_m cannot be instantiated more than once" << endl;
@@ -252,19 +232,9 @@ ss_m::_construct_once()
     /*
      *  Level 1
      */
-#ifndef USE_ATOMIC_COMMIT // otherwise, log and clog will point to the same log object
     log = new log_core(_options);
     ERROUT(<< "[" << timer.time_ms() << "] Initializing log manager (part 2)");
     W_COERCE(log->init());
-#else
-    /*
-     * Centralized log used for atomic commit protocol (by Caetano).
-     * See comments in plog.h
-     */
-    clog = new log_core(_options);
-    log = clog;
-    w_assert0(log);
-#endif
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing log archiver");
 
@@ -329,7 +299,7 @@ ss_m::_construct_once()
 
     SSM = this;
 
-    me()->mark_pin_count();
+    smthread_t::mark_pin_count();
 
     do_prefetch = _options.get_bool_option("sm_prefetch", false);
 
@@ -399,7 +369,7 @@ ss_m::_destruct_once()
     // get rid of all non-prepared transactions
     // First... disassociate me from any tx
     if(xct()) {
-        me()->detach_xct(xct());
+        smthread_t::detach_xct(xct());
     }
 
     ERROUT(<< "Terminating recovery manager");
@@ -430,15 +400,17 @@ ss_m::_destruct_once()
         ERROUT(<< "SM performing clean shutdown");
 
         W_COERCE(log->flush_all());
-        bf->get_cleaner()->wakeup(true);
+        bf->wakeup_cleaner(true);
         // CS TODO: two wakeups are necessary when using the async collector
-        bf->get_cleaner()->wakeup(true);
-        me()->check_actual_pin_count(0);
+        bf->wakeup_cleaner(true);
+        smthread_t::check_actual_pin_count(0);
 
         // Force alloc and stnode pages
         lsn_t dur_lsn = smlevel_0::log->durable_lsn();
-        W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
-        W_COERCE(vol->get_stnode_cache()->write_page(dur_lsn));
+        if (!bf->is_no_db_mode()) {
+            W_COERCE(vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
+            W_COERCE(vol->get_stnode_cache()->write_page(dur_lsn));
+        }
 
         if (truncate) { W_COERCE(_truncate_log(truncate_archive)); }
         else { chkpt->take(); }
@@ -452,9 +424,7 @@ ss_m::_destruct_once()
     delete chkpt; chkpt = 0;
 
     ERROUT(<< "Terminating log archiver");
-    if (logArchiver) {
-        logArchiver->shutdown();
-    }
+    if (logArchiver) { logArchiver->shutdown(); }
 
     nprepared = xct_t::cleanup(true /* now dispose of prepared xcts */);
     w_assert1(nprepared == 0);
@@ -465,14 +435,6 @@ ss_m::_destruct_once()
     bt->destruct_once();
     delete bt; bt = 0; // btree manager
     delete lm; lm = 0;
-
-#ifndef USE_ATOMIC_COMMIT // otherwise clog and log point to the same object
-    if(clog) {
-        clog->shutdown(); // log joins any subsidiary threads
-    }
-#endif
-    clog = 0;
-
 
     ERROUT(<< "Terminating buffer manager");
     bf->shutdown();
@@ -497,13 +459,6 @@ ss_m::_destruct_once()
         delete log;
     }
     log = 0;
-
-     w_rc_t        e;
-     char        *unused;
-     e = smthread_t::set_bufsize(0, unused);
-     if (e.is_error())  {
-        cerr << "ss_m: Warning: set_bufsize(0):" << endl << e << endl;
-     }
 
      ERROUT(<< "SM shutdown complete!");
 }
@@ -555,14 +510,14 @@ void ss_m::set_shutdown_flag(bool clean)
 rc_t
 ss_m::begin_xct(
         sm_stats_info_t*             _stats, // allocated by caller
-        timeout_in_ms timeout)
+        int timeout)
 {
     tid_t tid;
     W_DO(_begin_xct(_stats, tid, timeout));
     return RCOK;
 }
 rc_t
-ss_m::begin_xct(timeout_in_ms timeout)
+ss_m::begin_xct(int timeout)
 {
     tid_t tid;
     W_DO(_begin_xct(0, tid, timeout));
@@ -573,14 +528,14 @@ ss_m::begin_xct(timeout_in_ms timeout)
  *  ss_m::begin_xct() - for Markos' tests                       *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::begin_xct(tid_t& tid, timeout_in_ms timeout)
+ss_m::begin_xct(tid_t& tid, int timeout)
 {
     W_DO(_begin_xct(0, tid, timeout));
     return RCOK;
 }
 
 rc_t ss_m::begin_sys_xct(bool single_log_sys_xct,
-    sm_stats_info_t *stats, timeout_in_ms timeout)
+    sm_stats_info_t *stats, int timeout)
 {
     tid_t tid;
     W_DO (_begin_xct(stats, tid, timeout, true, single_log_sys_xct));
@@ -909,14 +864,14 @@ lil_global_table* ss_m::get_lil_global_table() {
 }
 
 rc_t ss_m::lock(const lockid_t& n, const okvl_mode& m,
-           bool check_only, timeout_in_ms timeout)
+           bool check_only, int timeout)
 {
     W_DO( lm->lock(n.hash(), m, true, true, !check_only, NULL, timeout) );
     return RCOK;
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::_begin_xct(sm_stats_info_t *_stats, timeout_in_ms timeout) *
+ *  ss_m::_begin_xct(sm_stats_info_t *_stats, int timeout) *
  *
  * @param[in] _stats  If called by begin_xct without a _stats, then _stats is NULL here.
  *                    If not null, the transaction is instrumented.
@@ -925,7 +880,7 @@ rc_t ss_m::lock(const lockid_t& n, const okvl_mode& m,
  *                    commit_xct, abort_xct, prepare_xct, or chain_xct.
  *--------------------------------------------------------------*/
 rc_t
-ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, bool sys_xct,
+ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, int timeout, bool sys_xct,
     bool single_log_sys_xct)
 {
     w_assert1(!single_log_sys_xct || sys_xct); // SSX is always system-transaction
@@ -951,8 +906,6 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
             tid = x->tid();
             return RCOK;
         }
-        // system transaction doesn't need synchronization with create_vol etc
-        // TODO might need to reconsider. but really needs this change now
         x = _new_xct(_stats, timeout, sys_xct, single_log_sys_xct);
     } else {
         spinlock_read_critical_section cs(&_begin_xct_mutex);
@@ -976,16 +929,11 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
 
 xct_t* ss_m::_new_xct(
         sm_stats_info_t* stats,
-        timeout_in_ms timeout,
+        int timeout,
         bool sys_xct,
         bool single_log_sys_xct)
 {
-    switch (xct_impl) {
-    case XCT_PLOG:
-        return new plog_xct_t(stats, timeout, sys_xct, single_log_sys_xct);
-    default:
-        return new xct_t(stats, timeout, sys_xct, single_log_sys_xct, false);
-    }
+    return new xct_t(stats, timeout, sys_xct, single_log_sys_xct, false);
 }
 
 /*--------------------------------------------------------------*
@@ -1036,7 +984,7 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
 {
     // We don't care what, if any, xct is attached
     xct_t* x = xct();
-    if(x) me()->detach_xct(x);
+    if(x) smthread_t::detach_xct(x);
 
     DBG(<<"commit group " );
 
@@ -1067,11 +1015,11 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
          * Do a partial commit -- all but logging the
          * commit and freeing the locks.
          */
-        me()->attach_xct(x);
+        smthread_t::attach_xct(x);
         {
         W_DO( x->commit_as_group_member() );
         }
-        w_assert1(me()->xct() == NULL);
+        w_assert1(smthread_t::xct() == NULL);
 
         if(x->is_instrumented()) {
             // remove the stats, delete them
@@ -1092,10 +1040,10 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
          *  Free all locks for each transaction
          */
         x = list[i];
-        w_assert1(me()->xct() == NULL);
-        me()->attach_xct(x);
+        w_assert1(smthread_t::xct() == NULL);
+        smthread_t::attach_xct(x);
         W_DO(x->commit_free_locks());
-        me()->detach_xct(x);
+        smthread_t::detach_xct(x);
         delete x;
     }
     return RCOK;
@@ -1165,15 +1113,6 @@ ss_m::_save_work(sm_save_point_t& sp)
 
     W_DO(x->save_point(sp));
     sp._tid = x->tid();
-#if W_DEBUG_LEVEL > 4
-    {
-        w_ostrstream s;
-        s << "save_point @ " << (void *)(&sp)
-            << " " << sp
-            << " created for tid " << x->tid();
-        fprintf(stderr,  "%s\n", s.c_str());
-    }
-#endif
     return RCOK;
 }
 
@@ -1185,15 +1124,6 @@ ss_m::_rollback_work(const sm_save_point_t& sp)
 {
     w_assert3(xct() != 0);
     xct_t* x = xct();
-#if W_DEBUG_LEVEL > 4
-    {
-        w_ostrstream s;
-        s << "rollback_work for " << (void *)(&sp)
-            << " " << sp
-            << " in tid " << x->tid();
-        fprintf(stderr,  "%s\n", s.c_str());
-    }
-#endif
     if (sp._tid != x->tid())  {
         return RC(eBADSAVEPOINT);
     }
@@ -1223,8 +1153,8 @@ ss_m::gather_xct_stats(sm_stats_info_t& _stats, bool reset)
         // into an xct, they aren't duplicated.
         // They are added to the global_stats before they are cleared, so
         // they don't get lost entirely.
-        me()->detach_xct(&x);
-        me()->attach_xct(&x);
+        smthread_t::detach_xct(&x);
+        smthread_t::attach_xct(&x);
 
         // Copy out the stats structure stored for this xct.
         _stats = x.const_stats_ref();
@@ -1315,7 +1245,8 @@ ss_m::gather_stats(sm_stats_info_t& _stats)
 
     //Gather all the threads' statistics into the copy given by
     //the client.
-    smthread_t::for_each_smthread(F);
+    // CS TODO: new thread stats mechanism!
+    // smthread_t::for_each_smthread(F);
     // F.compute();
 
     // Now add in the global stats.
@@ -1333,9 +1264,7 @@ void dump_all_sm_stats()
 {
     static sm_stats_info_t s;
     W_COERCE(ss_m::gather_stats(s));
-    w_ostrstream o;
-    o << s << endl;
-    fprintf(stderr, "%s\n", o.c_str());
+    std::cerr << s << endl;
 }
 #endif
 

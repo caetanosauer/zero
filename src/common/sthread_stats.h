@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -65,7 +65,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /**\brief A class to hold all the Perl-generated statistics for sthread_t
  *
- * This class just clears itself on construction and 
+ * This class just clears itself on construction and
  * when a client calls its method
  * \code
  * void clear();
@@ -78,7 +78,7 @@ public:
 #include "sthread_stats_struct_gen.h"
 
     sthread_stats() {
-        // easier than remembering to add the inits 
+        // easier than remembering to add the inits
         // since we're changing the stats a lot
         // during development
         memset(this,'\0', sizeof(*this));
@@ -88,14 +88,15 @@ public:
     void clear() {
         memset((void *)this, '\0', sizeof(*this));
     }
+
+    static thread_local sthread_stats INSTANCE;
 };
 
 extern ostream &operator<<(ostream &, const sthread_stats &stats);
 
 
-#    define INC_STH_STATS(x) sthread_t::me()->SthreadStats.x++;
-#    define GET_STH_STATS(x) sthread_t::me()->SthreadStats.x
-
+#    define INC_STH_STATS(x) sthread_stats::INSTANCE.x++;
+#    define GET_STH_STATS(x) sthread_stats::INSTANCE.x
 
 /*<std-footer incl-file-exclusion='STHREAD_STATS_H'>  -- do not edit anything below this line -- */
 

@@ -53,12 +53,14 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
 
     // get the left most page
     uint32_t correct_checksum;
+    PageID leaf_pid;
     W_DO(ssm->begin_xct());
     {
         btree_page_h leaf;
         W_DO (btree_impl::_ux_traverse(stid, neginf, btree_impl::t_fence_low_match, LATCH_SH, leaf));
         EXPECT_TRUE (leaf.is_fixed());
         EXPECT_TRUE (leaf.is_leaf());
+        leaf_pid = leaf.pid();
 
         generic_page dummy_p;
         ::memset (&dummy_p, 0, sizeof (generic_page));
@@ -69,19 +71,22 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
 
     // write out the page to set checksum by bufferpool
     smlevel_0::bf->get_cleaner()->wakeup(true);
-    // also discards the pages from bufferpool (this test requires to re-read from disk!)
+    smlevel_0::bf->get_cleaner()->wakeup(true);
 
     // check it again
     W_DO(ssm->begin_xct());
     {
         btree_page_h leaf;
-        W_DO (btree_impl::_ux_traverse(stid, neginf, btree_impl::t_fence_low_match, LATCH_SH, leaf));
+        leaf.fix_direct(leaf_pid, LATCH_SH);
+        W_DO (smlevel_0::vol->read_page(leaf_pid, leaf.get_generic_page()));
         EXPECT_TRUE (leaf.is_fixed());
         EXPECT_TRUE (leaf.is_leaf());
         EXPECT_FALSE (leaf.is_dirty());
 
-        EXPECT_EQ (correct_checksum, leaf.get_generic_page()->calculate_checksum()) << "page content has changed?";
-        EXPECT_EQ (correct_checksum, leaf.get_generic_page()->checksum) << "checksum hasn't been updated on write?";
+        EXPECT_EQ (correct_checksum, leaf.get_generic_page()->calculate_checksum())
+            << "page content has changed?";
+        EXPECT_EQ (correct_checksum, leaf.get_generic_page()->checksum)
+            << "checksum hasn't been updated on write?";
     }
     W_DO(ssm->commit_xct());
 

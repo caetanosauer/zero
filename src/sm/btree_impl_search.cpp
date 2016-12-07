@@ -20,6 +20,8 @@
 #include "vec_t.h"
 #include "w_key.h"
 #include "xct.h"
+#include "w_okvl.h"
+#include "w_okvl_inl.h"
 
 rc_t
 btree_impl::_ux_lookup(StoreID store, const w_keystr_t& key, bool& found,

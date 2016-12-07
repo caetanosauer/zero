@@ -76,9 +76,9 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
 sm_options make_options() {
     sm_options options;
     // larger than usual testcases
-    options.set_int_option("sm_locktablesize", 1 << 13);
-    options.set_int_option("sm_bufpoolsize", SM_PAGESIZE / 1024 * 1024);
-    options.set_int_option("sm_rawlock_lockpool_segsize", 1 << 14);
+    options.set_int_option("sm_locktablesize", 1 << 12);
+    options.set_int_option("sm_bufpoolsize", 80); // 80MB
+    options.set_int_option("sm_rawlock_lockpool_segsize", 1 << 13);
     return options;
 }
 

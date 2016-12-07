@@ -5,6 +5,7 @@
 #include "logarchiver.h"
 #include "restore.h"
 #include "vol.h"
+#include "btree_page.h"
 #include "alloc_cache.h"
 #include "sm_options.h"
 
@@ -137,6 +138,9 @@ void verifyVolumesEqual(string pathExp, string pathAct)
             }
         }
     }
+
+    volExp.shutdown();
+    volAct.shutdown();
 }
 
 rc_t singlePageTest(ss_m* ssm, test_volume_t* test_volume)

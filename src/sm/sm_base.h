@@ -62,20 +62,15 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #include <vector>
-#include "sthread.h"
 #include "basics.h"
 #include <w_debug.h>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <climits>
-#include <w_stream.h>
 #include <w.h>
 #include <vec_t.h>
 #include <latch.h>
-#if defined(SM_SOURCE)
-/* Do not force this on VASs */
-#endif /* SM_SOURCE */
 #include <smthread.h>
 #include <tid_t.h>
 #include "smstats.h"
@@ -100,7 +95,6 @@ class log_core;
 class lock_m;
 class LogArchiver;
 
-class tid_t;
 class option_t;
 class rid_t;
 class lsn_t;
@@ -173,8 +167,7 @@ struct check_compensated_op_nesting {
         if(_xd) {
             if( _depth != compensated_op_depth(_xd, _depth) ) {
                 fprintf(stderr,
-                    "th.%d check_compensated_op_nesting(%d,%s) depth was %d is %d\n",
-                    sthread_t::me()->id,
+                    "th.XXX check_compensated_op_nesting(%d,%s) depth was %d is %d\n",
                     _line, _file, _depth, compensated_op_depth(_xd, _depth));
             }
 
@@ -226,24 +219,11 @@ public:
         max_rec_len = max_uint4
     };
 
-    typedef sthread_base_t::fileoff_t fileoff_t;
-    /*
-     * Sizes-in-Kbytes for for things like volumes and devices.
-     * A KB is assumes to be 1024 bytes.
-     * Note: a different type was used for added type checking.
-     */
-    typedef sthread_t::fileoff_t smksize_t;
     typedef w_base_t::base_stat_t base_stat_t;
 
     /**\endcond skip */
 
     typedef    uint32_t partition_number_t;
-/**\cond skip */
-    enum switch_t {
-        ON = 1,
-        OFF = 0
-    };
-/**\endcond skip */
 
     /**\brief Comparison types used in scan_index_i
      * \enum cmp_t
@@ -309,7 +289,6 @@ public:
     static lock_m* lm;
 
     static log_core* log;
-    static log_core* clog;
     static LogArchiver* logArchiver;
 
     static int    dcommit_timeout; // to convey option to coordinator,
@@ -393,14 +372,6 @@ public:
                         xct_freeing_space = 0x6,
                         xct_ended = 0x7
     };
-
-    // xct implementation
-    enum xct_impl_t {
-        XCT_TRADITIONAL = 0,
-        XCT_PLOG = 1
-    };
-
-    static xct_impl_t xct_impl;
 
     // Checkpoint manager
     static chkpt_m*    chkpt;
@@ -529,24 +500,6 @@ operator<<(ostream& o, const smlevel_0::store_deleting_t value);
 
 #if defined(__GNUC__) && __GNUC_MINOR__ > 6
 ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state);
-#endif
-
-#if defined(SM_SOURCE)
-#    include <fixable_page_h.h>
-#    include <vol.h>
-
-#    if defined(FILE_C) || defined(SMFILE_C)
-#    define BTREE_H
-#    endif
-#    include <btree.h>
-
-#    include <btcursor.h>
-#    include <xct_dependent.h>
-
-#    include <lock.h>
-#    include <logrec.h>
-#    include <xct.h>
-#    include <logarchiver.h>
 #endif
 
 /**\endcond skip */

@@ -13,7 +13,6 @@
 #include "smthread.h"
 #include "generic_page.h"
 #include <string.h>
-#include "w_findprime.h"
 #include <stdlib.h>
 
 #include "sm_base.h"
@@ -31,16 +30,61 @@
 #include "btree_page_h.h"
 #include "log_core.h"
 #include "xct.h"
-#include <logfunc_gen.h>
+#include "xct_logger.h"
 
 #include "restart.h"
 
 // Template definitions
 #include "bf_hashtable.cpp"
 
+// lots of help from Wikipedia here!
+int64_t w_findprime(int64_t min)
+{
+    // the first 25 primes
+    static char const prime_start[] = {
+    // skip 2,3,5 because our mod60 test takes care of them for us
+    /*2, 3, 5,*/ 7, 11, 13, 17, 19, 23, 29, 31, 37, 41,
+    43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97
+    };
+    // x%60 isn't on this list, x is divisible by 2, 3 or 5. If it
+    // *is* on the list it still might not be prime
+    static char const sieve_start[] = {
+    // same as the start list, but adds 1,49 and removes 3,5
+    1, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 49, 53, 59
+    };
+
+    // use the starts to populate our data structures
+    std::vector<int64_t> primes(prime_start, prime_start+sizeof(prime_start));
+    char sieve[60];
+    memset(sieve, 0, sizeof(sieve));
+
+    for(uint64_t i=0; i < sizeof(sieve_start); i++)
+    sieve[int64_t(sieve_start[i])] = 1;
+
+    /* We aren't interested in 4000 digit numbers here, so a Sieve of
+       Erastothenes will work just fine, especially since we're
+       seeding it with the first 25 primes and avoiding the (many)
+       numbers that divide by 2,3 or 5.
+     */
+    for(int64_t x=primes.back()+1; primes.back() < min; x++) {
+    if(!sieve[x%60])
+        continue; // divides by 2, 3 or 5
+
+    bool prime = true;
+    for(int64_t i=0; prime && primes[i]*primes[i] <= x; i++)
+        prime = (x%primes[i]) > 0;
+
+    if(prime)
+        primes.push_back(x);
+    }
+
+    return primes.back();
+}
+
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////
 
 bf_tree_m::bf_tree_m(const sm_options& options)
+    : _cleaner(nullptr)
 {
     // sm_bufboolsize given in MB -- default 8GB
     long bufpoolsize = options.get_int_option("sm_bufpoolsize", 8192) * 1024 * 1024;
@@ -60,7 +104,9 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     std::string replacement_policy =
         options.get_string_option("sm_bufferpool_replacement_policy", "clock");
 
-    ::memset (this, 0, sizeof(bf_tree_m));
+    _no_db_mode = options.get_bool_option("sm_no_db", false);
+
+    _root_pages.fill(0);
 
     _block_cnt = nbufpages;
     _enable_swizzling = bufferpool_swizzle;
@@ -186,7 +232,7 @@ bf_tree_m::~bf_tree_m()
 
 page_cleaner_base* bf_tree_m::get_cleaner()
 {
-    if (!ss_m::vol || !ss_m::vol->caches_ready()) {
+    if (_no_db_mode || !ss_m::vol || !ss_m::vol->caches_ready()) {
         // No volume manager initialized -- no point in starting cleaner
         return nullptr;
     }
@@ -232,6 +278,12 @@ page_evictioner_base* bf_tree_m::get_evictioner()
     return _evictioner;
 }
 
+void bf_tree_m::wakeup_cleaner(bool wait)
+{
+    auto cleaner = get_cleaner();
+    if (cleaner) { cleaner->wakeup(wait); }
+}
+
 ///////////////////////////////////   Initialization and Release END ///////////////////////////////////
 
 bf_idx bf_tree_m::lookup(PageID pid) const
@@ -261,7 +313,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         bf_tree_cb_t &cb = get_cb(idx);
 
         W_DO(cb.latch().latch_acquire(mode,
-                    conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+                    conditional ? timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
 
         w_assert1(_is_active_idx(idx));
         w_assert1(cb._swizzled);
@@ -316,7 +368,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             // STEP 2) Acquire EX latch before hash table insert, to make sure
             // nobody will access this page until we're done
             w_rc_t check_rc = cb.latch().latch_acquire(LATCH_EX,
-                    sthread_t::WAIT_IMMEDIATE);
+                    timeout_t::WAIT_IMMEDIATE);
             if (check_rc.is_error())
             {
                 _add_free_block(idx);
@@ -384,7 +436,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             // meaning the actual page is in buffer pool already
 
             W_DO(cb.latch().latch_acquire(mode, conditional ?
-                        sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+                        timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
 
             if (cb._pin_cnt < 0 || cb._pid != pid) {
                 // Page was evicted between hash table probe and latching
@@ -744,7 +796,7 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
     sys_xct_section_t sxs (true); // this transaction will output only one log!
     W_DO(sxs.check_error_on_start());
     w_assert1(parent.is_latched());
-    W_DO(log_page_evict(parent, child_slotid, child_emlsn));
+    Logger::log<page_evict_log>(&parent, child_slotid, child_emlsn);
     parent.set_emlsn_general(child_slotid, child_emlsn);
     W_DO (sxs.end_sys_xct (RCOK));
     return RCOK;
@@ -822,7 +874,7 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
                                        idx, latch_mode_t mode, bool conditional) {
     bf_tree_cb_t &cb = get_cb(idx);
     W_DO(cb.latch().latch_acquire(mode, conditional ?
-                sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+                timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
     w_assert1(cb._pin_cnt > 0);
     cb.pin();
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
@@ -874,7 +926,7 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
     else {
         // Pointer to root page was swizzled -- direct access to CB
         W_DO(get_cb(idx).latch().latch_acquire(
-                    mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+                    mode, conditional ? timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
         page = &(_buffer[idx]);
         get_cb(idx).pin();
     }

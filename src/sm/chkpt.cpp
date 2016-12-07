@@ -58,6 +58,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
+#include <fstream>
+#include <algorithm>
+#include <new>
 
 #define SM_SOURCE
 #define CHKPT_C
@@ -66,23 +69,16 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "chkpt.h"
 #include "btree_logrec.h"       // Lock re-acquisition
 #include "bf_tree.h"
-#include "xct_dependent.h"
-#include <new>
 #include "sm.h"
 #include "lock_raw.h"      // Lock information gathering
 #include "w_okvl_inl.h"    // Lock information gathering
 struct RawLock;            // Lock information gathering
 #include "restart.h"
 #include "vol.h"
-#include <algorithm>
-
+#include "thread_wrapper.h"
 #include "stopwatch.h"
-
-#define LOG_INSERT(constructor_call, rlsn)            \
-    do {                                              \
-        new (logrec) constructor_call;                \
-        W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
-    } while(0)
+#include "logrec_support.h"
+#include "xct_logger.h"
 
 
 /*********************************************************************
@@ -92,11 +88,11 @@ struct RawLock;            // Lock information gathering
  *  Checkpoint thread.
  *
  *********************************************************************/
-class chkpt_thread_t : public smthread_t
+class chkpt_thread_t : public thread_wrapper_t
 {
 public:
-    NORET                chkpt_thread_t(int interval);
-    NORET                ~chkpt_thread_t();
+    chkpt_thread_t(int interval);
+    virtual ~chkpt_thread_t();
 
     virtual void        run();
     void                retire();
@@ -125,6 +121,8 @@ chkpt_m::chkpt_m(const sm_options& options, lsn_t last_chkpt_lsn)
         _chkpt_thread = new chkpt_thread_t(interval);
         W_COERCE(_chkpt_thread->fork());
     }
+
+    _no_db_mode = options.get_bool_option("sm_no_db", false);
 }
 
 chkpt_m::~chkpt_m()
@@ -184,7 +182,7 @@ void chkpt_t::scan_log(lsn_t scan_start)
             continue;
         }
 
-        if (!r.tid().is_null()) {
+        if (!r.tid() == 0) {
             if (r.tid() > get_highest_tid()) {
                 set_highest_tid(r.tid());
             }
@@ -350,7 +348,7 @@ void chkpt_t::scan_log(lsn_t scan_start)
 
 void chkpt_t::init()
 {
-    highest_tid = tid_t::null;
+    highest_tid = 0;
     last_scan_start = lsn_t::null;
     buf_tab.clear();
     xct_tab.clear();
@@ -479,8 +477,8 @@ void chkpt_t::serialize()
     if (!bkp_path.empty()) {
         vector<string> backup_paths;
         backup_paths.push_back(bkp_path);
-        LOG_INSERT(chkpt_backup_tab_log(backup_paths.size(),
-                    (const string*)(&backup_paths[0])), 0);
+        Logger::log_sys<chkpt_backup_tab_log>(backup_paths.size(),
+                    (const string*)(&backup_paths[0]));
     }
 
     //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
@@ -500,9 +498,9 @@ void chkpt_t::serialize()
         rec_lsn.push_back(it->second.rec_lsn);
         page_lsn.push_back(it->second.page_lsn);
          if(pid.size()==chunk || &*it==&*buf_tab.rbegin()) {
-            LOG_INSERT(chkpt_bf_tab_log(pid.size(), (const PageID*)(&pid[0]),
+             Logger::log_sys<chkpt_bf_tab_log>(pid.size(), (const PageID*)(&pid[0]),
                                                     (const lsn_t*)(&rec_lsn[0]),
-                                                    (const lsn_t*)(&page_lsn[0])), 0);
+                                                    (const lsn_t*)(&page_lsn[0]));
             pid.clear();
             rec_lsn.clear();
             page_lsn.clear();
@@ -528,11 +526,11 @@ void chkpt_t::serialize()
         last_lsn.push_back(it->second.last_lsn);
         first_lsn.push_back(it->second.first_lsn);
         if(tid.size()==chunk || &*it==&*xct_tab.rbegin()) {
-            LOG_INSERT(chkpt_xct_tab_log(get_highest_tid(), tid.size(),
+            Logger::log_sys<chkpt_xct_tab_log>(get_highest_tid(), tid.size(),
                                         (const tid_t*)(&tid[0]),
                                         (const smlevel_0::xct_state_t*)(&state[0]),
                                         (const lsn_t*)(&last_lsn[0]),
-                                        (const lsn_t*)(&first_lsn[0])), 0);
+                                        (const lsn_t*)(&first_lsn[0]));
             tid.clear();
             state.clear();
             last_lsn.clear();
@@ -547,19 +545,19 @@ void chkpt_t::serialize()
             lock_mode.push_back(jt->lock_mode);
             lock_hash.push_back(jt->lock_hash);
             if(lock_mode.size() == chunk) {
-                LOG_INSERT(chkpt_xct_lock_log(it->first,
+                Logger::log_sys<chkpt_xct_lock_log>(it->first,
                                       lock_mode.size(),
                                       (const okvl_mode*)(&lock_mode[0]),
-                                      (const uint32_t*)(&lock_hash[0])), 0);
+                                      (const uint32_t*)(&lock_hash[0]));
                 lock_mode.clear();
                 lock_hash.clear();
             }
         }
         if(lock_mode.size() > 0) {
-            LOG_INSERT(chkpt_xct_lock_log(it->first,
+            Logger::log_sys<chkpt_xct_lock_log>(it->first,
                         lock_mode.size(),
                         (const okvl_mode*)(&lock_mode[0]),
-                        (const uint32_t*)(&lock_hash[0])), 0);
+                        (const uint32_t*)(&lock_hash[0]));
             lock_mode.clear();
             lock_hash.clear();
         }
@@ -568,11 +566,11 @@ void chkpt_t::serialize()
     // In case the transaction table was empty, we insert a xct_tab_log anyway,
     // because we want to save the highest tid.
     if(xct_tab.size() == 0) {
-        LOG_INSERT(chkpt_xct_tab_log(get_highest_tid(), tid.size(),
+        Logger::log_sys<chkpt_xct_tab_log>(get_highest_tid(), tid.size(),
                                         (const tid_t*)(&tid[0]),
                                         (const smlevel_0::xct_state_t*)(&state[0]),
                                         (const lsn_t*)(&last_lsn[0]),
-                                        (const lsn_t*)(&first_lsn[0])), 0);
+                                        (const lsn_t*)(&first_lsn[0]));
     }
 
     delete logrec;
@@ -633,7 +631,7 @@ void chkpt_t::acquire_lock(logrec_t& r)
             break;
         case logrec_t::t_btree_ghost_mark:
             {
-                btree_ghost_t* dp = (btree_ghost_t*) r.data();
+                btree_ghost_t<btree_page_h*>* dp = (btree_ghost_t<btree_page_h*>*) r.data();
                 for (size_t i = 0; i < dp->cnt; ++i) {
                     w_keystr_t key (dp->get_key(i));
 
@@ -700,7 +698,7 @@ void chkpt_m::take()
     // Insert chkpt_begin log record.
     logrec_t* logrec = new logrec_t;
     lsn_t begin_lsn;
-    LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
+    begin_lsn = Logger::log_sys<chkpt_begin_log>(lsn_t::null);
     W_COERCE(ss_m::log->flush_all());
 
     // Collect checkpoint information from log
@@ -834,11 +832,11 @@ void chkpt_t::deserialize_binary(ifstream& ifs)
 }
 
 chkpt_thread_t::chkpt_thread_t(int interval)
-    : smthread_t(t_time_critical, "chkpt", WAIT_NOT_USED),
-    _wakeup(false), _retire(false), _interval(interval)
+    : _wakeup(false), _retire(false), _interval(interval)
 {
     DO_PTHREAD(pthread_mutex_init(&_awaken_lock, NULL));
     DO_PTHREAD(pthread_cond_init(&_awaken_cond, NULL));
+    smthread_t::set_lock_timeout(timeout_t::WAIT_NOT_USED);
 }
 
 chkpt_thread_t::~chkpt_thread_t()
@@ -849,12 +847,11 @@ void chkpt_thread_t::run()
 {
     while(!_retire)
     {
-        w_assert1(ss_m::chkpt);
         DO_PTHREAD(pthread_mutex_lock(&_awaken_lock));
 
         if (_interval >= 0) {
             struct timespec timeout;
-            sthread_t::timeout_to_timespec(_interval * 1000, timeout); // in ms
+            smthread_t::timeout_to_timespec(_interval * 1000, timeout); // in ms
             int code = pthread_cond_timedwait(&_awaken_cond, &_awaken_lock, &timeout);
             if (code == ETIMEDOUT) {
                 _wakeup = true;
@@ -870,8 +867,10 @@ void chkpt_thread_t::run()
         if (_retire) { break; }
         if (!_wakeup) { continue; }
 
-        ss_m::chkpt->take();
-        ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
+        if (ss_m::chkpt) {
+            ss_m::chkpt->take();
+            ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
+        }
     }
 }
 

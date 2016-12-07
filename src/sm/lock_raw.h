@@ -223,7 +223,7 @@ struct RawLockQueue {
      * @param[in] xct the transaction to own the new lock
      * @param[in] hash precise hash of the resource to lock.
      * @param[in] mode requested lock mode
-     * @param[in] timeout_in_ms maximum length to wait in milliseconds.
+     * @param[in] int maximum length to wait in milliseconds.
      * negative number means forever. If conditional, this parameter is ignored.
      * @param[in] conditional If true, this method doesn't wait at all \b and also it leaves
      * the inserted lock entry even if it wasn't granted immediately.
@@ -361,7 +361,7 @@ struct RawLockQueue {
      */
     lsn_t                       x_lock_tag;
 
-    // For on_demand and mixed UNDO counting purpose   
+    // For on_demand and mixed UNDO counting purpose
     static int                  loser_count;
 };
 std::ostream& operator<<(std::ostream& o, const RawLockQueue& v);

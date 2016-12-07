@@ -1,6 +1,7 @@
 #include <sstream>
 #include "sm.h"
 #include "stopwatch.h"
+#include "thread_wrapper.h"
 #include "base/command.h"
 #include <atomic>
 #include <random>
@@ -44,11 +45,10 @@ void setup_options()
     ;
 }
 
-class btree_thread_t : public smthread_t
+class btree_thread_t : public thread_wrapper_t
 {
 public:
     btree_thread_t() :
-        smthread_t(t_regular, "btree_stresser"),
         element_length(80)
     {}
 
@@ -71,7 +71,7 @@ public:
         long long begin_ts = watch.now();
         long counter = 0;
 
-        cout << "Worker thread " << me()->id << " beginning" << endl;
+        // cout << "Worker thread " << me()->id << " beginning" << endl;
 
         W_COERCE(sm->begin_xct());
         while (true) {
@@ -98,7 +98,7 @@ public:
         // CS TODO: allow batching of TA's
         W_COERCE(sm->commit_xct());
 
-        cout << "Worker thread " << me()->id << " finished" << endl;
+        // cout << "Worker thread " << me()->id << " finished" << endl;
     }
 
     void build_key(long id)
@@ -140,7 +140,7 @@ public:
     }
 };
 
-class main_thread_t : public smthread_t
+class main_thread_t : public thread_wrapper_t
 {
 public:
     main_thread_t()

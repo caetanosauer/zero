@@ -7,7 +7,6 @@
 #include "w_defines.h"
 #include "w_base.h"
 #include "basics.h"
-#include "w_hashing.h"
 #include "bf_hashtable.h"
 #include "latch.h"
 #include <string.h>
@@ -18,8 +17,8 @@ const uint32_t HASHBUCKET_INITIAL_EXPANSION = 16;
 const uint32_t HASHBUCKET_SUBSEQUENT_EXPANSION = 4;
 
 inline uint32_t bf_hash(PageID x) {
-    // CS TODO: use stdlib hashing
-    return w_hashing::uhash::hash32(BF_HASH_SEED, x);
+    static auto h = std::hash<PageID>{};
+    return h(x);
 }
 
 /** this one allows variable size in case of highly skewed hash. */

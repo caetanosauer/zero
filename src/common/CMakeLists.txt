@@ -1,33 +1,19 @@
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR})
 
 set(common_SRCS
-  ${CMAKE_CURRENT_SOURCE_DIR}/sthread.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/sthread_core_pthread.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.cpp # new stats infrastructure
   ${CMAKE_CURRENT_SOURCE_DIR}/worker_thread.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/srwlock.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/io.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/sdisk_unix.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/sdisk.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/w_debug.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/rand48.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/block_alloc.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/latches.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/block_alloc.cpp # unifiy all mem mgmt code (2 below too)
   ${CMAKE_CURRENT_SOURCE_DIR}/dynarray.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/mem_block.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/gethrtime.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_compat_strstream.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/stime.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_base.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_listm.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/tls.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_findprime.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/basics.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/bitmap.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/w_base.cpp # cleanup and remove if possible (lots of std numeric stuff)
+  ${CMAKE_CURRENT_SOURCE_DIR}/w_listm.cpp # remove all uses and throw away
+  ${CMAKE_CURRENT_SOURCE_DIR}/tls.cpp # cleanup (at least macros) and leave only memory manager stuff
+  ${CMAKE_CURRENT_SOURCE_DIR}/basics.cpp # cleanup unused parts; move used parts elsewhere
   ${CMAKE_CURRENT_SOURCE_DIR}/latch.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/kvl_t.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/lsn.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/tid_t.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/vec_mkchunk.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/lsn.cpp # unify with FL's new lsn_t
   ${CMAKE_CURRENT_SOURCE_DIR}/vec_t.cpp)
 
 add_library(common STATIC ${common_SRCS})

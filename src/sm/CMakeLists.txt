@@ -2,7 +2,7 @@
 set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.cpp
-    #${CMAKE_CURRENT_SOURCE_DIR}/allocator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/allocator.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backup_reader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.cpp
@@ -14,7 +14,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_defrag.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_grow.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_lock.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_merge.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_search.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_split.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_verify.cpp
@@ -25,8 +24,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/eventlog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/fixable_page_h.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/logarchiver.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/mem_mgmt.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_dump.cpp
@@ -35,17 +32,19 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_x.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_carray.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_core.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/log_consumer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_storage.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logarchiver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logarchive_writer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logarchive_index.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logarchive_scanner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/mem_mgmt.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logrec.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/logstub.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/page_evictioner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/page_cleaner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/page_cleaner_decoupled.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/partition.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/plog.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/plog_xct.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/restart.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/restore.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm.cpp
@@ -65,17 +64,6 @@ target_link_libraries(sm
     boost_filesystem
     boost_regex
     )
-
-# CS: target that uses plog_xct, i.e., atomic commit protocol
-add_library(sm_plog STATIC ${sm_STAT_SRCS})
-target_link_libraries(sm_plog fc sthread common numa)
-get_target_property (SM_PLOG_COMPILEDEF sm_plog COMPILE_DEFINITIONS)
-#set(SM_PLOG_COMPILEDEF "SIMULATE_NO_SWIZZLING;USE_ATOMIC_COMMIT")
-set(SM_PLOG_COMPILEDEF "USE_ATOMIC_COMMIT")
-set_target_properties (sm_plog PROPERTIES
-    COMPILE_DEFINITIONS "${SM_PLOG_COMPILEDEF}"
-    EXCLUDE_FROM_ALL  ON
-)
 
 # generate a library that performs swizzling but no pin_cnt increments/decrements
 add_library(sm_swizzling_nopincntincdec STATIC ${sm_STAT_SRCS})
@@ -138,85 +126,5 @@ endforeach()
 add_custom_target(BF_HTAB_STATS_GENFILES DEPENDS ${BF_HTAB_STATS_GENFILES_FILES})
 add_dependencies(sm BF_HTAB_STATS_GENFILES)
 
-# generate log header files with tools/logdef.pl
-set(LOGDEF_GENFILES_H logfunc_gen.h logtype_gen.h)
-set(LOGDEF_GENFILES_CPP undo_gen.cpp redo_gen.cpp logdef_gen.cpp logstr_gen.cpp logstub_gen.cpp logfudge_gen.cpp)
-set(LOGDEF_GENFILES_FILES ${LOGDEF_GENFILES_H} ${LOGDEF_GENFILES_CPP})
-foreach(_file ${LOGDEF_GENFILES_FILES})
-    add_custom_command(OUTPUT ${_file}
-        COMMAND perl ${CMAKE_SOURCE_DIR}/tools/logdef.pl ${CMAKE_CURRENT_SOURCE_DIR}/logdef.dat
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/logdef.dat
-    )
-    set (LOGDEF_GENFILES_B_H ${LOGDEF_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
-endforeach()
-add_custom_target(LOGDEF_GENFILES DEPENDS ${LOGDEF_GENFILES_FILES})
-add_dependencies(sm LOGDEF_GENFILES)
-
-
-SET (GENFILES_H ${SM_STATS_GENFILES_B_H} ${BF_HTAB_STATS_GENFILES_B_H} ${LOGDEF_GENFILES_B_H})
-
-
-########### install files ###############
-
-# install(FILES
-#   ${GENFILES_H}
-#   ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/backup.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/bf.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/bf_s.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/bf_transit_bucket.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/btcursor.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/btree.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/btree_logrec.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/btree_page.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/btree_page_h.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/chkpt.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/crash.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/device.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/fixable_page_h.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/lid.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_bucket.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_cache.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_compt.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_core.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/lock.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_lil.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_raw.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_s.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_x.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/log_carray.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/log_core.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/logrec.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/partition.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/pmap.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/prologue.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/restart.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/restart_s.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_base.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_external.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_0.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_0.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_2.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_3.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_4.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_options.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_s.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/smstats.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/smthread.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_vtable_enum.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/stnode_page.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/sysdefs.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/vol.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/xct_dependent.h
-#   ${CMAKE_CURRENT_SOURCE_DIR}/xct.h
-#   DESTINATION include)
+SET (GENFILES_H ${SM_STATS_GENFILES_B_H} ${BF_HTAB_STATS_GENFILES_B_H})
 

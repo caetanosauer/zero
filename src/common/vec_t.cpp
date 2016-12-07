@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -57,7 +57,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define VEC_T_C
 #include <cstdlib>
 #include <cstring>
-#include <w_stream.h>
+#include <w_debug.h>
 #include <w_base.h>
 #include <w_minmax.h>
 #include "basics.h"
@@ -84,7 +84,7 @@ vec_t&                vec_t::neg_inf = *(vec_t*) &cvec_t::neg_inf;
 cvec_t::cvec_t(const cvec_t& /*v*/)
 {
     cerr << "cvec_t: disabled member called" << endl;
-    cerr << "failed at \"" << __FILE__ << ":" << __LINE__ 
+    cerr << "failed at \"" << __FILE__ << ":" << __LINE__
          << "\"" << endl;
     abort();
 }
@@ -104,11 +104,11 @@ void cvec_t::split(size_t l1, cvec_t& v1, cvec_t& v2) const
         if (l1 > 0)  {
             min = (_base[i].len > l1) ? l1 : _base[i].len;
             v1.put(_base[i].ptr, min);
-            l1 -= min; 
+            l1 -= min;
         }
         if (l1 <= 0) break;
     }
-    
+
     for ( ; i < _cnt; i++)  {
         v2.put(_base[i].ptr + min, _base[i].len - min);
         min = 0;
@@ -128,7 +128,7 @@ cvec_t& cvec_t::put(const cvec_t& v, size_t start, size_t num_bytes)
     for (i = 0, total = 0; i < v._cnt && total <= start; i++) {
         total += v._base[i].len;
     }
-   
+
     // check for possible overflow
     if (_cnt+v._cnt > max_small) {
         _grow(_cnt+v._cnt);
@@ -142,12 +142,12 @@ cvec_t& cvec_t::put(const cvec_t& v, size_t start, size_t num_bytes)
     _base[_cnt].ptr = v._base[start_elem].ptr+start_byte;
     _base[_cnt].len = v._base[start_elem].len-start_byte;
     _cnt++;
-    w_assert3(_cnt <= _max_cnt()); 
+    w_assert3(_cnt <= _max_cnt());
     for (i = 1, total = _base[_cnt-1].len; total < num_bytes; i++) {
         _base[_cnt].ptr = v._base[start_elem+i].ptr;
         _base[_cnt].len = v._base[start_elem+i].len;
         total += _base[_cnt++].len;
-        w_assert3(_cnt <= _max_cnt()); 
+        w_assert3(_cnt <= _max_cnt());
     }
     _base[_cnt - 1].len -= total-num_bytes;
 
@@ -156,18 +156,18 @@ cvec_t& cvec_t::put(const cvec_t& v, size_t start, size_t num_bytes)
     return *this;
 }
 
-cvec_t& cvec_t::put(const void* p, size_t l)  
+cvec_t& cvec_t::put(const void* p, size_t l)
 {
     if (_cnt+1 > max_small) {
         _grow(_cnt+1);
     }
 
     // to make zvecs work:
-    _base[_cnt].ptr = (unsigned char*)p; 
+    _base[_cnt].ptr = (unsigned char*)p;
     _base[_cnt].len = l;
     if(l>0) {
         _cnt++;
-           w_assert3(_cnt <= _max_cnt()); 
+           w_assert3(_cnt <= _max_cnt());
         _size += l;
     }
     return *this;
@@ -179,7 +179,7 @@ bool cvec_t::check_size() const
     return true;
 }
 
-size_t cvec_t::recalc_size() const 
+size_t cvec_t::recalc_size() const
 {
     // w_assert1(! is_pos_inf() && ! is_neg_inf() );
     size_t l;
@@ -190,7 +190,7 @@ size_t cvec_t::recalc_size() const
 
 // Scatter:
 // write data from void *p into the area described by this vector.
-// Copy no more than "limit" bytes. 
+// Copy no more than "limit" bytes.
 // Does NOT update the vector so caller must keep track
 // of the limit to know what is good and what isn't.
 // It is a const function because it does not update *this
@@ -208,11 +208,11 @@ const vec_t& vec_t::copy_from(
         if ( offset < _base[i].len ) {
             size_t elemlen = ((_base[i].len - offset > limit)?
                                  limit : (_base[i].len - offset)) ;
-            memcpy((char*)_base[i].ptr + offset, s, elemlen); 
+            memcpy((char*)_base[i].ptr + offset, s, elemlen);
             w_assert3(limit >= elemlen);
             limit -= elemlen;
             s += elemlen;
-        } 
+        }
         if (_base[i].len > offset) {
             offset = 0;
         } else {
@@ -223,7 +223,7 @@ const vec_t& vec_t::copy_from(
 }
 
 // copies from vec to p;  returns # bytes copied
-size_t cvec_t::copy_to(void* p, size_t limit) const 
+size_t cvec_t::copy_to(void* p, size_t limit) const
 {
     w_assert1(! is_pos_inf() && ! is_neg_inf() );
     char* s = (char*) p;
@@ -258,7 +258,7 @@ size_t cvec_t::copy_to(std::basic_string<unsigned char> &buffer, size_t limit) c
 }
 
 // copies from s to this
-vec_t& vec_t::copy_from(const cvec_t& s) 
+vec_t& vec_t::copy_from(const cvec_t& s)
 {
     bool        zeroing=false;
     int         j = 0;
@@ -267,7 +267,7 @@ vec_t& vec_t::copy_from(const cvec_t& s)
 
     w_assert1(size() >= s.size());
     w_assert1(_base[0].ptr != zero_location);
-    
+
     for (int i = 0; i < s._cnt; i++)  {
         const unsigned char* pp = s._base[i].ptr;
         if(pp == zero_location) zeroing = true;
@@ -317,7 +317,7 @@ vec_t& vec_t::copy_from(const cvec_t& ss, size_t offset, size_t limit, size_t my
     for (j = 0; j < _cnt; j++)  {
         if (myoffset > _base[j].len)
             myoffset -= _base[j].len;
-        else  
+        else
             break;
     }
     char* p = ((char*)_base[j].ptr) + myoffset;
@@ -370,7 +370,7 @@ cvec_t& cvec_t::put(const cvec_t& v)
         _base[_cnt + i].len = v._base[i].len;
     }
     _cnt += v._cnt;
-    w_assert3(_cnt <= _max_cnt()); 
+    w_assert3(_cnt <= _max_cnt());
     _size += v._size;
 
     w_assert3(check_size());
@@ -405,7 +405,7 @@ int cvec_t::cmp(const cvec_t& v, size_t* common_size) const
     // it is ok to compare +infinity with itself or -infinity with itself
     if (&v == this) {        // same address
         if (common_size) *common_size = v.size();
-        return 0; 
+        return 0;
     }
 
     // Common size is not set when one of operands is infinity or null
@@ -413,13 +413,13 @@ int cvec_t::cmp(const cvec_t& v, size_t* common_size) const
     if (is_neg_inf() || v.is_pos_inf())  return -1;
     if (is_pos_inf() || v.is_neg_inf())  return 1;
 
-        
+
     // Return value : 0 if equal; common_size not set
     //              : <0 if this < v
     //                 or v is longer than this, but equal in
     //                 length of this
     //              : >0 if this > v
-    //                       or this is longer than v, but equal in 
+    //                       or this is longer than v, but equal in
     //                 length of v
 
     int result = 0;
@@ -432,7 +432,7 @@ int cvec_t::cmp(const cvec_t& v, size_t* common_size) const
     int i1 = 0;
     int i2 = 0;
     size_t j1 = 0, j2 = 0;
-    
+
     while (l1 && l2)  {
         w_assert3(i1 < _cnt);
         w_assert3(i2 < v._cnt);
@@ -442,7 +442,7 @@ int cvec_t::cmp(const cvec_t& v, size_t* common_size) const
         w_assert3(min > 0);
         result = umemcmp(&_base[i1].ptr[j1], &v._base[i2].ptr[j2], min);
         if (result) break;
-        
+
         if ((j1 += min) >= _base[i1].len)        { j1 = 0; ++i1; }
         if ((j2 += min) >= v._base[i2].len)        { j2 = 0; ++i2; }
 
@@ -473,7 +473,7 @@ int cvec_t::cmp(const cvec_t& v, size_t* common_size) const
     return result;
 }
 
-int cvec_t::checksum() const 
+int cvec_t::checksum() const
 {
     int sum = 0;
     w_assert1(! is_pos_inf() && ! is_neg_inf());
@@ -493,7 +493,7 @@ void cvec_t::calc_kvl(uint32_t& rh) const
         for (int i = 0; i < _cnt; i++)  {
             const unsigned char* s = _base[i].ptr;
             for (size_t j = 0; j < _base[i].len; j++)  {
-                if (h & 0xf8000000)  
+                if (h & 0xf8000000)
                 {
                     h = (h & ~0xf8000000) + (h >> 27);
                 }
@@ -507,10 +507,10 @@ void cvec_t::calc_kvl(uint32_t& rh) const
 void cvec_t::_grow(int total_cnt)
 {
     w_assert3(total_cnt > max_small);
-    w_assert3(_cnt <= _max_cnt()); 
+    w_assert3(_cnt <= _max_cnt());
 
     int prev_max = _max_cnt();
-  
+
     if (total_cnt > prev_max) {
         // overflow will occur
 
@@ -550,7 +550,7 @@ ostream& operator<<(ostream& o, const cvec_t& v)
         l = (i < v._cnt) ? v._base[i].len : 0;
 
         // p = (char *)v.ptr(i);
-        p = (i < v._cnt) ? (char *)v._base[i].ptr : (char *)NULL; 
+        p = (i < v._cnt) ? (char *)v._base[i].ptr : (char *)NULL;
 
         o << "{" << l << " " << "\"" ;
 
@@ -618,9 +618,9 @@ istream& operator>>(istream& is, cvec_t& v)
         is >> ws; // swallow whitespace
         c = is.peek();
         /*
-        cerr << __LINE__ << ":" 
+        cerr << __LINE__ << ":"
             << "state=" << state
-            << " peek=" << (char)is.peek() 
+            << " peek=" << (char)is.peek()
             << " pos=" << is.tellg()
             << " len=" << len
             << " err=" << err
@@ -657,19 +657,19 @@ istream& operator>>(istream& is, cvec_t& v)
                 break;
 
             case getting_pair:
-                is >> ws; 
+                is >> ws;
                 is >> c;
                 if( c == leftbracket ) {
                     is >> ws; // swallow whitespace
                     is >> len; // extract a len
-                    if(is.bad()) { 
+                    if(is.bad()) {
                         err ++;
                     } else state = got_len;
                 } else if( c== rightbracket ) {
                     state = done;
                 } else {
                     err ++;
-                } 
+                }
                 break;
 
             case got_len:
@@ -710,9 +710,9 @@ istream& operator>>(istream& is, cvec_t& v)
 
             }
             /*
-            cerr << __LINE__ << ":" 
+            cerr << __LINE__ << ":"
                 << "state=" << state
-                << " peek=" << (char)is.peek() 
+                << " peek=" << (char)is.peek()
                 << " pos=" << is.tellg()
                 << " len=" << len
                 << " err=" << err
@@ -771,6 +771,90 @@ bool w_keystr_t::copy_from_vec(const cvec_t &vect) {
     vect.copy_to(_data, vect.size());
     _strlen = vect.size();
     return true;
+}
+
+/////////////////////////////////////////////////////
+//
+// CS: THIS IS USED ONLY IN UNIT TESTS
+//
+// "result" is a vector with size() no larger than
+// maxsize, whose contents are taken from the part
+// of *this that's left after you skip the first
+// "offset" bytes of *this.
+// CALLER provides result, which is reset() right
+// away, and re-used each time this is called.
+//
+// The general idea is that this allows you to take
+// a vector of arbitrary configuration (in the context
+// of writes, say) and break it up into vectors of
+// "maxsize" sizes so that you can limit the sizes of
+// writes.
+/////////////////////////////////////////////////////
+void
+vec_t::mkchunk(
+    int                maxsize,
+    int                offset, // # skipped
+    vec_t            &result // provided by the caller
+) const
+{
+    int i;
+
+    w_assert1( _base[0].ptr != zero_location );
+
+    DBG(<<"offset " << offset << " in vector :");
+    result.reset();
+
+    // return a vector representing the next
+    // maxsize bytes starting at the given offset
+    // from the data represented by the input vector
+    int        first_chunk=0, first_chunk_offset=0, first_chunk_len=0;
+    {
+        // find first_chunk
+        int skipped=0, skipping;
+
+        for(i=0; i<this->count(); i++) {
+            skipping = this->len(i);
+            if(skipped + skipping > offset) {
+                // found
+                first_chunk = i;
+                first_chunk_offset = offset - skipped;
+                first_chunk_len = skipping - first_chunk_offset;
+                if(first_chunk_len > maxsize) {
+                    first_chunk_len = maxsize;
+                }
+
+        DBG(<<"put " << W_ADDR(this->ptr(i)) <<
+            "+" << first_chunk_offset << ", " << first_chunk_len);
+
+                result.put((char*)this->ptr(i)+first_chunk_offset,first_chunk_len);
+                break;
+            }
+            skipped += skipping;
+        }
+        if(first_chunk_len == 0) return;
+    }
+
+    if(first_chunk_len < maxsize) {
+        // find next chunks up to the last
+        int used, is_using ;
+
+        used = first_chunk_len;
+        for(i=first_chunk+1; i<this->count(); i++) {
+            is_using = this->len(i);
+            if(used + is_using <= maxsize) {
+                // use the whole thing
+                used += is_using;
+
+                DBG(<<"put " << W_ADDR(this->ptr(i)) << ", " << is_using);
+                result.put(this->ptr(i),is_using);
+            } else {
+                // gotta use part
+                result.put(this->ptr(i),maxsize-used);
+                used = maxsize;
+                break;
+            }
+        }
+    }
 }
 
 /**\endcond skip */

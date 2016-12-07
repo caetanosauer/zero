@@ -263,7 +263,7 @@ w_rc_t volume_empty(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
     verify_volume_result result;
     W_DO(ssm->verify_volume(19, result));
-    verification_context *context = result.get_context(stid);
+    verification_context *context = result.get_context(root_pid);
     EXPECT_TRUE (context != NULL);
     if (context != NULL) {
         EXPECT_TRUE (context->_pages_checked == 1); // only root page
@@ -310,7 +310,7 @@ w_rc_t volume_insert(ss_m* ssm, test_volume_t *test_volume) {
 
     verify_volume_result result;
     W_DO(ssm->verify_volume(19, result));
-    verification_context *context = result.get_context(stid);
+    verification_context *context = result.get_context(root_pid);
     EXPECT_TRUE (context != NULL);
     if (context != NULL) {
         cout << "checked " << context->_pages_checked << " pages" << endl;
@@ -339,11 +339,13 @@ w_rc_t volume_many(ss_m* ssm, test_volume_t *test_volume) {
 
     // create almost same two BTrees.
     StoreID stids[2];
+    PageID root_pids[2];
     for (int store = 0; store < 2; ++store) {
         StoreID stid;
         PageID root_pid;
         W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
         stids[store] = stid;
+        root_pids[store] = root_pid;
 
         W_DO(ssm->begin_xct());
         test_env->set_xct_query_lock();
@@ -377,7 +379,7 @@ w_rc_t volume_many(ss_m* ssm, test_volume_t *test_volume) {
         verify_volume_result result;
         W_DO(ssm->verify_volume(19, result));
         for (int store = 0; store < 2; ++store) {
-            verification_context *context = result.get_context(stids[store]);
+            verification_context *context = result.get_context(root_pids[store]);
             EXPECT_TRUE (context != NULL);
             if (context != NULL) {
                 cout << "store(" << store << "). checked " << context->_pages_checked << " pages" << endl;
@@ -423,7 +425,7 @@ w_rc_t volume_many(ss_m* ssm, test_volume_t *test_volume) {
         verify_volume_result result;
         W_DO(ssm->verify_volume(19, result));
         for (int store = 0; store < 2; ++store) {
-            verification_context *context = result.get_context(stids[store]);
+            verification_context *context = result.get_context(root_pids[store]);
             EXPECT_TRUE (context != NULL);
             if (context != NULL) {
                 cout << "store(" << store << "). checked " << context->_pages_checked << " pages" << endl;

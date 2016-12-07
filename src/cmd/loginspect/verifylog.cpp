@@ -29,7 +29,7 @@ VerifyHandler::VerifyHandler(bool merge)
 {
 }
 
-void VerifyHandler::newFile(const char* fname)
+void VerifyHandler::newFile(const char* /*fname*/)
 {
     // minLSN = LogArchiver::ArchiveDirectory::parseLSN(fname, false);
     // maxLSN = LogArchiver::ArchiveDirectory::parseLSN(fname, true);

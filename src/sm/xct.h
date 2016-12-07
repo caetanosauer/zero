@@ -83,38 +83,19 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <set>
 #include <AtomicCounter.hpp>
 #include "w_key.h"
+#include "lsn.h"
+#include "allocator.h"
 
 #include "latch.h"
 
-class xct_dependent_t;
 struct okvl_mode;
 struct RawXct;
-
-/**\cond skip */
-/**\internal Tells whether the log is on or off for this xct at this moment.
- * \details
- * This is used internally for turning on & off the log during
- * top-level actions.
- */
-class xct_log_t : public smlevel_0 {
-private:
-    //per-thread-per-xct info
-    bool         _xct_log_off;
-public:
-    NORET        xct_log_t(): _xct_log_off(false) {};
-    bool         xct_log_is_off() { return _xct_log_off; }
-    void         set_xct_log_off() { _xct_log_off = true; }
-    void         set_xct_log_on() { _xct_log_off = false; }
-};
-/**\endcond skip */
-
 class lockid_t; // forward
 class xct_i; // forward
 class restart_m; // forward
 class lock_m; // forward
 class lock_core_m; // forward
 class lock_request_t; // forward
-class xct_log_switch_t; // forward
 class xct_lock_info_t; // forward
 class smthread_t; // forward
 class lil_private_table;
@@ -203,7 +184,6 @@ class xct_t : public smlevel_0 {
     friend class lock_m;
     friend class lock_core_m;
     friend class lock_request_t;
-    friend class xct_log_switch_t;
 
 public:
     typedef xct_state_t           state_t;
@@ -221,30 +201,18 @@ public:
      */
     struct xct_core
     {
-        xct_core(tid_t const &t, state_t s, timeout_in_ms timeout);
+        xct_core(tid_t const &t, state_t s, int timeout);
         ~xct_core();
 
         //-- from xct.h ----------------------------------------------------
         tid_t                  _tid;
-        timeout_in_ms          _timeout; // default timeout value for lock reqs
+        int          _timeout; // default timeout value for lock reqs
         bool                   _warn_on;
         xct_lock_info_t*       _lock_info;
         lil_private_table*     _lil_lock_info;
 
         /** RAW-style lock manager's shadow transaction object. Garbage collected. */
         RawXct*                _raw_lock_xct;
-
-        // the 1thread_xct mutex is used to ensure that only one thread
-        // is using the xct structure on behalf of a transaction
-        // TBD whether this should be a spin- or block- lock:
-        queue_based_lock_t     _1thread_xct;
-
-        // Count of number of threads are doing update operations.
-        // Used by start_crit and stop_crit.
-        lintel::Atomic<int> _updating_operations;
-
-        // to be manipulated only by smthread funcs
-        lintel::Atomic<int> _threads_attached;
 
         state_t                   _state;
         bool                      _read_only;
@@ -260,9 +228,6 @@ public:
 
 protected:
     xct_core* _core;
-
-public:
-    static const std::string IMPL_NAME;
 
 protected:
     enum commit_t { t_normal = 0, t_lazy = 1, t_chain = 2, t_group = 4 };
@@ -290,24 +255,24 @@ public:
 public:
     NORET                       xct_t(
             sm_stats_info_t*    stats = NULL,
-            timeout_in_ms       timeout = WAIT_SPECIFIED_BY_THREAD,
+            int       timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD,
             bool                sys_xct = false,
             bool                single_log_sys_xct = false,
-            const tid_t&        tid = tid_t::null,
+            const tid_t&        tid = 0,
             const lsn_t&        last_lsn = lsn_t::null,
             const lsn_t&        undo_nxt = lsn_t::null,
             bool                loser_xct = false
             );
-    virtual                     ~xct_t();
+    ~xct_t();
 
 public:
 
     friend ostream&             operator<<(ostream&, const xct_t&);
 
     state_t                     state() const;
-    void                        set_timeout(timeout_in_ms t) ;
+    void                        set_timeout(int t) ;
 
-    timeout_in_ms               timeout_c() const;
+    int               timeout_c() const;
 
     /*
      * basic tx commands:
@@ -376,7 +341,6 @@ public:
     void                        release_anchor(bool compensate
                                    ADD_LOG_COMMENT_SIG
                                    );
-    int                         compensated_op_depth() const ;
 
     void                        compensate(const lsn_t&,
                                           bool undoable
@@ -395,47 +359,9 @@ public:
     void                         log_warn_resume();
     bool                         log_warn_is_on() const;
 
-protected:
-    void _update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn);
-
 public:
-    // used in sm.cpp
-    rc_t                        add_dependent(xct_dependent_t* dependent);
-    rc_t                        remove_dependent(xct_dependent_t* dependent);
-    bool                        find_dependent(xct_dependent_t* dependent);
-
-    //
-    //        logging functions -- used in logstub_gen.cpp only
-    //
-    bool                        is_log_on() const;
-
-    /**
-    * \brief Flush the logbuf and return it in "ret" for use.
-    * \details Caller must call give_logbuf(ret) to free it after use.
-    *  Leaves the xct's log mutex acquired.
-    *
-    *  This and give_logbuf() are used in the log_stub.i functions
-    *  and ONLY there.  THE ERROR RETURN (running out of log space)
-    *  IS PREDICATED ON THAT -- in that it's expected that in the case of
-    *  a normal  return (no error), give_logbuf will be called, but in
-    *  the error case (out of log space), it will not, and so we must
-    *  release the mutex in get_logbuf error cases.
-    * @param[out] ret the acquired log buffer
-    * @param[in] t bytes to reserve
-    */
-    virtual rc_t                        get_logbuf(logrec_t* &ret, int t);
-
-    /**
-     * \brief Returns the log buffer acquired by get_logbuf().
-     * \details
-     * This method receives 0 to 2 pages that were updated by the logged operation,
-     * making the pages dirty and updating the LSN.
-     * @param[in] l log buffer to return
-     * @param[in] p the main page the log updated
-     * @param[in] p2 the second page the log updated
-     */
-    virtual rc_t                        give_logbuf(logrec_t* l,
-        const fixable_page_h *p = NULL, const fixable_page_h *p2 = NULL);
+    //        logging functions
+    rc_t                        update_last_logrec(logrec_t* l, lsn_t lsn);
 
     //
     //        Used by I/O layer
@@ -451,27 +377,6 @@ protected:
     // doesn't know about the structures
     // and we have changed these to be a per-thread structures.
     static lockid_t*            new_lock_hierarchy();
-    static xct_log_t*           new_xct_log_t();
-    void                        steal(xct_log_t*&);
-    void                        stash(xct_log_t*&);
-
-    void                        attach_thread();
-    void                        detach_thread();
-
-protected:
-    // for xct_log_switch_t:
-    /// Set {thread,xct} pair's log-state to on/off (s) and return the old value.
-    switch_t                    set_log_state(switch_t s);
-    /// Restore {thread,xct} pair's log-state to on/off (s)
-    void                        restore_log_state(switch_t s);
-
-
-public:
-    int                          num_threads();
-    rc_t                         check_one_thread_attached() const;
-    int                          attach_update_thread();
-    void                         detach_update_thread();
-    int                          update_threads() const;
 
 public: // not quite public thing.. but convenient for experiments
     xct_lock_info_t*             lock_info() const;
@@ -522,7 +427,6 @@ private:
 
     sm_stats_info_t*             __stats; // allocated by user
     lockid_t*                    __saved_lockid_t;
-    xct_log_t*                   __saved_xct_log_t;
 
     // NB: must replicate because _xlist keys off it...
     // NB: can't be const because we might chain...
@@ -592,45 +496,14 @@ private:
     // Latch object mainly for checkpoint to access information in txn object
     latch_t                      _latch;
 
-public:
-    void                         acquire_1thread_xct_mutex() const; // serialize
-    void                         release_1thread_xct_mutex() const; // concurrency ok
-    bool                         is_1thread_log_mutex_mine() const {
-                                    return me()->is_update_thread();
-    }
-
-private:
-    void                         acquire_1thread_log_mutex() {
-        // This is a sanity check: we want to
-        // remove the 1thread log mutex altogether; given that,
-        // we assert that there is one and only one update thread
-        // and that thread is us.
-        w_assert0(me()->is_update_thread());
-    }
-    void                         release_1thread_log_mutex() {
-        // This is a sanity check: we want to
-        // remove the 1thread log mutex altogether; given that,
-        // we assert that there is one and only one update thread
-        // and that thread is us.
-        w_assert0(me()->is_update_thread());
-    }
-private:
-    bool                         is_1thread_xct_mutex_mine() const;
-    void                         assert_1thread_xct_mutex_free()const;
-
 protected:
-    virtual rc_t                _abort();
-    virtual rc_t                _commit(uint32_t flags,
+    rc_t                _abort();
+    rc_t                _commit(uint32_t flags,
                                                  lsn_t* plastlsn=NULL);
     // CS: decoupled from _commit to allow reuse in plog_xct_t
     rc_t _commit_read_only(uint32_t flags, lsn_t& inherited_read_watermark);
     rc_t _pre_commit(uint32_t flags);
     rc_t _pre_abort();
-
-protected:
-    // for xct_log_switch_t:
-    switch_t                    set_log_state(switch_t s, bool &nested);
-    void                        restore_log_state(switch_t s, bool nested);
 
 private:
     bool                        one_thread_attached() const;   // assertion
@@ -689,7 +562,7 @@ private:
     /////////////////////////////////////////////////////////////////
     // non-const because it acquires mutex:
     // removed, now that the lock mgrs use the const,INLINE-d form
-    // timeout_in_ms        timeout();
+    // int        timeout();
 
     static void                 xct_stats(
                                     u_long&             begins,
@@ -697,7 +570,6 @@ private:
                                     u_long&             aborts,
                                     bool                 reset);
 
-    w_rc_t                     _flush_logbuf();
     w_rc_t                     _sync_logbuf(bool block=true, bool signal=true);
     void                       _teardown(bool is_chaining);
 
@@ -734,14 +606,6 @@ public:
     };
 
 protected: // all data members protected
-    // the 1thread_xct mutex is used to ensure that only one thread
-    // is using the xct structure on behalf of a transaction
-    // It protects a number of things, including the xct_dependents list
-
-    // the 1thread_log mutex is used to ensure that only one thread
-    // is logging on behalf of this xct
-    mutable queue_based_lock_t   _1thread_log;
-
     lsn_t                        _first_lsn;
     lsn_t                        _last_lsn;
     lsn_t                        _undo_nxt;
@@ -759,24 +623,20 @@ protected: // all data members protected
 
     elr_mode_t                   _elr_mode;
 
-    // list of dependents: protected by _1thread_xct
-    // FRJ: this will become per-stream and not need the mutex any more
-    w_list_t<xct_dependent_t,queue_based_lock_t>    _dependent_list;
-
     // timestamp for calculating latency
     std::chrono::high_resolution_clock::time_point _begin_tstamp;
 
     /*
      *  log_m related
      */
-    logrec_t*                    _last_log;    // last log generated by xct
-    logrec_t*                    _log_buf;
-    /**
-     * As SSX log must be separated from outer transaction's logs, we maintain another buffer.
-     * This buffer is only used during one get/give_logbuf() call because it's SSX.
-     * Also, again because it's SSX, it can contain only one log.
-     */
-    logrec_t*                    _log_buf_for_piggybacked_ssx;
+    // logrec_t*                    _last_log;    // last log generated by xct
+    // logrec_t*                    _log_buf;
+    // /**
+    //  * As SSX log must be separated from outer transaction's logs, we maintain another buffer.
+    //  * This buffer is only used during one get/give_logbuf() call because it's SSX.
+    //  * Also, again because it's SSX, it can contain only one log.
+    //  */
+    // logrec_t*                    _log_buf_for_piggybacked_ssx;
 
     bool                         _rolling_back;// true if aborting OR
 
@@ -942,41 +802,6 @@ public:
 }
 #endif
 
-/**\cond skip */
-class xct_log_switch_t : public smlevel_0 {
-    /*
-     * NB: use sparingly!!!! EVERYTHING DONE UNDER
-     * CONTROL OF ONE OF THESE IS A CRITICAL SECTION
-     */
-    switch_t old_state;
-public:
-    /// Initialize old state
-    NORET xct_log_switch_t(switch_t s)  : old_state(OFF)
-    {
-        if(smlevel_0::log) {
-            INC_TSTAT(log_switches);
-            if (xct()) {
-                old_state = xct()->set_log_state(s);
-            }
-        }
-    }
-
-    NORET
-    ~xct_log_switch_t()  {
-        if(smlevel_0::log) {
-            if (xct()) {
-                xct()->restore_log_state(old_state);
-            }
-        }
-    }
-};
-
-inline
-bool xct_t::is_log_on() const {
-    return (me()->xct_log()->xct_log_is_off() == false);
-}
-/**\endcond skip */
-
 /* XXXX This is somewhat hacky becuase I am working on cleaning
    up the xct_i xct iterator to provide various levels of consistency.
    Until then, the "locking option" provides enough variance so
@@ -1086,7 +911,6 @@ xct_t::state() const
 class xct_auto_abort_t : public smlevel_0 {
 public:
     xct_auto_abort_t() : _xct(new xct_t()) {
-        (void)  _xct->attach_update_thread();
     }
     ~xct_auto_abort_t() {
         switch(_xct->state()) {
@@ -1102,7 +926,6 @@ public:
             cerr << "unexpected xct state: " << _xct->state() << endl;
             W_FATAL(eINTERNAL);
         }
-        (void)  _xct->detach_update_thread();
         delete _xct;
     }
     rc_t commit() {
@@ -1165,12 +988,12 @@ xct_t::set_undo_nxt(const lsn_t &l)
     _undo_nxt = l;
 }
 
-inline
-const logrec_t*
-xct_t::last_log() const
-{
-    return _last_log;
-}
+// inline
+// const logrec_t*
+// xct_t::last_log() const
+// {
+//     return _last_log;
+// }
 
 
 /**\endcond skip */
@@ -1181,7 +1004,7 @@ xct_t::last_log() const
 inline bool
 g_xct_does_need_lock()
 {
-    xct_t* x = g_xct();
+    xct_t* x = xct();
     if (x == NULL)  return false;
     if (x->is_sys_xct()) return false; // system transaction never needs locks
     return x->get_query_concurrency() == smlevel_0::t_cc_keyrange;
@@ -1190,7 +1013,7 @@ g_xct_does_need_lock()
 inline bool
 g_xct_does_ex_lock_for_select()
 {
-    xct_t* x = g_xct();
+    xct_t* x = xct();
     return x && x->get_query_exlock_for_select();
 }
 

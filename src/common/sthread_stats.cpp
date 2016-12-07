@@ -52,12 +52,14 @@ ostream &operator <<(ostream &o, const sthread_stats &s)
 {
     o << "STHREAD STATS:" << endl;
 
-    o << "rwlock_r_wait:" << endl 
+    o << "rwlock_r_wait:" << endl
         << "  count: " << s.rwlock_r_wait
         << endl;
-    o << "rwlock_w_wait:" << endl 
+    o << "rwlock_w_wait:" << endl
         << "  count: " << s.rwlock_w_wait
         << endl;
 
     return o;
 }
+
+thread_local sthread_stats sthread_stats::INSTANCE;

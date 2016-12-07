@@ -1,5 +1,4 @@
 #include "w_defines.h"
-#include "w_stream.h"
 #include <cstddef>
 #include "w.h"
 #include "gtest/gtest.h"
@@ -19,7 +18,7 @@ TEST(ListTest, List1) {
                         unsafe_nolock);
 
     elem1_t array[10];
-    
+
     int i;
     for (i = 0; i < 10; i++)  {
         array[i].i = i;
@@ -197,7 +196,7 @@ TEST(ListTest, List3) {
         for (i = 0; i < 10; i += 2)  {
             d.put_in_order(&array[9 - i]);        // insert 9, 7, 5, 3, 1
         }
-    
+
         for (i = 0; i < 10; i += 2)  {
             d.put_in_order(&array[i]);        // insert 0, 2, 4, 6, 8
         }

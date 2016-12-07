@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -130,11 +130,9 @@ w_base_t::assert_failed(
 
 typedef ios::fmtflags  fmtflags;
 
-#include <w_strstream.h>
-
 /* name is local to this file */
-static uint64_t    
-__strtou8(        
+static uint64_t
+__strtou8(
     const char *str,
     char **endptr,
     int     base,
@@ -148,7 +146,7 @@ __strtou8(
 #endif
 }
 
-int64_t    
+int64_t
 w_base_t::strtoi8(
     const char *str,
     char **endptr,
@@ -162,7 +160,7 @@ w_base_t::strtoi8(
     return i8;
 }
 
-uint64_t    
+uint64_t
 w_base_t::strtou8(
     const char *str,
     char **endptr,

@@ -6,7 +6,7 @@
 
 cmake_minimum_required(VERSION 2.6)
 
-PROJECT(fbtree) # Foster B-Trees
+PROJECT(zero)
 
 # generate clang compilation database
 set( CMAKE_EXPORT_COMPILE_COMMANDS 1 )

@@ -15,7 +15,6 @@
 #define SM_SOURCE
 #define LOGREC_C
 #include "sm_base.h"
-#include "logdef_gen.cpp"
 #include "btree_page_h.h"
 #include "btree_impl.h"
 #include "lock.h"
@@ -24,6 +23,9 @@
 #include "tls.h"
 #include "block_alloc.h"
 #include "restart.h"
+
+#include "logdef_gen.h"
+
 
 /**
  * Page buffers used while Single-Page-Recovery as scratch space.
@@ -55,8 +57,16 @@ struct btree_insert_t {
     bool        sys_txn;   // True if the insertion was from a page rebalance full logging operation
     char        data[logrec_t::max_data_sz - sizeof(PageID) - 2*sizeof(int16_t) - sizeof(bool)];
 
-    btree_insert_t(const btree_page_h& page, const w_keystr_t& key,
-                   const cvec_t& el, bool is_sys_txn);
+    btree_insert_t(PageID root, const w_keystr_t& key,
+                   const cvec_t& el, bool is_sys_txn)
+        : klen(key.get_length_as_keystr()), elen(el.size())
+    {
+        root_shpid = root;
+        w_assert1((size_t)(klen + elen) < sizeof(data));
+        key.serialize_as_keystr(data);
+        el.copy_to(data + klen);
+        sys_txn = is_sys_txn;
+    }
     int size()        { return sizeof(PageID) + 2*sizeof(int16_t) + klen + elen + sizeof(bool); }
 };
 
@@ -67,9 +77,9 @@ struct btree_update_t {
     uint16_t    _new_elen;
     char        _data[logrec_t::max_data_sz - sizeof(PageID) - 3*sizeof(int16_t)];
 
-    btree_update_t(const btree_page_h& page, const w_keystr_t& key,
+    btree_update_t(PageID root_pid, const w_keystr_t& key,
                    const char* old_el, int old_elen, const cvec_t& new_el) {
-        _root_shpid = page.btree_root();
+        _root_shpid = root_pid;
         _klen       = key.get_length_as_keystr();
         _old_elen   = old_elen;
         _new_elen   = new_el.size();
@@ -100,6 +110,7 @@ struct btree_overwrite_t {
     int size()        { return sizeof(PageID) + 3*sizeof(int16_t) + _klen + _elen * 2; }
 };
 
+template <class PagePtr>
 struct btree_ghost_t {
     PageID       root_shpid;
     uint16_t      sys_txn:1,      // 1 if the insertion was from a page rebalance full logging operation
@@ -113,8 +124,64 @@ struct btree_ghost_t {
     char          slot_data[logrec_t::max_data_sz - sizeof(PageID)
                         - sizeof(uint16_t) * 2 - sizeof(size_t)];
 
-    btree_ghost_t(const btree_page_h& p, const vector<slotid_t>& slots, const bool is_sys_txn);
-    w_keystr_t get_key (size_t i) const;
+    btree_ghost_t(const PagePtr p, const vector<slotid_t>& slots, const bool is_sys_txn)
+    {
+        root_shpid = p->root();
+        cnt = slots.size();
+        if (true == is_sys_txn)
+            sys_txn = 1;
+        else
+            sys_txn = 0;
+        uint16_t *offsets = reinterpret_cast<uint16_t*>(slot_data);
+        char *current = slot_data + sizeof (uint16_t) * slots.size();
+
+        // the first data is prefix
+        {
+            uint16_t prefix_len = p->get_prefix_length();
+            prefix_offset = (current - slot_data);
+            // *reinterpret_cast<uint16_t*>(current) = prefix_len; this causes Bus Error on solaris! so, instead:
+            ::memcpy(current, &prefix_len, sizeof(uint16_t));
+            if (prefix_len > 0) {
+                ::memcpy(current + sizeof(uint16_t), p->get_prefix_key(), prefix_len);
+            }
+            current += sizeof(uint16_t) + prefix_len;
+        }
+
+        for (size_t i = 0; i < slots.size(); ++i) {
+            size_t len;
+            w_assert3(p->is_leaf()); // ghost exists only in leaf
+            const char* key = p->_leaf_key_noprefix(slots[i], len);
+            offsets[i] = (current - slot_data);
+            // *reinterpret_cast<uint16_t*>(current) = len; this causes Bus Error on solaris! so, instead:
+            uint16_t len_u16 = (uint16_t) len;
+            ::memcpy(current, &len_u16, sizeof(uint16_t));
+            ::memcpy(current + sizeof(uint16_t), key, len);
+            current += sizeof(uint16_t) + len;
+        }
+        total_data_size = current - slot_data;
+        w_assert0(logrec_t::max_data_sz >= sizeof(PageID) + sizeof(uint16_t) * 2  + sizeof(size_t) + total_data_size);
+    }
+
+    w_keystr_t get_key (size_t i) const
+    {
+        w_keystr_t result;
+        uint16_t prefix_len;
+        // = *reinterpret_cast<const uint16_t*>(slot_data + prefix_offset); this causes Bus Error on solaris
+        ::memcpy(&prefix_len, slot_data + prefix_offset, sizeof(uint16_t));
+        w_assert1 (prefix_offset < sizeof(slot_data));
+        w_assert1 (prefix_len < sizeof(slot_data));
+        const char *prefix_key = slot_data + prefix_offset + sizeof(uint16_t);
+        uint16_t offset = reinterpret_cast<const uint16_t*>(slot_data)[i];
+        w_assert1 (offset < sizeof(slot_data));
+        uint16_t len;
+        // = *reinterpret_cast<const uint16_t*>(slot_data + offset); this causes Bus Error on solaris
+        ::memcpy(&len, slot_data + offset, sizeof(uint16_t));
+        w_assert1 (len < sizeof(slot_data));
+        const char *key = slot_data + offset + sizeof(uint16_t);
+        result.construct_from_keystr(prefix_key, prefix_len, key, len);
+        return result;
+    }
+
     int size() { return sizeof(PageID) + sizeof(uint16_t) * 2 + sizeof(size_t) + total_data_size; }
 };
 
@@ -123,8 +190,12 @@ struct btree_ghost_reserve_t {
     uint16_t      element_length;
     char          data[logrec_t::max_data_sz - sizeof(uint16_t) * 2];
 
-    btree_ghost_reserve_t(const w_keystr_t& key,
-                          int element_length);
+    btree_ghost_reserve_t(const w_keystr_t& key, int elem_length)
+        : klen (key.get_length_as_keystr()), element_length (elem_length)
+    {
+        key.serialize_as_keystr(data);
+    }
+
     int size() { return sizeof(uint16_t) * 2 + klen; }
 };
 
@@ -132,9 +203,27 @@ struct btree_ghost_reserve_t {
  * A \b multi-page \b SSX log record for \b btree_norec_alloc.
  * This log is totally \b self-contained, so no WOD assumed.
  */
+template <class PagePtr>
 struct btree_norec_alloc_t : public multi_page_log_t {
-    btree_norec_alloc_t(const btree_page_h &p,
-        PageID new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high);
+    btree_norec_alloc_t(const PagePtr p,
+        PageID new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high)
+        : multi_page_log_t(new_page_id)
+    {
+        w_assert1 (smthread_t::xct()->is_single_log_sys_xct());
+        w_assert1 (new_page_id != p->btree_root());
+        w_assert1 (p->latch_mode() != LATCH_NL);
+
+        _root_pid       = p->btree_root();
+        _foster_pid     = p->get_foster();
+        _foster_emlsn   = p->get_foster_emlsn();
+        _fence_len      = (uint16_t) fence.get_length_as_keystr();
+        _chain_high_len = (uint16_t) chain_fence_high.get_length_as_keystr();
+        _btree_level    = (int16_t) p->level();
+        w_assert1(size() < logrec_t::max_data_sz);
+
+        fence.serialize_as_keystr(_data);
+        chain_fence_high.serialize_as_keystr(_data + _fence_len);
+    }
     PageID     _root_pid, _foster_pid;       // +4+4 => 8
     lsn_t       _foster_emlsn;                // +8   => 16
     uint16_t    _fence_len, _chain_high_len;  // +2+2 => 20
@@ -145,79 +234,6 @@ struct btree_norec_alloc_t : public multi_page_log_t {
     int      size() const {
         return sizeof(multi_page_log_t) + 22 + _fence_len + _chain_high_len;
     }
-};
-
-// logs for Merge/Rebalance/De-Adopt
-// see jira ticket:39 "Node removal and rebalancing" (originally trac ticket:39) for detailed spec
-
-/**
- * A \b multi-page \b SSX log record for \b btree_foster_merge.
- * This log is \b NOT-self-contained, so it assumes WOD (foster-child is deleted later).
- */
-struct btree_foster_merge_t : multi_page_log_t {
-    PageID         _foster_pid0;        // +4 => 4, foster page ID (destination page)
-    lsn_t           _foster_pid0_emlsn;  // +8 => 12, foster emlsn (destination page)
-    uint16_t        _high_len;           // +2 => 14, high key length
-    uint16_t        _chain_high_len;     // +2 => 16, chain_high key length
-    int32_t         _move_count;         // +4 => 20, number of records to move
-    uint16_t        _record_data_len;    // +2 => 22, length of record data
-    uint16_t        _prefix_len;         // +2 => 24, source page prefix length
-
-    // _data contains high and chain_high, and then followed by moved user records
-    // in the case of merging, it means all the records from source (foster child) page
-    // The max_data_sz of log record is 3 pages so we should have suffice space in
-    // one log record
-    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 24];
-
-    btree_foster_merge_t(PageID page2_id, const w_keystr_t& high, const w_keystr_t& chain_high,
-        PageID foster_pid0, lsn_t foster_pid0_emlsn, const int16_t prefix_len,
-        const int32_t move_count, const smsize_t record_data_len, const cvec_t& record_data);
-    int size() const { return sizeof(multi_page_log_t) + 24 + _high_len + _chain_high_len + _record_data_len; }
-};
-
-/**
- * A \b multi-page \b SSX log record for \b btree_foster_rebalance.
- * This log is \b NOT-self-contained, so it assumes WOD (foster-parent is written later).
- */
-struct btree_foster_rebalance_t : multi_page_log_t {
-    int32_t         _move_count;         // +4 => 4, number of records to move
-    PageID         _new_pid0;           // +4 => 8, non-leaf node only
-    lsn_t           _new_pid0_emlsn;     // +8 => 16, non-leaf node only
-    uint16_t        _fence_len;          // +2 => 18, fence key length
-    uint16_t        _high_len;           // +2 => 20, high key length
-    uint16_t        _chain_high_len;     // +2 => 22, chain_high key length
-    uint16_t        _record_data_len;    // +2 => 24, length of record data
-    uint16_t        _prefix_len;         // +2 => 26, source page prefix length
-
-    // _data contains fence, high and chain_high, and then followed by moved user records
-    // in the case of spliting, it means some of the records from source (foster parent)
-    // page.  The max_data_size of log record is 3 pages so we should have sufficient
-    // space in one log record
-    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 26];
-
-    btree_foster_rebalance_t(PageID page2_id, const w_keystr_t& fence,
-            PageID new_pid0, lsn_t new_pid0_emlsn, const w_keystr_t& high, const w_keystr_t& chain_high,
-            const int16_t prefix_len, const int32_t move_count,
-            const smsize_t record_data_len, const cvec_t& record_data);
-    int size() const { return sizeof(multi_page_log_t) + 26 + _fence_len + _high_len + _chain_high_len + _record_data_len; }
-};
-
-/**
- * A \b multi-page \b SSX log record for \b btree_foster_rebalance_norec.
- * This log is totally \b self-contained, so no WOD assumed.
- */
-struct btree_foster_rebalance_norec_t : multi_page_log_t {
-    int16_t       _fence_len; // +2 -> 2
-    char          _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 2];
-
-    btree_foster_rebalance_norec_t(const btree_page_h& p,
-        const w_keystr_t& fence) : multi_page_log_t(p.get_foster()) {
-        w_assert1 (g_xct()->is_single_log_sys_xct());
-        w_assert1 (p.latch_mode() == LATCH_EX);
-        _fence_len = fence.get_length_as_keystr();
-        fence.serialize_as_keystr(_data);
-    }
-    int size() const { return sizeof(multi_page_log_t) + 2 + _fence_len; }
 };
 
 /**
@@ -231,25 +247,15 @@ struct btree_foster_adopt_t : multi_page_log_t {
     char    _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 14];
 
     btree_foster_adopt_t(PageID page2_id, PageID new_child_pid,
-                         lsn_t new_child_emlsn, const w_keystr_t& new_child_key);
+                         lsn_t new_child_emlsn, const w_keystr_t& new_child_key)
+    : multi_page_log_t(page2_id), _new_child_emlsn(new_child_emlsn),
+    _new_child_pid (new_child_pid)
+    {
+        _new_child_key_len = new_child_key.get_length_as_keystr();
+        new_child_key.serialize_as_keystr(_data);
+    }
+
     int size() const { return sizeof(multi_page_log_t) + 14 + _new_child_key_len; }
-};
-
-/**
- * A \b multi-page \b SSX log record for \b btree_foster_deadopt.
- * This log is totally \b self-contained, so no WOD assumed.
- */
-struct btree_foster_deadopt_t : multi_page_log_t {
-    PageID     _deadopted_pid;         // +4
-    int32_t     _foster_slot;           // +4
-    lsn_t       _deadopted_emlsn;       // +8
-    uint16_t    _low_len, _high_len;    // +2+2
-    char        _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) + 20];
-
-    btree_foster_deadopt_t(PageID page2_id, PageID deadopted_pid, lsn_t deadopted_emlsn,
-    int32_t foster_slot, const w_keystr_t &low, const w_keystr_t &high);
-    // CS TODO -- why 12 and not 20???
-    int size() const { return sizeof(multi_page_log_t) + 12 + _low_len + _high_len ; }
 };
 
 /**

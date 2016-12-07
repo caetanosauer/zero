@@ -8,13 +8,10 @@
 #include <sstream>
 
 
-#include "w_stream.h"
 #include "w.h"
-#include "w_strstream.h"
 #include "sm_vas.h"
 #include "sm_base.h"
 #include "generic_page.h"
-#include "smthread.h"
 #include "btree.h"
 #include "btcursor.h"
 #include "btree_impl.h"
@@ -23,7 +20,8 @@
 #include "sm_options.h"
 #include "xct.h"
 #include "sm_base.h"
-#include "srwlock.h"
+#include "latches.h"
+#include "thread_wrapper.h"
 
 #include "../nullbuf.h"
 #if W_DEBUG_LEVEL <= 3
@@ -56,6 +54,7 @@ sm_options btree_test_env::make_sm_options(
             const std::vector<std::pair<const char*, const char*> > &additional_string_params) {
     sm_options options;
     options.set_bool_option("sm_truncate", true);
+    options.set_bool_option("sm_restart_instant", false);
     options.set_int_option("sm_bufpoolsize", SM_PAGESIZE / 1024 * bufferpool_size_in_pages);
     options.set_int_option("sm_locktablesize", locktable_size);
     // Most testcases make little locks. to speed them up, use small number here.
@@ -117,14 +116,13 @@ sm_options btree_test_env::make_sm_options(
 }
 
 /** thread object to host Btree test functors. */
-class testdriver_thread_t : public smthread_t {
+class testdriver_thread_t : public thread_wrapper_t {
 public:
 
         testdriver_thread_t(test_functor *functor,
             btree_test_env *env,
             const sm_options &options)
-                : smthread_t(t_regular, "testdriver_thread_t"),
-                _env(env),
+                : _env(env),
                 _options(options),
                 _retval(0),
                 _functor(functor)
@@ -136,8 +134,7 @@ public:
             btree_test_env *env,
             const sm_options &options,
             int32_t restart_mode)
-                : smthread_t(t_regular, "testdriver_thread_t"),
-                _env(env),
+                : _env(env),
                 _options(options),
                 _retval(0),
                 _functor(functor)
@@ -154,7 +151,6 @@ public:
 
 private:
         void   do_construct();
-        w_rc_t do_init();
 
         btree_test_env *_env;
         sm_options      _options; // run-time options
@@ -186,23 +182,11 @@ testdriver_thread_t::do_construct()
                  SM_PAGESIZE / 1024 * default_bufferpool_size_in_pages);
     }
 
-    if(_options.get_bool_option("sm_testenv_init_vol", true)) {
-        _options.set_bool_option("sm_format", true);
-    }
+    _options.set_bool_option("sm_format", _functor->_need_init);
     _options.set_bool_option("sm_shutdown_clean", false);
     _options.set_int_option("sm_cleaner_interval_msec", 0);
-}
 
-rc_t
-testdriver_thread_t::do_init()
-{
-    if(_options.get_bool_option("sm_testenv_init_vol", true)) {
-        if (_functor->_need_init) {
-            _functor->_test_volume._device_name = device_name;
-        }
-    }
-
-    return RCOK;
+    _functor->_test_volume._device_name = device_name;
 }
 
 void testdriver_thread_t::run()
@@ -217,12 +201,6 @@ void testdriver_thread_t::run()
         rc_t rc = ss_m::config_info(config_info);
         if(rc.is_error()) {
             cerr << "Could not get storage manager configuration info: " << rc << endl;
-            _retval = 1;
-            return;
-        }
-        rc = do_init();
-        if(rc.is_error()) {
-            cerr << "Init failed: " << rc << endl;
             _retval = 1;
             return;
         }
@@ -597,6 +575,7 @@ int btree_test_env::runCrashTest (crash_test_base *context,
                     enable_swizzling,
                     additional_int_params, additional_bool_params, additional_string_params));
 }
+
 int btree_test_env::runCrashTest (crash_test_base *context, bool use_locks, const sm_options &options) {
     _use_locks = use_locks;
 
@@ -1499,7 +1478,7 @@ w_rc_t x_btree_scan(ss_m* ssm, const StoreID &stid, x_btree_scan_result &result,
  *    2) Call fork() on the thread object to run the thread
  *   [3) Call join() on the thread to wait for it to finish or use _finished to see if it has finished yet]
  */
-transact_thread_t::transact_thread_t(StoreID* stid_list, void (*runfunc)(StoreID*)) : smthread_t(t_regular, "transact_thread_t"), _stid_list(stid_list), _finished(false) {
+transact_thread_t::transact_thread_t(StoreID* stid_list, void (*runfunc)(StoreID*)) : _stid_list(stid_list), _finished(false) {
     _runnerfunc = runfunc;
     _thid = next_thid++;
 }

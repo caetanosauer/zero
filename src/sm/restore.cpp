@@ -8,6 +8,7 @@
 #include "vol.h"
 #include "sm_options.h"
 #include "backup_reader.h"
+#include "xct_logger.h"
 
 #include <algorithm>
 #include <random>
@@ -245,7 +246,7 @@ bool RestoreScheduler::next(PageID& next, unsigned thread_id, bool peek)
 /** Asynchronous writer for restored segments
  *  CS: Placed here on cpp file because it isn't used anywhere else.
  */
-class SegmentWriter : public smthread_t {
+class SegmentWriter : public thread_wrapper_t {
 public:
     SegmentWriter(RestoreMgr* restore);
     virtual ~SegmentWriter();
@@ -289,7 +290,7 @@ private:
 };
 
 RestoreMgr::RestoreMgr(const sm_options& options,
-        LogArchiver::ArchiveDirectory* archive, vol_t* volume, bool useBackup,
+        ArchiveDirectory* archive, vol_t* volume, bool useBackup,
         bool takeBackup)
     :
     archive(archive), volume(volume), numRestoredPages(0),
@@ -367,7 +368,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
          * BackupReader object is still used for the restore workspace, which
          * is basically the buffer on which pages are restored.
          */
-        backup = new DummyBackupReader(segmentSize);
+        backup = new DummyBackupReader(segmentSize, restoreThreadCount);
     }
 
     scheduler = new RestoreScheduler(options, this);
@@ -407,7 +408,7 @@ bool RestoreMgr::try_shutdown()
     backup->finish();
 
     sys_xct_section_t ssx(true);
-    log_restore_end();
+    Logger::log<restore_end_log>();
     ssx.end_sys_xct(RCOK);
 
     return true;
@@ -431,7 +432,7 @@ bool RestoreMgr::waitUntilRestored(const PageID& pid, size_t timeout_in_ms)
     struct timespec timeout;
     while (!isRestored(pid)) {
         if (timeout_in_ms > 0) {
-            sthread_t::timeout_to_timespec(timeout_in_ms, timeout);
+            smthread_t::timeout_to_timespec(timeout_in_ms, timeout);
             int code = pthread_cond_timedwait(&restoreCond, &restoreCondMutex,
                     &timeout);
             if (code == ETIMEDOUT) {
@@ -493,7 +494,7 @@ bool RestoreMgr::requestRestore(const PageID& pid, generic_page* addr)
 }
 
 void RestoreMgr::restoreSegment(char* workspace,
-        LogArchiver::ArchiveScanner::RunMerger* merger, PageID firstPage, unsigned thread_id)
+        ArchiveScanner::RunMerger* merger, PageID firstPage, unsigned thread_id)
 {
     INC_TSTAT(restore_invocations);
     stopwatch_t timer;
@@ -616,7 +617,7 @@ void RestoreMgr::restoreSegment(char* workspace,
 
 void RestoreMgr::restoreLoop(unsigned id)
 {
-    LogArchiver::ArchiveScanner logScan(archive);
+    ArchiveScanner logScan(archive);
 
     stopwatch_t timer;
 
@@ -649,7 +650,7 @@ void RestoreMgr::restoreLoop(unsigned id)
 
         lsn_t backupLSN = volume->get_backup_lsn();
 
-        LogArchiver::ArchiveScanner::RunMerger* merger =
+        ArchiveScanner::RunMerger* merger =
             logScan.open(startPID, endPID, backupLSN, 0);
 
         DBG3(<< "RunMerger opened with " << merger->heapSize() << " runs"
@@ -767,7 +768,7 @@ void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        log_restore_segment(segment);
+        Logger::log<restore_segment_log>(segment);
         smlevel_0::log->flush(smlevel_0::log->curr_lsn());
         ssx.end_sys_xct(RCOK);
     }
@@ -830,8 +831,7 @@ void RestoreMgr::shutdown()
 }
 
 SegmentWriter::SegmentWriter(RestoreMgr* restore)
-    : smthread_t(t_regular, "SegmentWriter"),
-    shutdownFlag(false), restore(restore)
+    : shutdownFlag(false), restore(restore)
 {
     w_assert1(restore);
     DO_PTHREAD(pthread_mutex_init(&requestMutex, NULL));
@@ -863,7 +863,7 @@ void SegmentWriter::run()
 
         while(requests.size() == 0) {
             struct timespec timeout;
-            sthread_t::timeout_to_timespec(100, timeout); // 100ms
+            smthread_t::timeout_to_timespec(100, timeout); // 100ms
             int code = pthread_cond_timedwait(&requestCond, &requestMutex,
                     &timeout);
             if (code == ETIMEDOUT) {

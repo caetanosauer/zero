@@ -98,7 +98,7 @@ LogAnalysisHandler::LogAnalysisHandler()
 
 void LogAnalysisHandler::invoke(logrec_t& r)
 {
-    if (!r.tid().is_null()) {
+    if (!r.tid() == 0) {
         if (r.is_page_update() || r.is_cpsn()) {
             activeTAs.insert(r.tid());
         }

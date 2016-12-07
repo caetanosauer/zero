@@ -3,12 +3,12 @@
 #include <cstdlib>
 #include <ctime>
 #include "w_base.h"
-#include "sthread.h"
 
+#include "latches.h"
 #include "latch.h"
+#include "thread_wrapper.h"
 
 #include <iostream>
-#include "w_strstream.h"
 
 #define NUM_THREADS 3
 #define LAST_THREAD (NUM_THREADS-1)
@@ -34,7 +34,7 @@ struct latch_thread_id_t {
     int _id;
 };
 
-class latch_thread_t : public sthread_t {
+class latch_thread_t : public thread_wrapper_t {
 public:
     latch_thread_t(int id);
     ~latch_thread_t() {
@@ -72,26 +72,22 @@ private:
 };
 
 latch_thread_t::latch_thread_t(int _id)
-: sthread_t(t_regular),
+:
   _self(_id),
   isWaiting(false),canProceed(false),hasExited(false)
 {
-    w_ostrstream_buf    s(40);        // XXX magic number
-    s << "latch_thread " << _id << ends;
-    this->rename(s.c_str());
-
     DO_PTHREAD(pthread_cond_init(&quiesced, NULL));
     DO_PTHREAD(pthread_cond_init(&proceed, NULL));
     DO_PTHREAD(pthread_mutex_init(&lock, NULL));
 }
 
 const char *latch_thread_t::kind_strings[] = {
-    "all_sh", 
-    "one_ex", 
+    "all_sh",
+    "one_ex",
      "all_ex"
 };
 
-void latch_thread_t::sync_other(latch_thread_t *r) 
+void latch_thread_t::sync_other(latch_thread_t *r)
 {
         CRITICAL_SECTION(cs, &r->lock);
     while(!(r->isWaiting || r->hasExited)) {
@@ -118,9 +114,9 @@ void
 check(  int line,
     const char *msg,
     latch_t &l,
-    latch_mode_t expected, 
-    latch_mode_t m1, 
-    latch_mode_t m2, 
+    latch_mode_t expected,
+    latch_mode_t m1,
+    latch_mode_t m2,
     int holders,
     int latch_cnt,
     bool is_latched,
@@ -133,7 +129,7 @@ check(  int line,
                 if (verbose) {
                     cout << endl;
                     cout << " {---------------------- "
-                    << latch_t::latch_mode_str[m1] << " / " << latch_t::latch_mode_str[m2] 
+                    << latch_t::latch_mode_str[m1] << " / " << latch_t::latch_mode_str[m2]
                     << "  ------------------" << line << endl; /*}*/
                     cout << "\t" << msg << endl;
                     dump(cout, l);
@@ -155,12 +151,12 @@ check(  int line,
                 CRITICAL_SECTION(cs, print_mutex);
         EXPECT_TRUE(false) << l << endl
             << "# failures: " << failure
-            << " last @" << last_failure 
+            << " last @" << last_failure
             << endl << endl;
     }
     }
     if (verbose) {
-        cout << " ---------------------------------------------------" 
+        cout << " ---------------------------------------------------"
         << line << "}" << endl;
     }
 }
@@ -213,11 +209,11 @@ void latch_thread_t::test1(int i, testKind t)
                 CRITICAL_SECTION(cs, print_mutex);
         cout << _self << " latch_acquire mode= "
             << mode  << "  @" << __LINE__ << endl;
-        print_all_latches();
+        // print_all_latches();
     }
     the_latch.latch_acquire(mode);
 
-    yield();
+    // yield();
 
     EXPECT_TRUE(the_latch.mode() == mode);
     EXPECT_TRUE(the_latch.num_holders() > 0);
@@ -232,7 +228,7 @@ void latch_thread_t::test1(int i, testKind t)
     }
 
     the_latch.latch_release();
-    yield();
+    // yield();
 
     EXPECT_TRUE(the_latch.is_mine() == false);
     EXPECT_TRUE(the_latch.held_by_me() == 0);
@@ -251,7 +247,7 @@ void latch_thread_t::test1(int i, testKind t)
 
 const char* const  latch_mode_str[3] = { "NL", "SH", "EX" };
 
-// 
+//
 // test2 is performed by only one thread, so there are
 // no races in checking the status of the latch (check(), assertions)
 //
@@ -261,9 +257,9 @@ void latch_thread_t::test2(int i, latch_mode_t mode1,
     // Make only one thread do anything here
     if(verbose)  {
                 CRITICAL_SECTION(cs, print_mutex);
-        cout << _self 
+        cout << _self
         << "--------- test2 STARTING " << " modes="
-        << latch_mode_str[int(mode1)] << ", " << latch_mode_str[int(mode2)] 
+        << latch_mode_str[int(mode1)] << ", " << latch_mode_str[int(mode2)]
         << endl;
         cout << _self << " await sync @" << __LINE__ << endl;
     }
@@ -285,11 +281,11 @@ void latch_thread_t::test2(int i, latch_mode_t mode1,
             is_upgrade=true;
         }
 
-        check(__LINE__, 
+        check(__LINE__,
             "before first acquire ",
-            the_latch, 
+            the_latch,
             LATCH_NL /* expected */,
-            mode1, mode2, 
+            mode1, mode2,
             0 /* holders */,
             0 /* latch_cnt */,
             false /* is_latched */,
@@ -306,11 +302,11 @@ void latch_thread_t::test2(int i, latch_mode_t mode1,
         // FIRST ACQUIRE
         the_latch.latch_acquire(mode1);
 
-        check(__LINE__, 
+        check(__LINE__,
             " after first acquire ",
-            the_latch, 
+            the_latch,
             (mode1==LATCH_NL)?LATCH_EX:mode1 /* expected */,
-            mode1, mode2, 
+            mode1, mode2,
             1 /* holders */,
             1 /* latch_cnt */,
             true /* is_latched */,
@@ -326,27 +322,27 @@ void latch_thread_t::test2(int i, latch_mode_t mode1,
 
         // 2nd ACQUIRE
         the_latch.latch_acquire(mode2);
-        if(is_upgrade) 
+        if(is_upgrade)
         {
-            check(__LINE__, 
+            check(__LINE__,
             " after 2nd acquire (upgrade) ",
-            the_latch, 
+            the_latch,
             mode2 /* expected */,
-            mode1, mode2, 
+            mode1, mode2,
             1 /* holders */,
             2 /* latch_cnt */,
             true /* is_latched */,
             (mode2==LATCH_EX) /* is_mine */,
             2 /* # held_by_me */
              );
-        } 
-        else 
+        }
+        else
         {
-            check(__LINE__, 
+            check(__LINE__,
             " after 2nd acquire (duplicate) ",
-            the_latch, 
+            the_latch,
             mode2 /* expected */,
-            mode1, mode2, 
+            mode1, mode2,
             1 /* holders */,
             2 /* latch_cnt */,
             true /* is_latched */,
@@ -364,11 +360,11 @@ void latch_thread_t::test2(int i, latch_mode_t mode1,
         the_latch.latch_release();
         if(is_upgrade)
         {
-            check(__LINE__, 
+            check(__LINE__,
             " after first release (from upgrade) ",
-            the_latch, 
+            the_latch,
             LATCH_EX /* expected */,
-            mode1, mode2, 
+            mode1, mode2,
             1 /* holders */,
             1 /* latch_cnt */,
             true /* is_latched */,
@@ -378,11 +374,11 @@ void latch_thread_t::test2(int i, latch_mode_t mode1,
         }
         else
         {
-            check(__LINE__, 
+            check(__LINE__,
             " after first release (from duplicate) ",
-            the_latch, 
+            the_latch,
             mode1 /* expected */,
-            mode1, mode2, 
+            mode1, mode2,
             1 /* holders */,
             1 /* latch_cnt */,
             true /* is_latched */,
@@ -397,11 +393,11 @@ void latch_thread_t::test2(int i, latch_mode_t mode1,
         }
         // 2nd RELEASE
         the_latch.latch_release();
-        check(__LINE__, 
+        check(__LINE__,
             " after 2nd release",
-            the_latch, 
+            the_latch,
             LATCH_NL /* expected */,
-            mode1, mode2, 
+            mode1, mode2,
             0 /* holders */,
             0 /* latch_cnt */,
             false /* is_latched */,
@@ -409,8 +405,8 @@ void latch_thread_t::test2(int i, latch_mode_t mode1,
             0 /* # held_by_me */
          );
 
-    } 
-    else 
+    }
+    else
     {
         if(verbose)  {
                         CRITICAL_SECTION(cs, print_mutex);
@@ -466,7 +462,7 @@ void latch_thread_t::test3(int i, testKind t)
     }
     the_latch.latch_acquire(mode);
 
-    yield();
+    // yield();
 
     EXPECT_TRUE(the_latch.mode() == mode);
     EXPECT_TRUE(the_latch.num_holders() > 0);
@@ -488,7 +484,7 @@ void latch_thread_t::test3(int i, testKind t)
     W_COERCE(the_latch.upgrade_if_not_block(would_block));
     if(verbose)  {
                 CRITICAL_SECTION(cs, print_mutex);
-        cout << _self << " upgrade_if_not_block would "   
+        cout << _self << " upgrade_if_not_block would "
         << (const char *)(would_block?"":" NOT ")
         << " have blocked "
         << __LINE__ << endl;
@@ -502,7 +498,7 @@ void latch_thread_t::test3(int i, testKind t)
         EXPECT_TRUE(the_latch.is_latched() == true);
         EXPECT_TRUE(the_latch.is_mine() == (mode == LATCH_EX));
         EXPECT_TRUE(the_latch.held_by_me() == 1);
-    } else if(is_real_upgrade) 
+    } else if(is_real_upgrade)
     {
         // upgrade worked
         EXPECT_TRUE(the_latch.mode() == LATCH_EX);
@@ -520,7 +516,7 @@ void latch_thread_t::test3(int i, testKind t)
         EXPECT_TRUE(the_latch.num_holders() == 1);
         EXPECT_TRUE(the_latch.latch_cnt() == 1);
         EXPECT_TRUE(the_latch.is_latched() == true);
-        EXPECT_TRUE(the_latch.is_mine() == true); 
+        EXPECT_TRUE(the_latch.is_mine() == true);
         EXPECT_TRUE(the_latch.held_by_me() == 1);
     }
 
@@ -540,7 +536,7 @@ void latch_thread_t::test3(int i, testKind t)
 
         // first release
         the_latch.latch_release();
-        yield();
+        // yield();
 
         EXPECT_TRUE(the_latch.is_mine() == false);
         EXPECT_TRUE(the_latch.held_by_me() == 0);
@@ -550,7 +546,7 @@ void latch_thread_t::test3(int i, testKind t)
         // would have blocked - hold it only once
         // first release
         the_latch.latch_release();
-        yield();
+        // yield();
 
         EXPECT_TRUE(the_latch.is_mine() == false);
         EXPECT_TRUE(the_latch.held_by_me() == 0);
@@ -561,7 +557,7 @@ void latch_thread_t::test3(int i, testKind t)
         // Did not upgrade but if mode is SH, it
         // first release
         the_latch.latch_release();
-        yield();
+        // yield();
 
         EXPECT_TRUE(the_latch.is_mine() == false);
         EXPECT_TRUE(the_latch.held_by_me() == 0);
@@ -581,7 +577,7 @@ void latch_thread_t::test3(int i, testKind t)
 
 void latch_thread_t::run()
 {
-    latch_t::on_thread_init(this);
+    // latch_t::on_thread_init(this);
     switch(testnum)
     {
     case 1:
@@ -597,10 +593,10 @@ void latch_thread_t::run()
         test2(1, LATCH_SH, LATCH_EX); // only thread 1 does this test
         test2(1, LATCH_EX, LATCH_EX); // only thread 1 does this test
         // Original SM w_assert9s that it never latches in
-        // LATCH_NL mode. 
+        // LATCH_NL mode.
         // Assertions are in bf, latch
         // The code in bf with predicates if mode != LATCH_NL
-        // should be removed. 
+        // should be removed.
         //
         // shore-mt version lets you latch in NL mode but hangs on
         // an upgrade attempt
@@ -624,9 +620,9 @@ void latch_thread_t::run()
                 CRITICAL_SECTION(cs, lock);
                 hasExited = true;
         }
-    latch_t::on_thread_destroy(this);
+    // latch_t::on_thread_destroy(this);
 }
-    
+
 void sync_all (latch_thread_t **t)
 {
         {
@@ -680,10 +676,6 @@ void terminate (latch_thread_t **latch_thread) {
 
     delete [] latch_thread;
     latch_thread = NULL;
-
-    // TODO: make this test the stats also
-    if(verbose)
-        sthread_t::dump_stats(cout);
 }
 
 TEST(LatchTest, Latch1) {

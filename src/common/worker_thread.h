@@ -1,7 +1,7 @@
 #ifndef WORKER_THREAD_H
 #define WORKER_THREAD_H
 
-#include "smthread.h"
+#include "thread_wrapper.h"
 
 #include <algorithm>
 #include <chrono>
@@ -9,7 +9,7 @@
 #include <condition_variable>
 #include <atomic>
 
-class worker_thread_t : public smthread_t {
+class worker_thread_t : public thread_wrapper_t {
 public:
     worker_thread_t(int inverval_ms = -1);
     virtual ~worker_thread_t();

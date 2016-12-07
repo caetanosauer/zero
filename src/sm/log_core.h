@@ -74,6 +74,7 @@ class PoorMansOldestLsnTracker;
 class plog_xct_t;
 class ticker_thread_t;
 class fetch_buffer_loader_t;
+class flush_daemon_thread_t;
 
 #include <partition.h>
 #include "mcs_lock.h"
@@ -106,11 +107,7 @@ public:
 
     lsn_t durable_lsn() const { return _durable_lsn; }
 
-    void start_flush_daemon()
-    {
-        _flush_daemon_running = true;
-        _flush_daemon->fork();
-    }
+    void start_flush_daemon();
 
     long                 segsize() const { return _segsize; }
 
@@ -278,7 +275,7 @@ protected:
 
     bool _waiting_for_flush; // protected by log_m::_wait_flush_lock
 
-    sthread_t*           _flush_daemon;
+    flush_daemon_thread_t*           _flush_daemon;
     /// @todo both of the below should become std::atomic_flag's at some time
     lintel::Atomic<bool> _shutting_down;
     lintel::Atomic<bool> _flush_daemon_running; // for asserts only

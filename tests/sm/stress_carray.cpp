@@ -4,6 +4,7 @@
 #include "sm_options.h"
 #include "log_core.h"
 #include "vol.h"
+#include "thread_wrapper.h"
 
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
@@ -45,11 +46,10 @@ void setup_options()
     ;
 }
 
-class log_inserter_thread : public smthread_t
+class log_inserter_thread : public thread_wrapper_t
 {
 public:
     log_inserter_thread() :
-        smthread_t(t_regular, "log_inserter"),
         counter(0), volume(0)
     {}
 
@@ -78,7 +78,7 @@ public:
                 size = max_logrec_size;
             }
 
-            logrec.fill(0, size);
+            logrec.set_size(size);
             W_COERCE(logcore->insert(logrec, &lsn));
             counter++;
             volume += size;
@@ -95,14 +95,9 @@ public:
     }
 };
 
-class main_thread_t : public smthread_t
+class main_thread_t : public thread_wrapper_t
 {
 public:
-    main_thread_t() :
-        smthread_t(t_regular, "log_inserter")
-    {}
-
-    virtual ~main_thread_t() {}
 
     virtual void run ()
     {
@@ -145,9 +140,6 @@ int main(int argc, char** argv)
     setup_options();
     po::store(po::parse_command_line(argc, argv, options_desc), options);
     po::notify(options);
-
-    sthread_t::initialize_sthreads_package();
-    smthread_t::init_fingerprint_map();
 
     cout << "Forking " << num_threads << " threads for "
         << duration << " seconds " << endl;

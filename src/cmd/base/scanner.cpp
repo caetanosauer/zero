@@ -1,13 +1,18 @@
 #include "scanner.h"
 
+#include <logarchive_scanner.h>
 #include <chkpt.h>
 #include <sm.h>
 #include <restart.h>
 #include <vol.h>
+#include <dirent.h>
 
-#define PARSE_LSN(a,b) \
-    LogArchiver::ArchiveDirectory::parseLSN(a, b);
+// CS TODO isolate this to log archive code
+const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
 
+using RunFileStats = ArchiveDirectory::RunFileStats;
+
+const auto& parseRunFileName = ArchiveDirectory::parseRunFileName;
 
 void BaseScanner::handle(logrec_t* lr)
 {
@@ -37,7 +42,7 @@ BlockScanner::BlockScanner(const po::variables_map& options,
     logdir = options["logdir"].as<string>().c_str();
     // blockSize = options["sm_archiver_block_size"].as<int>();
     // CS TODO no option for archiver block size
-    blockSize = LogArchiver::DFT_BLOCK_SIZE;
+    blockSize = DFT_BLOCK_SIZE;
     logScanner = new LogScanner(blockSize);
     currentBlock = new char[blockSize];
 
@@ -56,12 +61,12 @@ BlockScanner::BlockScanner(const po::variables_map& options,
 void BlockScanner::findFirstFile()
 {
     pnum = numeric_limits<int>::max();
-    os_dir_t dir = os_opendir(logdir);
+    DIR* dir = opendir(logdir);
     if (!dir) {
         cerr << "Error: could not open recovery log dir: " << logdir << endl;
         W_COERCE(RC(fcOS));
     }
-    os_dirent_t* entry = os_readdir(dir);
+    struct dirent* entry = readdir(dir);
     const char * PREFIX = "log.";
 
     while (entry != NULL) {
@@ -72,9 +77,9 @@ void BlockScanner::findFirstFile()
                 pnum = p;
             }
         }
-        entry = os_readdir(dir);
+        entry = readdir(dir);
     }
-    os_closedir(dir);
+    closedir(dir);
 }
 
 string BlockScanner::getNextFile()
@@ -190,8 +195,11 @@ LogArchiveScanner::LogArchiveScanner(const po::variables_map& options)
 
 bool runCompare (string a, string b)
 {
-    lsn_t lsn_a = PARSE_LSN(a.c_str(), false);
-    lsn_t lsn_b = PARSE_LSN(b.c_str(), false);
+    RunFileStats fstats;
+    parseRunFileName(a, fstats);
+    lsn_t lsn_a = fstats.beginLSN;
+    parseRunFileName(b, fstats);
+    lsn_t lsn_b = fstats.beginLSN;
     return lsn_a < lsn_b;
 }
 
@@ -200,13 +208,13 @@ void LogArchiveScanner::run()
     BaseScanner::initialize();
 
     // CS TODO no option for archiver block size
-    size_t blockSize = LogArchiver::DFT_BLOCK_SIZE;
+    // size_t blockSize = LogArchiver::DFT_BLOCK_SIZE;
     // size_t blockSize = options["sm_archiver_block_size"].as<int>();
     sm_options opt;
     opt.set_string_option("sm_archdir", archdir);
     // opt.set_int_option("sm_archiver_block_size", blockSize);
-    LogArchiver::ArchiveDirectory* directory = new
-        LogArchiver::ArchiveDirectory(opt);
+    ArchiveDirectory* directory = new
+        ArchiveDirectory(opt);
 
     std::vector<std::string> runFiles;
 
@@ -218,27 +226,31 @@ void LogArchiveScanner::run()
         runFiles.push_back(restrictFile);
     }
 
-    runBegin = PARSE_LSN(runFiles[0].c_str(), false);
-    runEnd = PARSE_LSN(runFiles[0].c_str(), true);
+    RunFileStats fstats;
+    parseRunFileName(runFiles[0], fstats);
+    runBegin = fstats.beginLSN;
+    runEnd = fstats.endLSN;
     std::vector<std::string>::const_iterator it;
     for(size_t i = 0; i < runFiles.size(); i++) {
         if (i > 0) {
             // begin of run i must be equal to end of run i-1
-            runBegin = PARSE_LSN(runFiles[i].c_str(), false);
+            parseRunFileName(runFiles[i], fstats);
+            runBegin = fstats.beginLSN;
             if (runBegin != runEnd) {
                 throw runtime_error("Hole found in run boundaries!");
             }
-            runEnd = PARSE_LSN(runFiles[i].c_str(), true);
+            runEnd = fstats.endLSN;
         }
 
         if (openFileCallback) {
             openFileCallback(runFiles[i].c_str());
         }
 
-        LogArchiver::ArchiveScanner::RunScanner* rs =
-            new LogArchiver::ArchiveScanner::RunScanner(
+        ArchiveScanner::RunScanner* rs =
+            new ArchiveScanner::RunScanner(
                     runBegin,
                     runEnd,
+                    1, // level (CS TODO)
                     0, // first PID
                     0, // last PID
                     0,            // file offset
@@ -281,7 +293,7 @@ void MergeScanner::run()
 
     // CS TODO blockSize not used anymore
     // CS TODO no option for archiver block size
-    size_t blockSize = LogArchiver::DFT_BLOCK_SIZE;
+    size_t blockSize = DFT_BLOCK_SIZE;
     // size_t blockSize = options["sm_archiver_block_size"].as<int>();
     size_t bucketSize = options["sm_archiver_bucket_size"].as<int>();
     sm_options opt;
@@ -289,11 +301,11 @@ void MergeScanner::run()
     // opt.set_int_option("sm_archiver_block_size", blockSize);
     opt.set_int_option("sm_archiver_bucket_size", bucketSize);
 
-    LogArchiver::ArchiveDirectory* directory = new
-        LogArchiver::ArchiveDirectory(opt);
-    LogArchiver::ArchiveScanner logScan(directory);
+    ArchiveDirectory* directory = new
+        ArchiveDirectory(opt);
+    ArchiveScanner logScan(directory);
 
-    LogArchiver::ArchiveScanner::RunMerger* merger =
+    ArchiveScanner::RunMerger* merger =
         logScan.open(0, 0, lsn_t::null, blockSize);
 
     logrec_t* lr;

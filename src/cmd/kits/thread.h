@@ -41,6 +41,7 @@
 #include "util/exception.h"
 #include "util/randgen.h"
 
+#include "thread_wrapper.h"
 
 #ifdef __spacrv9
 // Macro that tries to bind a thread to a specific CPU
@@ -153,7 +154,7 @@ struct thread_pool
  ***********************************************************************/
 
 #ifdef USE_SMTHREAD_AS_BASE
-class thread_t : public smthread_t
+class thread_t : public thread_wrapper_t
 #else
 class thread_t
 #endif
@@ -224,7 +225,7 @@ protected:
 
 
 #ifdef USE_SMTHREAD_AS_BASE
-void wait_for_sthread_clients(sthread_t** threads, int num_thread_ids);
+// void wait_for_sthread_clients(sthread_t** threads, int num_thread_ids);
 #endif
 
 

@@ -93,7 +93,7 @@
 
 #include "tls.h"
 #include "sm_vas.h"
-#include "srwlock.h"
+#include "latches.h"
 #include "btcursor.h"
 
 //#include "shore_msg.h"
@@ -104,10 +104,6 @@
 #include "index_desc.h"
 #include "row.h"
 #include "row_cache.h"
-
-#include "util/zero_proxy.h"
-
-
 
 /* ---------------------------------------------------------------
  *

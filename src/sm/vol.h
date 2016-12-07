@@ -25,7 +25,7 @@ public:
     vol_t(const sm_options&, chkpt_t* chkpt_info = nullptr);
     virtual ~vol_t();
 
-    void shutdown(bool abrupt);
+    void shutdown(bool abrupt = false);
 
     size_t      num_used_pages() const;
 
@@ -75,7 +75,7 @@ public:
 
     void list_backups(std::vector<string>& backups);
 
-    rc_t            sync();
+    void sync();
 
     /**
      *  Impose a fake IO penalty. Assume that each batch of pages requires
@@ -145,7 +145,7 @@ public:
 
 private:
     // variables read from volume header -- remain constant after mount
-    int              _unix_fd;
+    int              _fd;
 
     mutable srwlock_t _mutex;
 
@@ -190,9 +190,9 @@ private:
     /** Whether to generate page read log records */
     bool _log_page_reads;
 
-    /** Buffer to create restore_begin lorec manually
-     *  (128 bytes are enough since it contains only vid) */
-    char _logrec_buf[128];
+    /** Whether to fetch as many log records as possible from archive
+     * when performing single-page recovery */
+    bool _prioritize_archive;
 
     /** Wheter to open file with O_SYNC */
     bool _use_o_sync;
@@ -203,7 +203,7 @@ private:
     rc_t dismount(bool abrupt = false);
 
     /** Open backup file descriptor for retore or taking new backup */
-    rc_t open_backup();
+    void open_backup();
 
     lsn_t get_dirty_page_emlsn(PageID pid) const;
     void delete_dirty_page(PageID pid);

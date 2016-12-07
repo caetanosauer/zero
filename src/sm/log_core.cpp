@@ -61,14 +61,14 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define LOG_CORE_C
 
+#include "thread_wrapper.h"
 #include "sm_options.h"
 #include "sm_base.h"
-#include "logtype_gen.h"
 #include "logrec.h"
 #include "log_core.h"
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
-#include "eventlog.h"
+#include "xct_logger.h"
 
 #include "bf_tree.h"
 
@@ -76,16 +76,25 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <algorithm>
 #include <sstream>
-#include <w_strstream.h>
+
+// files and stuff
+#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
+#include <fcntl.h>
+#include <unistd.h>
 
-typedef smlevel_0::fileoff_t fileoff_t;
+// TODO proper exception mechanism
+#define CHECK_ERRNO(n) \
+    if (n == -1) { \
+        W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
+    }
 
-class ticker_thread_t : public smthread_t
+class ticker_thread_t : public thread_wrapper_t
 {
 public:
     ticker_thread_t(bool msec = false)
-        : smthread_t(t_regular, "ticker"), msec(msec)
+        : msec(msec)
     {
         interval_usec = 1000; // 1ms
         if (!msec) {
@@ -111,10 +120,10 @@ public:
             }
             ::usleep(interval_usec);
             if (msec) {
-                sysevent::log(logrec_t::t_tick_msec);
+                Logger::log_sys<tick_msec_log>();
             }
             else {
-                sysevent::log(logrec_t::t_tick_sec);
+                Logger::log_sys<tick_sec_log>();
             }
         }
     }
@@ -127,10 +136,10 @@ private:
     char lrbuf[80];
 };
 
-class fetch_buffer_loader_t : public smthread_t {
+class fetch_buffer_loader_t : public thread_wrapper_t
+{
 public:
-    fetch_buffer_loader_t(log_core* log)
-        : smthread_t(t_regular, "fetchbuf_loader"), log(log)
+    fetch_buffer_loader_t(log_core* log) : log(log)
     {
     }
 
@@ -146,14 +155,24 @@ private:
 };
 
 
-class flush_daemon_thread_t : public smthread_t {
+class flush_daemon_thread_t : public thread_wrapper_t
+{
     log_core* _log;
 public:
     flush_daemon_thread_t(log_core* log) :
-         smthread_t(t_regular, "flush_daemon", WAIT_NOT_USED), _log(log) { }
+         _log(log)
+    {
+        smthread_t::set_lock_timeout(timeout_t::WAIT_NOT_USED);
+    }
 
     virtual void run() { _log->flush_daemon(); }
 };
+
+void log_core::start_flush_daemon()
+{
+    _flush_daemon_running = true;
+    _flush_daemon->fork();
+}
 
 /*********************************************************************
  *
@@ -233,8 +252,8 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
     }
 
     auto p = _storage->get_partition(ll.hi());
+    if(!p) { return RC(eEOF); }
     W_DO(p->open_for_read());
-    w_assert1(p);
 
     logrec_t* rp;
     lsn_t prev_lsn = lsn_t::null;
@@ -252,9 +271,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
             ll = lsn_t(ll.hi() + 1, 0);
 
             p = _storage->get_partition(ll.hi());
-            if(!p) {
-                return RC(eEOF);
-            }
+            if(!p) { return RC(eEOF); }
 
             // re-read
             DBGOUT3(<< "fetch @ lsn: " << ll);
@@ -431,7 +448,7 @@ rc_t log_core::init()
 {
     // Consider this the beginning of log analysis so that
     // we can factor in the time it takes to load the fetch buffers
-    sysevent::log(logrec_t::t_loganalysis_begin);
+    Logger::log_sys<loganalysis_begin_log>();
     if (_ticker) {
         _ticker->fork();
     }
@@ -1225,7 +1242,7 @@ rc_t log_core::load_fetch_buffers()
         int fd;
 
         string fname = _storage->make_log_name(p);
-        int flags = smthread_t::OPEN_RDONLY;
+        int flags = O_RDONLY;
 
         // get file size and whether it exists
         struct stat file_info;
@@ -1237,7 +1254,8 @@ rc_t log_core::load_fetch_buffers()
         // Allocate buffer space and open file
         char* buf = new char[file_info.st_size];
         _fetch_buffers[p - _fetch_buf_first] = buf;
-        W_DO(me()->open(fname.c_str(), flags, 0744, fd));
+        fd = ::open(fname.c_str(), flags, 0744);
+        CHECK_ERRNO(fd);
 
         // Main loop that loads chunks of 32MB in reverse sequential order
         size_t chunk = 32 * 1024 * 1024;
@@ -1246,7 +1264,9 @@ rc_t log_core::load_fetch_buffers()
             size_t read_size = offset >= 0 ? chunk : chunk + offset;
             if (offset < 0) { offset = 0; }
 
-            W_DO(me()->pread(fd, buf + offset, read_size, offset));
+            auto bytesRead = ::pread(fd, buf + offset, read_size, offset);
+            CHECK_ERRNO(bytesRead);
+            if (bytesRead != read_size) { return RC(stSHORTIO); }
 
             // CS TODO: use std::atomic
             _fetch_buf_begin = lsn_t(p, offset);
@@ -1256,7 +1276,8 @@ rc_t log_core::load_fetch_buffers()
             offset -= read_size;
         }
 
-        W_DO(me()->close(fd));
+        auto ret = ::close(fd);
+        CHECK_ERRNO(ret);
 
         // size_t pos = 0;
         // while (pos < file_info.st_size) {

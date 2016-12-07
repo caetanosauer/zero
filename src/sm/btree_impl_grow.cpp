@@ -9,11 +9,8 @@
  * Separated from btree_impl.cpp.
  */
 
-#define SM_SOURCE
-#define BTREE_C
-
 #include "sm_base.h"
-#include "sm_base.h"
+#include "bf_tree.h"
 #include "btree_page_h.h"
 #include "btree_impl.h"
 #include "w_key.h"

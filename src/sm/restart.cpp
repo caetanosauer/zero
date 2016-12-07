@@ -55,24 +55,21 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 */
 
 #include "w_defines.h"
-
-#define SM_SOURCE
-#define RESTART_C
-
 #include "sm_base.h"
 #include "w_heap.h"
-#include "sm_base.h"
 #include "sm_base.h"
 #include "btree_impl.h"         // Lock re-acquisition
 #include "restart.h"
 #include "btree_logrec.h"       // Lock re-acquisition
 #include "sm.h"                 // Check system shutdown status
 #include "stopwatch.h"
-#include "eventlog.h"
+#include "xct_logger.h"
+#include "bf_tree.h"
 
 #include <fcntl.h>              // Performance reporting
 #include <unistd.h>
 #include <sstream>
+#include <iomanip>
 
 restart_m::restart_m(const sm_options&)
     : _restart_thread(NULL)
@@ -100,7 +97,7 @@ void restart_m::log_analysis()
                             it != chkpt.xct_tab.end(); ++it)
     {
         xct_t* xd = new xct_t(NULL,               // stats
-                        WAIT_SPECIFIED_BY_THREAD, // default timeout value
+                        timeout_t::WAIT_FOREVER, // default timeout value
                         false,                    // sys_xct
                         false,                    // single_log_sys_xct
                         it->first,
@@ -120,7 +117,7 @@ void restart_m::log_analysis()
             RawLock* entry;
             W_COERCE(smlevel_0::lm->lock(jt->lock_hash, jt->lock_mode,
                         false /*check*/, false /*wait*/, true /*acquire*/,
-                        xd, WAIT_SPECIFIED_BY_XCT, &entry));
+                        xd, timeout_t::WAIT_FOREVER, &entry));
         }
     }
 
@@ -129,7 +126,7 @@ void restart_m::log_analysis()
     // smlevel_0::vol->sx_add_backup(chkpt.bkp_path, true);
 
     ADD_TSTAT(restart_log_analysis_time, timer.time_us());
-    sysevent::log(logrec_t::t_loganalysis_end);
+    Logger::log_sys<loganalysis_end_log>();
 
     ERROUT(<< "Log analysis found "
             << chkpt.buf_tab.size() << " dirty pages and "
@@ -224,7 +221,7 @@ restart_m::redo_log_pass()
             if (r.pid() == 0 && r.type() != logrec_t::t_alloc_page &&
                     r.type() != logrec_t::t_dealloc_page)
             {
-                if (!r.is_single_sys_xct() && r.tid() != tid_t::null)
+                if (!r.is_single_sys_xct() && r.tid() != 0)
                 {
                     // Regular transaction with a valid txn id
                     xct_t *xd = xct_t::look_up(r.tid());
@@ -233,7 +230,7 @@ restart_m::redo_log_pass()
                         if (xd->state() == xct_t::xct_active)
                         {
                             DBGOUT3(<<"redo - no page, xct is " << r.tid());
-                            r.redo(0);
+                            r.redo();
 
                             // No page involved, no need to update dirty_count
                             redone = true;
@@ -257,7 +254,7 @@ restart_m::redo_log_pass()
                                 r.type() == logrec_t::t_chkpt_backup_tab ||
                                 r.type() == logrec_t::t_add_backup);
 
-                        r.redo(0);
+                        r.redo();
                     }
                     else
                     {
@@ -270,7 +267,7 @@ restart_m::redo_log_pass()
                             DBGOUT3(<<"redo - no page, ssx");
                             sys_xct_section_t sxs (true); // single log!
                             w_assert1(!sxs.check_error_on_start().is_error());
-                            r.redo(0);
+                            r.redo();
                             redone = true;
                             rc_t sxs_rc = sxs.end_sys_xct (RCOK);
                             w_assert1(!sxs_rc.is_error());
@@ -323,7 +320,7 @@ restart_m::redo_log_pass()
     }
 
     ADD_TSTAT(restart_redo_time, timer.time_us());
-    sysevent::log(logrec_t::t_redo_done);
+    Logger::log_sys<redo_done_log>();
 }
 
 /*********************************************************************
@@ -392,7 +389,7 @@ void restart_m::redo_page_pass()
 
     ADD_TSTAT(restart_redo_time, timer.time_us());
     ERROUT(<< "Finished concurrent REDO of " << chkpt.buf_tab.size() << " pages");
-    sysevent::log(logrec_t::t_redo_done);
+    Logger::log_sys<redo_done_log>();
 }
 
 void restart_m::undo_pass()
@@ -403,10 +400,6 @@ void restart_m::undo_pass()
         DBGOUT3(<<"No loser transaction to undo");
         return;
     }
-
-    w_ostrstream s;
-    s << "restart concurrent undo_txn_pass";
-    (void) log_comment(s.c_str());
 
     // Loop through the transaction table and look for loser txn
     // Do not lock the transaction table when looping through entries
@@ -436,7 +429,7 @@ void restart_m::undo_pass()
         // on_demand UNDO
         try
         {
-            w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
+            w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, timeout_t::WAIT_FOREVER);
             if (latch_rc.is_error())
             {
                     // If mixed mode, it is possible and valid if failed to acquire
@@ -520,7 +513,7 @@ void restart_m::undo_pass()
                     //     use_concurrent_commit_restart(): no lock acquisition
                     //     use_concurrent_lock_restart(): locks acquired during Log Analysis phase
 
-                    me()->attach_xct(curr);
+                    smthread_t::attach_xct(curr);
                     W_COERCE( curr->abort() );
 
                     // Then destroy the loser transaction
@@ -551,7 +544,7 @@ void restart_m::undo_pass()
     // generated by compensation operations
 
     W_COERCE( smlevel_0::log->flush_all() );
-    sysevent::log(logrec_t::t_undo_done);
+    Logger::log_sys<undo_done_log>();
 }
 
 //*********************************************************************
@@ -568,3 +561,209 @@ void restart_thread_t::run()
     smlevel_0::log->discard_fetch_buffers();
 };
 
+/************************************************************************
+ * SINGLE_PAGE RECOVERY
+ */
+
+void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn)
+{
+    lsn_t scan_start = smlevel_0::log->durable_lsn();
+    log_i           scan(*smlevel_0::log, scan_start);
+    logrec_t        buf;
+    lsn_t           lsn;
+    // Scan all log entries until EMLSN
+    while (scan.xct_next(lsn, buf) && buf.lsn_ck() <= max_lsn) {
+        if (buf.type() == logrec_t::t_chkpt_begin) {
+            o << "  CHECKPT: " << buf << std::endl;
+            continue;
+        }
+
+        PageID log_pid = buf.pid();
+        PageID log_pid2 = log_pid;
+        if (buf.is_multi_page()) {
+            log_pid2 = buf.data_ssx_multi()->_page2_pid;
+        }
+
+        // Is this page interesting to us?
+        if (pid != 0 && pid != log_pid && pid != log_pid2) {
+            continue;
+        }
+
+        o << "  LOG: " << buf << ", P_PREV=" << buf.page_prev_lsn();
+        if (buf.is_multi_page()) {
+            o << ", P2_PREV=" << buf.data_ssx_multi()->_page2_prv << std::endl;
+        }
+        o << std::endl;
+    }
+}
+
+void grow_buffer(char*& buffer, size_t& buffer_capacity, size_t pos, logrec_t** lr)
+{
+    DBGOUT1(<< "Doubling SPR buffer capacity");
+    buffer_capacity *= 2;
+    char* tmp = new char[buffer_capacity];
+    memcpy(tmp, buffer, buffer_capacity/2);
+    delete[] buffer;
+    buffer = tmp;
+    if (lr) {
+        *lr = (logrec_t*) (buffer + pos);
+        w_assert1((*lr)->length() <= buffer_capacity - pos);
+    }
+}
+
+SprIterator::SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
+        bool prioritizeArchive)
+    :
+    buffer_capacity{1 << 18 /* 256KB */},
+    last_lsn{lsn_t::null},
+    replayed_count{0}
+{
+    w_assert0(!lastLSN.is_null());
+    // make sure log is durable until the lsn we're trying to fetch
+    smlevel_0::log->flush(lastLSN);
+
+    // Allocate initial buffer -- expand later if needed
+    // CS: regular allocation is fine since SPR isn't such a critical operation
+    buffer = new char[buffer_capacity];
+    size_t pos = 0;
+
+    lsn_t archivedLSN = lsn_t::null;
+    if (smlevel_0::logArchiver) {
+        archivedLSN = smlevel_0::logArchiver->getDirectory()->getLastLSN();
+    }
+
+    lsn_t nxt = lastLSN;
+    bool left_early = false;
+    while (firstLSN < nxt && nxt != lsn_t::null) {
+        // If nxt has been archived already, fetch it from the archive
+        if (nxt < archivedLSN && prioritizeArchive) {
+            left_early = true;
+            break;
+        }
+
+        // STEP 1: Fecth log record and copy it into buffer
+        lsn_t lsn = nxt;
+        logrec_t* lr = (logrec_t*) (buffer + pos);
+        rc_t rc = smlevel_0::log->fetch(lsn, buffer + pos, NULL, true);
+
+        if ((rc.is_error()) && (eEOF == rc.err_num())) {
+            // EOF -- scan finished
+            left_early = true;
+            break;
+        }
+        else { W_COERCE(rc); }
+        w_assert0(lsn == nxt);
+
+        if (sizeof(logrec_t) > buffer_capacity - pos) {
+            grow_buffer(buffer, buffer_capacity, pos, &lr);
+        }
+
+        lr_offsets.push_front(pos);
+        pos += lr->length();
+
+        // STEP 2: Obtain LSN of previous log record on the same page (nxt)
+
+        // follow next pointer. This log might touch multi-pages. So, check both cases.
+        if (pid == lr->pid())
+        {
+            // Target pid matches the first page ID in the log recoredd
+            nxt = lr->page_prev_lsn();
+        }
+        else {
+            w_assert0(lr->is_multi_page());
+            // Multi-page log record, this is a page rebalance log record (split or merge)
+            // while the 2nd page is the source page
+            // In this case, the page we are trying to recover was the source page during
+            // a page rebalance operation, follow the proper log chain
+            w_assert0(lr->data_ssx_multi()->_page2_pid == pid);
+            nxt = lr->data_ssx_multi()->_page2_prv;
+        }
+
+        // In the cases below, the scan can stop since the page is initialized
+        // with this log record
+        if (lr->has_page_img(pid)) { break; }
+    }
+
+    if (left_early && ss_m::logArchiver) {
+        // Reached EOF when scanning log backwards looking for current_lsn.
+        // This means that the log record we're looking for is not in the recovery
+        // log anymore and has probably been archived already.
+        // Note that we should only get here if write elision is active, because
+        // otherwise the log recycler in log_storage should now allow deletion
+        // of old log files as long as they might be needed for restart recovery.
+
+        // What we have to do now is fetch the log records between current_lsn and
+        // nxt (both exclusive intervals) from the log archive and add them into
+        // the buffer as well.
+        archive_scan.reset(new ArchiveScanner{ss_m::logArchiver->getDirectory()});
+        merger.reset(archive_scan->open(pid, pid+1, firstLSN, 0));
+    }
+
+    lr_iter = lr_offsets.begin();
+}
+
+bool SprIterator::next(logrec_t*& lr)
+{
+    if (merger) {
+        bool ret = merger->next(lr);
+        if (ret) {
+            last_lsn = lr->lsn();
+            replayed_count++;
+            return true;
+        }
+
+        // archive scan is over -- delete it
+        merger.reset();
+    }
+
+    if (buffer) {
+        lsn_t curr_lsn = lsn_t::null;
+        while (curr_lsn <= last_lsn && lr_iter != lr_offsets.end()) {
+            lr = reinterpret_cast<logrec_t*>(buffer + *lr_iter);
+            lr_iter++;
+            curr_lsn = lr->lsn();
+        }
+        if (curr_lsn > last_lsn) {
+            replayed_count++;
+            last_lsn = curr_lsn;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+SprIterator::~SprIterator()
+{
+    if (buffer) { delete[] buffer; }
+}
+
+void SprIterator::apply(fixable_page_h &p)
+{
+    lsn_t prev_lsn = lsn_t::null;
+    PageID pid = p.pid();
+    logrec_t* lr;
+
+    while (next(lr)) {
+        w_assert1(lr->valid_header(lsn_t::null));
+        w_assert1(replayed_count == 1 || lr->is_multi_page() ||
+               (prev_lsn == lr->page_prev_lsn() && p.pid() == lr->pid()));
+
+        if (lr->is_redo() && p.lsn() < lr->lsn()) {
+            DBGOUT1(<< "SPR page(" << p.pid()
+                    << ") LSN=" << p.lsn() << ", log=" << *lr);
+
+            w_assert1(pid == lr->pid() || pid == lr->pid2());
+            w_assert1(lr->has_page_img(pid) || pid != lr->pid()
+                    || (lr->page_prev_lsn() == lsn_t::null
+                    || lr->page_prev_lsn() == p.lsn()));
+
+            w_assert1(pid != lr->pid2() || (lr->page2_prev_lsn() == lsn_t::null ||
+                        lr->page2_prev_lsn() == p.lsn()));
+
+            lr->redo(&p);
+        }
+
+        prev_lsn = lr->lsn();
+    }
+}

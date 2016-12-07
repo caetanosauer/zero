@@ -2,6 +2,7 @@
 #define BASETHREAD_H
 
 
+#include "thread_wrapper.h"
 #include "sm_base.h"
 #include "vol.h"
 #include "logarchiver.h"
@@ -12,7 +13,7 @@
 
 using namespace std;
 
-class basethread_t : public smthread_t {
+class basethread_t : public thread_wrapper_t {
 public:
     basethread_t();
 

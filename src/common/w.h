@@ -38,7 +38,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <w_rc.h>
 #include <w_minmax.h>
 #include <w_list.h>
-#include <w_hash.h>
 #include <sys/time.h>
 
 /*<std-footer incl-file-exclusion='W_H'>  -- do not edit anything below this line -- */

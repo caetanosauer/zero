@@ -62,11 +62,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#ifndef STHREAD_H
-#include <sthread.h>
-#endif
-
+#include "smthread.h"
+#include "latches.h"
 #include <list>
+#include <thread>
 
 /**
  * \enum latch_mode_t
@@ -110,7 +109,7 @@ public:
     latch_mode_t _mode;
     int          _count;
 private:
-    sthread_t*   _threadid; // REMOVE ME (for debuging)
+    std::thread::id   _threadid; // REMOVE ME (for debuging)
 
     // disabled
     latch_holder_t &operator=(latch_holder_t const &other);
@@ -120,9 +119,9 @@ public:
     latch_holder_t* _next;
 
     latch_holder_t()
-    : _latch(NULL), _mode(LATCH_NL), _count(0), _threadid(NULL)
+    : _latch(NULL), _mode(LATCH_NL), _count(0)
     {
-        _threadid = sthread_t::me();
+        _threadid = std::this_thread::get_id();
     }
 
     bool operator==(latch_holder_t const &other) const {
@@ -148,16 +147,6 @@ public:
 class latch_t /*: public sthread_named_base_t*/ {
 
 public:
-    /**\cond skip */
-    /// Used for debugging support:
-    /// Link together all the thread-local storage for latch holders in a list,
-    /// so that we can print this info later.
-    static void             on_thread_init(sthread_t *);
-    /// Used for debugging support:
-    /// Remove thread's latch info from the list.
-    static void             on_thread_destroy(sthread_t *);
-    /**\endcond skip */
-
     /// Create a latch
     latch_t();
     ~latch_t();
@@ -174,8 +163,7 @@ public:
     /// Acquire the latch in given mode. \sa  timeout_t.
     w_rc_t                  latch_acquire(
                                 latch_mode_t             m,
-                                sthread_t::timeout_in_ms timeout =
-                                      sthread_base_t::WAIT_FOREVER);
+                                int timeout = timeout_t::WAIT_FOREVER);
     /**\brief Upgrade from SH to EX if it can be done w/o blocking.
      * \details Returns bool indicating if it would have blocked, in which
      * case the upgrade did not occur. If it didn't have to block, the
@@ -228,7 +216,7 @@ public:
 private:
     // found, iterator
     w_rc_t                _acquire(latch_mode_t m,
-                                 sthread_t::timeout_in_ms,
+                                 int timeout_in_ms,
                                  latch_holder_t* me);
 	// return #times this thread holds the latch after this release
     int                   _release(latch_holder_t* me);

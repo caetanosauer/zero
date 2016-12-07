@@ -11,7 +11,7 @@
 #include "alloc_cache.h"
 #include "stnode_page.h"
 #include "vol.h"
-#include "eventlog.h"
+#include "xct_logger.h"
 #include "sm.h"
 #include "stopwatch.h"
 #include "xct.h"
@@ -169,7 +169,7 @@ void bf_tree_cleaner::log_and_flush(size_t wpos)
     flush_workspace(0, wpos);
 
     PageID pid = _workspace[0].pid;
-    sysevent::log_page_write(pid, _clean_lsn, wpos);
+    Logger::log_sys<page_write_log>(pid, _clean_lsn, wpos);
 
     _clean_lsn = smlevel_0::log->curr_lsn();
 }
@@ -180,7 +180,7 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
 
     // CS TODO: policy option: wait for latch or just attempt conditionally
-    rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, WAIT_IMMEDIATE);
+    rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, timeout_t::WAIT_IMMEDIATE);
     if (latch_rc.is_error()) {
         // Could not latch page in SH mode -- just skip it
         return false;

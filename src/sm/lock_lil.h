@@ -20,8 +20,7 @@
 
 #include <cstring> // for memset
 #include "w_rc.h"
-#include "srwlock.h"
-#include "sthread.h"
+#include "latches.h"
 #include "stnode_page.h" // only for stnode_page::max
 #include "vol.h"
 

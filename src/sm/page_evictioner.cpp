@@ -1,8 +1,8 @@
 #include "page_evictioner.h"
 
 #include "bf_tree.h"
-#include "bf_hashtable.cpp"
-#include "generic_page.h"
+#include "log_core.h"
+#include "btree_page_h.h"
 
 page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_options& options)
     :
@@ -73,7 +73,7 @@ void page_evictioner_base::do_work()
     }
 }
 
-void page_evictioner_base::ref(bf_idx idx) {}
+void page_evictioner_base::ref(bf_idx) {}
 
 bf_idx page_evictioner_base::pick_victim()
 {
@@ -97,7 +97,7 @@ bf_idx page_evictioner_base::pick_victim()
         if (idx == _current_frame - 1) {
             // We iterate over all pages and no victim was found.
             // Wake up cleaner and wait here.
-            _bufferpool->get_cleaner()->wakeup(true);
+            _bufferpool->wakeup_cleaner(true);
         }
 
         // CS TODO -- why do we latch CB manually instead of simply fixing
@@ -106,14 +106,14 @@ bf_idx page_evictioner_base::pick_victim()
         bf_tree_cb_t& cb = _bufferpool->get_cb(idx);
 
         // Step 1: latch page in EX mode and check if eligible for eviction
-        rc_t latch_rc;         
-        latch_rc = cb.latch().latch_acquire(LATCH_EX, sthread_t::WAIT_IMMEDIATE);
+        rc_t latch_rc;
+        latch_rc = cb.latch().latch_acquire(LATCH_EX, timeout_t::WAIT_IMMEDIATE);
         if (latch_rc.is_error()) {
             idx++;
             DBG3(<< "Eviction failed on latch for " << idx);
             continue;
         }
-        w_assert1(cb.latch().is_mine())
+        w_assert1(cb.latch().is_mine());
 
         // now we hold an EX latch -- check if leaf and not dirty
         btree_page_h p;
@@ -166,7 +166,7 @@ bool page_evictioner_base::unswizzle_and_update_emlsn(bf_idx idx)
     }
 
     bf_tree_cb_t& parent_cb = _bufferpool->get_cb(parent_idx);
-    rc_t r = parent_cb.latch().latch_acquire(LATCH_EX, sthread_t::WAIT_IMMEDIATE);
+    rc_t r = parent_cb.latch().latch_acquire(LATCH_EX, timeout_t::WAIT_IMMEDIATE);
     if (r.is_error()) {
         /* Just give up. If we try to latch it unconditionally, we may deadlock,
          * because other threads are also waiting on the eviction mutex. */
@@ -266,7 +266,7 @@ bf_idx page_evictioner_gclock::pick_victim()
         // Now we do the real work.
         bf_tree_cb_t& cb = _bufferpool->get_cb(idx);
 
-        rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_IMMEDIATE);
+        rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, timeout_t::WAIT_IMMEDIATE);
         if (latch_rc.is_error())
         {
             idx++;

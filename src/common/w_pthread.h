@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -57,31 +57,31 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define W_PTHREAD_H
 
 #include <pthread.h>
-#include <w_strstream.h>
 #include <string.h>
+#include <sstream>
 
 #define DO_PTHREAD_BARRIER(x) \
 {   int res = x; \
     if(res && res != PTHREAD_BARRIER_SERIAL_THREAD) { \
-       w_ostrstream S; \
+       std::stringstream S; \
        S << "Unexpected result from " << #x << " " << res << " "; \
        char buf[100]; \
        (void) strerror_r(res, &buf[0], sizeof(buf)); \
        S << buf << ends; \
-       W_FATAL_MSG(fcINTERNAL, << S.c_str()); \
+       W_FATAL_MSG(fcINTERNAL, << S.str()); \
     }  \
 }
 #define DO_PTHREAD(x) \
 {   int res = x; \
     if(res) { \
-       w_ostrstream S; \
+       std::stringstream S; \
        S << "Unexpected result from " << #x << " " << res << " "; \
        char buf[100]; \
        void * xxrs; \
        xxrs = (void *) strerror_r(res, &buf[0], sizeof(buf));     \
        (void) xxrs; \
        S << buf << ends; \
-       W_FATAL_MSG(fcINTERNAL, << S.c_str()); \
+       W_FATAL_MSG(fcINTERNAL, << S.str()); \
     }  \
 }
 #define DO_PTHREAD_TIMED(x) \

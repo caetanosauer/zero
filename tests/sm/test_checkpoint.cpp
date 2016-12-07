@@ -4,7 +4,8 @@
 #include "vol.h"
 #include "chkpt.h"
 #include "btree_logrec.h"
-#include "eventlog.h"
+// CS TODO make XctLogger return lsn and use it here
+#include "xct_logger.h"
 
 #include <vector>
 
@@ -25,6 +26,15 @@ void init()
     elem.put(someString, 12);
 }
 
+// stnode page is always dirty when system is initialized, so we clean it
+// here so that it doesn't mess up with the assertions
+void cleanMetadataPages()
+{
+    lsn_t dur_lsn = ss_m::log->curr_lsn();
+    W_COERCE(smlevel_0::vol->get_stnode_cache()->write_page(dur_lsn));
+    ss_m::log->flush_all();
+}
+
 void flushLog()
 {
     W_COERCE(smlevel_0::log->flush_all(true));
@@ -36,8 +46,11 @@ lsn_t makeUpdate(unsigned tid, PageID pid, string kstr)
     page.pid = pid;
     page.store = 1;
     key.construct_regularkey(kstr.c_str(), kstr.size());
-    new (&logrec) btree_insert_log(page_h, key, elem, false);
-    logrec.set_tid(tid_t(tid, 0));
+    logrec.init_header(btree_insert_log::TYPE);
+    logrec.init_xct_info();
+    logrec.init_page_info(&page_h);
+    reinterpret_cast<btree_insert_log*>(&logrec)->construct(&page_h, key, elem, false);
+    logrec.set_tid(tid);
     logrec.set_undo_nxt(undoNextMap[tid]);
     W_COERCE(smlevel_0::log->insert(logrec, &lsn));
     undoNextMap[tid] = lsn;
@@ -50,8 +63,9 @@ lsn_t logDummy()
 {
     lsn_t lsn;
     string empty("");
-    logrec_t* lr = new (&logrec) comment_log(empty.c_str());
-    W_COERCE(smlevel_0::log->insert(*lr, &lsn));
+    logrec.init_header(comment_log::TYPE);
+    reinterpret_cast<comment_log*>(&logrec)->construct(empty.c_str());
+    W_COERCE(smlevel_0::log->insert(logrec, &lsn));
     flushLog();
 
     return lsn;
@@ -60,8 +74,10 @@ lsn_t logDummy()
 lsn_t commitXct(unsigned tid)
 {
     lsn_t lsn;
-    new (&logrec) xct_end_log();
-    logrec.set_tid(tid_t(tid, 0));
+    logrec.init_header(xct_end_log::TYPE);
+    logrec.init_xct_info();
+    reinterpret_cast<xct_end_log*>(&logrec)->construct();
+    logrec.set_tid(tid);
     logrec.set_undo_nxt(undoNextMap[tid]);
     W_COERCE(smlevel_0::log->insert(logrec, &lsn));
     undoNextMap[tid] = lsn_t::null;
@@ -73,8 +89,10 @@ lsn_t commitXct(unsigned tid)
 lsn_t abortXct(unsigned tid)
 {
     lsn_t lsn;
-    new (&logrec) xct_abort_log();
-    logrec.set_tid(tid_t(tid, 0));
+    logrec.init_header(xct_abort_log::TYPE);
+    logrec.init_xct_info();
+    reinterpret_cast<xct_abort_log*>(&logrec)->construct();
+    logrec.set_tid(tid);
     logrec.set_undo_nxt(undoNextMap[tid]);
     W_COERCE(smlevel_0::log->insert(logrec, &lsn));
     undoNextMap[tid] = lsn_t::null;
@@ -86,8 +104,10 @@ lsn_t abortXct(unsigned tid)
 lsn_t generateCLR(unsigned tid, lsn_t lsn)
 {
     lsn_t ret;
-    new (&logrec) compensate_log(lsn);
-    logrec.set_tid(tid_t(tid, 0));
+    logrec.init_header(compensate_log::TYPE);
+    logrec.init_xct_info();
+    reinterpret_cast<compensate_log*>(&logrec)->construct(lsn);
+    logrec.set_tid(tid);
     W_COERCE(smlevel_0::log->insert(logrec, &ret));
     flushLog();
 
@@ -96,13 +116,14 @@ lsn_t generateCLR(unsigned tid, lsn_t lsn)
 
 rc_t emptyChkpt(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     chkpt_t chkpt;
     chkpt.scan_log();
 
     EXPECT_EQ(0, chkpt.buf_tab.size());
     EXPECT_EQ(0, chkpt.xct_tab.size());
     EXPECT_TRUE(chkpt.bkp_path.empty());
-    EXPECT_TRUE(chkpt.get_highest_tid().is_null());
+    EXPECT_TRUE(chkpt.get_highest_tid() == 0);
     EXPECT_TRUE(chkpt.get_min_rec_lsn().is_null());
     EXPECT_TRUE(chkpt.get_min_xct_lsn().is_null());
 
@@ -111,6 +132,7 @@ rc_t emptyChkpt(ss_m*, test_volume_t*)
 
 rc_t oneUpdateDirtyUncommitted(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn = makeUpdate(1, 1, "key1");
 
     chkpt_t chkpt;
@@ -119,7 +141,7 @@ rc_t oneUpdateDirtyUncommitted(ss_m*, test_volume_t*)
     EXPECT_EQ(1, chkpt.buf_tab.size());
     EXPECT_EQ(1, chkpt.xct_tab.size());
     EXPECT_TRUE(chkpt.bkp_path.empty());
-    EXPECT_EQ(tid_t(1,0), chkpt.get_highest_tid());
+    EXPECT_EQ(1, chkpt.get_highest_tid());
     EXPECT_EQ(lsn, chkpt.get_min_rec_lsn());
     EXPECT_EQ(lsn, chkpt.get_min_xct_lsn());
 
@@ -128,6 +150,7 @@ rc_t oneUpdateDirtyUncommitted(ss_m*, test_volume_t*)
 
 rc_t twoUpdatesDirtyUncommitted(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 1, "key2");
 
@@ -137,17 +160,18 @@ rc_t twoUpdatesDirtyUncommitted(ss_m*, test_volume_t*)
     EXPECT_EQ(1, chkpt.buf_tab.size());
     EXPECT_EQ(1, chkpt.xct_tab.size());
     EXPECT_TRUE(chkpt.bkp_path.empty());
-    EXPECT_EQ(tid_t(1,0), chkpt.get_highest_tid());
+    EXPECT_EQ(1, chkpt.get_highest_tid());
     EXPECT_EQ(lsn1, chkpt.get_min_rec_lsn());
     EXPECT_EQ(lsn1, chkpt.get_min_xct_lsn());
     EXPECT_EQ(lsn2, chkpt.buf_tab[1].page_lsn);
-    EXPECT_EQ(lsn2, chkpt.xct_tab[tid_t(1,0)].last_lsn);
+    EXPECT_EQ(lsn2, chkpt.xct_tab[1].last_lsn);
 
     return RCOK;
 }
 
 rc_t twoUpdatesDirtyCommitted(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 1, "key2");
     commitXct(1);
@@ -158,7 +182,7 @@ rc_t twoUpdatesDirtyCommitted(ss_m*, test_volume_t*)
     EXPECT_EQ(1, chkpt.buf_tab.size());
     EXPECT_EQ(0, chkpt.xct_tab.size());
     EXPECT_TRUE(chkpt.bkp_path.empty());
-    EXPECT_EQ(tid_t(1,0), chkpt.get_highest_tid());
+    EXPECT_EQ(1, chkpt.get_highest_tid());
     EXPECT_EQ(lsn1, chkpt.get_min_rec_lsn());
     EXPECT_EQ(lsn_t::null, chkpt.get_min_xct_lsn());
     EXPECT_EQ(lsn2, chkpt.buf_tab[1].page_lsn);
@@ -168,6 +192,7 @@ rc_t twoUpdatesDirtyCommitted(ss_m*, test_volume_t*)
 
 rc_t twoUpdatesDirtyAborting(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 1, "key2");
     lsn_t clr1 = generateCLR(1, lsn2);
@@ -179,11 +204,11 @@ rc_t twoUpdatesDirtyAborting(ss_m*, test_volume_t*)
     EXPECT_EQ(1, chkpt.buf_tab.size());
     EXPECT_EQ(1, chkpt.xct_tab.size());
     EXPECT_TRUE(chkpt.bkp_path.empty());
-    EXPECT_EQ(tid_t(1,0), chkpt.get_highest_tid());
+    EXPECT_EQ(1, chkpt.get_highest_tid());
     EXPECT_EQ(lsn1, chkpt.get_min_rec_lsn());
     EXPECT_EQ(lsn1, chkpt.get_min_xct_lsn());
     EXPECT_EQ(lsn2, chkpt.buf_tab[1].page_lsn);
-    EXPECT_EQ(clr2, chkpt.xct_tab[tid_t(1,0)].last_lsn);
+    EXPECT_EQ(clr2, chkpt.xct_tab[1].last_lsn);
     (void) clr1;
 
     return RCOK;
@@ -191,6 +216,7 @@ rc_t twoUpdatesDirtyAborting(ss_m*, test_volume_t*)
 
 rc_t twoUpdatesDirtyAborted(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 1, "key2");
     generateCLR(1, lsn2);
@@ -203,7 +229,7 @@ rc_t twoUpdatesDirtyAborted(ss_m*, test_volume_t*)
     EXPECT_EQ(1, chkpt.buf_tab.size());
     EXPECT_EQ(0, chkpt.xct_tab.size());
     EXPECT_TRUE(chkpt.bkp_path.empty());
-    EXPECT_EQ(tid_t(1,0), chkpt.get_highest_tid());
+    EXPECT_EQ(1, chkpt.get_highest_tid());
     EXPECT_EQ(lsn1, chkpt.get_min_rec_lsn());
     EXPECT_EQ(lsn_t::null, chkpt.get_min_xct_lsn());
     EXPECT_EQ(lsn2, chkpt.buf_tab[1].page_lsn);
@@ -213,6 +239,7 @@ rc_t twoUpdatesDirtyAborted(ss_m*, test_volume_t*)
 
 rc_t twoXcts(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 2, "key2");
     lsn_t lsn3 = makeUpdate(2, 3, "key1");
@@ -226,21 +253,22 @@ rc_t twoXcts(ss_m*, test_volume_t*)
     EXPECT_EQ(4, chkpt.buf_tab.size());
     EXPECT_EQ(2, chkpt.xct_tab.size());
     EXPECT_TRUE(chkpt.bkp_path.empty());
-    EXPECT_EQ(tid_t(2,0), chkpt.get_highest_tid());
+    EXPECT_EQ(2, chkpt.get_highest_tid());
     EXPECT_EQ(lsn1, chkpt.get_min_rec_lsn());
     EXPECT_EQ(lsn1, chkpt.get_min_xct_lsn());
     EXPECT_EQ(lsn1, chkpt.buf_tab[1].page_lsn);
     EXPECT_EQ(lsn2, chkpt.buf_tab[2].page_lsn);
     EXPECT_EQ(lsn3, chkpt.buf_tab[3].page_lsn);
     EXPECT_EQ(lsn4, chkpt.buf_tab[4].page_lsn);
-    EXPECT_EQ(clr1, chkpt.xct_tab[tid_t(1,0)].last_lsn);
-    EXPECT_EQ(lsn4, chkpt.xct_tab[tid_t(2,0)].last_lsn);
+    EXPECT_EQ(clr1, chkpt.xct_tab[1].last_lsn);
+    EXPECT_EQ(lsn4, chkpt.xct_tab[2].last_lsn);
 
     return RCOK;
 }
 
 rc_t twoXctsOneCommitted(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 2, "key2");
     lsn_t lsn3 = makeUpdate(2, 3, "key1");
@@ -253,23 +281,24 @@ rc_t twoXctsOneCommitted(ss_m*, test_volume_t*)
     EXPECT_EQ(4, chkpt.buf_tab.size());
     EXPECT_EQ(1, chkpt.xct_tab.size());
     EXPECT_TRUE(chkpt.bkp_path.empty());
-    EXPECT_EQ(tid_t(2,0), chkpt.get_highest_tid());
+    EXPECT_EQ(2, chkpt.get_highest_tid());
     EXPECT_EQ(lsn1, chkpt.get_min_rec_lsn());
     EXPECT_EQ(lsn1, chkpt.get_min_xct_lsn());
     EXPECT_EQ(lsn1, chkpt.buf_tab[1].page_lsn);
     EXPECT_EQ(lsn2, chkpt.buf_tab[2].page_lsn);
     EXPECT_EQ(lsn3, chkpt.buf_tab[3].page_lsn);
     EXPECT_EQ(lsn4, chkpt.buf_tab[4].page_lsn);
-    EXPECT_EQ(lsn2, chkpt.xct_tab[tid_t(1,0)].last_lsn);
+    EXPECT_EQ(lsn2, chkpt.xct_tab[1].last_lsn);
 
     return RCOK;
 }
 
 rc_t onePageClean(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 2, "key2");
-    sysevent::log_page_write(1, lsn2);
+    Logger::log_sys<page_write_log>(1, lsn2);
     flushLog();
 
     chkpt_t chkpt;
@@ -278,25 +307,26 @@ rc_t onePageClean(ss_m*, test_volume_t*)
     EXPECT_EQ(1, chkpt.buf_tab.size());
     EXPECT_EQ(1, chkpt.xct_tab.size());
     EXPECT_TRUE(chkpt.bkp_path.empty());
-    EXPECT_EQ(tid_t(1,0), chkpt.get_highest_tid());
+    EXPECT_EQ(1, chkpt.get_highest_tid());
     EXPECT_EQ(lsn2, chkpt.get_min_rec_lsn());
     EXPECT_EQ(lsn1, chkpt.get_min_xct_lsn());
     EXPECT_EQ(lsn2, chkpt.buf_tab[2].page_lsn);
-    EXPECT_EQ(lsn2, chkpt.xct_tab[tid_t(1,0)].last_lsn);
+    EXPECT_EQ(lsn2, chkpt.xct_tab[1].last_lsn);
 
     return RCOK;
 }
 
 rc_t twoPagesCleanTwoDirty(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 2, "key1");
     lsn_t lsn3 = makeUpdate(1, 2, "key2");
     lsn_t lsn4 = makeUpdate(1, 3, "key1");
     lsn_t lsn5 = makeUpdate(1, 4, "key1");
     lsn_t lsn6 = makeUpdate(1, 4, "key2");
-    sysevent::log_page_write(1, lsn6);
-    sysevent::log_page_write(3, lsn6);
+    Logger::log_sys<page_write_log>(1, lsn6);
+    Logger::log_sys<page_write_log>(3, lsn6);
     flushLog();
 
     chkpt_t chkpt;
@@ -305,14 +335,14 @@ rc_t twoPagesCleanTwoDirty(ss_m*, test_volume_t*)
     EXPECT_EQ(2, chkpt.buf_tab.size());
     EXPECT_EQ(1, chkpt.xct_tab.size());
     EXPECT_TRUE(chkpt.bkp_path.empty());
-    EXPECT_EQ(tid_t(1,0), chkpt.get_highest_tid());
+    EXPECT_EQ(1, chkpt.get_highest_tid());
     EXPECT_EQ(lsn2, chkpt.get_min_rec_lsn());
     EXPECT_EQ(lsn1, chkpt.get_min_xct_lsn());
     EXPECT_EQ(lsn3, chkpt.buf_tab[2].page_lsn);
     EXPECT_EQ(lsn2, chkpt.buf_tab[2].rec_lsn);
     EXPECT_EQ(lsn6, chkpt.buf_tab[4].page_lsn);
     EXPECT_EQ(lsn5, chkpt.buf_tab[4].rec_lsn);
-    EXPECT_EQ(lsn6, chkpt.xct_tab[tid_t(1,0)].last_lsn);
+    EXPECT_EQ(lsn6, chkpt.xct_tab[1].last_lsn);
     (void) lsn4;
 
     return RCOK;
@@ -320,14 +350,15 @@ rc_t twoPagesCleanTwoDirty(ss_m*, test_volume_t*)
 
 rc_t pagesDirtiedTwice(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     lsn_t lsn1 = makeUpdate(1, 1, "key1");
     lsn_t lsn2 = makeUpdate(1, 2, "key1");
     lsn_t lsn3 = makeUpdate(1, 2, "key2");
     lsn_t lsn4 = makeUpdate(1, 3, "key1");
     lsn_t lsn5 = makeUpdate(1, 4, "key1");
     lsn_t lsn6 = makeUpdate(1, 4, "key2");
-    sysevent::log_page_write(1, lsn6);
-    sysevent::log_page_write(3, lsn6);
+    Logger::log_sys<page_write_log>(1, lsn6);
+    Logger::log_sys<page_write_log>(3, lsn6);
 
     lsn_t lsn7 = makeUpdate(1, 1, "key2");
 
@@ -337,7 +368,7 @@ rc_t pagesDirtiedTwice(ss_m*, test_volume_t*)
     EXPECT_EQ(3, chkpt.buf_tab.size());
     EXPECT_EQ(1, chkpt.xct_tab.size());
     EXPECT_TRUE(chkpt.bkp_path.empty());
-    EXPECT_EQ(tid_t(1,0), chkpt.get_highest_tid());
+    EXPECT_EQ(1, chkpt.get_highest_tid());
     EXPECT_EQ(lsn2, chkpt.get_min_rec_lsn());
     EXPECT_EQ(lsn1, chkpt.get_min_xct_lsn());
     EXPECT_EQ(lsn7, chkpt.buf_tab[1].page_lsn);
@@ -346,7 +377,7 @@ rc_t pagesDirtiedTwice(ss_m*, test_volume_t*)
     EXPECT_EQ(lsn2, chkpt.buf_tab[2].rec_lsn);
     EXPECT_EQ(lsn6, chkpt.buf_tab[4].page_lsn);
     EXPECT_EQ(lsn5, chkpt.buf_tab[4].rec_lsn);
-    EXPECT_EQ(lsn7, chkpt.xct_tab[tid_t(1,0)].last_lsn);
+    EXPECT_EQ(lsn7, chkpt.xct_tab[1].last_lsn);
     (void) lsn4;
 
     return RCOK;
@@ -354,6 +385,7 @@ rc_t pagesDirtiedTwice(ss_m*, test_volume_t*)
 
 rc_t cleanerLostUpdate(ss_m*, test_volume_t*)
 {
+    cleanMetadataPages();
     // Update before page_write log record but after the last update
     // captured by the cleaner
     makeUpdate(1, 1, "key1");
@@ -369,8 +401,8 @@ rc_t cleanerLostUpdate(ss_m*, test_volume_t*)
     lsn_t lsn4 = makeUpdate(1, 2, "key2");
 
     // Cleaner missed LSN 3
-    sysevent::log_page_write(1, lsn3);
-    sysevent::log_page_write(2, lsn3);
+    Logger::log_sys<page_write_log>(1, lsn3);
+    Logger::log_sys<page_write_log>(2, lsn3);
     flushLog();
 
     chkpt_t chkpt;

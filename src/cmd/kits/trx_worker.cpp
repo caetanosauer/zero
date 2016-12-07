@@ -138,7 +138,7 @@ int trx_worker_t::_serve_action(Request* prequest)
     }
     }
 
-    xct_t* pxct = smthread_t::me()->xct();
+    xct_t* pxct = smthread_t::xct();
     assert (pxct);
     // TRACE( TRACE_TRX_FLOW, "Begin (%d)\n", atid.get_lo());
     prequest->_xct = pxct;

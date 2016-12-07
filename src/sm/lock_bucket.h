@@ -9,7 +9,6 @@
 #include "w_okvl.h"
 #include "w_okvl_inl.h"
 #include "lsn.h"
-#include "sthread.h"
 #include "lock_x.h"
 #include "lock_s.h"
 

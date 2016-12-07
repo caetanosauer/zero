@@ -11,8 +11,7 @@ public:
 private:
     string indir;
     string outdir;
-    size_t minRunSize;
-    size_t maxRunSize;
+    size_t level;
     size_t fanin;
 };
 

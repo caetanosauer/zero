@@ -1,14 +1,14 @@
 #include "restore_cmd.h"
 
+#include "thread_wrapper.h"
 #include "shore_env.h"
 #include "vol.h"
 
-class FailureThread : public smthread_t
+class FailureThread : public thread_wrapper_t
 {
 public:
     FailureThread(unsigned delay, bool evict, bool* flag)
-        : smthread_t(t_regular, "FailureThread"),
-        delay(delay), evict(evict), flag(flag)
+        : delay(delay), evict(evict), flag(flag)
     {
     }
 

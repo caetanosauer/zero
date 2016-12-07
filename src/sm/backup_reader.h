@@ -1,6 +1,7 @@
 #ifndef BACKUP_READER_H
 #define BACKUP_READER_H
 
+#include "thread_wrapper.h"
 #include "sm_base.h"
 #include "generic_page.h"
 
@@ -56,8 +57,8 @@ protected:
  */
 class DummyBackupReader : public BackupReader {
 public:
-    DummyBackupReader(size_t segmentSize)
-        : BackupReader(segmentSize * sizeof(generic_page)),
+    DummyBackupReader(size_t segmentSize, unsigned threads)
+        : BackupReader(segmentSize * sizeof(generic_page) * threads),
         segmentSize(segmentSize)
     {
     }
@@ -66,10 +67,11 @@ public:
     {
     }
 
-    virtual char* fix(unsigned, unsigned = 0)
+    virtual char* fix(unsigned, unsigned thread)
     {
-        memset(buffer, 0, segmentSize * sizeof(generic_page));
-        return buffer;
+        char* b = buffer + (thread * segmentSize * sizeof(generic_page));
+        memset(b, 0, segmentSize * sizeof(generic_page));
+        return b;
     }
 
     virtual void unfix(unsigned)
@@ -137,7 +139,7 @@ public:
  *
  * \author Caetano Sauer
  */
-class BackupPrefetcher : public smthread_t, public BackupReader {
+class BackupPrefetcher : public thread_wrapper_t, public BackupReader {
 public:
     BackupPrefetcher(vol_t* volume, size_t numSegments, size_t segmentSize);
     virtual ~BackupPrefetcher();

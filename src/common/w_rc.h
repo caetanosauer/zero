@@ -208,6 +208,8 @@ private:
     mutable bool    _checked;
 };
 
+typedef w_rc_t rc_t;
+
 inline std::ostream& operator<<(std::ostream& o, const w_rc_t& obj) {
     if (obj.err_num() == w_error_ok) {
         o << "No error";

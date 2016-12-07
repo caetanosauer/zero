@@ -9,16 +9,16 @@
 btree_test_env *test_env;
 
 w_rc_t empty_xct(ss_m*, test_volume_t *) {
-    size_t original_depth = me()->get_tcb_depth();
+    size_t original_depth = smthread_t::get_tcb_depth();
 
     // commit
     {
         sys_xct_section_t sxs;
-        EXPECT_EQ(original_depth + 1, me()->get_tcb_depth());
+        EXPECT_EQ(original_depth + 1, smthread_t::get_tcb_depth());
         EXPECT_FALSE(sxs.check_error_on_start().is_error());
         EXPECT_FALSE(sxs.end_sys_xct (RCOK).is_error());
     }
-    EXPECT_EQ(original_depth, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth, smthread_t::get_tcb_depth());
 
     // abort
     {
@@ -26,14 +26,14 @@ w_rc_t empty_xct(ss_m*, test_volume_t *) {
         EXPECT_FALSE(sxs.check_error_on_start().is_error());
         EXPECT_FALSE(sxs.end_sys_xct (RC(eOUTOFSPACE)).is_error());
     }
-    EXPECT_EQ(original_depth, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth, smthread_t::get_tcb_depth());
 
     // abort without explicit report
     {
         sys_xct_section_t sxs;
         EXPECT_FALSE(sxs.check_error_on_start().is_error());
     }
-    EXPECT_EQ(original_depth, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth, smthread_t::get_tcb_depth());
 
     return RCOK;
 }
@@ -44,25 +44,25 @@ TEST (SystemTransactionTest, EmptyXct) {
 }
 
 w_rc_t empty_nested_xct(ss_m *ssm, test_volume_t *) {
-    size_t original_depth = me()->get_tcb_depth();
+    size_t original_depth = smthread_t::get_tcb_depth();
 
     // commit -> commit
     W_DO(ssm->begin_xct());
-    EXPECT_EQ(original_depth + 1, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth + 1, smthread_t::get_tcb_depth());
     {
         sys_xct_section_t sxs;
-        EXPECT_EQ(original_depth + 2, me()->get_tcb_depth());
+        EXPECT_EQ(original_depth + 2, smthread_t::get_tcb_depth());
         EXPECT_FALSE(sxs.check_error_on_start().is_error());
         {
             sys_xct_section_t sxs2;
-            EXPECT_EQ(original_depth + 3, me()->get_tcb_depth());
+            EXPECT_EQ(original_depth + 3, smthread_t::get_tcb_depth());
             EXPECT_FALSE(sxs2.check_error_on_start().is_error());
             EXPECT_FALSE(sxs2.end_sys_xct (RCOK).is_error());
         }
         EXPECT_FALSE(sxs.end_sys_xct (RCOK).is_error());
     }
     W_DO(ssm->commit_xct());
-    EXPECT_EQ(original_depth, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth, smthread_t::get_tcb_depth());
 
     // commit -> abort
     W_DO(ssm->begin_xct());
@@ -77,7 +77,7 @@ w_rc_t empty_nested_xct(ss_m *ssm, test_volume_t *) {
         EXPECT_FALSE(sxs.end_sys_xct (RCOK).is_error());
     }
     W_DO(ssm->commit_xct());
-    EXPECT_EQ(original_depth, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth, smthread_t::get_tcb_depth());
 
     // abort -> commit
     W_DO(ssm->begin_xct());
@@ -92,7 +92,7 @@ w_rc_t empty_nested_xct(ss_m *ssm, test_volume_t *) {
         EXPECT_FALSE(sxs.end_sys_xct (RC(eOUTOFSPACE)).is_error());
     }
     W_DO(ssm->commit_xct());
-    EXPECT_EQ(original_depth, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth, smthread_t::get_tcb_depth());
 
     // abort -> abort
     W_DO(ssm->begin_xct());
@@ -107,7 +107,7 @@ w_rc_t empty_nested_xct(ss_m *ssm, test_volume_t *) {
         EXPECT_FALSE(sxs.end_sys_xct (RC(eOUTOFSPACE)).is_error());
     }
     W_DO(ssm->commit_xct());
-    EXPECT_EQ(original_depth, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth, smthread_t::get_tcb_depth());
 
     return RCOK;
 }
@@ -118,16 +118,16 @@ TEST (SystemTransactionTest, EmptyNestedXct) {
 }
 
 w_rc_t fail_user_nest(ss_m *ssm, test_volume_t *) {
-    size_t original_depth = me()->get_tcb_depth();
+    size_t original_depth = smthread_t::get_tcb_depth();
     W_DO(ssm->begin_xct());
-    EXPECT_EQ(original_depth + 1, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth + 1, smthread_t::get_tcb_depth());
 
     rc_t result = ssm->begin_xct();
     EXPECT_EQ(eINTRANS, result.err_num());
-    EXPECT_EQ(original_depth + 1, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth + 1, smthread_t::get_tcb_depth());
 
     W_DO(ssm->commit_xct());
-    EXPECT_EQ(original_depth, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth, smthread_t::get_tcb_depth());
 
     return RCOK;
 }
@@ -148,7 +148,7 @@ w_rc_t usercommit_syscommit(ss_m *ssm, test_volume_t *test_volume) {
 
     W_DO (x_btree_verify(ssm, stid));
 
-    size_t original_depth = me()->get_tcb_depth();
+    size_t original_depth = smthread_t::get_tcb_depth();
 
     // user commit -> sys commit
     W_DO(ssm->begin_xct());
@@ -159,7 +159,7 @@ w_rc_t usercommit_syscommit(ss_m *ssm, test_volume_t *test_volume) {
         EXPECT_FALSE(sxs.end_sys_xct (RCOK).is_error());
     }
     W_DO(ssm->commit_xct());
-    EXPECT_EQ(original_depth, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth, smthread_t::get_tcb_depth());
     {
         x_btree_scan_result s;
         W_DO(x_btree_scan(ssm, stid, s));
@@ -189,7 +189,7 @@ w_rc_t userabort_syscommit(ss_m *ssm, test_volume_t *test_volume) {
 
     W_DO (x_btree_verify(ssm, stid));
 
-    size_t original_depth = me()->get_tcb_depth();
+    size_t original_depth = smthread_t::get_tcb_depth();
 
     // user abort -> sys commit
     W_DO(ssm->begin_xct());
@@ -200,7 +200,7 @@ w_rc_t userabort_syscommit(ss_m *ssm, test_volume_t *test_volume) {
         EXPECT_FALSE(sxs.end_sys_xct (RCOK).is_error());
     }
     W_DO(ssm->abort_xct());
-    EXPECT_EQ(original_depth, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth, smthread_t::get_tcb_depth());
     {
         x_btree_scan_result s;
         W_DO(x_btree_scan(ssm, stid, s));
@@ -231,7 +231,7 @@ w_rc_t userabort_sysabort(ss_m *ssm, test_volume_t *test_volume) {
 
     W_DO (x_btree_verify(ssm, stid));
 
-    size_t original_depth = me()->get_tcb_depth();
+    size_t original_depth = smthread_t::get_tcb_depth();
 
     // user abort -> sys abort
     W_DO(ssm->begin_xct());
@@ -242,7 +242,7 @@ w_rc_t userabort_sysabort(ss_m *ssm, test_volume_t *test_volume) {
         EXPECT_FALSE(sxs.end_sys_xct (RC(eOUTOFSPACE)).is_error());
     }
     W_DO(ssm->abort_xct());
-    EXPECT_EQ(original_depth, me()->get_tcb_depth());
+    EXPECT_EQ(original_depth, smthread_t::get_tcb_depth());
     {
         x_btree_scan_result s;
         W_DO(x_btree_scan(ssm, stid, s));

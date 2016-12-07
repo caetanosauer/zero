@@ -3,15 +3,12 @@
  */
 
 #include "w_defines.h"
-
-#define SM_SOURCE
-#define SMINDEX_C
 #include "sm_base.h"
 #include "sm.h"
 #include "xct.h"
 #include "btree.h"
-#include "suppress_unused.h"
 #include "vol.h"
+#include "lock.h"
 
 /*==============================================================*
  *  Physical ID version of all the index operations                *
