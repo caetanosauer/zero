@@ -171,6 +171,8 @@ void Command::setupSMOptions(po::options_description& options)
             "Path to the error log of the storage manager")
     ("sm_chkpt_interval", po::value<int>(),
             "Interval for checkpoint flushes")
+    ("sm_chkpt_only_root_pages", po::value<bool>(),
+        "Checkpoints only record dirty root pages and SPR takes care of rest")
     ("sm_log_fetch_buf_partitions", po::value<uint>()->default_value(0),
         "Number of partitions to buffer in memory for recovery")
     ("sm_log_page_flushers", po::value<uint>()->default_value(1),

@@ -205,6 +205,7 @@ private:
     lsn_t _last_end_lsn;
 
     bool _no_db_mode;
+    bool _only_root_pages;
 };
 
 /*<std-footer incl-file-exclusion='CHKPT_H'>  -- do not edit anything below this line -- */
