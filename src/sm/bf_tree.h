@@ -279,8 +279,6 @@ public:
 
     void wakeup_cleaner(bool wait = false);
 
-    page_evictioner_base* get_evictioner();
-
     bool is_no_db_mode() const { return _no_db_mode; }
 
     /**
@@ -322,11 +320,6 @@ private:
 
     /** finds a free block and returns its index. if free list is empty and 'evict' = true, it evicts some page. */
     w_rc_t _grab_free_block(bf_idx& ret, bool evict = true);
-
-    /**
-     * evict some number of blocks.
-     */
-    w_rc_t _get_replacement_block();
 
     /**
      * try to evict a given block.
@@ -417,17 +410,6 @@ private:
 
     /** spin lock to protect all freelist related stuff. */
     tatas_lock           _freelist_lock;
-
-
-    bf_idx _eviction_current_frame;
-
-    /**
-     * Lock that provides mutual exclusion for the eviction algorithm.
-     * Only one thread may perform eviction at a time.
-     */
-    pthread_mutex_t _eviction_lock;
-
-    // queue_based_lock_t   _eviction_mutex;
 
     /** the dirty page cleaner. */
     page_cleaner_base*   _cleaner;

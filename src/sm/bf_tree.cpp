@@ -180,10 +180,21 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     _hashtable = new bf_hashtable<bf_idx_pair>(buckets);
     w_assert0(_hashtable != NULL);
 
-    _eviction_current_frame = 0;
-    DO_PTHREAD(pthread_mutex_init(&_eviction_lock, NULL));
-
     _cleaner_decoupled = options.get_bool_option("sm_cleaner_decoupled", false);
+
+    std::string s = ss_m::get_options().get_string_option("sm_evict_policy", "latched");
+    if(s == "gclock") {
+        _evictioner = new page_evictioner_gclock(this, ss_m::get_options());
+    }
+    else if(s == "latched") {
+        _evictioner = new page_evictioner_base(this, ss_m::get_options());
+    }
+    else {
+        std::cerr << "Invalid buffer policy." << std::endl;
+        W_FATAL(eCRASH);
+    }
+
+    _evictioner->fork();
 }
 
 void bf_tree_m::shutdown()
@@ -225,9 +236,6 @@ bf_tree_m::~bf_tree_m()
         ::free (buf);
         _buffer = NULL;
     }
-
-    DO_PTHREAD(pthread_mutex_destroy(&_eviction_lock));
-
 }
 
 page_cleaner_base* bf_tree_m::get_cleaner()
@@ -250,32 +258,6 @@ page_cleaner_base* bf_tree_m::get_cleaner()
     }
 
     return _cleaner;
-}
-
-page_evictioner_base* bf_tree_m::get_evictioner()
-{
-    if (!ss_m::vol || !ss_m::vol->caches_ready()) {
-        // No volume manager initialized -- no point in starting evictioner
-        return nullptr;
-    }
-
-    if (!_evictioner) {
-        std::string s = ss_m::get_options().get_string_option("sm_evict_policy", "latched");
-        if(s == "gclock") {
-            _evictioner = new page_evictioner_gclock(this, ss_m::get_options());
-        }
-        else if(s == "latched") {
-            _evictioner = new page_evictioner_base(this, ss_m::get_options());
-        }
-        else {
-            std::cerr << "Invalid buffer policy." << std::endl;
-            W_FATAL(eCRASH);
-        }
-
-        _evictioner->fork();
-    }
-
-    return _evictioner;
 }
 
 void bf_tree_m::wakeup_cleaner(bool wait)

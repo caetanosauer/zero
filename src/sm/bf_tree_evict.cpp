@@ -36,29 +36,14 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
         } // exit the scope to do the following out of the critical section
 
         // if the freelist was empty, let's evict some page.
-        if (evict)
-        {
-            W_DO (_get_replacement_block());
+        if (evict) {
+            _evictioner->wakeup();
+            _evictioner->wait_for_notify();
         }
-        else
-        {
-            return RC(eBFFULL);
-        }
+        else { return RC(eBFFULL); }
     }
     return RCOK;
 }
-
-w_rc_t bf_tree_m::_get_replacement_block()
-{
-    // Evictioner should be responsible for waking up cleaner.
-    while(_freelist_len == 0)
-    {
-        get_evictioner()->wakeup();
-        get_evictioner()->wait_for_notify();
-    }
-    return RCOK;
-}
-
 
 void bf_tree_m::_add_free_block(bf_idx idx)
 {
