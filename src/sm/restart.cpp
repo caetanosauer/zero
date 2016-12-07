@@ -65,7 +65,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "stopwatch.h"
 #include "xct_logger.h"
 #include "bf_tree.h"
-#include "logarchive_scanner.h"
 
 #include <fcntl.h>              // Performance reporting
 #include <unistd.h>
@@ -621,13 +620,8 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn)
     // W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
     w_assert0(p.lsn() <= emlsn);
 
-    char* buffer = NULL;
-    list<uint32_t> lr_offsets;
-    W_DO(_collect_spr_logs(pid, p.lsn(), emlsn, buffer, lr_offsets));
-    w_assert1(buffer);
-
-    W_DO(_apply_spr_logs(p, buffer, lr_offsets));
-    delete[] buffer;
+    SprIterator iter {pid, p.lsn(), emlsn};
+    iter.apply(p);
 
     w_assert0(p.lsn() == emlsn);
     DBGOUT1(<< "Single-Page-Recovery done for page " << p.pid());
@@ -648,27 +642,35 @@ void grow_buffer(char*& buffer, size_t& buffer_capacity, size_t pos, logrec_t** 
     }
 }
 
-rc_t restart_m::_collect_spr_logs(
-    const PageID& pid,         // In: page ID of the page to work on
-    const lsn_t& current_lsn,  // In: known last write to the page, where recovery starts
-    const lsn_t& emlsn,        // In: starting point of the log chain
-    char*& buffer,
-    list<uint32_t>& lr_offsets)
+SprIterator::SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
+        bool prioritizeArchive)
+    :
+    buffer_capacity{1 << 18 /* 256KB */},
+    last_lsn{lsn_t::null},
+    replayed_count{0}
 {
-    w_assert0(!emlsn.is_null());
+    w_assert0(!lastLSN.is_null());
     // make sure log is durable until the lsn we're trying to fetch
-    smlevel_0::log->flush(emlsn);
+    smlevel_0::log->flush(lastLSN);
 
     // Allocate initial buffer -- expand later if needed
     // CS: regular allocation is fine since SPR isn't such a critical operation
-    size_t buffer_capacity = 1 << 18; // start with 256KB
-    // must be freed by caller
     buffer = new char[buffer_capacity];
     size_t pos = 0;
 
-    lsn_t nxt = emlsn;
+    lsn_t archivedLSN = lsn_t::null;
+    if (smlevel_0::logArchiver) {
+        archivedLSN = smlevel_0::logArchiver->getDirectory()->getLastLSN();
+    }
+
+    lsn_t nxt = lastLSN;
     bool left_early = false;
-    while (current_lsn < nxt && nxt != lsn_t::null) {
+    while (firstLSN < nxt && nxt != lsn_t::null) {
+        // If nxt has been archived already, fetch it from the archive
+        if (nxt < archivedLSN && prioritizeArchive) {
+            left_early = true;
+            break;
+        }
 
         // STEP 1: Fecth log record and copy it into buffer
         lsn_t lsn = nxt;
@@ -680,7 +682,7 @@ rc_t restart_m::_collect_spr_logs(
             left_early = true;
             break;
         }
-        else { W_DO(rc); }
+        else { W_COERCE(rc); }
         w_assert0(lsn == nxt);
 
         if (sizeof(logrec_t) > buffer_capacity - pos) {
@@ -724,44 +726,61 @@ rc_t restart_m::_collect_spr_logs(
         // What we have to do now is fetch the log records between current_lsn and
         // nxt (both exclusive intervals) from the log archive and add them into
         // the buffer as well.
-        ArchiveScanner logScan(ss_m::logArchiver->getDirectory());
-        auto merger = logScan.open(pid, pid+1, current_lsn, 0);
+        archive_scan.reset(new ArchiveScanner{ss_m::logArchiver->getDirectory()});
+        merger.reset(archive_scan->open(pid, pid+1, firstLSN, 0));
+    }
 
-        logrec_t* lr {nullptr};
-        auto insert_iter = lr_offsets.begin();
-        while (merger && merger->next(lr)) {
-            // Log records after nxt have already been collected above
-            if (lr->lsn() > nxt) { break; }
+    lr_iter = lr_offsets.begin();
+}
 
-            // copy log record into end of buffer
-            if (lr->length() > buffer_capacity - pos) {
-                grow_buffer(buffer, buffer_capacity, pos, nullptr);
-            }
-            ::memcpy(buffer + pos, lr, lr->length());
+bool SprIterator::next(logrec_t*& lr)
+{
+    if (merger) {
+        bool ret = merger->next(lr);
+        if (ret) {
+            last_lsn = lr->lsn();
+            replayed_count++;
+            return true;
+        }
 
-            // Since now we are scanning forward, we don't always call push_front
-            lr_offsets.insert(insert_iter, pos);
-            pos += lr->length();
+        // archive scan is over -- delete it
+        merger.reset();
+    }
+
+    if (buffer) {
+        lsn_t curr_lsn = lsn_t::null;
+        while (curr_lsn <= last_lsn && lr_iter != lr_offsets.end()) {
+            lr = reinterpret_cast<logrec_t*>(buffer + *lr_iter);
+            lr_iter++;
+            curr_lsn = lr->lsn();
+        }
+        if (curr_lsn > last_lsn) {
+            replayed_count++;
+            last_lsn = curr_lsn;
+            return true;
         }
     }
 
-    return RCOK;
+    return false;
 }
 
-rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer,
-        list<uint32_t>& offsets)
+SprIterator::~SprIterator()
+{
+    if (buffer) { delete[] buffer; }
+}
+
+void SprIterator::apply(fixable_page_h &p)
 {
     lsn_t prev_lsn = lsn_t::null;
     PageID pid = p.pid();
-    list<uint32_t>::const_iterator iter;
-    for (iter = offsets.begin(); iter != offsets.end(); iter++) {
-        logrec_t* lr = (logrec_t*) (buffer + *iter);
+    logrec_t* lr;
 
+    while (next(lr)) {
         w_assert1(lr->valid_header(lsn_t::null));
-        w_assert1(iter == offsets.begin() || lr->is_multi_page() ||
+        w_assert1(replayed_count == 1 || lr->is_multi_page() ||
                (prev_lsn == lr->page_prev_lsn() && p.pid() == lr->pid()));
 
-        if (lr->is_redo() && p.lsn() < lr->lsn_ck()) {
+        if (lr->is_redo() && p.lsn() < lr->lsn()) {
             DBGOUT1(<< "SPR page(" << p.pid()
                     << ") LSN=" << p.lsn() << ", log=" << *lr);
 
@@ -778,6 +797,4 @@ rc_t restart_m::_apply_spr_logs(fixable_page_h &p, char* buffer,
 
         prev_lsn = lr->lsn();
     }
-
-    return RCOK;
 }

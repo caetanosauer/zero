@@ -41,6 +41,7 @@
 #include "sm_base.h"
 #include "chkpt.h"
 #include "lock.h"               // Lock re-acquisition
+#include "logarchive_scanner.h"
 
 #include <map>
 
@@ -69,6 +70,39 @@ private:
     // disabled
     restart_thread_t(const restart_thread_t&);
     restart_thread_t& operator=(const restart_thread_t&);
+};
+
+/*
+ * A log-record iterator that encapsulates a log archive scan and a recovery
+ * log scan. It reads from the former until it runs out, after which it reads
+ * from the latter, which is collected by following the per-page chain in the
+ * recovery log.
+ */
+class SprIterator
+{
+public:
+
+    // CS TODO: expand it to cover a pid range and reuse it for restore
+    SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
+            bool prioritizeArchive = true);
+    ~SprIterator();
+
+    bool next(logrec_t*& lr);
+
+    void apply(fixable_page_h& page);
+
+private:
+
+    char* buffer;
+    size_t buffer_capacity;
+    std::list<uint32_t> lr_offsets;
+    std::list<uint32_t>::const_iterator lr_iter;
+    std::unique_ptr<ArchiveScanner> archive_scan;
+    // CS TODO unify ArchiveScanner and RunMerger
+    std::unique_ptr<ArchiveScanner::RunMerger> merger;
+
+    lsn_t last_lsn;
+    unsigned replayed_count;
 };
 
 class restart_m
@@ -110,47 +144,6 @@ private:
     // Child thread, used only if open system after Log Analysis phase while REDO and UNDO
     // will be performed with concurrent user transactions
     restart_thread_t*           _restart_thread;
-
-    /*
-     * SINGLE-PAGE RECOVERY (SPR)
-     */
-
-    // CS: These functions were moved from log_core
-    /**
-    * \brief Collect relevant logs to recover the given page.
-    * \ingroup Single-Page-Recovery
-    * \details
-    * This method starts from the log record at EMLSN and follows
-    * the page-log-chain to go backward in the log file until
-    * it hits a page-img log from which we can reconstruct the
-    * page or it reaches the current_lsn.
-    * Defined in log_spr.cpp.
-    * \NOTE This method returns an error if the user had truncated
-    * the transaction logs required for the recovery.
-    * @param[in] pid ID of the page to recover.
-    * @param[in] current_lsn the LSN the page is currently at.
-    * @param[in] emlsn the LSN up to which we should recover the page.
-    * @param[out] buffer into which the log records will be copied
-    * @param[out] lr_pointers pointers to the individual log records within the
-    * buffer
-    * @pre current_lsn < emlsn
-    */
-    static rc_t _collect_spr_logs(
-        const PageID& pid, const lsn_t &current_lsn, const lsn_t &emlsn,
-        char*& buffer, list<uint32_t>& lr_offsets);
-
-    /**
-    * \brief Apply the given logs to the given page.
-    * \ingroup Single-Page-Recovery
-    * Defined in log_spr.cpp.
-    * @param[in, out] p the page to recover.
-    * @param[out] lr_pointers pointers to the individual log records to be
-    * replayed, in the correct order (forward list iteration)
-    * @pre p is already fixed with exclusive latch
-    */
-    static rc_t _apply_spr_logs(fixable_page_h &p, char* buffer,
-            list<uint32_t>& lr_offsets);
-
 
 public:
 
