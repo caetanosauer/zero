@@ -56,7 +56,7 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
                _failed(false),
                _restore_mgr(NULL), _dirty_pages(NULL), _backup_fd(-1),
                _current_backup_lsn(lsn_t::null), _backup_write_fd(-1),
-               _log_page_reads(false)
+               _log_page_reads(false), _prioritize_archive(true)
 {
     string dbfile = options.get_string_option("sm_dbfile", "db");
     bool truncate = options.get_bool_option("sm_format", false);
@@ -64,6 +64,8 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
     _use_o_sync = options.get_bool_option("sm_vol_o_sync", true);
     _use_o_direct = options.get_bool_option("sm_vol_o_direct", false);
     _readonly = options.get_bool_option("sm_vol_readonly", false);
+    _prioritize_archive =
+        options.get_bool_option("sm_recovery_prioritize_archive", true);
 
     if (options.get_bool_option("sm_no_db", false)) {
         _readonly = true;
@@ -451,12 +453,12 @@ rc_t vol_t::read_page(PageID pnum, generic_page* const buf)
     return read_many_pages(pnum, buf, 1);
 }
 
-rc_t vol_t::read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn)
+rc_t vol_t::read_page_verify(PageID pid, generic_page* const buf, lsn_t emlsn)
 {
-    W_DO(read_many_pages(pnum, buf, 1));
+    W_DO(read_many_pages(pid, buf, 1));
 
     // check for more recent LSN in dirty page table
-    lsn_t dirty_lsn = get_dirty_page_emlsn(pnum);
+    lsn_t dirty_lsn = get_dirty_page_emlsn(pid);
     if (dirty_lsn > emlsn) { emlsn = dirty_lsn; }
 
     // CS TODO: ignoring page corruption for now
@@ -466,22 +468,26 @@ rc_t vol_t::read_page_verify(PageID pnum, generic_page* const buf, lsn_t emlsn)
     if (buf->lsn < emlsn) {
         // if (buf->lsn == lsn_t::null) { // virgin page
         //     buf->lsn = lsn_t::null;
-        //     buf->pid = pnum;
+        //     buf->pid = pid;
         //     buf->tag = t_btree_p;
         // }
 
         btree_page_h p;
-        buf->pid = pnum;
+        buf->pid = pid;
         p.fix_nonbufferpool_page(buf);
         p.update_page_lsn(buf->lsn);
-        W_DO(smlevel_0::recovery->recover_single_page(p, emlsn));
-        delete_dirty_page(pnum);
-        // cerr << "Recovered " << pnum << " to LSN " << emlsn << endl;
+
+        SprIterator iter {pid, p.lsn(), emlsn, _prioritize_archive};
+        iter.apply(p);
+        w_assert0(p.lsn() == emlsn);
+
+        delete_dirty_page(pid);
+        // cerr << "Recovered " << pid << " to LSN " << emlsn << endl;
     }
 
-    // if (buf->pid != pnum) {
+    // if (buf->pid != pid) {
     //     W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
-    //         << pnum << " was " << buf->pid);
+    //         << pid << " was " << buf->pid);
     // }
 
     return RCOK;

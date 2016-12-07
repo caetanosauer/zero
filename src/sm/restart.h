@@ -154,22 +154,6 @@ public:
      */
     static void dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn);
 
-
-    /**
-    * \brief Apply single-page-recovery to the given page.
-    * \ingroup Single-Page-Recovery
-    * Defined in log_spr.cpp.
-    * \NOTE This method returns an error if the user had truncated
-    * the transaction logs required for the recovery.
-    * @param[in, out] p the page to recover.
-    * @param[in] emlsn the LSN up to which we should recover the page
-    *            (null if EMLSN not available -- must scan log to find it)
-    * @param[in] from_lsn true if we can use the last write lsn on the page as
-    *            the starting point for recovery, do not rely on backup file only.
-    * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)
-    */
-    static rc_t recover_single_page(fixable_page_h &p, const lsn_t& emlsn);
-
 private:
     // Function used for serialized operations, open system after the entire restart process finished
     // brief sub-routine of redo_pass() for logs that have pid.

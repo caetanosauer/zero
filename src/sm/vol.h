@@ -190,6 +190,10 @@ private:
     /** Whether to generate page read log records */
     bool _log_page_reads;
 
+    /** Whether to fetch as many log records as possible from archive
+     * when performing single-page recovery */
+    bool _prioritize_archive;
+
     /** Wheter to open file with O_SYNC */
     bool _use_o_sync;
 

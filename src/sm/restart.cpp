@@ -597,37 +597,6 @@ void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const ls
     }
 }
 
-rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn)
-{
-    // Single-Page-Recovery operation does not hold latch on the page to be recovered, because
-    // it assumes the page is private until recovered.  It is not the case during
-    // recovery.  It is caller's responsibility to hold latch before accessing Single-Page-Recovery
-
-    // First, retrieve the backup page we will be based on.
-    // If this backup is enough recent, we have to apply only a few logs.
-    w_assert1(p.is_fixed());
-    PageID pid = p.pid();
-    DBGOUT1(<< "Starting SPR page " << pid << ", EMLSN=" << emlsn << ", log-tail= "
-            << smlevel_0::log->curr_lsn());
-
-    // CS TODO: because of cleaner bug, we fetch page from disk itself.  In
-    // other words, if we are performing write elision, then we must read from
-    // disk instead of backup. We need to distinguish between cases of failure
-    // and normal outdated pages. Ideally, the volume manager should handle
-    // that transparently, so that a volume read is redirected to a backup if
-    // necessary (similar to how restore works currently).
-
-    // W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
-    w_assert0(p.lsn() <= emlsn);
-
-    SprIterator iter {pid, p.lsn(), emlsn};
-    iter.apply(p);
-
-    w_assert0(p.lsn() == emlsn);
-    DBGOUT1(<< "Single-Page-Recovery done for page " << p.pid());
-    return RCOK;
-}
-
 void grow_buffer(char*& buffer, size_t& buffer_capacity, size_t pos, logrec_t** lr)
 {
     DBGOUT1(<< "Doubling SPR buffer capacity");

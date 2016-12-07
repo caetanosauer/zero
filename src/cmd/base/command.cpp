@@ -204,6 +204,9 @@ void Command::setupSMOptions(po::options_description& options)
         "Enable instant restart")
     ("sm_restart_log_based_redo", po::value<bool>(),
         "Perform non-instant restart with log-based redo instead of page-based")
+    ("sm_restart_prioritize_archive", po::value<bool>(),
+        "When performing single-page recovery, fetch as much as possible from \
+        log archive and minimize random reads in the recovery log")
     ("sm_rawlock_gc_interval_ms", po::value<int>(),
         "Garbage Collection Interval in ms")
     ("sm_rawlock_lockpool_segsize", po::value<int>(),
