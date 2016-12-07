@@ -302,10 +302,6 @@ void logrec_t::init_xct_info()
 {
     /* adjust _cat */
     xct_t *x = xct();
-    if(x && (x->rolling_back() || x->state() == smlevel_0::xct_aborting))
-    {
-        header._cat |= t_rollback;
-    }
     if (!is_single_sys_xct()) { // prv does not exist in single-log system transaction
         set_xid_prev(lsn_t::null);
     }
@@ -1177,7 +1173,6 @@ operator<<(ostream& o, const logrec_t& l)
     o.setf(ios::left, ios::left);
 
     o << "LSN=" << l.lsn_ck() << " ";
-    const char *rb = l.is_rollback()? "U" : "F"; // rollback/undo or forward
 
     o << "len=" << l.length() << " ";
 
@@ -1186,7 +1181,7 @@ operator<<(ostream& o, const logrec_t& l)
     } else {
         o << "TID=SSX" << ' ';
     }
-    o << l.type_str() << ":" << l.cat_str() << ":" << rb;
+    o << l.type_str() << ":" << l.cat_str();
     o << "  p(" << l.pid() << ")";
     if (l.is_multi_page()) {
         o << " src-" << l.pid2();

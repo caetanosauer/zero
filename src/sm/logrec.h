@@ -352,7 +352,7 @@ protected:
      * Not a category, but means log rec was issued in rollback/abort/undo.
      * adding a bit is cheaper than adding a comment log record.
      */
-    t_rollback  = 0x40,
+    // t_rollback  = 0x40,
     /** log by system transaction which is fused with begin/commit record. */
     t_single_sys_xct    = 0x80
     };
@@ -576,13 +576,7 @@ logrec_t::type() const
 inline u_char
 logrec_t::cat() const
 {
-    return header._cat & ~t_rollback;
-}
-
-inline bool
-logrec_t::is_rollback() const
-{
-    return (header._cat & t_rollback) != 0;
+    return header._cat;
 }
 
 inline void
