@@ -1317,8 +1317,7 @@ rc_t xct_t::update_last_logrec(logrec_t* l, lsn_t lsn)
     if ( ! _first_lsn.valid())  _first_lsn = _last_lsn;
 
     if (!l->is_single_sys_xct()) {
-        _undo_nxt = ( l->is_undoable_clr() ? _last_lsn :
-                l->is_cpsn() ? l->undo_nxt() : _last_lsn);
+        _undo_nxt = (l->is_cpsn() ? l->undo_nxt() : _last_lsn);
     }
 
     return RCOK;
@@ -1627,6 +1626,7 @@ xct_t::rollback(const lsn_t &save_pt)
 
         if (r.is_undo())
         {
+            w_assert0(!r.is_cpsn());
            w_assert1(nxt == r.lsn_ck());
             // r is undoable
             w_assert1(!r.is_single_sys_xct());
@@ -1639,20 +1639,10 @@ xct_t::rollback(const lsn_t &save_pt)
 
             r.undo(page.is_fixed() ? &page : 0);
 
-            if(r.is_cpsn())
-            {
-                // A compensation log record
-                w_assert1(r.is_undoable_clr());
-                nxt = r.undo_nxt();
-                DBGOUT1(<<"Rollback, log record is compensation, undo_nxt: " << nxt);
-            }
-            else
-            {
-                // Not a compensation log record, use xid_prev() which is
-                // previous logrec of this xct
-                nxt = r.xid_prev();
-                DBGOUT1(<<"Rollback, log record is not compensation, xid_prev: " << nxt);
-            }
+            // Not a compensation log record, use xid_prev() which is
+            // previous logrec of this xct
+            nxt = r.xid_prev();
+            DBGOUT1(<<"Rollback, log record is not compensation, xid_prev: " << nxt);
         }
         else  if (r.is_cpsn())
         {

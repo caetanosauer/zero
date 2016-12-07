@@ -160,7 +160,7 @@ public:
         logrec->init_xct_info();
         reinterpret_cast<Logrec*>(logrec)->construct(args...);
         w_assert1(logrec->valid_header());
-        w_assert1(logrec->cat() == logrec_t::t_system);
+        w_assert1(logrec_t::get_logrec_cat(Logrec::TYPE) == logrec_t::t_system);
 
         lsn_t lsn;
         W_COERCE(ss_m::log->insert(*logrec, &lsn));

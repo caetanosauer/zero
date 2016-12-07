@@ -51,12 +51,10 @@ DEFINE_SM_ALLOC(logrec_t);
 const char*
 logrec_t::cat_str() const
 {
-    switch (cat())  {
+    auto c = cat();
+    switch (c)  {
     case t_logical:
         return "l---";
-
-    case t_logical | t_cpsn:
-        return "l--c";
 
     case t_system:
         return "s---";
@@ -67,23 +65,14 @@ logrec_t::cat_str() const
     case t_redo:
         return "-r--";
 
-    case t_redo | t_cpsn:
-        return "-r-c";
-
     case t_undo | t_redo:
         return "-ru-";
 
     case t_undo | t_redo | t_logical:
         return "lru-";
 
-    case t_redo | t_logical | t_cpsn:
-        return "lr_c";
-
     case t_redo | t_logical : // used in I/O layer
         return "lr__";
-
-    case t_undo | t_logical | t_cpsn:
-        return "l_uc";
 
     case t_undo | t_logical :
         return "l-u-";
@@ -217,65 +206,9 @@ logrec_t::get_type_str(kind_t type)
     return 0;
 }
 
-u_char logrec_t::get_logrec_cat(kind_t type)
-{
-    switch (type) {
-	case t_comment : return t_system;
-	case t_tick_sec : return t_system;
-	case t_tick_msec : return t_system;
-	case t_benchmark_start : return t_system;
-	case t_page_write : return t_system;
-	case t_page_read : return t_system;
-	case t_skip : return t_system;
-	case t_chkpt_begin : return t_system;
-	case t_chkpt_bf_tab : return t_system;
-	case t_chkpt_xct_tab : return t_system;
-	case t_chkpt_xct_lock : return t_system;
-	case t_chkpt_restore_tab : return t_system;
-	case t_chkpt_backup_tab : return t_system;
-	case t_chkpt_end : return t_system;
-	case t_loganalysis_begin : return t_system;
-	case t_loganalysis_end : return t_system;
-	case t_redo_done : return t_system;
-	case t_undo_done : return t_system;
-	case t_restore_begin : return t_system;
-	case t_restore_segment : return t_system;
-	case t_restore_end : return t_system;
-	case t_xct_latency_dump : return t_system;
-
-	case t_compensate : return t_logical;
-	case t_xct_abort : return t_logical;
-	case t_xct_freeing_space : return t_logical;
-	case t_xct_end : return t_logical;
-	case t_xct_end_group : return t_logical;
-	case t_add_backup : return t_logical;
-
-	case t_alloc_page : return t_redo|t_single_sys_xct;
-	case t_stnode_format : return t_redo|t_single_sys_xct;
-	case t_dealloc_page : return t_redo|t_single_sys_xct;
-	case t_create_store : return t_redo|t_single_sys_xct;
-	case t_append_extent : return t_redo|t_single_sys_xct;
-	case t_page_img_format : return t_redo | t_undo;
-	case t_page_evict : return t_redo|t_single_sys_xct;
-	case t_btree_norec_alloc : return t_redo|t_multi|t_single_sys_xct;
-	case t_btree_insert : return t_redo|t_undo|t_logical;
-	case t_btree_insert_nonghost : return t_redo|t_undo|t_logical;
-	case t_btree_update : return t_redo|t_undo|t_logical;
-	case t_btree_overwrite : return t_redo|t_undo|t_logical;
-	case t_btree_ghost_mark : return t_redo|t_undo|t_logical;
-	case t_btree_ghost_reclaim : return t_redo|t_single_sys_xct;
-	case t_btree_ghost_reserve : return t_redo|t_single_sys_xct;
-	case t_btree_foster_adopt : return t_redo|t_multi|t_single_sys_xct;
-	case t_btree_split : return t_redo|t_multi|t_single_sys_xct;
-	case t_btree_compress_page : return t_redo|t_single_sys_xct;
-
-        default: w_assert0(false); return t_bad_cat;
-    }
-}
-
 void logrec_t::init_header(kind_t type)
 {
-    header._cat = get_logrec_cat(type);
+    header._cpsn = false;
     header._type = type;
     header._pid = 0;
     header._page_tag = 0;
@@ -1182,6 +1115,7 @@ operator<<(ostream& o, const logrec_t& l)
         o << "TID=SSX" << ' ';
     }
     o << l.type_str() << ":" << l.cat_str();
+    if (l.is_cpsn()) { o << " CLR"; }
     o << "  p(" << l.pid() << ")";
     if (l.is_multi_page()) {
         o << " src-" << l.pid2();

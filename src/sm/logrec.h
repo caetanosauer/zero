@@ -75,7 +75,7 @@ struct baseLogHeader
 {
     uint16_t            _len;  // length of the log record
     u_char             _type; // kind_t (included from logtype_gen.h)
-    u_char             _cat;  // category_t
+    bool             _cpsn; // is this a CLR?
     /* 4 */
 
     // Was _pid; broke down to save 2 bytes:
@@ -210,7 +210,6 @@ public:
     bool             is_cpsn() const;
     bool             is_multi_page() const;
     bool             is_rollback() const;
-    bool             is_undoable_clr() const;
     bool             is_logical() const;
     bool             is_single_sys_xct() const;
     bool             valid_header(const lsn_t & lsn_ck = lsn_t::null) const;
@@ -219,7 +218,7 @@ public:
     template <class PagePtr>
     void             redo(PagePtr);
 
-    static u_char get_logrec_cat(kind_t type);
+    static constexpr u_char get_logrec_cat(kind_t type);
 
     void redo();
 
@@ -279,7 +278,6 @@ public:
     void                 set_undo_nxt(const lsn_t &lsn);
     void                 set_tid(tid_t tid);
     void                 set_clr(const lsn_t& c);
-    void                 set_undoable_clr(const lsn_t& c);
     void                 set_pid(const PageID& p);
     kind_t               type() const;
     const char*          type_str() const
@@ -323,38 +321,26 @@ public:
     friend ostream& operator<<(ostream&, const logrec_t&);
 
 protected:
-    /**
-     * Bit flags for the properties of log records.
-     */
+
     enum category_t {
-    /** should not happen. */
-    t_bad_cat   = 0x00,
-    /** System log record: not transaction- or page-related; no undo/redo */
-    t_system    = 0x01,
-    /** log with UNDO action? */
-    t_undo      = 0x02,
-    /** log with REDO action? */
-    t_redo      = 0x04,
-    /** log for multi pages? */
-    t_multi     = 0x08,
-    /**
-     * is the UNDO logical? If so, do not fix the page for undo.
-     * Irrelevant if not an undoable log record.
-     */
-    t_logical   = 0x10,
-    /**
-     * Note: compensation records are not undo-able
-     * (ie. they compensate around themselves as well)
-     * So far this limitation has been fine.
-     */
-    t_cpsn      = 0x20,
-    /**
-     * Not a category, but means log rec was issued in rollback/abort/undo.
-     * adding a bit is cheaper than adding a comment log record.
-     */
-    // t_rollback  = 0x40,
-    /** log by system transaction which is fused with begin/commit record. */
-    t_single_sys_xct    = 0x80
+        /** should not happen. */
+        t_bad_cat   = 0x00,
+        /** System log record: not transaction- or page-related; no undo/redo */
+        t_system    = 0x01,
+        /** log with UNDO action? */
+        t_undo      = 0x02,
+        /** log with REDO action? */
+        t_redo      = 0x04,
+        /** log for multi pages? */
+        t_multi     = 0x08,
+        /**
+         * is the UNDO logical? If so, do not fix the page for undo.
+         * Irrelevant if not an undoable log record.
+         */
+        t_logical   = 0x10,
+
+        /** log by system transaction which is fused with begin/commit record. */
+        t_single_sys_xct    = 0x80
     };
 
     u_char             cat() const;
@@ -401,7 +387,6 @@ inline bool baseLogHeader::is_valid() const
 {
     return (_len >= sizeof(baseLogHeader)
             && _type < logrec_t::t_max_logrec
-            && _cat != logrec_t::t_bad_cat
             && _len <= sizeof(logrec_t));
 }
 
@@ -475,9 +460,7 @@ logrec_t::stid() const
 
 inline PageID logrec_t::pid2() const
 {
-    if (!(header._cat & t_multi)) {
-        return 0;
-    }
+    if (!is_multi_page()) { return 0; }
 
     const multi_page_log_t* multi_log = reinterpret_cast<const multi_page_log_t*> (data_ssx());
     return multi_log->_page2_pid;
@@ -533,10 +516,7 @@ logrec_t::page_prev_lsn() const
 inline const lsn_t&
 logrec_t::page2_prev_lsn() const
 {
-    if (!(header._cat & t_multi)) {
-        return lsn_t::null;
-    }
-
+    if (!is_multi_page()) { return lsn_t::null; }
     return data_ssx_multi()->_page2_prv;
 }
 inline void
@@ -576,27 +556,14 @@ logrec_t::type() const
 inline u_char
 logrec_t::cat() const
 {
-    return header._cat;
+    return get_logrec_cat(static_cast<logrec_t::kind_t>(header._type));
 }
 
 inline void
 logrec_t::set_clr(const lsn_t& c)
 {
     w_assert0(!is_single_sys_xct()); // CLR shouldn't be output in this case
-    header._cat &= ~t_undo; // can't undo compensated
-             // log records, whatever kind they might be
-             // except for special case below
-             // Thus, if you set_clr, you're meaning to compensate
-             // around this log record (not undo it).
-             // The t_undo bit is what distinguishes this normal
-             // compensate-around case from the special undoable-clr
-             // case, which requires set_undoable_clr.
-             // NOTE: the t_undo bit is set by the log record constructor.
-             // Once we turn it off, we do not re-insert that bit (except
-             // as done with the special-case set_undoable_clr).
-
-     w_assert0(!is_undoable_clr());
-    header._cat |= t_cpsn;
+    header._cpsn = true;
 
     // To shrink log records,
     // we've taken out _undo_nxt and
@@ -605,21 +572,15 @@ logrec_t::set_clr(const lsn_t& c)
     xidInfo._xid_prv = c; // and _xid_prv is data area if is_single_sys_xct
 }
 
-inline bool
-logrec_t::is_undoable_clr() const
-{
-    return (header._cat & (t_cpsn|t_undo)) == (t_cpsn|t_undo);
-}
-
 
 inline bool
 logrec_t::is_redo() const
 {
-    return (header._cat & t_redo) != 0;
+    return (cat() & t_redo) != 0;
 }
 
 inline bool logrec_t::is_multi_page() const {
-    return (header._cat & t_multi) != 0;
+    return (cat() & t_multi) != 0;
 }
 
 
@@ -632,28 +593,13 @@ logrec_t::is_skip() const
 inline bool
 logrec_t::is_undo() const
 {
-    return (header._cat & t_undo) != 0;
-}
-
-
-/* The only case of undoable_clr now is the alloc_file_page.
- * This log record is not redoable, so it is not is_page_update.
- * If you add more cases of undoable_clr, you will have to analyze
- * the code in analysis_pass carefully, esp where is_page_update() is
- * concerned.
- */
-inline void
-logrec_t::set_undoable_clr(const lsn_t& c)
-{
-    bool undoable = is_undo();
-    set_clr(c);
-    if(undoable) header._cat |= t_undo;
+    return (cat() & t_undo) != 0;
 }
 
 inline bool
 logrec_t::is_cpsn() const
 {
-    return (header._cat & t_cpsn) != 0;
+    return header._cpsn;
 }
 
 inline bool
@@ -668,13 +614,13 @@ logrec_t::is_page_update() const
 inline bool
 logrec_t::is_logical() const
 {
-    return (header._cat & t_logical) != 0;
+    return (cat() & t_logical) != 0;
 }
 
 inline bool
 logrec_t::is_single_sys_xct() const
 {
-    return (header._cat & t_single_sys_xct) != 0;
+    return (cat() & t_single_sys_xct) != 0;
 }
 
 inline multi_page_log_t* logrec_t::data_ssx_multi() {
@@ -684,6 +630,62 @@ inline multi_page_log_t* logrec_t::data_ssx_multi() {
 inline const multi_page_log_t* logrec_t::data_ssx_multi() const {
     w_assert1(is_multi_page());
     return reinterpret_cast<const multi_page_log_t*>(data_ssx());
+}
+
+constexpr u_char logrec_t::get_logrec_cat(kind_t type)
+{
+    switch (type) {
+	case t_comment : return t_system;
+	case t_tick_sec : return t_system;
+	case t_tick_msec : return t_system;
+	case t_benchmark_start : return t_system;
+	case t_page_write : return t_system;
+	case t_page_read : return t_system;
+	case t_skip : return t_system;
+	case t_chkpt_begin : return t_system;
+	case t_chkpt_bf_tab : return t_system;
+	case t_chkpt_xct_tab : return t_system;
+	case t_chkpt_xct_lock : return t_system;
+	case t_chkpt_restore_tab : return t_system;
+	case t_chkpt_backup_tab : return t_system;
+	case t_chkpt_end : return t_system;
+	case t_loganalysis_begin : return t_system;
+	case t_loganalysis_end : return t_system;
+	case t_redo_done : return t_system;
+	case t_undo_done : return t_system;
+	case t_restore_begin : return t_system;
+	case t_restore_segment : return t_system;
+	case t_restore_end : return t_system;
+	case t_xct_latency_dump : return t_system;
+
+	case t_compensate : return t_logical;
+	case t_xct_abort : return t_logical;
+	case t_xct_freeing_space : return t_logical;
+	case t_xct_end : return t_logical;
+	case t_xct_end_group : return t_logical;
+	case t_add_backup : return t_logical;
+
+	case t_alloc_page : return t_redo|t_single_sys_xct;
+	case t_stnode_format : return t_redo|t_single_sys_xct;
+	case t_dealloc_page : return t_redo|t_single_sys_xct;
+	case t_create_store : return t_redo|t_single_sys_xct;
+	case t_append_extent : return t_redo|t_single_sys_xct;
+	case t_page_img_format : return t_redo | t_undo;
+	case t_page_evict : return t_redo|t_single_sys_xct;
+	case t_btree_norec_alloc : return t_redo|t_multi|t_single_sys_xct;
+	case t_btree_insert : return t_redo|t_undo|t_logical;
+	case t_btree_insert_nonghost : return t_redo|t_undo|t_logical;
+	case t_btree_update : return t_redo|t_undo|t_logical;
+	case t_btree_overwrite : return t_redo|t_undo|t_logical;
+	case t_btree_ghost_mark : return t_redo|t_undo|t_logical;
+	case t_btree_ghost_reclaim : return t_redo|t_single_sys_xct;
+	case t_btree_ghost_reserve : return t_redo|t_single_sys_xct;
+	case t_btree_foster_adopt : return t_redo|t_multi|t_single_sys_xct;
+	case t_btree_split : return t_redo|t_multi|t_single_sys_xct;
+	case t_btree_compress_page : return t_redo|t_single_sys_xct;
+
+        default: w_assert0(false); return t_bad_cat;
+    }
 }
 
 // define 0 or 1

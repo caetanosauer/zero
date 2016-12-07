@@ -1224,9 +1224,6 @@ rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
     if (!s->is_single_sys_xct()) {
         w_assert1(s->xid_prev() == lsn_t::null || s->xid_prev() >= undo_lsn);
 
-        if(s->is_undoable_clr())
-            return RC(eBADCOMPENSATION);
-
         // success!
         DBGTHRD(<<"COMPENSATING LOG RECORD " << undo_lsn << " : " << *s);
         s->set_clr(undo_lsn);
@@ -1266,7 +1263,7 @@ rc_t log_core::load_fetch_buffers()
 
             auto bytesRead = ::pread(fd, buf + offset, read_size, offset);
             CHECK_ERRNO(bytesRead);
-            if (bytesRead != read_size) { return RC(stSHORTIO); }
+            if (bytesRead != (int) read_size) { return RC(stSHORTIO); }
 
             // CS TODO: use std::atomic
             _fetch_buf_begin = lsn_t(p, offset);
