@@ -236,7 +236,7 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
 
     // log as one record
     if (log_it) {
-        Logger::log<page_img_format_log>(this);
+        Logger::log_p<page_img_format_log>(this);
     }
 
     // This is the only place where a page format log record is being generated,
@@ -459,7 +459,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
                 el.put(data, data_length);
                 // key: original key including prefix
                 // el: non-key portion only
-                Logger::log<btree_insert_nonghost_log>(this, keystr, el, true /*is_sys_txn*/);
+                Logger::log_p<btree_insert_nonghost_log>(this, keystr, el, true /*is_sys_txn*/);
                 // Clear the key string so it is ready for the next record
                 keystr.clear();
             }
@@ -478,7 +478,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
                 // Log the insertion into new page (non-leaf)
                 vec_t el;
                 el.put(emlsn_ptr, sizeof(lsn_t));
-                Logger::log<btree_insert_nonghost_log>(this, keystr, el, true /*is_sys_txn*/);
+                Logger::log_p<btree_insert_nonghost_log>(this, keystr, el, true /*is_sys_txn*/);
                 // Clear the key string so it is ready for the next record
                 keystr.clear();
             }
@@ -490,7 +490,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             // No difference between leaf or non-leaf page
             vector<slotid_t> slots;
             slots.push_back(i);    // Current 'i' is the slot for the deleted record
-            Logger::log<btree_ghost_mark_log>(steal_src, slots, true /*is_sys_txn*/);
+            Logger::log_p<btree_ghost_mark_log>(steal_src, slots, true /*is_sys_txn*/);
         }
 
         // Now the actual insertion into the new page
@@ -1239,7 +1239,7 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
     // log FIRST. note that this might apply the deferred ghost creation too.
     // so, this cannot be done later than any of following
     if (!redo) {
-        Logger::log<btree_insert_log> (this, key, elem, false /*is_sys_txn*/);
+        Logger::log_p<btree_insert_log> (this, key, elem, false /*is_sys_txn*/);
     }
 
     // which slot to replace?
@@ -1820,7 +1820,7 @@ rc_t btree_page_h::defrag( const bool full_logging_redo) {
     }
     // defrag doesn't need log if there were no ghost records:
     if ((ghost_slots.size() > 0) && (false == full_logging_redo)){
-        Logger::log<btree_ghost_reclaim_log>(this, ghost_slots);
+        Logger::log_p<btree_ghost_reclaim_log>(this, ghost_slots);
     }
 
     page()->compact();
@@ -1874,7 +1874,7 @@ rc_t btree_page_h::compress(const w_keystr_t& low, const w_keystr_t& high,
     w_assert3(is_consistent(true, true));
 
     if (!redo) {
-        Logger::log<btree_compress_page_log>(this, low, high, chain);
+        Logger::log_p<btree_compress_page_log>(this, low, high, chain);
     }
     ssx.end_sys_xct(RCOK);
 

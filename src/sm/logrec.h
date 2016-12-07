@@ -144,7 +144,7 @@ struct xidChainLogHeader
  */
 class logrec_t {
 public:
-    template <class T> friend class XctLogger;
+    friend class XctLogger;
     friend class sysevent;
     friend class baseLogHeader;
 

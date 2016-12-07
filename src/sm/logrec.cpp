@@ -114,9 +114,100 @@ const char*
 logrec_t::get_type_str(kind_t type)
 {
     switch (type)  {
-#        include "logstr_gen.cpp"
+	case t_comment :
+		return "comment";
+	case t_compensate :
+		return "compensate";
+	case t_skip :
+		return "skip";
+	case t_chkpt_begin :
+		return "chkpt_begin";
+	case t_chkpt_bf_tab :
+		return "chkpt_bf_tab";
+	case t_chkpt_xct_tab :
+		return "chkpt_xct_tab";
+	case t_chkpt_xct_lock :
+		return "chkpt_xct_lock";
+	case t_chkpt_restore_tab :
+		return "chkpt_restore_tab";
+	case t_chkpt_backup_tab :
+		return "chkpt_backup_tab";
+	case t_chkpt_end :
+		return "chkpt_end";
+	case t_add_backup :
+		return "add_backup";
+	case t_xct_abort :
+		return "xct_abort";
+	case t_xct_freeing_space :
+		return "xct_freeing_space";
+	case t_xct_end :
+		return "xct_end";
+	case t_xct_end_group :
+		return "xct_end_group";
+	case t_xct_latency_dump :
+		return "xct_latency_dump";
+	case t_alloc_page :
+		return "alloc_page";
+	case t_dealloc_page :
+		return "dealloc_page";
+	case t_create_store :
+		return "create_store";
+	case t_stnode_format :
+		return "stnode_format";
+	case t_append_extent :
+		return "append_extent";
+	case t_loganalysis_begin :
+		return "loganalysis_begin";
+	case t_loganalysis_end :
+		return "loganalysis_end";
+	case t_redo_done :
+		return "redo_done";
+	case t_undo_done :
+		return "undo_done";
+	case t_restore_begin :
+		return "restore_begin";
+	case t_restore_segment :
+		return "restore_segment";
+	case t_restore_end :
+		return "restore_end";
+	case t_page_img_format :
+		return "page_img_format";
+	case t_page_evict :
+		return "page_evict";
+	case t_btree_norec_alloc :
+		return "btree_norec_alloc";
+	case t_btree_insert :
+		return "btree_insert";
+	case t_btree_insert_nonghost :
+		return "btree_insert_nonghost";
+	case t_btree_update :
+		return "btree_update";
+	case t_btree_overwrite :
+		return "btree_overwrite";
+	case t_btree_ghost_mark :
+		return "btree_ghost_mark";
+	case t_btree_ghost_reclaim :
+		return "btree_ghost_reclaim";
+	case t_btree_ghost_reserve :
+		return "btree_ghost_reserve";
+	case t_btree_foster_adopt :
+		return "btree_foster_adopt";
+	case t_btree_split :
+		return "btree_split";
+	case t_btree_compress_page :
+		return "btree_compress_page";
+	case t_tick_sec :
+		return "tick_sec";
+	case t_tick_msec :
+		return "tick_msec";
+	case t_benchmark_start :
+		return "benchmark_start";
+	case t_page_write :
+		return "page_write";
+	case t_page_read :
+		return "page_read";
     default:
-      return 0;
+      return "UNKNOWN";
     }
 
     /*
@@ -153,11 +244,12 @@ u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_xct_latency_dump : return t_system;
 
 	case t_compensate : return t_logical;
-	case t_add_backup : return t_redo|t_single_sys_xct;
 	case t_xct_abort : return t_logical;
 	case t_xct_freeing_space : return t_logical;
 	case t_xct_end : return t_logical;
 	case t_xct_end_group : return t_logical;
+	case t_add_backup : return t_logical;
+
 	case t_alloc_page : return t_redo|t_single_sys_xct;
 	case t_stnode_format : return t_redo|t_single_sys_xct;
 	case t_dealloc_page : return t_redo|t_single_sys_xct;
@@ -252,7 +344,147 @@ void logrec_t::redo(PagePtr page)
         << " size: " << header._len << " xid_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xid_prev()) );
 
     switch (header._type)  {
-#include "redo_gen.cpp"
+	case t_comment :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_compensate :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_skip :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_begin :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_bf_tab :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_xct_tab :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_xct_lock :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_restore_tab :
+		((chkpt_restore_tab_log *) this)->redo(page);
+		break;
+	case t_chkpt_backup_tab :
+		((chkpt_backup_tab_log *) this)->redo(page);
+		break;
+	case t_chkpt_end :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_add_backup :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_xct_abort :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_xct_freeing_space :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_xct_end :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_xct_end_group :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_xct_latency_dump :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_alloc_page :
+		((alloc_page_log *) this)->redo(page);
+		break;
+	case t_dealloc_page :
+		((dealloc_page_log *) this)->redo(page);
+		break;
+	case t_stnode_format :
+		((stnode_format_log *) this)->redo(page);
+		break;
+	case t_create_store :
+		((create_store_log *) this)->redo(page);
+		break;
+	case t_append_extent :
+		((append_extent_log *) this)->redo(page);
+		break;
+	case t_loganalysis_begin :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_loganalysis_end :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_redo_done :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_undo_done :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_restore_begin :
+		((restore_begin_log *) this)->redo(page);
+		break;
+	case t_restore_segment :
+		((restore_segment_log *) this)->redo(page);
+		break;
+	case t_restore_end :
+		((restore_end_log *) this)->redo(page);
+		break;
+	case t_page_img_format :
+		((page_img_format_log *) this)->redo(page);
+		break;
+	case t_page_evict :
+		((page_evict_log *) this)->redo(page);
+		break;
+	case t_btree_norec_alloc :
+		((btree_norec_alloc_log *) this)->redo(page);
+		break;
+	case t_btree_insert :
+		((btree_insert_log *) this)->redo(page);
+		break;
+	case t_btree_insert_nonghost :
+		((btree_insert_nonghost_log *) this)->redo(page);
+		break;
+	case t_btree_update :
+		((btree_update_log *) this)->redo(page);
+		break;
+	case t_btree_overwrite :
+		((btree_overwrite_log *) this)->redo(page);
+		break;
+	case t_btree_ghost_mark :
+		((btree_ghost_mark_log *) this)->redo(page);
+		break;
+	case t_btree_ghost_reclaim :
+		((btree_ghost_reclaim_log *) this)->redo(page);
+		break;
+	case t_btree_ghost_reserve :
+		((btree_ghost_reserve_log *) this)->redo(page);
+		break;
+	case t_btree_foster_adopt :
+		((btree_foster_adopt_log *) this)->redo(page);
+		break;
+	case t_btree_split :
+		((btree_split_log *) this)->redo(page);
+		break;
+	case t_btree_compress_page :
+		((btree_compress_page_log *) this)->redo(page);
+		break;
+	case t_tick_sec :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_tick_msec :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_benchmark_start :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_page_write :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_page_read :
+		W_FATAL(eINTERNAL);
+		break;
+	default :
+		W_FATAL(eINTERNAL);
+		break;
     }
 
     page->update_page_lsn(lsn());
@@ -299,7 +531,147 @@ void logrec_t::undo(PagePtr page)
     // The actual UNDO implementation in Btree_impl.cpp
 
     switch (header._type) {
-#include "undo_gen.cpp"
+	case t_comment :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_compensate :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_skip :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_begin :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_bf_tab :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_xct_tab :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_xct_lock :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_restore_tab :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_backup_tab :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_chkpt_end :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_add_backup :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_xct_abort :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_xct_freeing_space :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_xct_end :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_xct_end_group :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_xct_latency_dump :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_alloc_page :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_dealloc_page :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_stnode_format :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_create_store :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_append_extent :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_loganalysis_begin :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_loganalysis_end :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_redo_done :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_undo_done :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_restore_begin :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_restore_segment :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_restore_end :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_page_img_format :
+		((page_img_format_log *) this)->undo(page);
+		break;
+	case t_page_evict :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_btree_norec_alloc :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_btree_insert :
+		((btree_insert_log *) this)->undo(page);
+		break;
+	case t_btree_insert_nonghost :
+		((btree_insert_nonghost_log *) this)->undo(page);
+		break;
+	case t_btree_update :
+		((btree_update_log *) this)->undo(page);
+		break;
+	case t_btree_overwrite :
+		((btree_overwrite_log *) this)->undo(page);
+		break;
+	case t_btree_ghost_mark :
+		((btree_ghost_mark_log *) this)->undo(page);
+		break;
+	case t_btree_ghost_reclaim :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_btree_ghost_reserve :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_btree_foster_adopt :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_btree_split :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_btree_compress_page :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_tick_sec :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_tick_msec :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_benchmark_start :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_page_write :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_page_read :
+		W_FATAL(eINTERNAL);
+		break;
+	default :
+		W_FATAL(eINTERNAL);
+		break;
     }
 
     xct()->compensate_undo(xid_prev());
@@ -532,7 +904,7 @@ void chkpt_backup_tab_log::construct(int cnt,
 template <class PagePtr>
 void chkpt_backup_tab_log::redo(PagePtr)
 {
-    // CS TODO
+    // CS TODO should not be a redo logrec!
     chkpt_backup_tab_t* tab = (chkpt_backup_tab_t*) _data;
     std::vector<string> paths;
     tab->read(paths);
@@ -555,6 +927,7 @@ void chkpt_restore_tab_log::construct()
 template <class PagePtr>
 void chkpt_restore_tab_log::redo(PagePtr)
 {
+    // CS TODO should not be a redo logrec!
     // CS TODO: disabled for now
     return;
 
@@ -889,15 +1262,11 @@ operator<<(ostream& o, const logrec_t& l)
     return o;
 }
 
-void create_store_log::construct(PageID root_pid, StoreID snum)
+template <class PagePtr>
+void create_store_log::construct(PagePtr page, PageID root_pid, StoreID snum)
 {
     memcpy(data_ssx(), &snum, sizeof(StoreID));
     memcpy(data_ssx() + sizeof(StoreID), &root_pid, sizeof(PageID));
-    PageID stpage_pid(stnode_page::stpid);
-    // CS TODO: eventlog cleanup
-    // fill(stpage_pid, snum, 0, sizeof(StoreID) + sizeof(PageID));
-    header._pid = stpage_pid;
-    header._stid = snum;
     set_size(sizeof(StoreID) + sizeof(PageID));
 }
 
@@ -914,13 +1283,10 @@ void create_store_log::redo(PagePtr page)
     stpage->set_root(snum, root_pid);
 }
 
-void append_extent_log::construct(extent_id_t ext)
+template <class PagePtr>
+void append_extent_log::construct(PagePtr, extent_id_t ext)
 {
     memcpy(data_ssx(), &ext, sizeof(extent_id_t));
-    PageID stpage_pid(stnode_page::stpid);
-    // CS TODO: eventlog cleanup
-    // fill(stpage_pid, 0, 0, sizeof(extent_id_t));
-    header._pid = stpage_pid;
     set_size(sizeof(extent_id_t));
 }
 
@@ -1029,14 +1395,6 @@ void logrec_accounting_impl_t::account(logrec_t &l, bool fwd)
     }
 }
 
-const char *logrec_accounting_impl_t::type_str(int _type) {
-    switch (_type)  {
-#        include "logstr_gen.cpp"
-    default:
-      return "UNKNOWN";
-    }
-}
-
 void logrec_accounting_t::print_account_and_clear()
 {
     logrec_accounting_impl_t::print_account_and_clear();
@@ -1134,3 +1492,6 @@ template void page_evict_log::template construct<btree_page_h*>(btree_page_h* p,
                                 general_recordid_t child_slot, lsn_t child_lsn);
 
 template void page_img_format_log::template construct<btree_page_h*>(btree_page_h*);
+
+template void create_store_log::template construct<fixable_page_h*>(fixable_page_h*, PageID, StoreID);
+template void append_extent_log::template construct<fixable_page_h*>(fixable_page_h*, extent_id_t);
