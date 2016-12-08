@@ -75,40 +75,26 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 struct RawLock;            // Lock information gathering
 #include "restart.h"
 #include "vol.h"
-#include "thread_wrapper.h"
+#include "worker_thread.h"
 #include "stopwatch.h"
 #include "logrec_support.h"
 #include "xct_logger.h"
 
 
-/*********************************************************************
- *
- *  class chkpt_thread_t
- *
- *  Checkpoint thread.
- *
- *********************************************************************/
-class chkpt_thread_t : public thread_wrapper_t
+class chkpt_thread_t : public worker_thread_t
 {
 public:
-    chkpt_thread_t(int interval);
-    virtual ~chkpt_thread_t();
+    chkpt_thread_t(int interval)
+        : worker_thread_t(interval)
+    {}
 
-    virtual void        run();
-    void                retire();
-    void                awaken();
-    bool                is_retired() {return _retire;}
-
-private:
-    bool                _wakeup;
-    bool                _retire;
-    int                 _interval;
-    pthread_mutex_t     _awaken_lock;
-    pthread_cond_t      _awaken_cond;
-
-    // disabled
-    NORET                chkpt_thread_t(const chkpt_thread_t&);
-    chkpt_thread_t&      operator=(const chkpt_thread_t&);
+    virtual void do_work()
+    {
+        if (ss_m::chkpt) {
+            ss_m::chkpt->take();
+            ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
+        }
+    }
 };
 
 chkpt_m::chkpt_m(const sm_options& options, lsn_t last_chkpt_lsn)
@@ -134,8 +120,7 @@ chkpt_m::~chkpt_m()
 void chkpt_m::retire_thread()
 {
     if (_chkpt_thread) {
-        _chkpt_thread->retire();
-        W_COERCE(_chkpt_thread->join());
+        _chkpt_thread->stop();
         delete _chkpt_thread;
         _chkpt_thread = nullptr;
     }
@@ -147,7 +132,7 @@ void chkpt_m::wakeup_thread()
         _chkpt_thread = new chkpt_thread_t(-1);
         W_COERCE(_chkpt_thread->fork());
     }
-    _chkpt_thread->awaken();
+    _chkpt_thread->wakeup();
 }
 
 /*********************************************************************
@@ -830,66 +815,5 @@ void chkpt_t::deserialize_binary(ifstream& ifs)
     if (!bkp_path.empty()) {
         ifs.read((char*)&bkp_path, bkp_path_size);
     }
-}
-
-chkpt_thread_t::chkpt_thread_t(int interval)
-    : _wakeup(false), _retire(false), _interval(interval)
-{
-    DO_PTHREAD(pthread_mutex_init(&_awaken_lock, NULL));
-    DO_PTHREAD(pthread_cond_init(&_awaken_cond, NULL));
-    smthread_t::set_lock_timeout(timeout_t::WAIT_NOT_USED);
-}
-
-chkpt_thread_t::~chkpt_thread_t()
-{
-}
-
-void chkpt_thread_t::run()
-{
-    while(!_retire)
-    {
-        DO_PTHREAD(pthread_mutex_lock(&_awaken_lock));
-
-        if (_interval >= 0) {
-            struct timespec timeout;
-            smthread_t::timeout_to_timespec(_interval * 1000, timeout); // in ms
-            int code = pthread_cond_timedwait(&_awaken_cond, &_awaken_lock, &timeout);
-            if (code == ETIMEDOUT) {
-                _wakeup = true;
-            }
-            DO_PTHREAD_TIMED(code);
-        }
-        else {
-            DO_PTHREAD(pthread_cond_wait(&_awaken_cond, &_awaken_lock));
-        }
-
-        DO_PTHREAD(pthread_mutex_unlock(&_awaken_lock));
-
-        if (_retire) { break; }
-        if (!_wakeup) { continue; }
-
-        if (ss_m::chkpt) {
-            ss_m::chkpt->take();
-            ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
-        }
-    }
-}
-
-void
-chkpt_thread_t::retire()
-{
-    DO_PTHREAD(pthread_mutex_lock(&_awaken_lock));
-    _retire = true;
-    DO_PTHREAD(pthread_cond_signal(&_awaken_cond));
-    DO_PTHREAD(pthread_mutex_unlock(&_awaken_lock));
-}
-
-void
-chkpt_thread_t::awaken()
-{
-    DO_PTHREAD(pthread_mutex_lock(&_awaken_lock));
-    _wakeup = true;
-    DO_PTHREAD(pthread_cond_signal(&_awaken_cond));
-    DO_PTHREAD(pthread_mutex_unlock(&_awaken_lock));
 }
 
