@@ -21,9 +21,13 @@ void page_evictioner_base::do_work()
 {
     uint32_t preferred_count = EVICT_BATCH_RATIO * _bufferpool->_block_cnt + 1;
 
-    while(_bufferpool->_freelist_len < preferred_count) // TODO: increment _freelist_len atomically
+    // In principle, _freelist_len requires a fence, but here it should be OK
+    // because we don't need to read a consistent value every time.
+    while(_bufferpool->_freelist_len < preferred_count)
     {
+        DBG5(<< "Waiting for pick_victim...");
         bf_idx victim = pick_victim();
+        DBG5(<< "Found victim idx=" << victim);
 
         if(victim == 0) {
             /* idx 0 is never used, so this means pick_victim() exited without
@@ -91,13 +95,13 @@ bf_idx page_evictioner_base::pick_victim()
         if(should_exit()) return 0; // in bf_tree.h, 0 is never used, means null
 
         if(idx == _bufferpool->_block_cnt) {
+            DBG3(<< "Eviction did a full round");
             idx = 1;
         }
 
         if (idx == _current_frame - 1) {
             // We iterate over all pages and no victim was found.
-            // Wake up cleaner and wait here.
-            _bufferpool->wakeup_cleaner(true);
+            _bufferpool->wakeup_cleaner(false);
         }
 
         // CS TODO -- why do we latch CB manually instead of simply fixing
