@@ -7,7 +7,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree_cleaner.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree_evict.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btcursor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl.cpp
