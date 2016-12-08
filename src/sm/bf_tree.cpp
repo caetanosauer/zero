@@ -260,12 +260,6 @@ page_cleaner_base* bf_tree_m::get_cleaner()
     return _cleaner;
 }
 
-void bf_tree_m::wakeup_cleaner(bool wait)
-{
-    auto cleaner = get_cleaner();
-    if (cleaner) { cleaner->wakeup(wait); }
-}
-
 ///////////////////////////////////   Initialization and Release END ///////////////////////////////////
 
 bf_idx bf_tree_m::lookup(PageID pid) const

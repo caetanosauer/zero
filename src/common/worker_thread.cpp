@@ -14,7 +14,7 @@ worker_thread_t::~worker_thread_t()
 {
 }
 
-void worker_thread_t::wakeup(bool wait)
+void worker_thread_t::wakeup(bool wait, int rounds_to_wait)
 {
     unsigned long this_round = 0;
     {
@@ -22,7 +22,7 @@ void worker_thread_t::wakeup(bool wait)
 
         if (wait) {
             // Capture current round number before wakeup
-            this_round = rounds_completed + 1;
+            this_round = rounds_completed + rounds_to_wait;
             if (worker_busy) { this_round++; }
         }
 
@@ -32,7 +32,6 @@ void worker_thread_t::wakeup(bool wait)
     }
 
     if (wait) {
-        // Wait for worker to finish one round
         wait_for_round(this_round);
     }
 }
@@ -45,19 +44,10 @@ void worker_thread_t::wait_for_round(unsigned long round)
 
     auto predicate = [this, round]
     {
-        return rounds_completed >= round;
+        return should_exit() || rounds_completed >= round;
     };
 
     done_condvar.wait(lck, predicate);
-}
-
-void worker_thread_t::wait_for_notify()
-{
-    /* We have a timeout of 10ms. This is pretty high, but it is issued only to
-     * avoid starvation in case the notify() signal is lost. In most cases we
-     * should be awaken by the notify() call, not by the timeout. */
-    std::unique_lock<std::mutex> lck(cond_mutex);
-    done_condvar.wait_for(lck, std::chrono::milliseconds(10));
 }
 
 void worker_thread_t::stop()
@@ -106,10 +96,12 @@ void worker_thread_t::run()
 
 void worker_thread_t::notify_one()
 {
+    std::lock_guard<std::mutex> lck(cond_mutex);
     done_condvar.notify_one();
 }
 
 void worker_thread_t::notify_all()
 {
+    std::lock_guard<std::mutex> lck(cond_mutex);
     done_condvar.notify_all();
 }

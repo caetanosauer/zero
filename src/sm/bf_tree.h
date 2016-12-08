@@ -277,7 +277,12 @@ public:
 
     page_cleaner_base* get_cleaner();
 
-    void wakeup_cleaner(bool wait = false);
+    template <typename... Args>
+    void wakeup_cleaner(Args... args)
+    {
+        auto cleaner = get_cleaner();
+        if (cleaner) { cleaner->wakeup(args...); }
+    }
 
     bool is_no_db_mode() const { return _no_db_mode; }
 

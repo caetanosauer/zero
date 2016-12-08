@@ -37,8 +37,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
 
         // if the freelist was empty, let's evict some page.
         if (evict) {
-            _evictioner->wakeup();
-            _evictioner->wait_for_notify();
+            _evictioner->wakeup(true);
         }
         else { return RC(eBFFULL); }
     }
@@ -48,8 +47,6 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
 void bf_tree_m::_add_free_block(bf_idx idx)
 {
     CRITICAL_SECTION(cs, &_freelist_lock);
-    // CS TODO: Eviction is apparently broken, since I'm seeing the same
-    // frame being freed twice by two different threads.
     w_assert1(idx != FREELIST_HEAD);
     w_assert1(!get_cb(idx)._used);
     ++_freelist_len;
