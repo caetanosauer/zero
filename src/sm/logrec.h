@@ -73,9 +73,9 @@ class xct_t;
 
 struct baseLogHeader
 {
-    uint16_t            _len;  // length of the log record
-    u_char             _type; // kind_t (included from logtype_gen.h)
-    bool             _cpsn; // is this a CLR?
+    uint16_t _len;  // length of the log record
+    u_char _type; // kind_t (included from logtype_gen.h)
+    u_char _flags;
     /* 4 */
 
     // Was _pid; broke down to save 2 bytes:
@@ -209,8 +209,9 @@ public:
     bool             is_undo() const;
     bool             is_cpsn() const;
     bool             is_multi_page() const;
-    bool             is_rollback() const;
+    bool             is_root_page() const;
     bool             is_logical() const;
+    bool             is_system() const;
     bool             is_single_sys_xct() const;
     bool             valid_header(const lsn_t & lsn_ck = lsn_t::null) const;
     smsize_t         header_size() const;
@@ -278,6 +279,7 @@ public:
     void                 set_undo_nxt(const lsn_t &lsn);
     void                 set_tid(tid_t tid);
     void                 set_clr(const lsn_t& c);
+    void                 set_root_page();
     void                 set_pid(const PageID& p);
     kind_t               type() const;
     const char*          type_str() const
@@ -341,6 +343,15 @@ protected:
 
         /** log by system transaction which is fused with begin/commit record. */
         t_single_sys_xct    = 0x80
+    };
+
+    enum flag_t {
+        // If this logrec is a CLR
+        t_cpsn          = 0x01,
+        // If this logrec refers to a root page (in a general sense, a root is
+        // any page which cannot be recovered by SPR because no other page
+        // points to it
+        t_root_page     = 0x02
     };
 
     u_char             cat() const;
@@ -563,7 +574,7 @@ inline void
 logrec_t::set_clr(const lsn_t& c)
 {
     w_assert0(!is_single_sys_xct()); // CLR shouldn't be output in this case
-    header._cpsn = true;
+    header._flags |= t_cpsn;
 
     // To shrink log records,
     // we've taken out _undo_nxt and
@@ -572,6 +583,17 @@ logrec_t::set_clr(const lsn_t& c)
     xidInfo._xid_prv = c; // and _xid_prv is data area if is_single_sys_xct
 }
 
+inline void
+logrec_t::set_root_page()
+{
+    header._flags |= t_root_page;
+}
+
+inline bool
+logrec_t::is_system() const
+{
+    return (cat() & t_system) != 0;
+}
 
 inline bool
 logrec_t::is_redo() const
@@ -599,7 +621,13 @@ logrec_t::is_undo() const
 inline bool
 logrec_t::is_cpsn() const
 {
-    return header._cpsn;
+    return (header._flags & t_cpsn) != 0;
+}
+
+inline bool
+logrec_t::is_root_page() const
+{
+    return (header._flags & t_root_page) != 0;
 }
 
 inline bool

@@ -208,7 +208,7 @@ logrec_t::get_type_str(kind_t type)
 
 void logrec_t::init_header(kind_t type)
 {
-    header._cpsn = false;
+    header._flags = 0;
     header._type = type;
     header._pid = 0;
     header._page_tag = 0;
@@ -234,7 +234,6 @@ void logrec_t::set_size(size_t l)
 void logrec_t::init_xct_info()
 {
     /* adjust _cat */
-    xct_t *x = xct();
     if (!is_single_sys_xct()) { // prv does not exist in single-log system transaction
         set_xid_prev(lsn_t::null);
     }
@@ -1116,7 +1115,8 @@ operator<<(ostream& o, const logrec_t& l)
     }
     o << l.type_str() << ":" << l.cat_str();
     if (l.is_cpsn()) { o << " CLR"; }
-    o << "  p(" << l.pid() << ")";
+    if (l.is_root_page()) { o << " ROOT"; }
+    o << " p(" << l.pid() << ")";
     if (l.is_multi_page()) {
         o << " src-" << l.pid2();
     }

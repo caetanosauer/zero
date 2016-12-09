@@ -68,6 +68,10 @@ public:
         reinterpret_cast<Logrec*>(logrec)->construct(p, args...);
         w_assert1(logrec->valid_header());
 
+        if (p->tag() != t_btree_p || p->root() == p->pid()) {
+            logrec->set_root_page();
+        }
+
         // set page LSN chain
         logrec->set_page_prev_lsn(p->get_page_lsn());
 
@@ -107,6 +111,13 @@ public:
         logrec->init_page_info(p);
         reinterpret_cast<Logrec*>(logrec)->construct(p, p2, args...);
         w_assert1(logrec->valid_header());
+
+        if (p->tag() != t_btree_p || p->root() == p->pid()) {
+            logrec->set_root_page();
+        }
+        if (p2->tag() != t_btree_p || p2->root() == p2->pid()) {
+            logrec->set_root_page();
+        }
 
         // set page LSN chain
         logrec->set_page_prev_lsn(p->get_page_lsn());
@@ -187,6 +198,9 @@ public:
         logrec->init_xct_info();
         reinterpret_cast<Logrec*>(logrec)->construct(args...);
         w_assert1(logrec->valid_header());
+
+        // CS TODO: all uses of log_page_chain are on a root page
+        logrec->set_root_page();
 
         lsn_t lsn;
         logrec->set_page_prev_lsn(prev_page_lsn);

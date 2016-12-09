@@ -226,3 +226,9 @@ PageID* fixable_page_h::child_slot_address(int child_slot) const {
     downcast.fix_nonbufferpool_page(get_generic_page());
     return downcast.page_pointer_address(child_slot -1);
 }
+
+PageID fixable_page_h::root() const {
+    btree_page_h downcast;
+    downcast.fix_nonbufferpool_page(get_generic_page());
+    return downcast.root();
+}

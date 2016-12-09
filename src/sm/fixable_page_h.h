@@ -198,6 +198,8 @@ public:
     /// @pre We do not hold current page's latch in Q mode
     PageID*     child_slot_address(int child_slot) const;
 
+    PageID root() const;
+
     /**
      * Used by restore to perform REDO on a page allocated ouside the buffer
      * pool. Ideally, this would not be necessary, but unfortunately, the
