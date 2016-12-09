@@ -185,6 +185,8 @@ void chkpt_t::scan_log(lsn_t scan_start)
             }
         }
 
+        analyze_logrec(r, scan_stop);
+
         // CS: A CLR is not considered a page update for some reason...
         if (r.is_redo()) {
             mark_page_dirty(r.pid(), lsn, lsn);
@@ -194,141 +196,146 @@ void chkpt_t::scan_log(lsn_t scan_start)
                 mark_page_dirty(r.pid2(), lsn, lsn);
             }
         }
-
-        switch (r.type())
-        {
-            case logrec_t::t_chkpt_begin:
-                // CS TODO: not needed with file serialization
-                // if (insideChkpt) {
-                //     // Signal to stop backward log scan loop now
-                //     scan_stop = lsn;
-                // }
-                {
-                    fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn);
-                    if (fs::exists(fpath)) {
-                        ifstream ifs(fpath.string(), ios::binary);
-                        deserialize_binary(ifs);
-                        ifs.close();
-                        scan_stop = lsn;
-                    }
-                }
-
-                break;
-
-            case logrec_t::t_chkpt_bf_tab:
-                // CS TODO: not needed with file serialization
-                // if (insideChkpt) {
-                //     const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
-                //     for (uint i = 0; i < dp->count; i++) {
-                //         mark_page_dirty(dp->brec[i].pid, dp->brec[i].page_lsn,
-                //                 dp->brec[i].rec_lsn);
-                //     }
-                // }
-                break;
-
-
-            case logrec_t::t_chkpt_xct_lock:
-                // CS TODO: not needed with file serialization
-                // if (insideChkpt) {
-                //     const chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r.data();
-                //     if (is_xct_active(dp->tid)) {
-                //         for (uint i = 0; i < dp->count; i++) {
-                //             add_lock(dp->tid, dp->xrec[i].lock_mode,
-                //                     dp->xrec[i].lock_hash);
-                //         }
-                //     }
-                // }
-                break;
-
-            case logrec_t::t_chkpt_xct_tab:
-                // CS TODO: not needed with file serialization
-                // if (insideChkpt) {
-                //     const chkpt_xct_tab_t* dp = (chkpt_xct_tab_t*) r.data();
-                //     for (size_t i = 0; i < dp->count; ++i) {
-                //         tid_t tid = dp->xrec[i].tid;
-                //         w_assert1(!tid.is_null());
-                //         mark_xct_active(tid, dp->xrec[i].first_lsn,
-                //                 dp->xrec[i].last_lsn);
-                //     }
-                // }
-                break;
-
-
-                // CS TODO: not needed with file serialization
-            // case logrec_t::t_chkpt_end:
-                // checkpoints should not run concurrently
-                // w_assert0(!insideChkpt);
-                // insideChkpt = true;
-                break;
-
-            // CS TODO: why do we need this? Isn't it related to 2PC?
-            // case logrec_t::t_xct_freeing_space:
-            case logrec_t::t_xct_end:
-            case logrec_t::t_xct_abort:
-                mark_xct_ended(r.tid());
-                break;
-
-            case logrec_t::t_xct_end_group:
-                {
-                    // CS TODO: is this type of group commit still used?
-                    w_assert0(false);
-                    const xct_list_t* list = (xct_list_t*) r.data();
-                    uint listlen = list->count;
-                    for(uint i=0; i<listlen; i++) {
-                        tid_t tid = list->xrec[i].tid;
-                        mark_xct_ended(tid);
-                    }
-                }
-                break;
-
-            case logrec_t::t_page_write:
-                {
-                    char* pos = r.data();
-
-                    PageID pid = *((PageID*) pos);
-                    pos += sizeof(PageID);
-
-                    lsn_t clean_lsn = *((lsn_t*) pos);
-                    pos += sizeof(lsn_t);
-
-                    uint32_t count = *((uint32_t*) pos);
-                    PageID end = pid + count;
-
-                    while (pid < end) {
-                        mark_page_clean(pid, clean_lsn);
-                        pid++;
-                    }
-                }
-                break;
-
-            case logrec_t::t_add_backup:
-                {
-                    const char* dev = (const char*)(r.data_ssx());
-                    add_backup(dev);
-                }
-                break;
-
-            case logrec_t::t_chkpt_backup_tab:
-                // CS TODO
-                break;
-
-            case logrec_t::t_restore_begin:
-            case logrec_t::t_restore_end:
-            case logrec_t::t_restore_segment:
-            case logrec_t::t_chkpt_restore_tab:
-                // CS TODO - IMPLEMENT!
-                break;
-
-            default:
-                break;
-
-        } //switch
-    } //while
+    }
 
     w_assert0(lsn == scan_stop);
     last_scan_start = scan_start;
 
     cleanup();
+}
+
+void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop)
+{
+    auto lsn = r.lsn();
+
+    switch (r.type())
+    {
+        case logrec_t::t_chkpt_begin:
+            // CS TODO: not needed with file serialization
+            // if (insideChkpt) {
+            //     // Signal to stop backward log scan loop now
+            //     scan_stop = lsn;
+            // }
+            {
+                fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn);
+                if (fs::exists(fpath)) {
+                    ifstream ifs(fpath.string(), ios::binary);
+                    deserialize_binary(ifs);
+                    ifs.close();
+                    scan_stop = lsn;
+                }
+            }
+
+            break;
+
+        case logrec_t::t_chkpt_bf_tab:
+            // CS TODO: not needed with file serialization
+            // if (insideChkpt) {
+            //     const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
+            //     for (uint i = 0; i < dp->count; i++) {
+            //         mark_page_dirty(dp->brec[i].pid, dp->brec[i].page_lsn,
+            //                 dp->brec[i].rec_lsn);
+            //     }
+            // }
+            break;
+
+
+        case logrec_t::t_chkpt_xct_lock:
+            // CS TODO: not needed with file serialization
+            // if (insideChkpt) {
+            //     const chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r.data();
+            //     if (is_xct_active(dp->tid)) {
+            //         for (uint i = 0; i < dp->count; i++) {
+            //             add_lock(dp->tid, dp->xrec[i].lock_mode,
+            //                     dp->xrec[i].lock_hash);
+            //         }
+            //     }
+            // }
+            break;
+
+        case logrec_t::t_chkpt_xct_tab:
+            // CS TODO: not needed with file serialization
+            // if (insideChkpt) {
+            //     const chkpt_xct_tab_t* dp = (chkpt_xct_tab_t*) r.data();
+            //     for (size_t i = 0; i < dp->count; ++i) {
+            //         tid_t tid = dp->xrec[i].tid;
+            //         w_assert1(!tid.is_null());
+            //         mark_xct_active(tid, dp->xrec[i].first_lsn,
+            //                 dp->xrec[i].last_lsn);
+            //     }
+            // }
+            break;
+
+
+            // CS TODO: not needed with file serialization
+            // case logrec_t::t_chkpt_end:
+            // checkpoints should not run concurrently
+            // w_assert0(!insideChkpt);
+            // insideChkpt = true;
+            break;
+
+            // CS TODO: why do we need this? Isn't it related to 2PC?
+            // case logrec_t::t_xct_freeing_space:
+        case logrec_t::t_xct_end:
+        case logrec_t::t_xct_abort:
+            mark_xct_ended(r.tid());
+            break;
+
+        case logrec_t::t_xct_end_group:
+            {
+                // CS TODO: is this type of group commit still used?
+                w_assert0(false);
+                const xct_list_t* list = (xct_list_t*) r.data();
+                uint listlen = list->count;
+                for(uint i=0; i<listlen; i++) {
+                    tid_t tid = list->xrec[i].tid;
+                    mark_xct_ended(tid);
+                }
+            }
+            break;
+
+        case logrec_t::t_page_write:
+            {
+                char* pos = r.data();
+
+                PageID pid = *((PageID*) pos);
+                pos += sizeof(PageID);
+
+                lsn_t clean_lsn = *((lsn_t*) pos);
+                pos += sizeof(lsn_t);
+
+                uint32_t count = *((uint32_t*) pos);
+                PageID end = pid + count;
+
+                while (pid < end) {
+                    mark_page_clean(pid, clean_lsn);
+                    pid++;
+                }
+            }
+            break;
+
+        case logrec_t::t_add_backup:
+            {
+                const char* dev = (const char*)(r.data_ssx());
+                add_backup(dev);
+            }
+            break;
+
+        case logrec_t::t_chkpt_backup_tab:
+            // CS TODO
+            break;
+
+        case logrec_t::t_restore_begin:
+        case logrec_t::t_restore_end:
+        case logrec_t::t_restore_segment:
+        case logrec_t::t_chkpt_restore_tab:
+            // CS TODO - IMPLEMENT!
+            break;
+
+        default:
+            break;
+
+    } //switch
 }
 
 void chkpt_t::init()

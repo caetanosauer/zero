@@ -126,6 +126,7 @@ public:
     void add_lock(tid_t tid, okvl_mode mode, uint32_t hash);
 
     void add_backup(const char* path);
+    void analyze_logrec(logrec_t&, lsn_t& scan_stop);
 
     lsn_t get_min_rec_lsn() const;
     lsn_t get_min_xct_lsn() const;

@@ -26,7 +26,6 @@ typedef uint32_t extent_id_t;
  * their interpretation is contained in the handle class.
  */
 class alloc_page : public generic_page_header {
-    friend class alloc_page_h;
 public:
 
     extent_id_t extent_id;
