@@ -139,8 +139,6 @@ private:
     // System state object, updated by log analysis
     chkpt_t chkpt;
 
-    bool instantRestart;
-
     // Child thread, used only if open system after Log Analysis phase while REDO and UNDO
     // will be performed with concurrent user transactions
     restart_thread_t*           _restart_thread;

@@ -109,7 +109,6 @@ chkpt_m::chkpt_m(const sm_options& options, lsn_t last_chkpt_lsn)
     }
 
     _no_db_mode = options.get_bool_option("sm_no_db", false);
-    _only_root_pages = options.get_bool_option("sm_chkpt_only_root_pages", false);
 }
 
 chkpt_m::~chkpt_m()
