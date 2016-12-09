@@ -248,19 +248,19 @@ rc_t ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
     CRITICAL_SECTION(cs, mutex);
 
     if (appendFd[level] >= 0) {
-        if (appendPos[level] == 0 && runEndLSN == lsn_t::null) {
-            // nothing was appended -- just close file and return
-            auto ret = ::close(appendFd[level]);
-            CHECK_ERRNO(ret);
-            appendFd[level] = -1;
-            return RCOK;
-        }
+        // if (appendPos[level] == 0 && runEndLSN == lsn_t::null) {
+        //     // nothing was appended -- just close file and return
+        //     auto ret = ::close(appendFd[level]);
+        //     CHECK_ERRNO(ret);
+        //     appendFd[level] = -1;
+        //     return RCOK;
+        // }
 
         // CS TODO from now on, archiveIndex is mandatory
         // CS TODO unify ArchiveDirectory and ArchiveIndex
         w_assert0(archIndex);
         lsn_t lastLSN = archIndex->getLastLSN(level);
-        if (lastLSN != runEndLSN) {
+        if (lastLSN != runEndLSN && !runEndLSN.is_null()) {
             // register index information and write it on end of file
             if (archIndex && appendPos[level] > 0) {
                 // take into account space for skip log record
@@ -268,9 +268,9 @@ rc_t ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
                 // and make sure data is written aligned to block boundary
                 appendPos[level] -= appendPos[level] % blockSize;
                 appendPos[level] += blockSize;
-                archIndex->finishRun(lastLSN, runEndLSN, appendFd[level], appendPos[level], level);
             }
 
+            archIndex->finishRun(lastLSN, runEndLSN, appendFd[level], appendPos[level], level);
             fs::path new_path = make_run_path(lastLSN, runEndLSN, level);
             fs::rename(make_current_run_path(), new_path);
 
@@ -414,18 +414,23 @@ void ArchiveIndex::newBlock(const vector<pair<PageID, size_t> >&
 rc_t ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
         off_t offset, unsigned level)
 {
+    if (offset == 0) {
+        // at least one entry is required for empty runs
+        appendNewEntry(level);
+    }
+
     CRITICAL_SECTION(cs, mutex);
     w_assert1(offset % blockSize == 0);
 
-    // check if it isn't an empty run (from truncation)
     int& lf = lastFinished[level];
-    if (offset > 0 && lf < (int) runs[level].size()) {
-        lf++;
-        w_assert1(lf == 0 || first == runs[level][lf-1].lastLSN);
-        w_assert1(lf < (int) runs[level].size());
+    lf++;
+    w_assert1(lf == 0 || first == runs[level][lf-1].lastLSN);
+    w_assert1(lf < (int) runs[level].size());
 
-        runs[level][lf].firstLSN = first;
-        runs[level][lf].lastLSN = last;
+    runs[level][lf].firstLSN = first;
+    runs[level][lf].lastLSN = last;
+
+    if (offset > 0 && lf < (int) runs[level].size()) {
         W_DO(serializeRunInfo(runs[level][lf], fd, offset));
     }
 
@@ -549,7 +554,7 @@ rc_t ArchiveIndex::loadRunInfo(int fd, const ArchiveDirectory::RunFileStats& fst
         while (indexBlockCount > 0) {
             auto bytesRead = ::pread(fd, readBuffer, blockSize, offset);
             CHECK_ERRNO(bytesRead);
-            if (bytesRead != blockSize) { return RC(stSHORTIO); }
+            if (bytesRead != (int) blockSize) { return RC(stSHORTIO); }
 
             BlockHeader* h = (BlockHeader*) readBuffer;
 

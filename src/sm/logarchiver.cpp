@@ -617,7 +617,7 @@ void LogArchiver::requestFlushSync(lsn_t reqLSN)
 void LogArchiver::archiveUntilLSN(lsn_t lsn)
 {
     // if lsn.lo() == 0, archiver will not activate and it will get stuck
-    w_assert1(lsn.lo() > 0);
+    w_assert1(lsn.is_null() || lsn.lo() > 0);
 
     // wait for log record to be consumed
     while (getNextConsumedLSN() < lsn) {
