@@ -134,6 +134,8 @@ public:
         return _oldest_lsn_tracker;
     }
 
+    lsn_t get_oldest_active_lsn();
+
     static lsn_t first_lsn(uint32_t pnum) { return lsn_t(pnum, 0); }
 
 protected:

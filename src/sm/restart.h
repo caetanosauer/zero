@@ -143,6 +143,8 @@ private:
     // will be performed with concurrent user transactions
     restart_thread_t*           _restart_thread;
 
+    bool _no_db_mode;
+
 public:
 
     /**

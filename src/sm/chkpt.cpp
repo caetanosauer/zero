@@ -127,6 +127,9 @@ void chkpt_m::retire_thread()
 
 void chkpt_m::wakeup_thread()
 {
+    // No chkpts in no-db mode -- see comments in take() below
+    if (_no_db_mode) { return; }
+
     if (!_chkpt_thread) {
         _chkpt_thread = new chkpt_thread_t(-1);
         W_COERCE(_chkpt_thread->fork());
@@ -142,7 +145,7 @@ void chkpt_m::wakeup_thread()
 *  corresponding to the latest completed checkpoint.
 *
 *********************************************************************/
-void chkpt_t::scan_log(lsn_t scan_start)
+void chkpt_t::scan_log(lsn_t scan_start, bool no_db_mode)
 {
     init();
 
@@ -185,7 +188,7 @@ void chkpt_t::scan_log(lsn_t scan_start)
             }
         }
 
-        analyze_logrec(r, scan_stop);
+        analyze_logrec(r, scan_stop, no_db_mode);
 
         // CS: A CLR is not considered a page update for some reason...
         if (r.is_redo()) {
@@ -198,13 +201,13 @@ void chkpt_t::scan_log(lsn_t scan_start)
         }
     }
 
-    w_assert0(lsn == scan_stop);
+    w_assert0(no_db_mode || lsn == scan_stop);
     last_scan_start = scan_start;
 
     cleanup();
 }
 
-void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop)
+void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop, bool no_db_mode)
 {
     auto lsn = r.lsn();
 
@@ -217,6 +220,9 @@ void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop)
             //     scan_stop = lsn;
             // }
             {
+                // In no-db mode, ignore chkpt files and always scan whole log
+                if (no_db_mode) { break; }
+
                 fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn);
                 if (fs::exists(fpath)) {
                     ifstream ifs(fpath.string(), ios::binary);
@@ -693,8 +699,16 @@ void chkpt_m::take()
     begin_lsn = Logger::log_sys<chkpt_begin_log>(lsn_t::null);
     W_COERCE(ss_m::log->flush_all());
 
-    // Collect checkpoint information from log
-    curr_chkpt.scan_log(begin_lsn);
+    // No chkpts are taken in no-db mode -- log analysis always scans the whole
+    // recovery log, which should be kept quite tiny at all times in no-db mode.
+    // However, we still need to be able to know the min_xct_lsn, so we get it
+    // from the log manager's oldest lsn tracker. To make sure that we keep track
+    // of the current LSN, especially after log truncation during a clean shutdown,
+    // we just write an empty chekpoint.
+    if (!_no_db_mode) {
+        // Collect checkpoint information from log
+        curr_chkpt.scan_log(begin_lsn, _no_db_mode);
+    }
 
     // Serialize chkpt to file
     fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn_t::null);
@@ -705,9 +719,15 @@ void chkpt_m::take()
     fs::rename(fpath, newpath);
     smlevel_0::log->get_storage()->add_checkpoint(begin_lsn);
 
-    _min_rec_lsn = curr_chkpt.get_min_rec_lsn();
-    _min_xct_lsn = curr_chkpt.get_min_xct_lsn();
-    _last_end_lsn = curr_chkpt.get_last_scan_start();
+    if (_no_db_mode) {
+        _min_xct_lsn = ss_m::log->get_oldest_active_lsn();
+        _last_end_lsn = begin_lsn;
+    }
+    else {
+        _min_rec_lsn = curr_chkpt.get_min_rec_lsn();
+        _min_xct_lsn = curr_chkpt.get_min_xct_lsn();
+        _last_end_lsn = curr_chkpt.get_last_scan_start();
+    }
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_mutex.release_write();

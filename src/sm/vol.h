@@ -168,6 +168,8 @@ private:
      */
     bool             _readonly;
 
+    bool _no_db_mode;
+
     /** Restore Manager is activated when volume has failed */
     RestoreMgr*      _restore_mgr;
 

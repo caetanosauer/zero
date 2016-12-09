@@ -1308,6 +1308,11 @@ void log_core::discard_fetch_buffers()
     _fetch_buf_end = lsn_t::null;
 }
 
+lsn_t log_core::get_oldest_active_lsn()
+{
+    return _oldest_lsn_tracker->get_oldest_active_lsn(curr_lsn());
+}
+
 /*********************************************************************
  *
  *  log_i::xct_next(lsn, r)

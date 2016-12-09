@@ -71,9 +71,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sstream>
 #include <iomanip>
 
-restart_m::restart_m(const sm_options&)
+restart_m::restart_m(const sm_options& options)
     : _restart_thread(NULL)
 {
+    _no_db_mode = options.get_bool_option("sm_no_db", false);
 }
 
 restart_m::~restart_m()
@@ -89,7 +90,7 @@ void restart_m::log_analysis()
 {
     stopwatch_t timer;
 
-    chkpt.scan_log();
+    chkpt.scan_log(lsn_t::null, _no_db_mode);
 
     //Re-create transactions
     xct_t::update_youngest_tid(chkpt.get_highest_tid());
@@ -618,9 +619,10 @@ SprIterator::SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
     last_lsn{lsn_t::null},
     replayed_count{0}
 {
-    w_assert0(!lastLSN.is_null());
-    // make sure log is durable until the lsn we're trying to fetch
-    smlevel_0::log->flush(lastLSN);
+    if (!lastLSN.is_null()) {
+        // make sure log is durable until the lsn we're trying to fetch
+        smlevel_0::log->flush(lastLSN);
+    }
 
     // Allocate initial buffer -- expand later if needed
     // CS: regular allocation is fine since SPR isn't such a critical operation
@@ -684,7 +686,7 @@ SprIterator::SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
         if (lr->has_page_img(pid)) { break; }
     }
 
-    if (left_early && ss_m::logArchiver) {
+    if ((lastLSN.is_null() || left_early) && ss_m::logArchiver) {
         // Reached EOF when scanning log backwards looking for current_lsn.
         // This means that the log record we're looking for is not in the recovery
         // log anymore and has probably been archived already.

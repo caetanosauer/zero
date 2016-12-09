@@ -67,7 +67,8 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
     _prioritize_archive =
         options.get_bool_option("sm_recovery_prioritize_archive", true);
 
-    if (options.get_bool_option("sm_no_db", false)) {
+    _no_db_mode = options.get_bool_option("sm_no_db", false);
+    if (_no_db_mode) {
         _readonly = true;
     }
 
@@ -465,7 +466,7 @@ rc_t vol_t::read_page_verify(PageID pid, generic_page* const buf, lsn_t emlsn)
     // uint32_t checksum = buf->calculate_checksum();
     // if (checksum != buf->checksum && !emlsn.is_null())
 
-    if (buf->lsn < emlsn) {
+    if (buf->lsn < emlsn || _no_db_mode) {
         // if (buf->lsn == lsn_t::null) { // virgin page
         //     buf->lsn = lsn_t::null;
         //     buf->pid = pid;
@@ -479,7 +480,9 @@ rc_t vol_t::read_page_verify(PageID pid, generic_page* const buf, lsn_t emlsn)
 
         SprIterator iter {pid, p.lsn(), emlsn, _prioritize_archive};
         iter.apply(p);
-        w_assert0(p.lsn() == emlsn);
+        w_assert0(_no_db_mode || p.lsn() == emlsn);
+        w_assert0(!_no_db_mode || p.lsn() >= emlsn);
+        w_assert0(!p.lsn().is_null());
 
         delete_dirty_page(pid);
         // cerr << "Recovered " << pid << " to LSN " << emlsn << endl;
