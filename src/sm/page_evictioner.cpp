@@ -122,7 +122,8 @@ bf_idx page_evictioner_base::pick_victim()
         // now we hold an EX latch -- check if leaf and not dirty
         btree_page_h p;
         p.fix_nonbufferpool_page(_bufferpool->_buffer + idx);
-        if (p.tag() != t_btree_p || !p.is_leaf() || cb.is_dirty()
+        if (p.tag() != t_btree_p || !p.is_leaf()
+                || (!_bufferpool->is_no_db_mode() && cb.is_dirty())
                 || !cb._used || p.pid() == p.root() || p.get_foster() != 0)
         {
             cb.latch().latch_release();
