@@ -97,7 +97,7 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
         }
     }
 
-    maxLevel = 0;
+    unsigned maxLevel = 0;
     archpath = archdir;
     fs::directory_iterator it(archpath), eod;
     boost::regex current_rx(current_regex, boost::regex::perl);
@@ -189,7 +189,7 @@ void ArchiveDirectory::listFileStats(list<RunFileStats>& list,
         int level)
 {
     list.clear();
-    if (level > static_cast<int>(maxLevel)) { return; }
+    if (level > static_cast<int>(archIndex->getMaxLevel())) { return; }
 
     vector<string> fnames;
     listFiles(fnames, level);

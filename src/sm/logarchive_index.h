@@ -50,7 +50,6 @@ public:
     ArchiveIndex* getIndex() { return archIndex; }
     size_t getBlockSize() const { return blockSize; }
     std::string getArchDir() const { return archdir; }
-    unsigned getMaxLevel() const { return maxLevel; }
 
     lsn_t getLastLSN();
 
@@ -78,7 +77,6 @@ private:
     std::vector<int> appendFd;
     std::vector<off_t> appendPos;
     size_t blockSize;
-    unsigned maxLevel;
 
     fs::path archpath;
 
@@ -108,6 +106,7 @@ public:
  * \author Caetano Sauer
  */
 class ArchiveIndex {
+    friend class ArchiveDirectory;
 public:
     ArchiveIndex(size_t blockSize, size_t bucketSize = 0);
     virtual ~ArchiveIndex();
@@ -137,6 +136,7 @@ public:
     lsn_t getLastLSN(unsigned level = 1);
     lsn_t getFirstLSN(unsigned level);
 
+    unsigned getMaxLevel() const { return maxLevel; }
     size_t getBucketSize() { return bucketSize; }
     size_t getRunCount(unsigned level) {
         if (level > maxLevel) { return 0; }
