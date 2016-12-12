@@ -191,6 +191,7 @@ LogArchiveScanner::LogArchiveScanner(const po::variables_map& options)
     : BaseScanner(options), runBegin(lsn_t::null), runEnd(lsn_t::null)
 {
     archdir = options["logdir"].as<string>();
+    level = options["level"].as<int>();
 }
 
 bool runCompare (string a, string b)
@@ -219,7 +220,7 @@ void LogArchiveScanner::run()
     std::vector<std::string> runFiles;
 
     if (restrictFile.empty()) {
-        directory->listFiles(runFiles);
+        directory->listFiles(runFiles, level);
         std::sort(runFiles.begin(), runFiles.end(), runCompare);
     }
     else {
@@ -250,7 +251,7 @@ void LogArchiveScanner::run()
             new ArchiveScanner::RunScanner(
                     runBegin,
                     runEnd,
-                    1, // level (CS TODO)
+                    fstats.level,
                     0, // first PID
                     0, // last PID
                     0,            // file offset
@@ -285,6 +286,7 @@ MergeScanner::MergeScanner(const po::variables_map& options)
     : BaseScanner(options)
 {
     archdir = options["logdir"].as<string>();
+    level = options["level"].as<int>();
 }
 
 void MergeScanner::run()

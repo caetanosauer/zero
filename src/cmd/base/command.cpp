@@ -352,7 +352,8 @@ BaseScanner* LogScannerCommand::getScanner(
     }
 
     if (!filename.empty()) {
-        s->setRestrictFile(logdir + "/" + filename);
+        if (!isArchive) { s->setRestrictFile(logdir + "/" + filename); }
+        else { s->setRestrictFile(filename); }
     }
 
     return s;
@@ -375,6 +376,8 @@ void LogScannerCommand::setupOptions()
             "Merge archiver input so that global sort order is produced")
         ("limit,n", po::value<size_t>(&limit)->default_value(0),
              "Number of log records to scan")
+        ("level", po::value<int>(&level)->default_value(-1),
+             "Level of log archive to scan (-1 for all)")
         ;
     options.add(logscanner);
 }

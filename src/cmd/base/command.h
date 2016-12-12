@@ -59,6 +59,7 @@ protected:
     bool isArchive;
     bool merge;
     string filename;
+    int level;
 
 private:
     size_t limit;

@@ -72,6 +72,7 @@ private:
     string archdir;
     lsn_t runBegin;
     lsn_t runEnd;
+    int level;
 
     void findFirstFile();
     string getNextFile();
@@ -85,6 +86,7 @@ public:
     virtual void run();
 private:
     string archdir;
+    int level;
 };
 
 #endif
