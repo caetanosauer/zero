@@ -18,6 +18,7 @@ BlockAssembly::BlockAssembly(ArchiveDirectory* directory, unsigned level)
     writer = new WriterThread(writebuf, directory, level);
     writer->fork();
 
+    directory->openNewRun(level);
     spaceToReserve = directory->getSkipLogrecSize();
 }
 
@@ -201,11 +202,11 @@ void WriterThread::run()
              *  holes exist in the archive.
              */
             W_COERCE(directory->closeCurrentRun(maxLSNInRun, level));
-            w_assert1(directory->getLastLSN() == maxLSNInRun);
+            w_assert1(directory->getIndex()->getLastLSN(level) == maxLSNInRun);
             currentRun = run;
             maxLSNInRun = lsn_t::null;
             DBGTHRD(<< "Opening file for new run " << run
-                    << " starting on LSN " << directory->getLastLSN());
+                    << " starting on LSN " << directory->getIndex()->getLastLSN(level));
         }
 
         lsn_t blockLSN = BlockAssembly::getLSNFromBlock(src);

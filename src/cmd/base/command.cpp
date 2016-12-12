@@ -256,8 +256,10 @@ void Command::setupSMOptions(po::options_description& options)
     //     "Archiver Block size")
     ("sm_archiver_bucket_size", po::value<int>()->default_value(128),
         "Archiver bucket size")
-    ("sm_merge_factor", po::value<int>(),
-        "Merging factor")
+    ("sm_archiver_merging", po::value<bool>(),
+        "Whether to turn on asynchronous merging with log archiver")
+    ("sm_archiver_fanin", po::value<int>(),
+        "Log archiver merge fan-in")
     ("sm_archiving_blocksize", po::value<int>(),
         "Archiving block size")
     ("sm_reformat_log", po::value<bool>(),

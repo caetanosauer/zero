@@ -14,11 +14,10 @@
 
 // definition of static members
 const string ArchiveDirectory::RUN_PREFIX = "archive_";
-const string ArchiveDirectory::CURR_RUN_FILE = "current_run";
-const string ArchiveDirectory::CURR_MERGE_FILE = "current_merge";
+const string ArchiveDirectory::CURR_RUN_PREFIX = "current_run_";
 const string ArchiveDirectory::run_regex =
     "^archive_([1-9][0-9]*)_([1-9][0-9]*\\.[0-9]+)-([1-9][0-9]*\\.[0-9]+)$";
-const string ArchiveDirectory::current_regex = "current_run|current_merge";
+const string ArchiveDirectory::current_regex = "^current_run_[1-9][0-9]*$";
 
 // CS TODO: Aligning with the Linux standard FS block size
 // We could try using 512 (typical hard drive sector) at some point,
@@ -156,9 +155,6 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
 
     SKIP_LOGREC.init_header(logrec_t::t_skip);
     SKIP_LOGREC.construct();
-
-    // ArchiveDirectory invariant is that current_run file always exists
-    openNewRun(1);
 }
 
 ArchiveDirectory::~ArchiveDirectory()
@@ -214,12 +210,8 @@ void ArchiveDirectory::listFileStats(list<RunFileStats>& list,
  */
 rc_t ArchiveDirectory::openNewRun(unsigned level)
 {
-    if (appendFd.size() > level && appendFd[level] >= 0) {
-        return RC(fcINTERNAL);
-    }
-
     int flags = O_WRONLY | O_SYNC | O_CREAT;
-    std::string fname = archdir + "/" + CURR_RUN_FILE;
+    std::string fname = make_current_run_path(level).string();
     auto fd = ::open(fname.c_str(), flags, 0744 /*mode*/);
     CHECK_ERRNO(fd);
     DBGTHRD(<< "Opened new output run in level " << level);
@@ -238,9 +230,9 @@ fs::path ArchiveDirectory::make_run_path(lsn_t begin, lsn_t end, unsigned level)
             + "-" + end.str());
 }
 
-fs::path ArchiveDirectory::make_current_run_path() const
+fs::path ArchiveDirectory::make_current_run_path(unsigned level) const
 {
-    return archpath / fs::path(CURR_RUN_FILE);
+    return archpath / fs::path(CURR_RUN_PREFIX + std::to_string(level));
 }
 
 rc_t ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
@@ -260,7 +252,13 @@ rc_t ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
         // CS TODO unify ArchiveDirectory and ArchiveIndex
         w_assert0(archIndex);
         lsn_t lastLSN = archIndex->getLastLSN(level);
+        w_assert1(!lastLSN.is_null() && (lastLSN < runEndLSN || runEndLSN.is_null()));
         if (lastLSN != runEndLSN && !runEndLSN.is_null()) {
+            // if level>1, runEndLSN must match the boundaries in the lower level
+            if (level > 1) {
+                runEndLSN = archIndex->roundToEndLSN(runEndLSN, level-1);
+                w_assert1(!runEndLSN.is_null());
+            }
             // register index information and write it on end of file
             if (archIndex && appendPos[level] > 0) {
                 // take into account space for skip log record
@@ -272,7 +270,7 @@ rc_t ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
 
             archIndex->finishRun(lastLSN, runEndLSN, appendFd[level], appendPos[level], level);
             fs::path new_path = make_run_path(lastLSN, runEndLSN, level);
-            fs::rename(make_current_run_path(), new_path);
+            fs::rename(make_current_run_path(level), new_path);
 
             DBGTHRD(<< "Closing current output run: " << new_path.string());
         }
@@ -514,7 +512,7 @@ lsn_t ArchiveIndex::getLastLSN(unsigned level)
     CRITICAL_SECTION(cs, mutex);
 
     if (level > maxLevel) {
-        return level == 1 ? lsn_t(1,0) : lsn_t::null;
+        return lsn_t(1,0);
     }
 
     if (lastFinished[level] < 0) {
@@ -780,6 +778,25 @@ void ArchiveIndex::probe(std::vector<ProbeResult>& probes,
         startLSN = res.runEnd;
         level--;
     }
+}
+
+lsn_t ArchiveIndex::roundToEndLSN(lsn_t lsn, unsigned level)
+{
+    size_t index = findRun(lsn, level);
+
+    // LSN not archived yet -> must be exactly the lastLSN of that level
+    if ((int) index > lastFinished[level]) {
+        w_assert1(runs[level][lastFinished[level]].lastLSN == lsn);
+        return lsn;
+    }
+
+    // LSN at the exact beginning of a run, which means that the given LSN
+    // was already at an endLSN border and, becuase it is an open interval,
+    // findRun returns the following run
+    auto begin = runs[level][index].firstLSN;
+    if (lsn == begin) { return lsn; }
+
+    return runs[level][index].lastLSN;
 }
 
 void ArchiveIndex::dumpIndex(ostream& out)

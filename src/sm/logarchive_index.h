@@ -54,6 +54,7 @@ public:
     lsn_t getLastLSN();
 
     // run generation methods
+    rc_t openNewRun(unsigned level);
     rc_t append(char* data, size_t length, unsigned level);
     rc_t closeCurrentRun(lsn_t runEndLSN, unsigned level);
 
@@ -85,13 +86,11 @@ private:
     pthread_mutex_t mutex;
 
     fs::path make_run_path(lsn_t begin, lsn_t end, unsigned level = 1) const;
-    fs::path make_current_run_path() const;
-    rc_t openNewRun(unsigned level);
+    fs::path make_current_run_path(unsigned level) const;
 
 public:
     const static string RUN_PREFIX;
-    const static string CURR_RUN_FILE;
-    const static string CURR_MERGE_FILE;
+    const static string CURR_RUN_PREFIX;
     const static string run_regex;
     const static string current_regex;
 };
@@ -205,6 +204,8 @@ private:
     size_t findEntry(RunInfo* run, PageID pid,
             int from = -1, int to = -1);
     rc_t serializeRunInfo(RunInfo&, int fd, off_t);
+
+    lsn_t roundToEndLSN(lsn_t lsn, unsigned level);
 
 };
 

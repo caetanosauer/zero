@@ -51,6 +51,12 @@ LogArchiver::LogArchiver(const sm_options& options)
     consumer = new LogConsumer(directory->getIndex()->getLastLSN(), blockSize);
     heap = new ArchiverHeap(workspaceSize);
     blkAssemb = new BlockAssembly(directory);
+
+    merger = nullptr;
+    if (options.get_bool_option("sm_archiver_merging", false)) {
+        merger = new MergerDaemon(options, directory);
+        merger->fork();
+    }
 }
 
 /*
@@ -78,6 +84,7 @@ void LogArchiver::shutdown()
     join();
     consumer->shutdown();
     blkAssemb->shutdown();
+    if (merger) { merger->stop(); }
 }
 
 LogArchiver::~LogArchiver()
@@ -90,6 +97,7 @@ LogArchiver::~LogArchiver()
         delete consumer;
         delete heap;
         delete directory;
+        if (merger) { delete merger; }
     }
 }
 
@@ -630,12 +638,23 @@ void LogArchiver::archiveUntilLSN(lsn_t lsn)
     }
 }
 
-MergerDaemon::MergerDaemon(ArchiveDirectory* in,
-        ArchiveDirectory* out)
-    : indir(in), outdir(out)
+MergerDaemon::MergerDaemon(const sm_options& options,
+        ArchiveDirectory* in, ArchiveDirectory* out)
+    :
+    // CS TODO: interval should come from merge policy
+    worker_thread_t(0),
+     indir(in), outdir(out)
 {
+    _fanin = options.get_int_option("sm_archiver_fanin", 5);
     if (!outdir) { outdir = indir; }
     w_assert0(indir && outdir);
+}
+
+void MergerDaemon::do_work()
+{
+    // CS TODO: implement merge policies
+    // For now, constantly merge runs of level 1 into level 2
+    doMerge(1, _fanin);
 }
 
 typedef ArchiveDirectory::RunFileStats RunFileStats;
@@ -645,15 +664,18 @@ bool runComp(const RunFileStats& a, const RunFileStats& b)
     return a.beginLSN < b.beginLSN;
 }
 
-// CS TODO: this currently only works when merging contiguous runs in ascending
-// order, and only for all available runs at once. It fits the purposes of our
-// restore experiments, but it should be fixed in the future. See comments in
-// the header file.
-rc_t MergerDaemon::runSync(unsigned level, unsigned fanin)
+rc_t MergerDaemon::doMerge(unsigned level, unsigned fanin)
 {
     list<RunFileStats> stats, statsNext;
     indir->listFileStats(stats, level);
     indir->listFileStats(statsNext, level+1);
+
+    if (stats.size() < fanin) {
+        // CS TODO: merge policies
+        DBGOUT3(<< "Not enough runs to merge: " << stats.size());
+        ::sleep(1);
+        return RCOK;
+    }
 
     // sort list by LSN, since only contiguous runs are merged
     stats.sort(runComp);
@@ -664,30 +686,33 @@ rc_t MergerDaemon::runSync(unsigned level, unsigned fanin)
     if (statsNext.size() > 0) {
         nextLSN = statsNext.back().endLSN;
     }
-    w_assert1(nextLSN < stats.back().endLSN);
+    w_assert1(nextLSN <= stats.back().endLSN);
 
     // collect 'fanin' runs in the current level starting from nextLSN
     auto begin = stats.begin();
-    while (begin->endLSN <= nextLSN) { begin++; }
+    while (begin != stats.end() && nextLSN > begin->beginLSN) { begin++; }
     auto end = begin;
     unsigned count = 0;
     while (count < fanin && end != stats.end()) {
         end++;
         count++;
     }
-    if (count < 2) {
-        ERROUT(<< "Not enough runs to merge");
+    if (count < fanin) {
+        // CS TODO: merge policies
+        DBGOUT3(<< "Not enough runs to merge");
+        ::sleep(1);
         return RCOK;
     }
 
     {
         ArchiveScanner::RunMerger merger;
         BlockAssembly blkAssemb(outdir, level+1);
+        outdir->openNewRun(level+1);
 
-        ERROUT(<< "doMerge");
+        DBGOUT1(<< "doMerge");
         list<RunFileStats>::const_iterator iter = begin;
         while (iter != end) {
-            ERROUT(<< "Merging " << iter->beginLSN << "-" << iter->endLSN);
+            DBGOUT1(<< "Merging " << iter->beginLSN << "-" << iter->endLSN);
             ArchiveScanner::RunScanner* runScanner =
                 new ArchiveScanner::RunScanner(
                         iter->beginLSN, iter->endLSN, iter->level, 0, 0, 0 /* offset */, indir);

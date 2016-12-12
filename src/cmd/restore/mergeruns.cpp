@@ -53,6 +53,6 @@ void MergeRuns::run()
         out = new ArchiveDirectory(opt);
     }
 
-    MergerDaemon merge(in, out);
-    W_COERCE(merge.runSync(level, fanin));
+    MergerDaemon merge(opt, in, out);
+    W_COERCE(merge.doMerge(level, fanin));
 }

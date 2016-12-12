@@ -1,7 +1,7 @@
 #ifndef LOGARCHIVER_H
 #define LOGARCHIVER_H
 
-#include "thread_wrapper.h"
+#include "worker_thread.h"
 #include "sm_base.h"
 #include "log_consumer.h"
 #include "logarchive_index.h"
@@ -117,20 +117,21 @@ class ArchiverHeap {
  * logic clever and more abstract; or simply don't reuse the BlockAssembly
  * infrastructure.
  */
-class MergerDaemon {
-    public:
-        MergerDaemon(ArchiveDirectory* in, ArchiveDirectory* out);
-        virtual ~MergerDaemon()
-        {}
+class MergerDaemon : public worker_thread_t {
+public:
+    MergerDaemon(const sm_options&,
+            ArchiveDirectory* in, ArchiveDirectory* out = nullptr);
 
-        rc_t runSync(unsigned level, unsigned fanin);
-        rc_t join(bool terminate);
+    virtual ~MergerDaemon() {}
 
-    private:
-        ArchiveDirectory* indir;
-        ArchiveDirectory* outdir;
-        rc_t asyncRC;
+    virtual void do_work();
 
+    rc_t doMerge(unsigned level, unsigned fanin);
+
+private:
+    ArchiveDirectory* indir;
+    ArchiveDirectory* outdir;
+    unsigned _fanin;
 };
 
 /** \brief Implementation of a log archiver using asynchronous reader and
@@ -239,6 +240,7 @@ private:
     LogConsumer* consumer;
     ArchiverHeap* heap;
     BlockAssembly* blkAssemb;
+    MergerDaemon* merger;
 
     bool shutdownFlag;
     ArchiverControl control;
