@@ -10,8 +10,8 @@
 // but none of this is actually standardized or portable
 const size_t IO_ALIGN = 512;
 
-ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory)
-    : directory(directory), archIndex(directory->getIndex())
+ArchiveScanner::ArchiveScanner(ArchiveIndex* index)
+    : archIndex(index)
 {
     if (!archIndex) {
         W_FATAL_MSG(fcINTERNAL,
@@ -38,7 +38,7 @@ ArchiveScanner::open(PageID startPID, PageID endPID,
                 probes[i].pidBegin,
                 probes[i].pidEnd,
                 probes[i].offset,
-                directory,
+                archIndex,
                 readSize
         );
 
@@ -57,12 +57,13 @@ ArchiveScanner::open(PageID startPID, PageID endPID,
 }
 
 ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e, unsigned level,
-        PageID f, PageID l, off_t o, ArchiveDirectory* directory, size_t rSize)
+        PageID f, PageID l, off_t o, ArchiveIndex* index, size_t rSize)
     : runBegin(b), runEnd(e), level(level), firstPID(f), lastPID(l), offset(o),
-        fd(-1), blockCount(0), readSize(rSize), directory(directory)
+        fd(-1), blockCount(0), readSize(rSize), archIndex(index)
 {
+    w_assert0(archIndex);
     if (readSize == 0) {
-        readSize = directory->getBlockSize();
+        readSize = archIndex->getBlockSize();
     }
 
     // Using direct I/O
@@ -70,8 +71,7 @@ ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e, unsigned level,
     w_assert0(res == 0);
     // buffer = new char[directory->getBlockSize()];
 
-    w_assert0(directory->getIndex());
-    bucketSize = directory->getIndex()->getBucketSize();
+    bucketSize = archIndex->getBucketSize();
 
     // bpos at the end of block triggers reading of the first block
     // when calling next()
@@ -84,7 +84,7 @@ ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e, unsigned level,
 ArchiveScanner::RunScanner::~RunScanner()
 {
     if (fd > 0) {
-        W_COERCE(directory->closeScan(fd));
+        W_COERCE(archIndex->closeScan(fd));
     }
 
     delete scanner;
@@ -96,29 +96,26 @@ ArchiveScanner::RunScanner::~RunScanner()
 
 bool ArchiveScanner::RunScanner::nextBlock()
 {
-    size_t blockSize = directory->getBlockSize();
+    size_t blockSize = archIndex->getBlockSize();
 
     if (fd < 0) {
-        W_COERCE(directory->openForScan(fd, runBegin, runEnd, level));
-
-        if (directory->getIndex()) {
-            directory->getIndex()->getBlockCounts(fd, NULL, &blockCount);
-        }
+        W_COERCE(archIndex->openForScan(fd, runBegin, runEnd, level));
+        archIndex->getBlockCounts(fd, NULL, &blockCount);
     }
 
     // do not read past data blocks into index blocks
     if (blockCount == 0 || offset >= blockCount * blockSize)
     {
-        W_COERCE(directory->closeScan(fd));
+        W_COERCE(archIndex->closeScan(fd));
         return false;
     }
 
     // offset is updated by readBlock
-    W_COERCE(directory->readBlock(fd, buffer, offset, readSize));
+    W_COERCE(archIndex->readBlock(fd, buffer, offset, readSize));
 
     // offset set to zero indicates EOF
     if (offset == 0) {
-        W_COERCE(directory->closeScan(fd));
+        W_COERCE(archIndex->closeScan(fd));
         return false;
     }
 

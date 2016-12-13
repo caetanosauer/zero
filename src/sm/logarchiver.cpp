@@ -18,13 +18,13 @@ typedef mem_mgmt_t::slot_t slot_t;
 const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
 
 LogArchiver::LogArchiver(
-        ArchiveDirectory* d, LogConsumer* c, ArchiverHeap* h, BlockAssembly* b)
+        ArchiveIndex* d, LogConsumer* c, ArchiverHeap* h, BlockAssembly* b)
     :
-    directory(d), consumer(c), heap(h), blkAssemb(b),
+    index(d), consumer(c), heap(h), blkAssemb(b),
     shutdownFlag(false), control(&shutdownFlag), selfManaged(false),
     flushReqLSN(lsn_t::null)
 {
-    nextActLSN = directory->getIndex()->getLastLSN();
+    nextActLSN = index->getLastLSN();
 }
 
 LogArchiver::LogArchiver(const sm_options& options)
@@ -44,17 +44,17 @@ LogArchiver::LogArchiver(const sm_options& options)
     slowLogGracePeriod = options.get_int_option(
             "sm_archiver_slow_log_grace_period", DFT_GRACE_PERIOD);
 
-    directory = new ArchiveDirectory(options);
-    nextActLSN = directory->getIndex()->getLastLSN();
+    index = new ArchiveIndex(options);
+    nextActLSN = index->getLastLSN();
     w_assert1(nextActLSN.hi() > 0);
 
-    consumer = new LogConsumer(directory->getIndex()->getLastLSN(), blockSize);
+    consumer = new LogConsumer(index->getLastLSN(), blockSize);
     heap = new ArchiverHeap(workspaceSize);
-    blkAssemb = new BlockAssembly(directory);
+    blkAssemb = new BlockAssembly(index);
 
     merger = nullptr;
     if (options.get_bool_option("sm_archiver_merging", false)) {
-        merger = new MergerDaemon(options, directory);
+        merger = new MergerDaemon(options, index);
         merger->fork();
     }
 }
@@ -96,7 +96,7 @@ LogArchiver::~LogArchiver()
         delete blkAssemb;
         delete consumer;
         delete heap;
-        delete directory;
+        delete index;
         if (merger) { delete merger; }
     }
 }
@@ -422,7 +422,7 @@ bool LogArchiver::processFlushRequest()
             }
 
             // Forcibly close current run to guarantee that LSN is persisted
-            W_COERCE(directory->closeCurrentRun(flushReqLSN, 1 /* level */));
+            W_COERCE(index->closeCurrentRun(flushReqLSN, 1 /* level */));
             blkAssemb->resetWriter();
 
             /* Now we know that the requested LSN has been processed by the
@@ -442,7 +442,7 @@ bool LogArchiver::isLogTooSlow()
 {
     if (!eager) { return false; }
 
-    int minActWindow = directory->getBlockSize();
+    int minActWindow = index->getBlockSize();
 
     auto isSmallWindow = [minActWindow](lsn_t endLSN, lsn_t nextLSN) {
         int nextHi = nextLSN.hi();
@@ -493,8 +493,8 @@ bool LogArchiver::shouldActivate(bool logTooSlow)
     // Try to keep activation window at block boundaries to better utilize
     // I/O bandwidth
     if (eager && readWholeBlocks && !logTooSlow) {
-        size_t boundary = directory->getBlockSize() *
-            (control.endLSN.lo() / directory->getBlockSize());
+        size_t boundary = index->getBlockSize() *
+            (control.endLSN.lo() / index->getBlockSize());
         control.endLSN = lsn_t(control.endLSN.hi(), boundary);
         if (control.endLSN <= nextActLSN) {
             return false;
@@ -633,13 +633,13 @@ void LogArchiver::archiveUntilLSN(lsn_t lsn)
         ::usleep(10000); // 10ms
     }
 
-    if (getDirectory()->getLastLSN() < lsn) {
+    if (index->getLastLSN() < lsn) {
         requestFlushSync(lsn);
     }
 }
 
 MergerDaemon::MergerDaemon(const sm_options& options,
-        ArchiveDirectory* in, ArchiveDirectory* out)
+        ArchiveIndex* in, ArchiveIndex* out)
     :
     // CS TODO: interval should come from merge policy
     worker_thread_t(0),
@@ -657,7 +657,7 @@ void MergerDaemon::do_work()
     doMerge(1, _fanin);
 }
 
-typedef ArchiveDirectory::RunFileStats RunFileStats;
+typedef ArchiveIndex::RunFileStats RunFileStats;
 
 bool runComp(const RunFileStats& a, const RunFileStats& b)
 {

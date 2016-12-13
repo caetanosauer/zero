@@ -5,7 +5,6 @@
 
 #include "thread_wrapper.h"
 #include "sm_base.h"
-#include "logarchiver.h"
 #include "logarchive_scanner.h"
 
 #include <queue>
@@ -20,6 +19,7 @@ class generic_page;
 class BackupReader;
 class SegmentWriter;
 class RestoreThread;
+class ArchiveIndex;
 
 /** \brief Class that controls the process of restoring a failed volume
  *
@@ -37,7 +37,7 @@ public:
      * in which restored segments are written to a backup file, also specified
      * in vol_t with the take_backup() method.
      */
-    RestoreMgr(const sm_options&, ArchiveDirectory*, vol_t*,
+    RestoreMgr(const sm_options&, ArchiveIndex*, vol_t*,
             bool useBackup, bool takeBackup = false);
     virtual ~RestoreMgr();
 
@@ -126,7 +126,7 @@ public:
 protected:
     RestoreBitmap* bitmap;
     RestoreScheduler* scheduler;
-    ArchiveDirectory* archive;
+    ArchiveIndex* archIndex;
     vol_t* volume;
 
     // CS TODO: get rid of this annoying dependence on smthread_t

@@ -195,7 +195,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
     }
 
     _restore_mgr = new RestoreMgr(ss_m::get_options(),
-            ss_m::logArchiver->getDirectory(), this, useBackup);
+            ss_m::logArchiver->getIndex(), this, useBackup);
 
     _failed = true;
 
@@ -647,11 +647,11 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     // only one thread may set _backup_write_fd (i.e., open file) above.
 
     // Maximum LSN which is guaranteed to be reflected in the backup
-    lsn_t backupLSN = ss_m::logArchiver->getDirectory()->getLastLSN();
+    lsn_t backupLSN = ss_m::logArchiver->getIndex()->getLastLSN();
     DBG1(<< "Taking backup until LSN " << backupLSN);
 
     // Instantiate special restore manager for taking backup
-    RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
+    RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getIndex(),
             this, useBackup, true /* takeBackup */);
 
     restore.setInstant(false);

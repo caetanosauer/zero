@@ -56,7 +56,7 @@ void GenArchive::run()
     int waitBeforeFlush = 100;
     ::usleep(waitBeforeFlush * 1000);
 
-    if (la->getDirectory()->getLastLSN() < durableLSN) {
+    if (la->getIndex()->getLastLSN() < durableLSN) {
         la->requestFlushSync(durableLSN);
     }
 

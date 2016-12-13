@@ -631,7 +631,7 @@ SprIterator::SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
 
     lsn_t archivedLSN = lsn_t::null;
     if (smlevel_0::logArchiver) {
-        archivedLSN = smlevel_0::logArchiver->getDirectory()->getLastLSN();
+        archivedLSN = smlevel_0::logArchiver->getIndex()->getLastLSN();
     }
 
     lsn_t nxt = lastLSN;
@@ -697,7 +697,7 @@ SprIterator::SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
         // What we have to do now is fetch the log records between current_lsn and
         // nxt (both exclusive intervals) from the log archive and add them into
         // the buffer as well.
-        archive_scan.reset(new ArchiveScanner{ss_m::logArchiver->getDirectory()});
+        archive_scan.reset(new ArchiveScanner{ss_m::logArchiver->getIndex()});
         merger.reset(archive_scan->open(pid, pid+1, firstLSN, 0));
     }
 

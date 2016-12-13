@@ -34,9 +34,9 @@ void MergeRuns::run()
     opt.set_string_option("sm_archdir", indir);
     opt.set_int_option("sm_archiver_block_size", BLOCK_SIZE);
     opt.set_int_option("sm_archiver_bucket_size", BUCKET_SIZE);
-    ArchiveDirectory* in = new ArchiveDirectory(opt);
+    ArchiveIndex* in = new ArchiveIndex(opt);
 
-    ArchiveDirectory* out = in;
+    ArchiveIndex* out = in;
     if (!outdir.empty() && outdir != indir) {
         // if directory does not exist, create it
         fs::path fspath(outdir);
@@ -50,7 +50,7 @@ void MergeRuns::run()
         }
 
         opt.set_string_option("sm_archdir", outdir);
-        out = new ArchiveDirectory(opt);
+        out = new ArchiveIndex(opt);
     }
 
     MergerDaemon merge(opt, in, out);

@@ -21,7 +21,7 @@ page_cleaner_decoupled::~page_cleaner_decoupled()
 
 void page_cleaner_decoupled::do_work()
 {
-    lsn_t last_lsn = smlevel_0::logArchiver->getDirectory()->getLastLSN();
+    lsn_t last_lsn = smlevel_0::logArchiver->getIndex()->getLastLSN();
     if(last_lsn <= _clean_lsn) {
         ERROUT(<< "Nothing archived to clean.");
         return;
@@ -29,7 +29,7 @@ void page_cleaner_decoupled::do_work()
 
     ERROUT(<< "Cleaner thread activated from " << _clean_lsn);
 
-    ArchiveScanner logScan(smlevel_0::logArchiver->getDirectory());
+    ArchiveScanner logScan(smlevel_0::logArchiver->getIndex());
     // CS TODO block size
     ArchiveScanner::RunMerger* merger = logScan.open(0, 0,
             _clean_lsn, 1048576);

@@ -120,7 +120,7 @@ class ArchiverHeap {
 class MergerDaemon : public worker_thread_t {
 public:
     MergerDaemon(const sm_options&,
-            ArchiveDirectory* in, ArchiveDirectory* out = nullptr);
+            ArchiveIndex* in, ArchiveIndex* out = nullptr);
 
     virtual ~MergerDaemon() {}
 
@@ -129,8 +129,8 @@ public:
     rc_t doMerge(unsigned level, unsigned fanin);
 
 private:
-    ArchiveDirectory* indir;
-    ArchiveDirectory* outdir;
+    ArchiveIndex* indir;
+    ArchiveIndex* outdir;
     unsigned _fanin;
 };
 
@@ -201,7 +201,7 @@ class LogArchiver : public thread_wrapper_t {
 public:
     LogArchiver(const sm_options& options);
     LogArchiver(
-            ArchiveDirectory*,
+            ArchiveIndex*,
             LogConsumer*,
             ArchiverHeap*,
             BlockAssembly*
@@ -216,7 +216,7 @@ public:
     void requestFlushSync(lsn_t);
     void archiveUntilLSN(lsn_t);
 
-    ArchiveDirectory* getDirectory() { return directory; }
+    ArchiveIndex* getIndex() { return index; }
     lsn_t getNextConsumedLSN() { return consumer->getNextLSN(); }
     void setEager(bool e)
     {
@@ -236,7 +236,7 @@ public:
     const static int DFT_GRACE_PERIOD = 1000000; // 1 sec
 
 private:
-    ArchiveDirectory* directory;
+    ArchiveIndex* index;
     LogConsumer* consumer;
     ArchiverHeap* heap;
     BlockAssembly* blkAssemb;

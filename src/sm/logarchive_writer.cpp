@@ -6,20 +6,19 @@
 // CS TODO: use option
 const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
 
-BlockAssembly::BlockAssembly(ArchiveDirectory* directory, unsigned level)
+BlockAssembly::BlockAssembly(ArchiveIndex* index, unsigned level)
     : dest(NULL), maxLSNInBlock(lsn_t::null), maxLSNLength(0),
     lastRun(-1), bucketSize(0), nextBucket(0), level(level)
 {
-    archIndex = directory->getIndex();
-    w_assert0(archIndex);
-    blockSize = directory->getBlockSize();
+    archIndex = index;
+    blockSize = archIndex->getBlockSize();
     bucketSize = archIndex->getBucketSize();
     writebuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT);
-    writer = new WriterThread(writebuf, directory, level);
+    writer = new WriterThread(writebuf, index, level);
     writer->fork();
 
-    directory->openNewRun(level);
-    spaceToReserve = directory->getSkipLogrecSize();
+    index->openNewRun(level);
+    spaceToReserve = index->getSkipLogrecSize();
 }
 
 BlockAssembly::~BlockAssembly()
@@ -183,7 +182,7 @@ void WriterThread::run()
              * that all pending blocks are written out before shutdown.
              */
             DBGTHRD(<< "Finished flag set on writer thread");
-            W_COERCE(directory->closeCurrentRun(maxLSNInRun, level));
+            W_COERCE(index->closeCurrentRun(maxLSNInRun, level));
             return; // finished is set on buf
         }
 
@@ -201,12 +200,12 @@ void WriterThread::run()
              *  bound on the next run, which allows us to verify whether
              *  holes exist in the archive.
              */
-            W_COERCE(directory->closeCurrentRun(maxLSNInRun, level));
-            w_assert1(directory->getIndex()->getLastLSN(level) == maxLSNInRun);
+            W_COERCE(index->closeCurrentRun(maxLSNInRun, level));
+            w_assert1(index->getLastLSN(level) == maxLSNInRun);
             currentRun = run;
             maxLSNInRun = lsn_t::null;
             DBGTHRD(<< "Opening file for new run " << run
-                    << " starting on LSN " << directory->getIndex()->getLastLSN(level));
+                    << " starting on LSN " << index->getLastLSN(level));
         }
 
         lsn_t blockLSN = BlockAssembly::getLSNFromBlock(src);
@@ -218,7 +217,7 @@ void WriterThread::run()
         size_t actualBlockSize= blockEnd - sizeof(BlockAssembly::BlockHeader);
         memmove(src, src + sizeof(BlockAssembly::BlockHeader), actualBlockSize);
 
-        W_COERCE(directory->append(src, actualBlockSize, level));
+        W_COERCE(index->append(src, actualBlockSize, level));
 
         DBGTHRD(<< "Wrote out block " << (void*) src
                 << " with max LSN " << blockLSN);

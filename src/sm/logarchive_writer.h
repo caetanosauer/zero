@@ -8,7 +8,6 @@
 #include "thread_wrapper.h"
 
 class AsyncRingBuffer;
-class ArchiveDirectory;
 class ArchiveIndex;
 class logrec_t;
 
@@ -25,7 +24,7 @@ class WriterThread : public thread_wrapper_t {
 private:
 
     AsyncRingBuffer* buf;
-    ArchiveDirectory* directory;
+    ArchiveIndex* index;
     lsn_t maxLSNInRun;
     run_number_t currentRun;
     unsigned level;
@@ -33,7 +32,7 @@ private:
 public:
     virtual void run();
 
-    ArchiveDirectory* getDirectory() { return directory; }
+    ArchiveIndex* getIndex() { return index; }
 
     /*
      * Called by processFlushRequest to forcibly start a new run
@@ -44,9 +43,9 @@ public:
         maxLSNInRun = lsn_t::null;
     }
 
-    WriterThread(AsyncRingBuffer* writebuf, ArchiveDirectory* directory, unsigned level)
+    WriterThread(AsyncRingBuffer* writebuf, ArchiveIndex* index, unsigned level)
         :
-            buf(writebuf), directory(directory),
+            buf(writebuf), index(index),
             maxLSNInRun(lsn_t::null), currentRun(0), level(level)
     {
     }
@@ -85,7 +84,7 @@ public:
  */
 class BlockAssembly {
 public:
-    BlockAssembly(ArchiveDirectory* directory, unsigned level = 1);
+    BlockAssembly(ArchiveIndex* index, unsigned level = 1);
     virtual ~BlockAssembly();
 
     bool start(run_number_t run);

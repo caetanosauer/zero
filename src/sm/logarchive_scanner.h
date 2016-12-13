@@ -7,7 +7,6 @@
 #include "lsn.h"
 #include "w_heap.h"
 
-class ArchiveDirectory;
 class ArchiveIndex;
 class LogScanner;
 class logrec_t;
@@ -21,7 +20,7 @@ class logrec_t;
  */
 class ArchiveScanner {
 public:
-    ArchiveScanner(ArchiveDirectory*);
+    ArchiveScanner(ArchiveIndex*);
     virtual ~ArchiveScanner() {};
 
     struct RunMerger;
@@ -49,11 +48,11 @@ public:
         size_t bucketSize;
         size_t readSize;
 
-        ArchiveDirectory* directory;
+        ArchiveIndex* archIndex;
         LogScanner* scanner;
 
         RunScanner(lsn_t b, lsn_t e, unsigned level, PageID f, PageID l, off_t o,
-                ArchiveDirectory* directory, size_t readSize = 0);
+                ArchiveIndex* index, size_t readSize = 0);
         ~RunScanner();
 
         bool next(logrec_t*& lr);
@@ -65,7 +64,6 @@ public:
     };
 
 private:
-    ArchiveDirectory* directory;
     ArchiveIndex* archIndex;
 
     struct MergeHeapEntry {

@@ -10,9 +10,9 @@
 // CS TODO isolate this to log archive code
 const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
 
-using RunFileStats = ArchiveDirectory::RunFileStats;
+using RunFileStats = ArchiveIndex::RunFileStats;
 
-const auto& parseRunFileName = ArchiveDirectory::parseRunFileName;
+const auto& parseRunFileName = ArchiveIndex::parseRunFileName;
 
 void BaseScanner::handle(logrec_t* lr)
 {
@@ -214,8 +214,7 @@ void LogArchiveScanner::run()
     sm_options opt;
     opt.set_string_option("sm_archdir", archdir);
     // opt.set_int_option("sm_archiver_block_size", blockSize);
-    ArchiveDirectory* directory = new
-        ArchiveDirectory(opt);
+    ArchiveIndex* directory = new ArchiveIndex(opt);
 
     std::vector<std::string> runFiles;
 
@@ -303,8 +302,8 @@ void MergeScanner::run()
     // opt.set_int_option("sm_archiver_block_size", blockSize);
     opt.set_int_option("sm_archiver_bucket_size", bucketSize);
 
-    ArchiveDirectory* directory = new
-        ArchiveDirectory(opt);
+    ArchiveIndex* directory = new
+        ArchiveIndex(opt);
     ArchiveScanner logScan(directory);
 
     ArchiveScanner::RunMerger* merger =

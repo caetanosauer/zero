@@ -13,11 +13,11 @@
 #include "stopwatch.h"
 
 // definition of static members
-const string ArchiveDirectory::RUN_PREFIX = "archive_";
-const string ArchiveDirectory::CURR_RUN_PREFIX = "current_run_";
-const string ArchiveDirectory::run_regex =
+const string ArchiveIndex::RUN_PREFIX = "archive_";
+const string ArchiveIndex::CURR_RUN_PREFIX = "current_run_";
+const string ArchiveIndex::run_regex =
     "^archive_([1-9][0-9]*)_([1-9][0-9]*\\.[0-9]+)-([1-9][0-9]*\\.[0-9]+)$";
-const string ArchiveDirectory::current_regex = "^current_run_[1-9][0-9]*$";
+const string ArchiveIndex::current_regex = "^current_run_[1-9][0-9]*$";
 
 // CS TODO: Aligning with the Linux standard FS block size
 // We could try using 512 (typical hard drive sector) at some point,
@@ -35,7 +35,7 @@ skip_log SKIP_LOGREC;
         W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
     }
 
-bool ArchiveDirectory::parseRunFileName(string fname, RunFileStats& fstats)
+bool ArchiveIndex::parseRunFileName(string fname, RunFileStats& fstats)
 {
     boost::regex run_rx(run_regex, boost::regex::perl);
     boost::smatch res;
@@ -53,14 +53,7 @@ bool ArchiveDirectory::parseRunFileName(string fname, RunFileStats& fstats)
     return true;
 }
 
-lsn_t ArchiveDirectory::getLastLSN()
-{
-    // CS TODO index mandatory
-    w_assert0(archIndex);
-    return archIndex->getLastLSN(1 /* level */);
-}
-
-size_t ArchiveDirectory::getFileSize(int fd)
+size_t ArchiveIndex::getFileSize(int fd)
 {
     struct stat stat;
     auto ret = ::fstat(fd, &stat);
@@ -68,7 +61,7 @@ size_t ArchiveDirectory::getFileSize(int fd)
     return stat.st_size;
 }
 
-ArchiveDirectory::ArchiveDirectory(const sm_options& options)
+ArchiveIndex::ArchiveIndex(const sm_options& options)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
 
@@ -76,8 +69,7 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
     // CS TODO: archiver currently only works with 1MB blocks
     blockSize = DFT_BLOCK_SIZE;
         // options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
-    size_t bucketSize =
-        options.get_int_option("sm_archiver_bucket_size", 128);
+    bucketSize = options.get_int_option("sm_archiver_bucket_size", 128);
     w_assert0(bucketSize > 0);
 
     bool reformat = options.get_bool_option("sm_format", false);
@@ -96,15 +88,13 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
         }
     }
 
-    unsigned maxLevel = 0;
+    maxLevel = 0;
     archpath = archdir;
     fs::directory_iterator it(archpath), eod;
     boost::regex current_rx(current_regex, boost::regex::perl);
 
     // create/load index
-    archIndex = new ArchiveIndex(blockSize, bucketSize);
     int fd;
-
     for (; it != eod; it++) {
         fs::path fpath = it->path();
         string fname = fpath.filename().string();
@@ -117,7 +107,7 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
             }
 
             W_COERCE(openForScan(fd, fstats.beginLSN, fstats.endLSN, fstats.level));
-            W_COERCE(archIndex->loadRunInfo(fd, fstats));
+            W_COERCE(loadRunInfo(fd, fstats));
             W_COERCE(closeScan(fd));
 
             if (fstats.level > maxLevel) { maxLevel = fstats.level; }
@@ -127,14 +117,17 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
             fs::remove(fpath);
         }
         else {
-            cerr << "ArchiveDirectory cannot parse filename " << fname << endl;
+            cerr << "ArchiveIndex cannot parse filename " << fname << endl;
             W_FATAL(fcINTERNAL);
         }
     }
-    archIndex->init();
+
+    for (unsigned l = 0; l < runs.size(); l++) {
+        std::sort(runs[l].begin(), runs[l].end());
+    }
 
     // no runs found in archive log -- start from first available log file
-    if (archIndex->getRunCount(1 /*level*/) == 0) {
+    if (getRunCount(1 /*level*/) == 0) {
         std::vector<partition_number_t> partitions;
         smlevel_0::log->get_storage()->list_partitions(partitions);
 
@@ -147,7 +140,7 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
                 closeCurrentRun(startLSN, 1);
                 W_COERCE(openForScan(fd, lsn_t(1,0), startLSN, 1));
                 RunFileStats fstats = {lsn_t(1,0), startLSN, 1};
-                W_COERCE(archIndex->loadRunInfo(fd, fstats));
+                W_COERCE(loadRunInfo(fd, fstats));
                 W_COERCE(closeScan(fd));
             }
         }
@@ -157,13 +150,12 @@ ArchiveDirectory::ArchiveDirectory(const sm_options& options)
     SKIP_LOGREC.construct();
 }
 
-ArchiveDirectory::~ArchiveDirectory()
+ArchiveIndex::~ArchiveIndex()
 {
-    if(archIndex) { delete archIndex; }
     DO_PTHREAD(pthread_mutex_destroy(&mutex));
 }
 
-void ArchiveDirectory::listFiles(std::vector<std::string>& list,
+void ArchiveIndex::listFiles(std::vector<std::string>& list,
         int level)
 {
     list.clear();
@@ -181,11 +173,11 @@ void ArchiveDirectory::listFiles(std::vector<std::string>& list,
     }
 }
 
-void ArchiveDirectory::listFileStats(list<RunFileStats>& list,
+void ArchiveIndex::listFileStats(list<RunFileStats>& list,
         int level)
 {
     list.clear();
-    if (level > static_cast<int>(archIndex->getMaxLevel())) { return; }
+    if (level > static_cast<int>(getMaxLevel())) { return; }
 
     vector<string> fnames;
     listFiles(fnames, level);
@@ -208,7 +200,7 @@ void ArchiveDirectory::listFileStats(list<RunFileStats>& list,
  * We assume the rename operation is atomic, even in case of OS crashes.
  *
  */
-rc_t ArchiveDirectory::openNewRun(unsigned level)
+rc_t ArchiveIndex::openNewRun(unsigned level)
 {
     int flags = O_WRONLY | O_SYNC | O_CREAT;
     std::string fname = make_current_run_path(level).string();
@@ -223,19 +215,19 @@ rc_t ArchiveDirectory::openNewRun(unsigned level)
     return RCOK;
 }
 
-fs::path ArchiveDirectory::make_run_path(lsn_t begin, lsn_t end, unsigned level)
+fs::path ArchiveIndex::make_run_path(lsn_t begin, lsn_t end, unsigned level)
     const
 {
     return archpath / fs::path(RUN_PREFIX + std::to_string(level) + "_" + begin.str()
             + "-" + end.str());
 }
 
-fs::path ArchiveDirectory::make_current_run_path(unsigned level) const
+fs::path ArchiveIndex::make_current_run_path(unsigned level) const
 {
     return archpath / fs::path(CURR_RUN_PREFIX + std::to_string(level));
 }
 
-rc_t ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
+rc_t ArchiveIndex::closeCurrentRun(lsn_t runEndLSN, unsigned level)
 {
     CRITICAL_SECTION(cs, mutex);
 
@@ -249,18 +241,17 @@ rc_t ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
         // }
 
         // CS TODO from now on, archiveIndex is mandatory
-        // CS TODO unify ArchiveDirectory and ArchiveIndex
-        w_assert0(archIndex);
-        lsn_t lastLSN = archIndex->getLastLSN(level);
+        // CS TODO unify ArchiveIndex and ArchiveIndex
+        lsn_t lastLSN = getLastLSN(level);
         w_assert1(!lastLSN.is_null() && (lastLSN < runEndLSN || runEndLSN.is_null()));
         if (lastLSN != runEndLSN && !runEndLSN.is_null()) {
             // if level>1, runEndLSN must match the boundaries in the lower level
             if (level > 1) {
-                runEndLSN = archIndex->roundToEndLSN(runEndLSN, level-1);
+                runEndLSN = roundToEndLSN(runEndLSN, level-1);
                 w_assert1(!runEndLSN.is_null());
             }
             // register index information and write it on end of file
-            if (archIndex && appendPos[level] > 0) {
+            if (appendPos[level] > 0) {
                 // take into account space for skip log record
                 appendPos[level] += SKIP_LOGREC.length();
                 // and make sure data is written aligned to block boundary
@@ -268,7 +259,7 @@ rc_t ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
                 appendPos[level] += blockSize;
             }
 
-            archIndex->finishRun(lastLSN, runEndLSN, appendFd[level], appendPos[level], level);
+            finishRun(lastLSN, runEndLSN, appendFd[level], appendPos[level], level);
             fs::path new_path = make_run_path(lastLSN, runEndLSN, level);
             fs::rename(make_current_run_path(level), new_path);
 
@@ -285,7 +276,7 @@ rc_t ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN, unsigned level)
     return RCOK;
 }
 
-rc_t ArchiveDirectory::append(char* data, size_t length, unsigned level)
+rc_t ArchiveIndex::append(char* data, size_t length, unsigned level)
 {
     // make sure there is always a skip log record at the end
     w_assert1(length + SKIP_LOGREC.length() <= blockSize);
@@ -302,7 +293,7 @@ rc_t ArchiveDirectory::append(char* data, size_t length, unsigned level)
     return RCOK;
 }
 
-rc_t ArchiveDirectory::openForScan(int& fd, lsn_t runBegin,
+rc_t ArchiveIndex::openForScan(int& fd, lsn_t runBegin,
         lsn_t runEnd, unsigned level)
 {
     fs::path fpath = make_run_path(runBegin, runEnd, level);
@@ -318,7 +309,7 @@ rc_t ArchiveDirectory::openForScan(int& fd, lsn_t runBegin,
 /** Note: buffer must be allocated for at least readSize + IO_ALIGN bytes,
  * otherwise direct I/O with alignment will corrupt memory.
  */
-rc_t ArchiveDirectory::readBlock(int fd, char* buf,
+rc_t ArchiveIndex::readBlock(int fd, char* buf,
         size_t& offset, size_t readSize)
 {
     stopwatch_t timer;
@@ -356,7 +347,7 @@ rc_t ArchiveDirectory::readBlock(int fd, char* buf,
     return RCOK;
 }
 
-rc_t ArchiveDirectory::closeScan(int& fd)
+rc_t ArchiveIndex::closeScan(int& fd)
 {
     auto ret = ::close(fd);
     CHECK_ERRNO(ret);
@@ -364,7 +355,7 @@ rc_t ArchiveDirectory::closeScan(int& fd)
     return RCOK;
 }
 
-void ArchiveDirectory::deleteRuns(unsigned replicationFactor)
+void ArchiveIndex::deleteRuns(unsigned replicationFactor)
 {
     if (replicationFactor == 0) { // delete all runs
         fs::directory_iterator it(archpath), eod;
@@ -382,19 +373,9 @@ void ArchiveDirectory::deleteRuns(unsigned replicationFactor)
     // TODO
 }
 
-size_t ArchiveDirectory::getSkipLogrecSize() const
+size_t ArchiveIndex::getSkipLogrecSize() const
 {
     return SKIP_LOGREC.length();
-}
-
-ArchiveIndex::ArchiveIndex(size_t blockSize, size_t bucketSize)
-    : blockSize(blockSize), bucketSize(bucketSize), maxLevel(0)
-{
-    DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
-}
-
-ArchiveIndex::~ArchiveIndex()
-{
 }
 
 void ArchiveIndex::newBlock(const vector<pair<PageID, size_t> >&
@@ -446,8 +427,6 @@ rc_t ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
 {
     // Assumption: mutex is held by caller
 
-    // lastPID is stored on first block, but we reserve space for it in every
-    // block to simplify things
     int entriesPerBlock =
         (blockSize - sizeof(BlockHeader) - sizeof(PageID)) / sizeof(BlockEntry);
     int remaining = run.entries.size();
@@ -473,11 +452,6 @@ rc_t ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
         h->entries = j;
         h->blockNumber = i;
 
-        // copy lastPID into last block (space was reserved above)
-        // if (remaining == 0) {
-        //     memcpy(writeBuffer + bpos, &run.lastPID, sizeof(PageID));
-        // }
-
         auto ret = ::pwrite(fd, writeBuffer, blockSize, offset);
         CHECK_ERRNO(ret);
         offset += blockSize;
@@ -489,20 +463,9 @@ rc_t ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
     return RCOK;
 }
 
-void ArchiveIndex::init()
-{
-    for (unsigned l = 0; l < runs.size(); l++) {
-        std::sort(runs[l].begin(), runs[l].end());
-    }
-}
-
 void ArchiveIndex::appendNewEntry(unsigned level)
 {
     CRITICAL_SECTION(cs, mutex);
-
-    // if (runs.size() > 0) {
-    //     runs.back().lastPID = lastPID;
-    // }
 
     RunInfo newRun;
     if (level > maxLevel) {
@@ -540,7 +503,7 @@ lsn_t ArchiveIndex::getFirstLSN(unsigned level)
     return runs[level][0].firstLSN;
 }
 
-rc_t ArchiveIndex::loadRunInfo(int fd, const ArchiveDirectory::RunFileStats& fstats)
+rc_t ArchiveIndex::loadRunInfo(int fd, const ArchiveIndex::RunFileStats& fstats)
 {
     RunInfo run;
     {
@@ -576,11 +539,6 @@ rc_t ArchiveIndex::loadRunInfo(int fd, const ArchiveDirectory::RunFileStats& fst
             }
             indexBlockCount--;
             offset += blockSize;
-
-            // if (indexBlockCount == 0) {
-            //     // read lasPID from last block
-            //     run.lastPID = *((PageID*) (readBuffer + bpos));
-            // }
         }
 
         alloc.deallocate(readBuffer);
@@ -604,7 +562,7 @@ rc_t ArchiveIndex::loadRunInfo(int fd, const ArchiveDirectory::RunFileStats& fst
 rc_t ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
         size_t* dataBlocks)
 {
-    size_t fsize = ArchiveDirectory::getFileSize(fd);
+    size_t fsize = ArchiveIndex::getFileSize(fd);
     w_assert1(fsize % blockSize == 0);
 
     // skip emtpy runs

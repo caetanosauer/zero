@@ -290,14 +290,14 @@ private:
 };
 
 RestoreMgr::RestoreMgr(const sm_options& options,
-        ArchiveDirectory* archive, vol_t* volume, bool useBackup,
+        ArchiveIndex* index, vol_t* volume, bool useBackup,
         bool takeBackup)
     :
-    archive(archive), volume(volume), numRestoredPages(0),
+    archIndex(index), volume(volume), numRestoredPages(0),
     useBackup(useBackup), takeBackup(takeBackup),
     failureLSN(lsn_t::null), pinCount(0)
 {
-    w_assert0(archive);
+    w_assert0(archIndex);
     w_assert0(volume);
 
     instantRestore = options.get_bool_option("sm_restore_instant", true);
@@ -617,7 +617,7 @@ void RestoreMgr::restoreSegment(char* workspace,
 
 void RestoreMgr::restoreLoop(unsigned id)
 {
-    ArchiveScanner logScan(archive);
+    ArchiveScanner logScan(archIndex);
 
     stopwatch_t timer;
 
@@ -790,7 +790,7 @@ void RestoreMgr::start()
 
     LogArchiver* la = smlevel_0::logArchiver;
     w_assert0(la);
-    w_assert0(la->getDirectory());
+    w_assert0(la->getIndex());
 
     if (failureLSN != lsn_t::null) {
         // Wait for archiver to persist (or at least make available for
