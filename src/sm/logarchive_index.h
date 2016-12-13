@@ -12,6 +12,8 @@ namespace fs = boost::filesystem;
 #include "lsn.h"
 #include "sm_options.h"
 
+class RunRecycler;
+
 /** \brief Encapsulates all file and I/O operations on the log archive
  *
  * The directory object serves the following purposes:
@@ -170,6 +172,8 @@ private:
     size_t bucketSize;
 
     unsigned maxLevel;
+
+    std::unique_ptr<RunRecycler> runRecycler;
 
     // closeCurrentRun needs mutual exclusion because it is called by both
     // the writer thread and the archiver thread in processFlushRequest

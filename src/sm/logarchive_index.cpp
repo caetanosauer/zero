@@ -11,6 +11,23 @@
 #include "sm_base.h"
 #include "log_core.h"
 #include "stopwatch.h"
+#include "worker_thread.h"
+
+class RunRecycler : public worker_thread_t
+{
+public:
+    RunRecycler(unsigned replFactor, ArchiveIndex* archIndex)
+        : archIndex(archIndex), replFactor(replFactor)
+    {}
+
+    virtual void do_work()
+    {
+        archIndex->deleteRuns(replFactor);
+    }
+
+    ArchiveIndex* archIndex;
+    const unsigned replFactor;
+};
 
 // definition of static members
 const string ArchiveIndex::RUN_PREFIX = "archive_";
@@ -148,10 +165,18 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
 
     SKIP_LOGREC.init_header(logrec_t::t_skip);
     SKIP_LOGREC.construct();
+
+    unsigned replFactor = options.get_int_option("sm_archive_replication_factor", 0);
+    if (replFactor > 0) {
+        runRecycler.reset(new RunRecycler {replFactor, this});
+        runRecycler->fork();
+    }
 }
 
 ArchiveIndex::~ArchiveIndex()
 {
+    if (runRecycler) { runRecycler->stop(); }
+
     DO_PTHREAD(pthread_mutex_destroy(&mutex));
 }
 
@@ -366,7 +391,27 @@ void ArchiveIndex::deleteRuns(unsigned replicationFactor)
         return;
     }
 
-    // TODO
+    for (unsigned level = maxLevel; level > 0; level--) {
+        if (level <= replicationFactor) {
+            // there's no run with the given replication factor -- just return
+            return;
+        }
+        for (auto high : runs[level]) {
+            unsigned levelToClean = level - replicationFactor;
+            while (levelToClean > 0) {
+                // delete all runs within the LSN range of the higher-level run
+                for (auto low : runs[levelToClean]) {
+                    if (low.firstLSN >= high.firstLSN &&
+                            low.lastLSN <= high.lastLSN)
+                    {
+                        auto path = make_run_path(low.firstLSN,
+                                low.lastLSN, levelToClean);
+                        fs::remove(path);
+                    }
+                }
+            }
+        }
+    }
 }
 
 size_t ArchiveIndex::getSkipLogrecSize() const
@@ -412,6 +457,8 @@ rc_t ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
     if (offset > 0 && lf < (int) runs[level].size()) {
         W_DO(serializeRunInfo(runs[level][lf], fd, offset));
     }
+
+    if (level > 1 && runRecycler) { runRecycler->wakeup(); }
 
     return RCOK;
 }

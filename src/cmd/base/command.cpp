@@ -260,6 +260,9 @@ void Command::setupSMOptions(po::options_description& options)
         "Whether to turn on asynchronous merging with log archiver")
     ("sm_archiver_fanin", po::value<int>(),
         "Log archiver merge fan-in")
+    ("sm_archiver_replication_factor", po::value<int>(),
+        "Replication factor maintained by the log archive \
+         run recycler (0 = never delete a run)")
     ("sm_archiving_blocksize", po::value<int>(),
         "Archiving block size")
     ("sm_reformat_log", po::value<bool>(),
