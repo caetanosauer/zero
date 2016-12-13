@@ -65,7 +65,7 @@ public:
 
     void listFiles(std::vector<std::string>& list, int level = -1);
     void listFileStats(std::list<RunFileStats>& list, int level = -1);
-    void deleteAllRuns();
+    void deleteRuns(unsigned replicationFactor = 0);
 
     size_t getSkipLogrecSize() const;
 

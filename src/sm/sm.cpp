@@ -464,7 +464,7 @@ rc_t ss_m::_truncate_log(bool truncate_archive)
 
     if (logArchiver) {
         logArchiver->archiveUntilLSN(log->durable_lsn());
-        if (truncate_archive) { logArchiver->getDirectory()->deleteAllRuns(); }
+        if (truncate_archive) { logArchiver->getDirectory()->deleteRuns(); }
     }
 
     W_DO(log->truncate());

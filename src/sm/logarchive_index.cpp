@@ -364,16 +364,22 @@ rc_t ArchiveDirectory::closeScan(int& fd)
     return RCOK;
 }
 
-void ArchiveDirectory::deleteAllRuns()
+void ArchiveDirectory::deleteRuns(unsigned replicationFactor)
 {
-    fs::directory_iterator it(archpath), eod;
-    boost::regex run_rx(run_regex, boost::regex::perl);
-    for (; it != eod; it++) {
-        string fname = it->path().filename().string();
-        if (boost::regex_match(fname, run_rx)) {
-            fs::remove(it->path());
+    if (replicationFactor == 0) { // delete all runs
+        fs::directory_iterator it(archpath), eod;
+        boost::regex run_rx(run_regex, boost::regex::perl);
+        for (; it != eod; it++) {
+            string fname = it->path().filename().string();
+            if (boost::regex_match(fname, run_rx)) {
+                fs::remove(it->path());
+            }
         }
+
+        return;
     }
+
+    // TODO
 }
 
 size_t ArchiveDirectory::getSkipLogrecSize() const
