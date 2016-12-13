@@ -70,9 +70,7 @@ bool BlockAssembly::start(run_number_t run)
     pos = sizeof(BlockHeader);
 
     if (run != lastRun) {
-        if (archIndex) {
-            archIndex->appendNewEntry(level);
-        }
+        archIndex->startNewRun(level);
         nextBucket = 0;
         fpos = 0;
         lastRun = run;

@@ -229,21 +229,15 @@ fs::path ArchiveIndex::make_current_run_path(unsigned level) const
 
 rc_t ArchiveIndex::closeCurrentRun(lsn_t runEndLSN, unsigned level)
 {
+    // Enter two critical sections, one in getLastLSN and one below.
+    // This is OK because lastLSN cannot change in between, as only one
+    // thread may call closeCurrentRun on the same level at the same time.
+    lsn_t lastLSN = getLastLSN(level);
+    w_assert1(!lastLSN.is_null() && (lastLSN < runEndLSN || runEndLSN.is_null()));
+
     CRITICAL_SECTION(cs, mutex);
 
     if (appendFd[level] >= 0) {
-        // if (appendPos[level] == 0 && runEndLSN == lsn_t::null) {
-        //     // nothing was appended -- just close file and return
-        //     auto ret = ::close(appendFd[level]);
-        //     CHECK_ERRNO(ret);
-        //     appendFd[level] = -1;
-        //     return RCOK;
-        // }
-
-        // CS TODO from now on, archiveIndex is mandatory
-        // CS TODO unify ArchiveIndex and ArchiveIndex
-        lsn_t lastLSN = getLastLSN(level);
-        w_assert1(!lastLSN.is_null() && (lastLSN < runEndLSN || runEndLSN.is_null()));
         if (lastLSN != runEndLSN && !runEndLSN.is_null()) {
             // if level>1, runEndLSN must match the boundaries in the lower level
             if (level > 1) {
@@ -357,6 +351,8 @@ rc_t ArchiveIndex::closeScan(int& fd)
 
 void ArchiveIndex::deleteRuns(unsigned replicationFactor)
 {
+    CRITICAL_SECTION(cs, mutex);
+
     if (replicationFactor == 0) { // delete all runs
         fs::directory_iterator it(archpath), eod;
         boost::regex run_rx(run_regex, boost::regex::perl);
@@ -401,10 +397,8 @@ rc_t ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
 {
     if (offset == 0) {
         // at least one entry is required for empty runs
-        appendNewEntry(level);
+        appendNewRun(level);
     }
-
-    CRITICAL_SECTION(cs, mutex);
     w_assert1(offset % blockSize == 0);
 
     int& lf = lastFinished[level];
@@ -463,10 +457,8 @@ rc_t ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
     return RCOK;
 }
 
-void ArchiveIndex::appendNewEntry(unsigned level)
+void ArchiveIndex::appendNewRun(unsigned level)
 {
-    CRITICAL_SECTION(cs, mutex);
-
     RunInfo newRun;
     if (level > maxLevel) {
         maxLevel = level;
@@ -474,6 +466,12 @@ void ArchiveIndex::appendNewEntry(unsigned level)
         lastFinished.resize(maxLevel+1, -1);
     }
     runs[level].push_back(newRun);
+}
+
+void ArchiveIndex::startNewRun(unsigned level)
+{
+    CRITICAL_SECTION(cs, mutex);
+    appendNewRun(level);
 }
 
 lsn_t ArchiveIndex::getLastLSN(unsigned level)

@@ -119,7 +119,7 @@ public:
 
     rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
     rc_t loadRunInfo(int fd, const RunFileStats&);
-    void appendNewEntry(unsigned level);
+    void startNewRun(unsigned level);
 
     unsigned getMaxLevel() const { return maxLevel; }
     size_t getBucketSize() { return bucketSize; }
@@ -132,6 +132,7 @@ public:
 
 private:
 
+    void appendNewRun(unsigned level);
     size_t findRun(lsn_t lsn, unsigned level);
     void probeInRun(ProbeResult&);
     // binary search
