@@ -89,7 +89,7 @@ void ShoreTPCCEnv::table_creator_t::work()
     W_COERCE(_env->_porder_line_desc->create_physical_table(_env->db()));
     W_COERCE(_env->_pitem_desc->create_physical_table(_env->db()));
     W_COERCE(_env->_pstock_desc->create_physical_table(_env->db()));
-    W_COERCE(_env->db()->commit_xct());
+    W_COERCE(xct_t::commit());
 
     // do the first transaction
     populate_baseline_input_t in = {_sf};

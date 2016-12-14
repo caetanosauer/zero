@@ -305,12 +305,12 @@ public:
                                     return         s;
                                 }
     const sm_stats_info_t&      const_stats_ref() { return *__stats; }
-    rc_t                        commit(bool lazy = false, lsn_t* plastlsn=NULL);
+    static rc_t commit(bool lazy = false, lsn_t* plastlsn=NULL);
     rc_t                        commit_as_group_member();
     rc_t                        rollback(const lsn_t &save_pt);
     rc_t                        save_point(lsn_t& lsn);
     rc_t                        chain(bool lazy = false);
-    rc_t                        abort(bool save_stats = false);
+    static rc_t abort(bool save_stats = false);
 
     // used by restart.cpp, some logrecs
 protected:
@@ -503,12 +503,11 @@ private:
     latch_t                      _latch;
 
 protected:
-    rc_t                _abort();
-    rc_t                _commit(uint32_t flags,
-                                                 lsn_t* plastlsn=NULL);
+    rc_t                _abort(bool save_stats_structure);
+    rc_t                _commit(bool lazy = false, lsn_t* plastlsn=NULL);
     // CS: decoupled from _commit to allow reuse in plog_xct_t
-    rc_t _commit_read_only(uint32_t flags, lsn_t& inherited_read_watermark);
-    rc_t _pre_commit(uint32_t flags);
+    rc_t _commit_read_only();
+    rc_t _pre_commit();
     rc_t _pre_abort();
 
 private:
@@ -910,39 +909,6 @@ xct_t::state() const
         return xct_ended;
     return _core->_state;
 }
-
-// For use in sm functions that don't allow
-// active xct when entered.  These are functions that
-// apply to local volumes only.
-class xct_auto_abort_t : public smlevel_0 {
-public:
-    xct_auto_abort_t() : _xct(new xct_t()) {
-    }
-    ~xct_auto_abort_t() {
-        switch(_xct->state()) {
-        case smlevel_0::xct_ended:
-            // do nothing
-            break;
-        case smlevel_0::xct_active:
-        case smlevel_0::xct_freeing_space: // we got an error in commit
-        case smlevel_0::xct_committing: // we got an error in commit
-            W_COERCE(_xct->abort());
-            break;
-        default:
-            cerr << "unexpected xct state: " << _xct->state() << endl;
-            W_FATAL(eINTERNAL);
-        }
-        delete _xct;
-    }
-    rc_t commit() {
-        W_DO(_xct->commit());
-        return RCOK;
-    }
-    rc_t abort() {W_DO(_xct->abort()); return RCOK;}
-
-private:
-    xct_t*        _xct;
-};
 
 
 inline

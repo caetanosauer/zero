@@ -100,7 +100,7 @@ const int SHORE_NUM_OF_RETRIES       = 3;
         w_rc_t e = xct_##trximpl(xct_id, in);                           \
         if (!e.is_error()) {                                            \
             lsn_t xctLastLsn;                                           \
-            e = _pssm->commit_xct(true,&xctLastLsn);                    \
+            e = xct_t::commit(true,&xctLastLsn);                    \
             prequest->set_last_lsn(xctLastLsn); }                       \
         if (e.is_error()) {                                             \
             if (e.err_num() != smlevel_0::eDEADLOCK)                    \
@@ -127,14 +127,14 @@ const int SHORE_NUM_OF_RETRIES       = 3;
         _inc_##trxlid##_att();                                          \
         w_rc_t e = xct_##trximpl(xct_id, in);                           \
         if (!e.is_error()) {                                            \
-            if (isAsynchCommit()) e = _pssm->commit_xct(true);          \
-            else e = _pssm->commit_xct(); }                             \
+            if (isAsynchCommit()) e = xct_t::commit(true);          \
+            else e = xct_t::commit(); }                             \
         if (e.is_error()) {                                             \
             if (e.err_num() != eDEADLOCK)                    \
                 _inc_##trxlid##_failed();                               \
             else _inc_##trxlid##_dld();                                 \
             /*TRACE( TRACE_TRX_FLOW, "Xct (%d) aborted [0x%x]\n", xct_id, e.err_num());*/ \
-            w_rc_t e2 = _pssm->abort_xct();                             \
+            w_rc_t e2 = xct_t::abort();                             \
             if(e2.is_error()) TRACE( TRACE_ALWAYS, "Xct (%d) abort failed [0x%x]\n", xct_id, e2.err_num()); \
             prequest->notify_client();                                  \
             if ((*&_measure)!=MST_MEASURE) return (e);                  \
@@ -171,7 +171,7 @@ const int SHORE_NUM_OF_RETRIES       = 3;
 #define CHECK_XCT_RETURN(rc,retry,ENV)			\
     if (rc.is_error()) {						\
 	TRACE( TRACE_ALWAYS, "Error %x\n", rc.err_num());		\
-	W_COERCE(ENV->db()->abort_xct());				\
+	W_COERCE(xct_t::abort());				\
 	switch(rc.err_num()) {						\
 	case eDEADLOCK:					\
 	    goto retry;							\

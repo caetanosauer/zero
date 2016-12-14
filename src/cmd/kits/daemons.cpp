@@ -134,8 +134,8 @@ void abort_smt_t::work()
 
         victim = *it;
         assert (victim);
-        _env->db()->attach_xct(victim);
-        r = _env->db()->abort_xct();
+        smthread_t::attach_xct(victim);
+        r = xct_t::abort();
         if (r.is_error()) {
             TRACE( TRACE_ALWAYS, "Problem aborting (%x)\n", *it);
         }

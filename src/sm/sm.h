@@ -67,10 +67,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *  definitions used in the API.
  */
 
-#ifndef SM_INT_2_H
 #include <sm_base.h>
-#endif
-
 #include <smstats.h> // declares sm_stats_info_t and sm_config_info_t
 #include <lsn.h>
 #include <string>
@@ -379,16 +376,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *  See \ref SSMSTORE.
  */
 
-
-
-/** \file sm_vas.h
- * \details
- * This is the include file that all value-added servers should
- * include to get the Shore Storage Manager API.
- *
- */
-/********************************************************************/
-
 class fixable_page_h;
 class btree_page_h;
 class xct_t;
@@ -558,208 +545,6 @@ private:
     void                _destruct_once();
 
 public:
-    /**\addtogroup SSMXCT
-     *
-     * All work performed on behalf of a transaction must occur while that
-     * transaction is "attached" to the thread that performs the work.
-     * Creating a transaction attaches it to the thread that creates the transaction.
-     * The thread may detach from the transaction and attach to another.
-     * Multiple threads may attach to a single transaction and do work in certain circumstances.   See \ref SSMMULTIXCT
-     *
-     *
-     */
-
-    /**\brief Commit a transaction.
-     *\ingroup SSMXCT
-     * @param[in] lazy   Optional, controls flushing of log.
-     * @param[out] plastlsn   If non-null, this is a pointer to a
-     *                    log sequence number into which the storage
-     *                    manager writes the that of the last log record
-     *                    inserted for this transaction.
-     * \details
-     *
-     * Commit the attached transaction and detach it, destroy it.
-     * If \a lazy is true, the log is not synced.  This means that
-     * recovery of this transaction might not be possible.
-     */
-    static rc_t           commit_xct(
-                                     bool   lazy = false,
-                                     lsn_t* plastlsn=NULL);
-
-    /**\brief Commit an instrumented transaction and get its statistics.
-     *\ingroup SSMXCT
-     * @param[out] stats   Get a copy of the statistics for this transaction.
-     * @param[in] lazy   Optional, controls flushing of log.
-     * @param[out] plastlsn   If non-null, this is a pointer to a
-     *                    log sequence number into which the storage
-     *                    manager writes the that of the last log record
-     *                    inserted for this transaction.
-     * \details
-     *
-     * Commit the attached transaction and detach it, destroy it.
-     * If \a lazy is true, the log is not synced.  This means that
-     * recovery of this transaction might not be possible.
-     */
-    static rc_t            commit_xct(
-                                    sm_stats_info_t*& stats,
-                                    bool              lazy = false,
-                                    lsn_t*            plastlsn=NULL);
-
-    /**
-     * \brief Commit a system transaction, which doesn't cause log sync.
-     * \ingroup SSMXCT
-     * \details
-     * This function is a synonym of commit_xct(lazy=true).
-     */
-    static rc_t           commit_sys_xct();
-
-    /**\brief Commit an instrumented transaction and start a new one.
-     *\ingroup SSMXCT
-     * @param[out] stats   Get a copy of the statistics for the first transaction.
-     * @param[in] lazy   Optional, controls flushing of log.
-     * \details
-     *
-     * Commit the attached transaction and detach it, destroy it.
-     * Start a new transaction and attach it to this thread.
-     * \note \e The \e new
-     * \e transaction \e inherits \e the \e locks \e of \e the \e old
-     * \e transaction.
-     *
-     * If \a lazy is true, the log is not synced.  This means that
-     * recovery of this transaction might not be possible.
-     */
-    static rc_t            chain_xct(
-        sm_stats_info_t*&         stats,    /* in w/new, out w/old */
-        bool                      lazy = false);
-
-    /**\brief Commit a transaction and start a new one, inheriting locks.
-     *\ingroup SSMXCT
-     * @param[in] lazy   Optional, controls flushing of log.
-     * \details
-     *
-     * Commit the attached transaction and detach it, destroy it.
-     * Start a new transaction and attach it to this thread.
-     * \note \e The \e new
-     * \e transaction \e inherits \e the \e locks \e of \e the \e old
-     * \e transaction.
-     *
-     * If \a lazy is true, the log is not synced.  This means that
-     * recovery of the committed transaction might not be possible.
-     */
-    static rc_t            chain_xct(bool lazy = false);
-
-
-    /**\brief Commit a group of transactions.
-     *\ingroup SSMXCT
-     * @param[in] list      List of pointers to transactions to commit.
-     * @param[in] listlen   Number of transactions in the list.
-     * \details
-     *
-     * Commit each transaction in the list as an all-or-none affair.
-     * Any transaction that is attached to the thread will be
-	 * detached before anything is done.
-	 *
-	 * The purpose of this method is to allow multiple transactions
-	 * to commit together with a single log record. No voting takes place.
-	 * The entire list of transaction identifiers must fit in a single
-	 * log record. If it does not, a descriptive error will be returned and no
-	 * transaction will be committed. In this case, the server has the
-	 * option to singly commit each transaction.
-	 *
-	 * If any other error occurs during one of the commits, the error
-	 * will be returned to the caller and none of the transactions
-	 * will be committed; they \b must be aborted thereafter.
-	 *
-	 * This is not intended to be used with transactions that are
-	 * participating in two-phase commit, but if
-	 * one of the transactions is participating in two-phase commit,
-	 * they all must be and they all must be prepared.
-	 *
-	 * Chaining and lazy commit are not offered with this form of commit.
-	 * If a transaction in the list is instrumented, its statistics
-	 * resources will be deleted upon successful commit.
-	 *
-	 * \note
-	 * By taking a list of transaction pointers, this avoids a the tid_to_xct lookup
-	 * for each transaction, but the server must regard the transaction pointers as
-	 * invalid after this method returns.
-	 * The transactions, once committed, do not exist anymore.
-	 * If an error is returned, the server has to re-verify the transaction pointers
-	 * by using ss_m::tid_to_xct from a separate list of transaction ids to determine
-	 * which transactions are extant.
-     */
-    static rc_t            commit_xct_group(
-		xct_t *               list[],
-		int                   listlen);
-
-    /**\brief Abort an instrumented transaction and get its statistics.
-     *\ingroup SSMXCT
-     * @param[out] stats   Get a copy of the statistics for this transaction.
-     * \details
-     *
-     * Abort the attached transaction and detach it, destroy it.
-     */
-    static rc_t            abort_xct(sm_stats_info_t*&  stats);
-    /**\brief Abort a transaction.
-     *\ingroup SSMXCT
-     * \details
-     *
-     * Abort the attached transaction and detach it, destroy it.
-     */
-    static rc_t            abort_xct();
-
-    /**\brief Populate a save point.
-     *\ingroup SSMSP
-     * @param[out] sp   An sm_save_point_t owned by the caller.
-     *\details
-     * Store in sp the needed information to be able to roll back
-     * to this point.
-     * For use with rollback_work.
-     * \note Only one thread may be attached to a transaction when this
-     * is called.
-     */
-    static rc_t            save_work(sm_save_point_t& sp);
-
-    /**\brief Roll back to a savepoint.
-     *\ingroup SSMSP
-     * @param[in] sp   An sm_save_point_t owned by the caller and
-     * populated by save_work.
-     *\details
-     * Undo everything that was
-     * done from the time save_work was called on this savepoint.
-     * \note Locks are not freed.
-     *
-     * \note Only one thread may be attached to a transaction when this
-     * is called.
-     */
-    static rc_t            rollback_work(const sm_save_point_t& sp);
-
-    /**\brief Attach the given transaction to the currently-running smthread_t.
-     *\ingroup SSMXCT
-     * \details
-     * It is assumed that the currently running thread is an smthread_t.
-     */
-    static void           attach_xct(xct_t *x) { smthread_t::attach_xct(x); }
-
-    /**\brief Detach any attached from the currently-running smthread_t.
-     *\ingroup SSMXCT
-     * \details
-     * Sever the connection between the running thread and the transaction.
-     * This allow the running thread to attach a different
-     * transaction and to perform work in its behalf.
-     */
-    static void           detach_xct() { xct_t *x = smthread_t::xct();
-                                        if(x) smthread_t::detach_xct(x); }
-
-    /**\brief Get the transaction state for a given transaction (structure).
-     *\ingroup SSMXCT
-     * @param[in] x   Pointer to transaction structure.
-     * \details
-     * Returns the state of the transaction (active, prepared). It is
-     * hard to get the state of an aborted or committed transaction, since
-     * their structures no longer exist.
-     */
-    static xct_state_t     state_xct(const xct_t* x);
 
     /**\brief Get a copy of the statistics from an attached instrumented transaction.
      * \ingroup SSMXCT
@@ -789,26 +574,6 @@ public:
      *
      *****************************************************************/
 
-    /** Returns the global lock table object for light-weight intent locks. */
-    static lil_global_table*  get_lil_global_table();
-
-    /**
-     * \brief Acquire a lock.
-     * \ingroup SSMLOCK
-     * @param[in]  n  Lock id of the entity to lock. There are
-     * conversions from record ids, volume ids, store ids, and page ids to
-     * lockid_t.
-     * @param[in]  m  Desired lock mode.  Values: EX, SH.
-     * @param[in]  check_only  if true, the lock goes away right after grant. default false.
-     * @param[in]  timeout  Milliseconds willing to block.  See int.
-     */
-    static rc_t            lock(
-        const lockid_t&         n,
-        const okvl_mode&           m,
-        bool                    check_only = false,
-        int           timeout = timeout_t::WAIT_SPECIFIED_BY_XCT
-    );
-
     /** Start-up parameters for the storage engine. */
     static sm_options _options;
 
@@ -817,27 +582,6 @@ public:
 private:
 
     static int _instance_cnt;
-
-    static rc_t            _commit_xct(
-        sm_stats_info_t*&     stats,
-        bool                  lazy,
-        lsn_t* plastlsn);
-
-    static rc_t            _commit_xct_group(
-        xct_t *               list[],
-        int                   listlen);
-    static rc_t            _chain_xct(
-        sm_stats_info_t*&      stats,
-        bool                   lazy);
-
-    static rc_t            _abort_xct(
-        sm_stats_info_t*&      stats);
-
-    static rc_t            _save_work(sm_save_point_t& sp);
-
-    static rc_t            _rollback_work(const sm_save_point_t&        sp);
-
-
 };
 
 ostream& operator<<(ostream& o, const sm_stats_info_t& s);
@@ -852,10 +596,6 @@ ostream& operator<<(ostream& o, const sm_config_info_t& s)
       ;
     return o;
 }
-
-#ifndef VEC_T_H
-#include <vec_t.h>
-#endif
 
 /*<std-footer incl-file-exclusion='SM_H'>  -- do not edit anything below this line -- */
 

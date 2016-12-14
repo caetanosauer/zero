@@ -347,7 +347,7 @@ void ShoreTPCBEnv::table_creator_t::work()
     W_COERCE(_env->teller_man->table()->create_physical_table(_env->db()));
     W_COERCE(_env->account_man->table()->create_physical_table(_env->db()));
     W_COERCE(_env->history_man->table()->create_physical_table(_env->db()));
-    W_COERCE(_env->db()->commit_xct());
+    W_COERCE(xct_t::commit());
 
     // Create 10k accounts in each partition to buffer
     // workers from each other
@@ -363,7 +363,7 @@ void ShoreTPCBEnv::table_creator_t::work()
     // Before returning, run the post initialization phase
     xct_t::begin();
     W_COERCE(_env->_post_init_impl());
-    W_COERCE(_env->db()->commit_xct());
+    W_COERCE(xct_t::commit());
 }
 
 
@@ -542,16 +542,16 @@ int ShoreTPCBEnv::post_init()
     if (get_pd() & PD_PADDED) {
         TRACE( TRACE_ALWAYS, "Checking for BRANCH/TELLER record padding...\n");
 
-	xct_t::begin();
+        xct_t::begin();
         w_rc_t rc = _post_init_impl();
         if(rc.is_error()) {
             cerr << "-> BRANCH/TELLER padding failed with: " << rc << endl;
-            rc = db()->abort_xct();
+            rc = xct_t::abort();
             return (rc.err_num());
         }
         else {
             TRACE( TRACE_ALWAYS, "-> Done\n");
-            rc = db()->commit_xct();
+            rc = xct_t::commit();
         }
     }
     return (0);

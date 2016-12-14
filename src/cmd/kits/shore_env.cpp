@@ -529,7 +529,7 @@ int ShoreEnv::start()
     // Cache fids at the kits side
         xct_t::begin();
         W_COERCE(load_and_register_fids());
-        W_COERCE(db()->commit_xct());
+        W_COERCE(xct_t::commit());
         // Call the (virtual) post-initialization function
         if (int rval = post_init()) {
             TRACE( TRACE_ALWAYS, "Error in Shore post-init\n");
@@ -798,7 +798,7 @@ int ShoreEnv::start_sm()
         xct_t::begin();
         W_COERCE(btree_m::create(cat_stid));
         w_assert0(cat_stid == 1);
-        W_COERCE(_pssm->commit_xct());
+        W_COERCE(xct_t::commit());
 
         // set that the database is not loaded
         _loaded = false;

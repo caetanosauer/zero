@@ -731,7 +731,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
 
                                 // Attach to the loser transaction
                                 smthread_t::attach_xct(xd);
-                                W_COERCE(xd->abort());
+                                W_COERCE(xct_t::abort());
 
                                 // Done with rollback of loser transaction, destroy it
                                 delete xd;

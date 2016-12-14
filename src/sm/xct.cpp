@@ -499,7 +499,7 @@ void xct_t::cleanup(bool allow_abort)
             case xct_active: {
                     smthread_t::attach_xct(xd);
                     if (allow_abort) {
-                        W_COERCE( xd->abort() );
+                        W_COERCE(abort());
                     } else {
                         W_COERCE( xd->dispose() );
                     }
@@ -607,14 +607,18 @@ xct_t::oldest_tid()
 }
 
 
-rc_t
-xct_t::abort(bool save_stats_structure /* = false */)
+// CS TODO: abort should be rollback + "commit nothing"
+rc_t xct_t::abort(bool save_stats_structure /* = false */)
 {
-    if(is_instrumented() && !save_stats_structure) {
-        delete __stats;
-        __stats = 0;
-    }
-    return _abort();
+    xct_t* xp = xct();
+    bool was_sys_xct = xp->is_sys_xct();
+
+    W_DO(xp->_abort(save_stats_structure));
+
+    if (!was_sys_xct) { delete xp; }
+    w_assert3(was_sys_xct || xct() == 0);
+
+    return RCOK;
 }
 
 void
@@ -623,14 +627,17 @@ xct_t::force_nonblocking()
 //    lock_info()->set_nonblocking();
 }
 
-rc_t
-xct_t::commit(bool lazy,lsn_t* plastlsn)
+rc_t xct_t::commit(bool lazy,lsn_t* plastlsn)
 {
-    // removed because a checkpoint could
-    // be going on right now.... see comments
-    // in log_prepared and chkpt.cpp
+    xct_t* xp = xct();
+    bool was_sys_xct = xp->is_sys_xct();
 
-    return _commit(t_normal | (lazy ? t_lazy : t_normal), plastlsn);
+    W_DO(xp->_commit(lazy, plastlsn));
+
+    if (!was_sys_xct) { delete xp; }
+    w_assert3(was_sys_xct || xct() == 0);
+
+    return RCOK;
 }
 
 rc_t
@@ -832,13 +839,15 @@ xct_t::log_warn_is_on() const
 }
 
 rc_t
-xct_t::_pre_commit(uint32_t flags)
+xct_t::_pre_commit()
 {
     // "normal" means individual commit; not group commit.
     // Group commit cannot be lazy or chained.
-    bool individual = ! (flags & xct_t::t_group);
-    w_assert2(individual || ((flags & xct_t::t_chain) ==0));
-    w_assert2(individual || ((flags & xct_t::t_lazy) ==0));
+    // CS TODO get rid of groups and chains
+    bool individual = true;
+    // bool individual = ! (flags & xct_t::t_group);
+    // w_assert2(individual || ((flags & xct_t::t_chain) ==0));
+    // w_assert2(individual || ((flags & xct_t::t_lazy) ==0));
 
     w_assert1(_core->_state == xct_active);
 
@@ -846,7 +855,9 @@ xct_t::_pre_commit(uint32_t flags)
 
 //    W_DO( ConvertAllLoadStoresToRegularStores() );
 
-    change_state(flags & xct_t::t_chain ? xct_chaining : xct_committing);
+    // CS TODO get rid fo chaining
+    // change_state(flags & xct_t::t_chain ? xct_chaining : xct_committing);
+    change_state(xct_committing);
 
     if (_last_lsn.valid() || !smlevel_0::log)  {
         /*
@@ -876,7 +887,7 @@ xct_t::_pre_commit(uint32_t flags)
         // if the logic changes here, need to visit chkpt logic which is
         // depending on the logic here when recording active transactions
 
-        state_t old_state = _core->_state;
+        // state_t old_state = _core->_state;
         change_state(xct_freeing_space);
         rc_t rc = RCOK;
         if (!is_sys_xct()) { // system transaction has nothing to free, so this log is not needed
@@ -922,20 +933,32 @@ xct_t::_pre_commit(uint32_t flags)
  *
  *********************************************************************/
 rc_t
-xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
+xct_t::_commit(bool lazy, lsn_t* plastlsn)
 {
+
+    if (is_piggy_backed_single_log_sys_xct()) {
+        // then, commit() does nothing
+        // It just "resolves" the SSX on piggyback
+        if (ssx_chain_len() > 0) {
+            --ssx_chain_len(); // multiple SSXs on piggyback
+        } else {
+            set_piggy_backed_single_log_sys_xct(false);
+        }
+        return RCOK;
+    }
+
     // when chaining, we inherit the read_watermark from the previous xct
     // in case the next transaction are read-only.
-    lsn_t inherited_read_watermark;
+    // lsn_t inherited_read_watermark;
 
     // Static thread-local variables used to measure transaction latency
     static thread_local unsigned long _accum_latency = 0;
     static thread_local unsigned int _latency_count = 0;
 
-    W_DO(_pre_commit(flags));
+    W_DO(_pre_commit());
 
     if (_last_lsn.valid() || !smlevel_0::log)  {
-        if (!(flags & xct_t::t_lazy))  {
+        if (!lazy)  {
             _sync_logbuf();
         }
         else { // IP: If lazy, wake up the flusher but do not block
@@ -948,17 +971,19 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         change_state(xct_ended);
 
         // Free all locks. Do not free locks if chaining.
-        bool individual = ! (flags & xct_t::t_group);
-        if(individual && ! (flags & xct_t::t_chain) && _elr_mode != elr_sx)  {
-            W_DO(commit_free_locks());
-        }
+        // bool individual = ! (flags & xct_t::t_group);
+        // if(individual && ! (flags & xct_t::t_chain) && _elr_mode != elr_sx)  {
+        //     W_DO(commit_free_locks());
+        // }
+        // CS TODO get rid of groups and chains
+        W_DO(commit_free_locks());
 
-        if(flags & xct_t::t_chain)  {
-            // in this case the dependency is the previous xct itself, so take the commit LSN.
-            inherited_read_watermark = _last_lsn;
-        }
+        // if(flags & xct_t::t_chain)  {
+        //     // in this case the dependency is the previous xct itself, so take the commit LSN.
+        //     inherited_read_watermark = _last_lsn;
+        // }
     }  else  {
-        W_DO(_commit_read_only(flags, inherited_read_watermark));
+        W_DO(_commit_read_only());
     }
 
     INC_TSTAT(commit_xct_cnt);
@@ -969,38 +994,38 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
      *  Xct is now committed
      */
 
-    if (flags & xct_t::t_chain)  {
-        w_assert0(!is_sys_xct()); // system transaction cannot chain (and never has to)
+    // if (flags & xct_t::t_chain)  {
+    //     w_assert0(!is_sys_xct()); // system transaction cannot chain (and never has to)
 
-        w_assert1(! (flags & xct_t::t_group));
+    //     w_assert1(! (flags & xct_t::t_group));
 
-        ++_xct_chain_len;
-        /*
-         *  Start a new xct in place
-         */
-        _teardown(true);
-        _first_lsn = _last_lsn = _undo_nxt = lsn_t::null;
-        if (inherited_read_watermark.valid()) {
-            _read_watermark = inherited_read_watermark;
-        }
-        // we do NOT reset _read_watermark here. the last xct of the chain
-        // is responsible to flush if it's read-only. (if read-write, it anyway flushes)
-        _core->_xct_ended = 0;
-        w_assert1(_core->_xct_aborting == false);
-        // _last_log = 0;
+    //     ++_xct_chain_len;
+    //     /*
+    //      *  Start a new xct in place
+    //      */
+    //     _teardown(true);
+    //     _first_lsn = _last_lsn = _undo_nxt = lsn_t::null;
+    //     if (inherited_read_watermark.valid()) {
+    //         _read_watermark = inherited_read_watermark;
+    //     }
+    //     // we do NOT reset _read_watermark here. the last xct of the chain
+    //     // is responsible to flush if it's read-only. (if read-write, it anyway flushes)
+    //     _core->_xct_ended = 0;
+    //     w_assert1(_core->_xct_aborting == false);
+    //     // _last_log = 0;
 
-        // should already be out of compensated operation
-        w_assert3( _in_compensated_op==0 );
+    //     // should already be out of compensated operation
+    //     w_assert3( _in_compensated_op==0 );
 
-        smthread_t::attach_xct(this);
-        INC_TSTAT(begin_xct_cnt);
-        _core->_state = xct_chaining; // to allow us to change state back
-        // to active: there's an assert about this where we don't
-        // have context to know that it's where we're chaining.
-        change_state(xct_active);
-    } else {
-        _xct_chain_len = 0;
-    }
+    //     smthread_t::attach_xct(this);
+    //     INC_TSTAT(begin_xct_cnt);
+    //     _core->_state = xct_chaining; // to allow us to change state back
+    //     // to active: there's an assert about this where we don't
+    //     // have context to know that it's where we're chaining.
+    //     change_state(xct_active);
+    // } else {
+    //     _xct_chain_len = 0;
+    // }
 
     auto end_tstamp = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end_tstamp - _begin_tstamp);
@@ -1013,17 +1038,22 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         _latency_count = 0;
     }
 
+    if(is_instrumented()) {
+        __stats->compute();
+    }
+
     return RCOK;
 }
 
 rc_t
-xct_t::_commit_read_only(uint32_t flags, lsn_t& inherited_read_watermark)
+xct_t::_commit_read_only()
 {
     // Nothing logged; no need to write a log record.
     change_state(xct_ended);
 
-    bool individual = ! (flags & xct_t::t_group);
-    if(individual && !is_sys_xct() && ! (flags & xct_t::t_chain)) {
+    // CS TODO get rid of cahining
+    // bool individual = ! (flags & xct_t::t_group);
+    if(!is_sys_xct()) {
         W_DO(commit_free_locks());
 
         // however, to make sure the ELR for X-lock and CLV is
@@ -1075,9 +1105,9 @@ xct_t::_commit_read_only(uint32_t flags, lsn_t& inherited_read_watermark)
             _read_watermark = lsn_t::null;
         }
     } else {
-        if(flags & xct_t::t_chain)  {
-            inherited_read_watermark = _read_watermark;
-        }
+        // if(flags & xct_t::t_chain)  {
+        //     inherited_read_watermark = _read_watermark;
+        // }
         // even if chaining or grouped xct, we can do ELR
         W_DO(early_lock_release());
     }
@@ -1185,8 +1215,19 @@ xct_t::_pre_abort()
  *
  *********************************************************************/
 rc_t
-xct_t::_abort()
+xct_t::_abort(bool save_stats_structure)
 {
+    if(is_instrumented() && !save_stats_structure) {
+        delete __stats;
+        __stats = 0;
+    }
+
+    // if this is "piggy-backed" ssx, just end the status
+    if (is_piggy_backed_single_log_sys_xct()) {
+        set_piggy_backed_single_log_sys_xct(false);
+        return RCOK;
+    }
+
     W_DO(_pre_abort());
 
     /*
@@ -1268,6 +1309,11 @@ xct_t::_abort()
 
     smthread_t::detach_xct(this);        // no transaction for this thread
     INC_TSTAT(abort_xct_cnt);
+
+    if(is_instrumented()) {
+        __stats->compute();
+    }
+
     return RCOK;
 }
 
@@ -1754,15 +1800,15 @@ sys_xct_section_t::~sys_xct_section_t()
 {
     size_t xct_depth = smthread_t::get_tcb_depth();
     if (xct_depth > _original_xct_depth) {
-        W_COERCE(ss_m::abort_xct());
+        xct_t::abort();
     }
 }
 rc_t sys_xct_section_t::end_sys_xct (rc_t result)
 {
     if (result.is_error()) {
-        W_DO (ss_m::abort_xct());
+        W_DO(xct_t::abort());
     } else {
-        W_DO (ss_m::commit_sys_xct());
+        W_DO(xct_t::commit());
     }
     return RCOK;
 }

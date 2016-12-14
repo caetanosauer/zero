@@ -515,7 +515,7 @@ void restart_m::undo_pass()
                     //     use_concurrent_lock_restart(): locks acquired during Log Analysis phase
 
                     smthread_t::attach_xct(curr);
-                    W_COERCE( curr->abort() );
+                    W_COERCE(xct_t::abort());
 
                     // Then destroy the loser transaction
                     delete curr;

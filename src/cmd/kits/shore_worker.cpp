@@ -31,6 +31,7 @@
 
 #include "trx_worker.h"
 #include "shore_env.h"
+#include "xct.h"
 
 #ifdef WORKER_VERBOSE_STATS
 #warning Verbose worker statistics enabled
@@ -386,7 +387,7 @@ bool base_worker_t::abort_one_trx(xct_t* axct)
     assert (_env);
     assert (axct);
     smthread_t::attach_xct(axct);
-    w_rc_t e = ss_m::abort_xct();
+    w_rc_t e = xct_t::abort();
     if (e.is_error()) {
         TRACE( TRACE_ALWAYS, "Xct abort failed [0x%x]\n", e.err_num());
         return (false);

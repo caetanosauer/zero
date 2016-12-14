@@ -430,7 +430,7 @@ w_rc_t ShoreTPCBEnv::xct_populate_db(const int /* xct_id */,
     }
     // The database loader which calls this xct does not use the xct wrapper,
     // so it should do the commit here
-    W_DO(_pssm->commit_xct());
+    W_DO(xct_t::commit());
 
 #ifdef PRINT_TRX_RESULTS
     // at the end of the transaction

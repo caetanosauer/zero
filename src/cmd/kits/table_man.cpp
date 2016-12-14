@@ -591,7 +591,7 @@ w_rc_t table_man_t<T>::fetch_table(ss_m* db, lock_mode_t /* alm */)
         TRACE( TRACE_ALWAYS, "\t%s:%d pages\n", index->name().c_str(), counter);
     }
 
-    W_DO(db->commit_xct());
+    W_DO(xct_t::commit());
     give_tuple(tuple);
 
     return RCOK;

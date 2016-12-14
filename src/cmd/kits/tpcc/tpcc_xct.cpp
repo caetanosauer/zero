@@ -391,7 +391,7 @@ w_rc_t ShoreTPCCEnv::xct_populate_baseline(const int /* xct_id */,
     }
 
     // Should do the commit here, called by the loader
-    W_DO(_pssm->commit_xct());
+    W_DO(xct_t::commit());
 
     return RCOK;
 }
@@ -620,7 +620,7 @@ w_rc_t ShoreTPCCEnv::xct_populate_one_unit(const int /* xct_id */,
     }
 
     // Should do the commit here, called by the loaded
-    W_DO(_pssm->commit_xct());
+    W_DO(xct_t::commit());
 
     return RCOK;
 }
@@ -1496,7 +1496,7 @@ w_rc_t ShoreTPCCEnv::xct_delivery(const int xct_id,
     int d_id;
     w_rc_t e = _xct_delivery_helper(xct_id, pdin, dlist, d_id, SPLIT_TRX);
     while(SPLIT_TRX && e.is_error() && e.err_num() == eDEADLOCK) {
-	W_COERCE(_pssm->abort_xct());
+	W_COERCE(xct_t::abort());
         xct_t::begin();
         lintel::unsafe::atomic_fetch_add(&delivery_abort_ctr, 1);
 	dlist.push_back(d_id); // retry the failed trx
@@ -1696,7 +1696,7 @@ w_rc_t ShoreTPCCEnv::_xct_delivery_helper(const int xct_id,
 #ifdef CFG_FLUSHER
 #warning TPCC-Delivery does not do the intermediate commits lazily
 #endif
-	    W_DO(_pssm->commit_xct());
+            W_DO(xct_t::commit());
             xct_t::begin();
 	}
     }
