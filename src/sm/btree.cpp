@@ -69,7 +69,9 @@ btree_m::is_empty(
     return RCOK;
 }
 
-rc_t btree_m::insert(StoreID store, const w_keystr_t &key, const cvec_t &el) {
+rc_t btree_m::insert(StoreID store, const w_keystr_t &key, const cvec_t &el)
+{
+    W_DO(open_store(store, true));
     if (key.get_length_as_nonkeystr() + el.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
@@ -82,6 +84,7 @@ rc_t btree_m::update(
     const w_keystr_t&                 key,
     const cvec_t&                     elem)
 {
+    W_DO(open_store(store, true));
     if(key.get_length_as_nonkeystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
@@ -94,6 +97,7 @@ rc_t btree_m::put(
     const w_keystr_t&                 key,
     const cvec_t&                     elem)
 {
+    W_DO(open_store(store, true));
     if(key.get_length_as_nonkeystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
@@ -108,12 +112,14 @@ rc_t btree_m::overwrite(
     smsize_t                          offset,
     smsize_t                          elen)
 {
+    W_DO(open_store(store, true));
     W_DO(btree_impl::_ux_overwrite(store, key, el, offset, elen));
     return RCOK;
 }
 
 rc_t btree_m::remove(StoreID store, const w_keystr_t &key)
 {
+    W_DO(open_store(store, true));
     W_DO(btree_impl::_ux_remove(store, key));
     return RCOK;
 }
@@ -129,14 +135,20 @@ rc_t btree_m::lookup(
     StoreID store,
     const w_keystr_t &key, void *el, smsize_t &elen, bool &found)
 {
+    bool for_update = g_xct_does_ex_lock_for_select();
+    W_DO(open_store (store, for_update));
+
     W_DO( btree_impl::_ux_lookup(store, key, found, el, elen ));
     return RCOK;
 }
+
 rc_t btree_m::verify_tree(
         StoreID store, int hash_bits, bool &consistent)
 {
+    W_DO(open_store(store, true));
     return btree_impl::_ux_verify_tree(store, hash_bits, consistent);
 }
+
 rc_t btree_m::verify_volume(
         int hash_bits, verify_volume_result &result)
 {
@@ -145,8 +157,7 @@ rc_t btree_m::verify_volume(
 
 rc_t btree_m::touch_all(StoreID stid, uint64_t &page_count)
 {
-    PageID root_pid;
-    W_DO(btree_m::open_store_nolock (stid, root_pid)); // this method is for debugging
+    // no locking -- this method is for debugging
     btree_page_h page;
     W_DO( page.fix_root(stid, LATCH_SH));
     page_count = 0;
@@ -208,22 +219,11 @@ btree_m::undo_ghost_mark(StoreID store, const w_keystr_t &key)
     return btree_impl::_ux_undo_ghost_mark(store, key);
 }
 
-rc_t btree_m::open_store (StoreID stid, PageID &root_pid, bool for_update)
+rc_t btree_m::open_store (StoreID stid, bool for_update)
 {
     // take intent lock
     if (g_xct_does_need_lock()) {
         W_DO(lm->intent_store_lock(stid, for_update ? okvl_mode::IX : okvl_mode::IS));
     }
-    return open_store_nolock (stid, root_pid);
-}
-
-rc_t btree_m::open_store_nolock (StoreID stid, PageID &root_pid)
-{
-    // CS TODO: Do we really need to fetch root PID here?
-    PageID shpid = vol->get_store_root(stid);
-    if (shpid == 0) {
-        return RC(eBADSTID);
-    }
-    root_pid = shpid;
     return RCOK;
 }

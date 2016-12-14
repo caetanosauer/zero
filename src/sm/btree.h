@@ -128,9 +128,7 @@ public:
     static rc_t            verify_volume(
         int hash_bits, verify_volume_result &result);
 
-    static rc_t open_store (StoreID stid, PageID &root_pid,
-            bool for_update = false);
-    static rc_t open_store_nolock (StoreID stid, PageID &root_pid);
+    static rc_t open_store (StoreID stid, bool for_update = false);
 protected:
     /*
      * for use by logrecs for undo

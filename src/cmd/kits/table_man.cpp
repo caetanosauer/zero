@@ -106,7 +106,7 @@ w_rc_t table_man_t<T>::index_probe(ss_m* db,
         ptuple->_rep->set(fields_sz);
 
         smsize_t len = ptuple->_rep->_bufsz;
-        W_DO(db->find_assoc(pindex->stid(), kstr, ptuple->_rep->_dest, len,
+        W_DO(btree_m::lookup(pindex->stid(), kstr, ptuple->_rep->_dest, len,
                     found));
         if (!found) return RC(se_TUPLE_NOT_FOUND);
 
@@ -124,14 +124,14 @@ w_rc_t table_man_t<T>::index_probe(ss_m* db,
         smsize_t len = ptuple->_rep_key->_bufsz;
         // int ref_sz = key_size(ptuple->_ptable->primary_idx());
         // ptuple->_rep_key->set(ref_sz);
-        W_DO(db->find_assoc(pindex->stid(), kstr, ptuple->_rep_key->_dest, len,
+        W_DO(btree_m::lookup(pindex->stid(), kstr, ptuple->_rep_key->_dest, len,
                     found));
 
         if (!found) return RC(se_TUPLE_NOT_FOUND);
 
         // read the tuple from the primary index
         kstr.construct_regularkey(ptuple->_rep_key->_dest, len);
-        W_DO(db->find_assoc(pindex->table()->get_primary_stid(), kstr,
+        W_DO(btree_m::lookup(pindex->table()->get_primary_stid(), kstr,
                     ptuple->_rep->_dest, len, found));
 
         if (!found) return RC(se_TUPLE_NOT_FOUND);
@@ -190,7 +190,7 @@ w_rc_t table_man_t<T>::add_tuple(ss_m* db,
     ptuple->store_key(ptuple->_rep_key->_dest, ksz, pindex);
     kstr.construct_regularkey(ptuple->_rep_key->_dest, ksz);
 
-    W_DO(db->create_assoc(pindex->stid(), kstr, vec_t(ptuple->_rep->_dest, tsz)));
+    W_DO(btree_m::insert(pindex->stid(), kstr, vec_t(ptuple->_rep->_dest, tsz)));
 
     // update the indexes
     const std::vector<index_desc_t*>& indexes = _ptable->get_indexes();
@@ -201,7 +201,7 @@ w_rc_t table_man_t<T>::add_tuple(ss_m* db,
         sec_kstr.construct_regularkey(ptuple->_rep->_dest, sec_ksz);
 
         // primary key value (i.e., pointer) is stored in _rep_key
-        W_DO(db->create_assoc(indexes[i]->stid(),
+        W_DO(btree_m::insert(indexes[i]->stid(),
                     sec_kstr,
                     vec_t(ptuple->_rep_key->_dest, ksz)
                     ));
@@ -255,7 +255,7 @@ w_rc_t table_man_t<T>::add_index_entry(ss_m* db,
     ptuple->store_key(ptuple->_rep->_dest, ksz, pindex);
     w_keystr_t sec_kstr;
     sec_kstr.construct_regularkey(ptuple->_rep->_dest, sec_ksz);
-    W_DO(db->create_assoc(pindex->stid(),
+    W_DO(btree_m::insert(pindex->stid(),
                 sec_kstr,
                 vec_t(ptuple->_rep_key->_dest, ksz)
                 ));
@@ -306,14 +306,14 @@ w_rc_t table_man_t<T>::delete_tuple(ss_m* db,
 
         w_keystr_t kstr;
         kstr.construct_regularkey(ptuple->_rep->_dest, ksz);
-        W_DO(db->destroy_assoc(indexes[i]->stid(), kstr));
+        W_DO(btree_m::remove(indexes[i]->stid(), kstr));
     }
 
     size_t ksz = ptuple->_rep_key->_bufsz;
     ptuple->store_key(ptuple->_rep_key->_dest, ksz, _ptable->primary_idx());
     w_keystr_t kstr;
     kstr.construct_regularkey(ptuple->_rep_key->_dest, ksz);
-    W_DO(db->destroy_assoc(_ptable->primary_idx()->stid(), kstr));
+    W_DO(btree_m::remove(_ptable->primary_idx()->stid(), kstr));
 
     // invalidate tuple
     // ptuple->set_rid(rid_t::null);
@@ -364,7 +364,7 @@ w_rc_t table_man_t<T>::delete_index_entry(ss_m* db,
 
     w_keystr_t kstr;
     kstr.construct_regularkey(ptuple->_rep->_dest, ksz);
-    W_DO(db->destroy_assoc(pindex->stid(), kstr));
+    W_DO(btree_m::remove(pindex->stid(), kstr));
 
     return (RCOK);
 }
@@ -411,7 +411,7 @@ w_rc_t table_man_t<T>::update_tuple(ss_m* db,
 
     w_keystr_t kstr;
     kstr.construct_regularkey(ptuple->_rep_key->_dest, ksz);
-    W_DO(db->overwrite_assoc(table()->primary_idx()->stid(),
+    W_DO(btree_m::overwrite(table()->primary_idx()->stid(),
                 kstr, ptuple->_rep->_dest, 0, elen));
 
     return RCOK;

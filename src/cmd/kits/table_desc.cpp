@@ -118,7 +118,7 @@ w_rc_t table_desc_t::create_physical_index(ss_m* db, index_desc_t* index)
     // Add entry on catalog
     w_keystr_t kstr;
     kstr.construct_regularkey(index->name().c_str(), index->name().length());
-    W_DO(db->create_assoc(get_catalog_stid(), kstr,
+    W_DO(btree_m::insert(get_catalog_stid(), kstr,
                 vec_t(&stid, sizeof(StoreID))));
 
     // Print info

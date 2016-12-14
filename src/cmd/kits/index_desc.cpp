@@ -31,6 +31,7 @@
  */
 
 #include "index_desc.h"
+#include "btree.h"
 
 /******************************************************************
  *
@@ -111,7 +112,7 @@ w_rc_t index_desc_t::load_stid(ss_m* db, StoreID cat_stid)
     kstr.construct_regularkey(_name.c_str(), _name.length());
     StoreID stid;
     bool found;
-    W_DO(db->find_assoc(cat_stid, kstr, &stid, size, found));
+    W_DO(btree_m::lookup(cat_stid, kstr, &stid, size, found));
 
     if (!found) {
         return RC(eNOTFOUND);

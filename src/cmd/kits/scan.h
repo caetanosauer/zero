@@ -2,6 +2,7 @@
 #define KITS_SCAN_H
 
 #include "table_man.h"
+#include "btree.h"
 
 class base_scan_t
 {
@@ -140,7 +141,7 @@ public:
             // fetch and load other fields
             w_keystr_t pkeystr;
             pkeystr.construct_regularkey(pkey, elen);
-            ss_m::find_assoc(prim_idx->stid(), pkeystr, tuple._rep->_dest,
+            btree_m::lookup(prim_idx->stid(), pkeystr, tuple._rep->_dest,
                     elen, loaded);
             w_assert0(loaded);
 
