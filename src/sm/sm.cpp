@@ -96,9 +96,6 @@ bool        smlevel_0::statistics_enabled = true;
  * start-up/shut-down operations for a server.
  */
 
-// Certain operations have to exclude xcts
-static srwlock_t          _begin_xct_mutex;
-
 vol_t* smlevel_0::vol = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_core* smlevel_0::log = 0;
@@ -480,52 +477,6 @@ void ss_m::set_shutdown_flag(bool clean)
     shutdown_clean = clean;
 }
 
-
-/*--------------------------------------------------------------*
- *  ss_m::begin_xct()                                *
- *
- *\details
- *
- * You cannot start a transaction while any thread is :
- * - mounting or unmounting a device, or
- * - creating or destroying a volume.
- *--------------------------------------------------------------*/
-rc_t
-ss_m::begin_xct(
-        sm_stats_info_t*             _stats, // allocated by caller
-        int timeout)
-{
-    tid_t tid;
-    W_DO(_begin_xct(_stats, tid, timeout));
-    return RCOK;
-}
-rc_t
-ss_m::begin_xct(int timeout)
-{
-    tid_t tid;
-    W_DO(_begin_xct(0, tid, timeout));
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::begin_xct() - for Markos' tests                       *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::begin_xct(tid_t& tid, int timeout)
-{
-    W_DO(_begin_xct(0, tid, timeout));
-    return RCOK;
-}
-
-rc_t ss_m::begin_sys_xct(bool single_log_sys_xct,
-    sm_stats_info_t *stats, int timeout)
-{
-    tid_t tid;
-    W_DO (_begin_xct(stats, tid, timeout, true, single_log_sys_xct));
-    return RCOK;
-}
-
-
 /*--------------------------------------------------------------*
  *  ss_m::commit_xct()                                *
  *--------------------------------------------------------------*/
@@ -687,72 +638,6 @@ rc_t ss_m::lock(const lockid_t& n, const okvl_mode& m,
 {
     W_DO( lm->lock(n.hash(), m, true, true, !check_only, NULL, timeout) );
     return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_begin_xct(sm_stats_info_t *_stats, int timeout) *
- *
- * @param[in] _stats  If called by begin_xct without a _stats, then _stats is NULL here.
- *                    If not null, the transaction is instrumented.
- *                    The stats structure may be returned to the
- *                    client through the appropriate version of
- *                    commit_xct, abort_xct, prepare_xct, or chain_xct.
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, int timeout, bool sys_xct,
-    bool single_log_sys_xct)
-{
-    w_assert1(!single_log_sys_xct || sys_xct); // SSX is always system-transaction
-
-    // system transaction can be a nested transaction, so
-    // xct() could be non-NULL
-    if (!sys_xct && xct() != NULL) {
-        return RC (eINTRANS);
-    }
-
-    xct_t* x;
-    if (sys_xct) {
-        x = xct();
-        if (single_log_sys_xct && x) {
-            // in this case, we don't need an independent transaction object.
-            // we just piggy back on the outer transaction
-            if (x->is_piggy_backed_single_log_sys_xct()) {
-                // SSX can't nest SSX, but we can chain consecutive SSXs.
-                ++(x->ssx_chain_len());
-            } else {
-                x->set_piggy_backed_single_log_sys_xct(true);
-            }
-            tid = x->tid();
-            return RCOK;
-        }
-        x = _new_xct(_stats, timeout, sys_xct, single_log_sys_xct);
-    } else {
-        spinlock_read_critical_section cs(&_begin_xct_mutex);
-        x = _new_xct(_stats, timeout, sys_xct);
-        if(log) {
-            // This transaction will make no events related to LSN
-            // smaller than this. Used to control garbage collection, etc.
-            log->get_oldest_lsn_tracker()->enter(reinterpret_cast<uintptr_t>(x), log->curr_lsn());
-        }
-    }
-
-    if (!x)
-        return RC(eOUTOFMEMORY);
-
-    w_assert3(xct() == x);
-    w_assert3(x->state() == xct_t::xct_active);
-    tid = x->tid();
-
-    return RCOK;
-}
-
-xct_t* ss_m::_new_xct(
-        sm_stats_info_t* stats,
-        int timeout,
-        bool sys_xct,
-        bool single_log_sys_xct)
-{
-    return new xct_t(stats, timeout, sys_xct, single_log_sys_xct, false);
 }
 
 /*--------------------------------------------------------------*

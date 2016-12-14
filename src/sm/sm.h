@@ -557,13 +557,6 @@ private:
     void                _construct_once();
     void                _destruct_once();
 
-    // Used for cosntructing xct object depending on chosen implementation
-    static xct_t* _new_xct(
-            sm_stats_info_t* stats,
-            int timeout,
-            bool sys_xct,
-            bool single_log_sys_xct = false);
-
 public:
     /**\addtogroup SSMXCT
      *
@@ -575,83 +568,6 @@ public:
      *
      *
      */
-    /**\brief Begin a transaction
-     *\ingroup SSMXCT
-     * @param[in] timeout   Optional, controls blocking behavior.
-     * \details
-     *
-     * Start a new transaction and "attach" it to this thread.
-     * No running transaction may be attached to this thread.
-     *
-     * Storage manager methods that must block (e.g., to acquire a lock)
-     * will use the timeout given.
-     * The default timeout is the one associated with this thread.
-     *
-     * \sa int
-     */
-    static rc_t           begin_xct(
-        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
-
-    /**\brief Begin an instrumented transaction.
-     *\ingroup SSMXCT
-     * @param[in] stats   Pointer to an allocated statistics-holding structure.
-     * @param[in] timeout   Optional, controls blocking behavior.
-     * \details
-     * No running transaction may be already attached to this thread.
-     * A new transaction is started and attached to the running thread.
-     *
-     * The transaction will be instrumented.
-     * This structure is updated by the storage manager whenever a thread
-     * detaches from this transaction.  The activity recorded during
-     * the time the thread is attached to the transcation will be stored in
-     * the per-transaction statistics.
-     * \attention It is the client's
-     * responsibility to delete the statistics-holding structure.
-     *
-     * Storage manager methods that must block (e.g., to acquire a lock)
-     * will use the timeout given.
-     * The default timeout is the one associated with this thread.
-     *
-     * \sa int
-     */
-    static rc_t           begin_xct(
-        sm_stats_info_t*         stats,  // allocated by caller
-        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
-
-    /**\brief Begin a transaction and return the transaction id.
-     *\ingroup SSMXCT
-     * @param[out] tid      Transaction id of new transaction.
-     * @param[in] timeout   Optional, controls blocking behavior.
-     * \details
-     *
-     * No running transaction may be attached to this thread.
-     *
-     * Storage manager methods that must block (e.g., to acquire a lock)
-     * will use the timeout given.
-     * The default timeout is the one associated with this thread.
-     *
-     * \sa int
-     */
-    static rc_t           begin_xct(
-        tid_t&                   tid,
-        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
-
-    /**
-     * \brief Being a new system transaction which might be a nested transaction.
-     * \ingroup SSMXCT
-     * \details
-     * System transactions do no logical changes but do physical changes like
-     * page split, key push-ups and page deletion. This method starts a new
-     * system transaction, if the current thread already has a transaction,
-     * inside the current transaction.
-     * @param[in] single_log_sys_xct whether this transaction will have at most one xlog entry
-     * @param[in] stats   Pointer to an allocated statistics-holding structure.
-     * @param[in] timeout   Optional, controls blocking behavior.
-     */
-    static rc_t           begin_sys_xct(
-        bool single_log_sys_xct = false,
-        sm_stats_info_t*         stats = NULL,
-        int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Commit a transaction.
      *\ingroup SSMXCT
@@ -901,13 +817,6 @@ public:
 private:
 
     static int _instance_cnt;
-
-    static rc_t         _begin_xct(
-        sm_stats_info_t*      stats,  // allocated by caller
-        tid_t&                tid,
-        int         timeout,
-        bool sys_xct = false,
-        bool single_log_sys_xct = false);
 
     static rc_t            _commit_xct(
         sm_stats_info_t*&     stats,

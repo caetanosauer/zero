@@ -31,6 +31,7 @@
 #include "tpcc_env.h"
 
 #include "tpcc_random.h"
+#include "xct.h"
 
 DEFINE_ROW_CACHE_TLS(tpcc, warehouse);
 DEFINE_ROW_CACHE_TLS(tpcc, district);
@@ -78,7 +79,7 @@ struct ShoreTPCCEnv::table_creator_t : public thread_t
 void ShoreTPCCEnv::table_creator_t::work()
 {
     // Create the tables
-    W_COERCE(_env->db()->begin_xct());
+    xct_t::begin();
     W_COERCE(_env->_pwarehouse_desc->create_physical_table(_env->db()));
     W_COERCE(_env->_pdistrict_desc->create_physical_table(_env->db()));
     W_COERCE(_env->_pcustomer_desc->create_physical_table(_env->db()));
@@ -92,7 +93,7 @@ void ShoreTPCCEnv::table_creator_t::work()
 
     // do the first transaction
     populate_baseline_input_t in = {_sf};
-    W_COERCE(_env->db()->begin_xct());
+    xct_t::begin();
     W_COERCE(_env->xct_populate_baseline(0, in));
 
     // W_COERCE(_env->db()->begin_xct());
@@ -158,7 +159,7 @@ void ShoreTPCCEnv::table_builder_t::work()
 	int *cids = overlap? _cids : cid_array+0;
 	populate_one_unit_input_t in = {tid, cids};
     retry:
-	W_COERCE(_env->db()->begin_xct());
+        xct_t::begin();
 
 	e = _env->xct_populate_one_unit(tid, in);
 

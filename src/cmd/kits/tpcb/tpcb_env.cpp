@@ -33,6 +33,7 @@
 #include "tpcb_env.h"
 
 #include "lock.h"
+#include "xct.h"
 
 DEFINE_ROW_CACHE_TLS(tpcb, branch);
 DEFINE_ROW_CACHE_TLS(tpcb, teller);
@@ -297,7 +298,7 @@ void ShoreTPCBEnv::table_builder_t::work()
 	long a_id = _start + i;
 	populate_db_input_t in(_sf, a_id);
     retry:
-	W_COERCE(_env->db()->begin_xct());
+	xct_t::begin();
 	e = _env->xct_populate_db(a_id, in);
         CHECK_XCT_RETURN(e,retry,_env);
 
@@ -341,7 +342,7 @@ void ShoreTPCBEnv::table_creator_t::work()
 {
     // Create the tables, if any partitioning is to be applied, that has already
     // been set at update_partitioning()
-    W_COERCE(_env->db()->begin_xct());
+    xct_t::begin();
     W_COERCE(_env->branch_man->table()->create_physical_table(_env->db()));
     W_COERCE(_env->teller_man->table()->create_physical_table(_env->db()));
     W_COERCE(_env->account_man->table()->create_physical_table(_env->db()));
@@ -355,12 +356,12 @@ void ShoreTPCBEnv::table_creator_t::work()
 	populate_db_input_t in(_sf, a_id);
 	TRACE( TRACE_STATISTICS, "Populating %ld a_ids starting with %ld\n",
                TPCB_ACCOUNTS_CREATED_PER_POP_XCT, a_id);
-	W_COERCE(_env->db()->begin_xct());
+	xct_t::begin();
 	W_COERCE(_env->xct_populate_db(a_id, in));
     }
 
     // Before returning, run the post initialization phase
-    W_COERCE(_env->db()->begin_xct());
+    xct_t::begin();
     W_COERCE(_env->_post_init_impl());
     W_COERCE(_env->db()->commit_xct());
 }
@@ -541,7 +542,7 @@ int ShoreTPCBEnv::post_init()
     if (get_pd() & PD_PADDED) {
         TRACE( TRACE_ALWAYS, "Checking for BRANCH/TELLER record padding...\n");
 
-        W_COERCE(db()->begin_xct());
+	xct_t::begin();
         w_rc_t rc = _post_init_impl();
         if(rc.is_error()) {
             cerr << "-> BRANCH/TELLER padding failed with: " << rc << endl;

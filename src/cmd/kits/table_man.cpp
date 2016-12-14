@@ -33,7 +33,7 @@
 #include "table_man.h"
 #include "table_desc.h"
 #include "scan.h"
-
+#include "xct.h"
 #include "w_key.h"
 
 /*********************************************************************
@@ -569,7 +569,7 @@ w_rc_t table_man_t<T>::fetch_table(ss_m* db, lock_mode_t /* alm */)
     tuple->_rep = &areprow;
     tuple->_rep_key = &areprow_key;
 
-    W_DO(db->begin_xct());
+    xct_t::begin();
 
     // 1. scan the table
     table_scan_iter_impl<T> t_scan(this);

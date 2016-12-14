@@ -31,6 +31,10 @@
 
 #include "allocator.h"
 
+// CS TODO this mutex should not be necessary
+// Certain operations have to exclude xcts
+static srwlock_t          _begin_xct_mutex;
+
 // Template specializations for sm_tls_allocator
 DECLARE_TLS(block_pool<xct_t>, xct_pool);
 DECLARE_TLS(block_pool<xct_t::xct_core>, xct_core_pool);
@@ -359,6 +363,45 @@ xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
     _begin_tstamp = std::chrono::high_resolution_clock::now();
 }
 
+void xct_t::begin(bool sys_xct, bool single_log_sys_xct, int timeout,
+        sm_stats_info_t *_stats)
+{
+    w_assert1(!single_log_sys_xct || sys_xct); // SSX is always system-transaction
+
+    // system transaction can be a nested transaction, so
+    // xct() could be non-NULL
+    if (!sys_xct && xct() != NULL) {
+        W_COERCE(RC(eINTRANS));
+    }
+
+    xct_t* x;
+    if (sys_xct) {
+        x = xct();
+        if (single_log_sys_xct && x) {
+            // in this case, we don't need an independent transaction object.
+            // we just piggy back on the outer transaction
+            if (x->is_piggy_backed_single_log_sys_xct()) {
+                // SSX can't nest SSX, but we can chain consecutive SSXs.
+                ++(x->ssx_chain_len());
+            } else {
+                x->set_piggy_backed_single_log_sys_xct(true);
+            }
+            return;
+        }
+        x = new xct_t(_stats, timeout, sys_xct, single_log_sys_xct, false);
+    } else {
+        spinlock_read_critical_section cs(&_begin_xct_mutex);
+        x = new xct_t(_stats, timeout, sys_xct, single_log_sys_xct, false);
+        if(log) {
+            // This transaction will make no events related to LSN
+            // smaller than this. Used to control garbage collection, etc.
+            log->get_oldest_lsn_tracker()->enter(reinterpret_cast<uintptr_t>(x), log->curr_lsn());
+        }
+    }
+
+    w_assert3(xct() == x);
+    w_assert3(x->state() == xct_t::xct_active);
+}
 
 xct_t::xct_core::~xct_core()
 {
@@ -373,6 +416,7 @@ xct_t::xct_core::~xct_core()
         smlevel_0::lm->deallocate_xct(_raw_lock_xct);
     }
 }
+
 /*********************************************************************
  *
  *  xct_t::~xct_t()
@@ -1704,7 +1748,7 @@ xct_t::dump_locks(ostream &out) const
 sys_xct_section_t::sys_xct_section_t(bool single_log_sys_xct)
 {
     _original_xct_depth = smthread_t::get_tcb_depth();
-    _error_on_start = ss_m::begin_sys_xct(single_log_sys_xct);
+    xct_t::begin(true, single_log_sys_xct);
 }
 sys_xct_section_t::~sys_xct_section_t()
 {

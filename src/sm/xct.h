@@ -265,6 +265,13 @@ public:
             );
     ~xct_t();
 
+    static void begin(
+            bool sys_xct = false,
+            bool single_log_sys_xct = false,
+            int timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD,
+            sm_stats_info_t *_stats = nullptr
+    );
+
 public:
 
     friend ostream&             operator<<(ostream&, const xct_t&);
