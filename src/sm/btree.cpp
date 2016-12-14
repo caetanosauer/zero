@@ -4,10 +4,6 @@
 
 #include "w_defines.h"
 
-#define SM_SOURCE
-#define BTREE_C
-
-#include "sm_base.h"
 #include "sm_base.h"
 #include "bf_tree.h"
 #include "btree_page_h.h"
@@ -17,6 +13,7 @@
 #include "xct.h"
 #include "vec_t.h"
 #include "vol.h"
+#include "lock.h"
 
 void btree_m::construct_once()
 {
@@ -42,10 +39,13 @@ btree_m::max_entry_size() {
 }
 
 rc_t
-btree_m::create(StoreID stid, PageID root)
+btree_m::create(StoreID& stid)
 {
-    DBGTHRD(<<"btree create: stid " << stid);
+    // CS TODO: page allocation should transfer ownership to stnode
+    PageID root;
+    W_DO(smlevel_0::vol->create_store(root, stid));
 
+    W_DO(smlevel_0::lm->intent_store_lock(stid, okvl_mode::X)); // take X on this new index
     W_DO(btree_impl::_ux_create_tree_core(stid, root));
 
     bool empty=false;
@@ -54,7 +54,7 @@ btree_m::create(StoreID stid, PageID root)
          DBGTHRD(<<"eNDXNOTEMPTY");
          return RC(eNDXNOTEMPTY);
     }
-    DBGTHRD(<<"returning from btree_create, store " << stid);
+
     return RCOK;
 }
 
@@ -143,66 +143,16 @@ rc_t btree_m::verify_volume(
     return btree_impl::_ux_verify_volume(hash_bits, result);
 }
 
-void
-btree_m::print(const PageID& current,
-    bool print_elem
-)
+rc_t btree_m::touch_all(StoreID stid, uint64_t &page_count)
 {
-    // CS TODO: currently not supported due to removal of fix_direct
-    W_FATAL(fcNOTIMPLEMENTED);
-
-    {
-        // PageID original_pid = smlevel_0::bf->debug_get_original_pageid(current);
-        btree_page_h page;
-        // W_COERCE( page.fix_direct(original_pid, LATCH_SH));// coerce ok-- debugging
-
-        for (int i = 0; i < 5 - page.level(); i++) {
-            cout << '\t';
-        }
-        w_keystr_t fence_low, fence_high, chain_fence_high;
-        page.copy_fence_low_key (fence_low);
-        page.copy_fence_high_key(fence_high);
-        page.copy_chain_fence_high_key(chain_fence_high);
-        cout
-             << " "
-             << "LEVEL " << page.level()
-             << ", page " << page.pid()
-             << ", pid0 " << page.pid0()
-             << ", foster " << page.get_foster()
-             << ", nrec " << page.nrecs()
-             << ", fence-low " << fence_low
-             << ", fence-high " << fence_high
-             << ", chain_fence-high " << chain_fence_high
-             << ", prefix-len " << page.get_prefix_length()
-             << endl;
-        page.print(print_elem);
-        cout << flush;
-        //recursively print all descendants and siblings
-        if (page.get_foster()) {
-            PageID child = current;
-            child = page.get_foster();
-            print(child, print_elem);
-        }
-        if (page.is_node()) {
-            if (page.pid0())  {
-                PageID child = current;
-                child = page.pid0();
-                print(child, print_elem);
-            }
-            for (int i = 0; i < page.nrecs(); ++i) {
-                PageID child = current;
-                child = page.child(i);
-                print(child, print_elem);
-            }
-        }
-    }
-}
-rc_t btree_m::touch_all(StoreID stid, uint64_t &page_count) {
+    PageID root_pid;
+    W_DO(btree_m::open_store_nolock (stid, root_pid)); // this method is for debugging
     btree_page_h page;
     W_DO( page.fix_root(stid, LATCH_SH));
     page_count = 0;
     return touch(page, page_count);
 }
+
 rc_t btree_m::touch(const btree_page_h& page, uint64_t &page_count) {
     ++page_count;
     if (page.get_foster_opaqueptr() != 0) {
@@ -256,4 +206,24 @@ btree_m::undo_ghost_mark(StoreID store, const w_keystr_t &key)
     // UNDO delete operation
     no_lock_section_t nolock;
     return btree_impl::_ux_undo_ghost_mark(store, key);
+}
+
+rc_t btree_m::open_store (StoreID stid, PageID &root_pid, bool for_update)
+{
+    // take intent lock
+    if (g_xct_does_need_lock()) {
+        W_DO(lm->intent_store_lock(stid, for_update ? okvl_mode::IX : okvl_mode::IS));
+    }
+    return open_store_nolock (stid, root_pid);
+}
+
+rc_t btree_m::open_store_nolock (StoreID stid, PageID &root_pid)
+{
+    // CS TODO: Do we really need to fetch root PID here?
+    PageID shpid = vol->get_store_root(stid);
+    if (shpid == 0) {
+        return RC(eBADSTID);
+    }
+    root_pid = shpid;
+    return RCOK;
 }

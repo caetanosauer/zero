@@ -43,10 +43,8 @@ public:
 
     static smsize_t                max_entry_size();
 
-    /** Create a btree. Return the root page id in root. */
     static rc_t                        create(
-        StoreID              stid,
-        PageID               root
+        StoreID&              stid
         );
 
     /**
@@ -89,9 +87,6 @@ public:
         StoreID store,
         const w_keystr_t&                    key);
 
-    /** Print the btree (for debugging only). */
-    static void                 print(const PageID& root,  bool print_elem = true);
-
     /** Touch all pages in the btree (for performance experiments). */
     static rc_t                 touch_all(StoreID stid, uint64_t &page_count);
     static rc_t                 touch(const btree_page_h& page, uint64_t &page_count);
@@ -132,6 +127,10 @@ public:
      */
     static rc_t            verify_volume(
         int hash_bits, verify_volume_result &result);
+
+    static rc_t open_store (StoreID stid, PageID &root_pid,
+            bool for_update = false);
+    static rc_t open_store_nolock (StoreID stid, PageID &root_pid);
 protected:
     /*
      * for use by logrecs for undo

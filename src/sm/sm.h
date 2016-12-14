@@ -864,38 +864,6 @@ public:
         sm_stats_info_t&       stats
         );
 
-    /**\brief Create a B+-Tree index.
-     * \ingroup SSMBTREE
-     * @param[in] vid   Volume on which to create the index.
-     * @param[out] stid New store ID will be returned here.
-     */
-    static rc_t            create_index(
-                StoreID&               stid
-    );
-
-
-    /**\brief Destroy a B+-Tree index.
-     * \ingroup SSMBTREE
-     *
-     * @param[in] iid  ID of the index to be destroyed.
-     */
-    static rc_t            destroy_index(const StoreID& iid);
-
-    /**\cond skip */
-    static rc_t            print_index(StoreID stid);
-    /**\endcond skip */
-
-    /**
-     * \brief Touches all pages in the B-tree index to load them into bufferpool.
-     * \ingroup SSMBTREE
-     * @param[in] stid ID of the index to be touched.
-     * @param[out] page_count Number of pages touched.
-     * \details This is mainly for performance experiments with \e hot bufferpool.
-     * We traditionally used a cursor to touch all pages, but this one is much more efficient
-     * for the purpose.
-     */
-    static rc_t            touch_index(StoreID stid, uint64_t &page_count);
-
     /**
      * \brief Create an entry in a B+-Tree index.
      * \ingroup SSMBTREE
@@ -1006,17 +974,6 @@ public:
     * @param[in] stid  ID of the index.
     */
     static rc_t           verify_index(StoreID  stid, int hash_bits, bool &consistent);
-
-    /**
-     * Starts reading a given store and returns its root page ID.
-     * If this is called in transaction with lock enabled,
-     * this takes an intent lock on it.
-     * @param for_update whether to take IX or IS lock on the store.
-     */
-    static rc_t open_store (StoreID stid, PageID &root_pid,
-                            bool for_update = false);
-    /** This version doesn't take a lock. */
-    static rc_t open_store_nolock (StoreID stid, PageID &root_pid);
 
     /*****************************************************************
      * Locking related functions

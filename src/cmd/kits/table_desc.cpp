@@ -33,6 +33,7 @@
 #include "table_desc.h"
 
 #include "w_key.h"
+#include "btree.h"
 
 table_desc_t::table_desc_t(const char* name, int fieldcnt, uint32_t pd)
     : _name(name), _field_count(fieldcnt), _pd(pd), _db(NULL), _primary_idx(NULL),
@@ -110,7 +111,7 @@ w_rc_t table_desc_t::create_physical_index(ss_m* db, index_desc_t* index)
     // Create all the indexes of the table
     StoreID stid = 0;
 
-    W_DO(db->create_index(stid));
+    W_DO(btree_m::create(stid));
     w_assert0(index);
     index->set_stid(stid);
 
