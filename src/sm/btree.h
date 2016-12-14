@@ -20,6 +20,7 @@ struct btree_int_stats_t;
 class w_keystr_t;
 class verify_volume_result;
 struct okvl_mode;
+
 /**
  * Data access API for B+Tree.
  * \ingroup SSMBTREE
@@ -37,10 +38,8 @@ class btree_m : public smlevel_0 {
     friend class btree_ghost_reclaim_log;
 
 public:
-    NORET                        btree_m()   {};
-    NORET                        ~btree_m()  {};
-    void                         construct_once();
-    void                         destruct_once();
+    static void construct_once();
+    static void destruct_once();
 
     static smsize_t                max_entry_size();
 

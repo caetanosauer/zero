@@ -42,7 +42,7 @@ void btree_insert_log::undo(PagePtr page) {
 DBGOUT3( << "&&&& UNDO insertion, key: " << key);
 
     // ***LOGICAL*** don't grab locks during undo
-    W_COERCE(smlevel_0::bt->remove_as_undo(header._stid, key));
+    W_COERCE(btree_m::remove_as_undo(header._stid, key));
 }
 
 template <class PagePtr>
@@ -123,7 +123,7 @@ void btree_update_log::undo(PagePtr)
     old_el.put(dp->_data + dp->_klen, dp->_old_elen);
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_0::bt->update_as_undo(header._stid, key, old_el);
+    rc_t rc = btree_m::update_as_undo(header._stid, key, old_el);
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -176,7 +176,7 @@ void btree_overwrite_log::undo(PagePtr)
     const char* old_el = dp->_data + dp->_klen;
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_0::bt->overwrite_as_undo(header._stid, key, old_el, offset, elen);
+    rc_t rc = btree_m::overwrite_as_undo(header._stid, key, old_el, offset, elen);
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -245,7 +245,7 @@ void btree_ghost_mark_log::undo(PagePtr)
 // TODO(Restart)...
 DBGOUT3( << "&&&& UNDO deletion by remove ghost mark, key: " << key);
 
-        rc_t rc = smlevel_0::bt->undo_ghost_mark(header._stid, key);
+        rc_t rc = btree_m::undo_ghost_mark(header._stid, key);
         if(rc.is_error()) {
             cerr << " key=" << key << endl << " rc =" << rc << endl;
             W_FATAL(rc.err_num());

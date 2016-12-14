@@ -101,12 +101,11 @@ void basethread_t::start_other()
         cerr << "OK" << endl;
 
         cerr << "Initializing b-tree manager ... ";
-        smlevel_0::bt = new btree_m;
+        btree_m::construct_once();
 
         assert(
                 smlevel_0::lm &&
-                smlevel_0::chkpt &&
-                smlevel_0::bt
+                smlevel_0::chkpt
               );
 
         cerr << "OK" << endl;

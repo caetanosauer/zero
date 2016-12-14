@@ -395,7 +395,6 @@ class xct_t;
 class vec_t;
 class log_m;
 class lock_m;
-class btree_m;
 class pool_m;
 class dir_m;
 class chkpt_m;

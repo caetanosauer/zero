@@ -99,7 +99,6 @@ bool        smlevel_0::statistics_enabled = true;
 // Certain operations have to exclude xcts
 static srwlock_t          _begin_xct_mutex;
 
-BackupManager* smlevel_0::bk = 0;
 vol_t* smlevel_0::vol = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_core* smlevel_0::log = 0;
@@ -112,8 +111,6 @@ char smlevel_0::zero_page[page_sz];
 chkpt_m* smlevel_0::chkpt = 0;
 
 restart_m* smlevel_0::recovery = 0;
-
-btree_m* smlevel_0::bt = 0;
 
 ss_m* smlevel_top::SSM = 0;
 
@@ -286,11 +283,7 @@ ss_m::_construct_once()
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer cleaner and other services");
 
-    bt = new btree_m;
-    if (! bt) {
-        W_FATAL(eOUTOFMEMORY);
-    }
-    bt->construct_once();
+    btree_m::construct_once();
 
     chkpt = new chkpt_m(_options, chkpt_info->get_last_scan_start());
     if (! chkpt)  {
@@ -423,8 +416,7 @@ ss_m::_destruct_once()
 
     ERROUT(<< "Terminating other services");
     lm->assert_empty(); // no locks should be left
-    bt->destruct_once();
-    delete bt; bt = 0; // btree manager
+    btree_m::destruct_once();
     delete lm; lm = 0;
 
     ERROUT(<< "Terminating buffer manager");
