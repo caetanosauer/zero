@@ -136,18 +136,3 @@ rc_t ss_m::open_store_nolock (StoreID stid, PageID &root_pid)
     return RCOK;
 }
 
-/*--------------------------------------------------------------*
- *  ss_m::_get_store_info()                                        *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_get_store_info(
-    const StoreID&         stid,
-    sm_store_info_t&        info
-)
-{
-    PageID root_pid;
-    W_DO(open_store_nolock(stid, root_pid));
-    info.store = stid;
-    info.root   = root_pid;
-    return RCOK;
-}

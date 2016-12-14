@@ -706,20 +706,6 @@ int ShoreEnv::close_sm()
         return (1);
     }
 
-
-    // Disabling fake io delay, if any
-    // _pssm->disable_fake_disk_latency(_vid);
-
-    // check if any active xcts
-    int activexcts = ss_m::num_active_xcts();
-    if (activexcts) {
-        TRACE (TRACE_ALWAYS, "\n*** Warning (%d) active xcts. Cannot dismount!!\n",
-               activexcts);
-
-        W_IGNORE(ss_m::dump_xcts(cout));
-        cout << flush;
-    }
-
     // Final stats
     gatherstats_sm();
 
@@ -784,22 +770,6 @@ int ShoreEnv::configure_sm()
 
 
 
-/******************************************************************
- *
- *  @fn:     start_sm()
- *
- *  @brief:  Start Shore storage manager.
- *           - Format and mount the device
- *           - Create the volume in the device
- *           (Shore limitation: only 1 volume per device)
- *           - Set the fakeiodelay params
- *
- *  @return: 0 on success, non-zero otherwise
- *
- ******************************************************************/
-int /*shore::*/ssm_max_small_rec;
-sm_config_info_t  sm_config_info;
-
 int ShoreEnv::start_sm()
 {
     TRACE( TRACE_DEBUG, "Starting Shore...\n");
@@ -849,57 +819,9 @@ int ShoreEnv::start_sm()
         _loaded = true;
     }
 
-    // CS TODO: latency is set on vol_t directly
-    // setting the fake io disk latency - after we mount
-    // (let the volume be formatted and mounted without any fake io latency)
-    // int enableFakeIO = optionValues["sm_fakeiodelay-enable"].as<int>();
-    // TRACE( TRACE_DEBUG, "Is fake I/O delay enabled: (%d)\n", enableFakeIO);
-    // if (enableFakeIO) {
-    //     _pssm->enable_fake_disk_latency(_vid);
-    // }
-    // else {
-    //     _pssm->disable_fake_disk_latency(_vid);
-    // }
-    // int ioLatency = optionValues["sm_fakeiodelay"].as<uint>();
-    // TRACE( TRACE_DEBUG, "I/O delay latency set: (%d)\n", ioLatency);
-    // W_COERCE(_pssm->set_fake_disk_latency(_vid,ioLatency));
-
-    // Using the physical ID interface
-
-    // Get the configuration info so we have the max size of a small record
-    // for use in _post_init_impl()
-    if (ss_m::config_info(sm_config_info).is_error()) return (1);
-    ssm_max_small_rec = sm_config_info.max_small_rec;
-
 
     // If we reached this point the sm has started correctly
     return (0);
-}
-
-
-
-/*********************************************************************
- *
- *  @fn:      checkpoint()
- *
- *  @brief:   Takes a db checkpoint
- *
- *  @note:    Used between iterations and measurements that explicitly
- *            request periodic checkpoints.
- *
- *********************************************************************/
-
-int ShoreEnv::checkpoint()
-{
-    _pssm->checkpoint();
-    return 0;
-}
-
-void ShoreEnv::activate_archiver()
-{
-    if (_enable_archiver) {
-        _pssm->activate_archiver();
-    }
 }
 
 /******************************************************************

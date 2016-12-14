@@ -306,11 +306,6 @@ class ShoreEnv;
 
 extern ShoreEnv* _g_shore_env;
 
-// extern procmonitor_t* _g_mon;
-
-extern int ssm_max_small_rec;
-
-
 /********************************************************************
  *
  * @enum  MeasurementState

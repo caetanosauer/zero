@@ -441,10 +441,6 @@ private:
     tid_t            _tid;
 };
 
-class sm_store_info_t;
-class log_entry;
-class coordinator;
-class tape_t;
 /**
  * \brief \b This \b is \b the \b SHORE \b Storage \b Manager \b API.
  * \ingroup SSMBTREE
@@ -454,45 +450,10 @@ class tape_t;
  */
 class ss_m : public smlevel_top
 {
-    friend class prologue_rc_t;
-    friend class log_entry;
-    friend class coordinator;
-    friend class tape_t;
 public:
 
     typedef smlevel_0::concurrency_t concurrency_t;
     typedef smlevel_0::xct_state_t xct_state_t;
-
-    typedef sm_store_property_t store_property_t;
-
-#ifdef COMMENT
-    //
-    // Below is most of the interface for the SHORE Storage Manager.
-    // The rest is located in smthread.h
-    //
-
-    //
-    // TEMPORARY FILES/INDEXES
-    //
-    // When a file or index is created there is a tmp_flag parameter
-    // that when true indicates that the file is temporary.
-    // Operations on a temporary file are not logged and the
-    // file will be gone the next time the volume is mounted.
-    //
-    // TODO: IMPLEMENTATION NOTE on Temporary Files/Indexes:
-    //        Temp files cannot be trusted after transaction abort.
-    //            They should be marked for removal.
-    //
-    // CODE STRUCTURE:
-    //    Almost all ss_m functions begin by creating a prologue object
-    //    whose constructor and descructor check for many common errors.
-    //    In addition most ss_m::OP() functions now call an ss_m::_OP()
-    //    function to do the real work.  The ss_m::OP functions should
-    //    not be called by other ss_m functions, instead the corresponding
-    //    ss_m::_OP function should be used.
-    //
-
-#endif /* COMMENT */
 
   public:
     /**\brief  Initialize the storage manager.
@@ -591,22 +552,11 @@ public:
      */
     static void         set_shutdown_flag(bool clean);
 
-    /**\brief Notify storage manager when a log file was archived by a
-     * LOG_WARN_CALLBACK_FUNC.
-     * \ingroup SSMLOG
-     * @param[in] logfile   Character string name of file archived.
-     */
-    static rc_t         log_file_was_archived(const char * logfile);
-
     rc_t                _truncate_log(bool truncate_archive = false);
 
 private:
-//    void                _construct_once(LOG_WARN_CALLBACK_FUNC x=NULL,
-//                                           LOG_ARCHIVED_CALLBACK_FUNC y=NULL);
     void                _construct_once();
     void                _destruct_once();
-    void                _do_restart();
-    void                _finish_recovery();
 
     // Used for cosntructing xct object depending on chosen implementation
     static xct_t* _new_xct(
@@ -869,15 +819,6 @@ public:
      */
     static rc_t            rollback_work(const sm_save_point_t& sp);
 
-    /**\brief Return the number of transactions in active state.
-     *\ingroup SSMXCT
-     * \details
-     * While this is thread-safe, the moment a value is returned, it could
-     * be out of date.
-     * Useful only for debugging.
-     */
-    static uint32_t     num_active_xcts();
-
     /**\brief Attach the given transaction to the currently-running smthread_t.
      *\ingroup SSMXCT
      * \details
@@ -895,30 +836,6 @@ public:
     static void           detach_xct() { xct_t *x = smthread_t::xct();
                                         if(x) smthread_t::detach_xct(x); }
 
-    /**\brief Get the transaction structure for a given a transaction id.
-     *\ingroup SSMXCT
-     * @param[in] tid   Transaction ID.
-     *\details
-     * Return a pointer to the storage manager's transaction structure.
-     * Can be used with detach_xct and attach_xct.
-     */
-    static xct_t*          tid_to_xct(const tid_t& tid);
-    /**\brief Get the transaction ID for a given a transaction structure.
-     *\ingroup SSMXCT
-     * @param[in] x   Pointer to transaction structure.
-     *\details
-     * Return the transaction ID for the given transaction.
-     */
-    static tid_t           xct_to_tid(const xct_t* x);
-
-    /**\brief Print transaction information to an output stream.
-     *\ingroup SSMAPIDEBUG
-     * @param[in] o   Stream to which to write the information.
-     * \details
-     * This is for debugging only, and is not thread-safe.
-     */
-    static rc_t            dump_xcts(ostream &o);
-
     /**\brief Get the transaction state for a given transaction (structure).
      *\ingroup SSMXCT
      * @param[in] x   Pointer to transaction structure.
@@ -928,107 +845,6 @@ public:
      * their structures no longer exist.
      */
     static xct_state_t     state_xct(const xct_t* x);
-
-    /**\brief Return the amount of log this transaction would consume
-     * if it rolled back.
-     * \ingroup SSMLOG
-     *
-     * If a transaction aborts with eOUTOFLOGSPACE this function can
-     * be used in conjunction with xct_reserve_log_space to
-     * pre-allocate the needed amount of log space before retrying.
-     */
-    static off_t        xct_log_space_needed();
-
-    /**\brief Require the specified amount of log space to be
-     * available for this transaction before continuing.
-     * \ingroup SSMLOG
-     *
-     * If a transaction risks running out of log space it can
-     * pre-request some or all of the needed amount before starting in
-     * order to improve its chances of success. Other new transactions
-     * will be unable to acquire log space before this request is
-     * granted (existing ones will be able to commit, unless they also
-     * run out of space, because that tends to free up log space and
-     * avoids wasting work).
-     */
-    static rc_t            xct_reserve_log_space(off_t amt);
-
-
-    // /**\brief Collect transaction information in a virtual table.
-    //  * \ingroup SSMVTABLE
-    //  * \details
-    //  * @param[out] v  The virtual table to populate.
-    //  * @param[in] names_too  If true, make the
-    //  *            first row of the table a list of the attribute names.
-    //  *
-    //  * All attribute values will be strings.
-    //  * The virtual table v can be printed with its output operator
-    //  * operator\<\< for ostreams.
-    //  *
-    //  * \attention Not atomic. Can yield stale data.
-    //  */
-    // static rc_t            xct_collect(vtable_t&v, bool names_too=true);
-
-    // /**\brief Collect lock table information in a virtual table.
-    //  * \ingroup SSMVTABLE
-    //  * \details
-    //  * @param[out] v  The virtual table to populate.
-    //  * @param[in] names_too  If true, make the
-    //  *            first row of the table a list of the attribute names.
-    //  *
-    //  * All attribute values will be strings.
-    //  * The virtual table v can be printed with its output operator
-    //  * operator<< for ostreams.
-    //  *
-    //  * \attention Not atomic. Can yield stale data.
-    //  * Cannot be used in a multi-threaded-transaction context.
-    //  */
-    // static rc_t            lock_collect(vtable_t&v, bool names_too=true);
-
-    // /**\brief Collect thread information in a virtual table.
-    //  * \ingroup SSMVTABLE
-    //  * \details
-    //  * @param[out] v  The virtual table to populate.
-    //  * @param[in] names_too  If true, make the
-    //  *            first row of the table a list of the attribute names.
-    //  *
-    //  * All attribute values will be strings.
-    //  * The virtual table v can be printed with its output operator
-    //  * operator<< for ostreams.
-    //  *
-    //  * \attention Not thread-safe. Can yield stale data.
-    //  */
-    // static rc_t            thread_collect(vtable_t&v, bool names_too=true);
-
-    /**\brief Take a checkpoint.
-     * \ingroup SSMAPIDEBUG
-     * \note For debugging only!
-     *
-     * Force the storage manager to take a checkpoint.
-     * Checkpoints are fuzzy : they can be taken while most other
-     * storage manager activity is happening, even though they have
-     * to be serialized with respect to each other, and with respect to
-     * a few other activities.
-     *
-     * This is thread-safe.
-     */
-    static rc_t            checkpoint();
-
-    /**
-     * \brief Force the buffer pool to flush to disk all pages for the given volume.
-     * \ingroup SSMBUFPOOL
-     * @param[in] vol Volume whose pages are to be flushed.
-     */
-    static rc_t            force_volume();
-
-    /**\cond skip
-     * Do not document. Very un-thread-safe.
-     */
-    static rc_t            dump_buffers(ostream &o);
-    static rc_t            dump_locks(ostream &o);
-    static rc_t            dump_locks(); // defaults to std::cout
-
-    /**\endcond skip */
 
     /**\brief Get a copy of the statistics from an attached instrumented transaction.
      * \ingroup SSMXCT
@@ -1048,135 +864,6 @@ public:
     static rc_t            gather_stats(
         sm_stats_info_t&       stats
         );
-
-    /**\brief Get a copy of configuration-dependent information.
-     * \ingroup OPT
-     * \details
-     * @param[out] info A pre-allocated structure.
-     */
-    static rc_t            config_info(sm_config_info_t& info);
-
-    /**\brief Set sleep time before I/O operations.
-     * \ingroup SSMVOL
-     * \details
-     * This method sets a milli_sec delay to occur before
-     * each disk read/write operation.  This is for debugging.
-     * It is useful in discovering thread sync bugs.
-     * This delay applies to all threads.
-    */
-    static rc_t            set_disk_delay(u_int milli_sec);
-
-    /**
-     * \brief Forces a log flush
-     * \ingroup SSMLOG
-     */
-    static rc_t            sync_log(bool block=true);
-    /**
-     * \brief Forces a log flush until the given lsn
-     * \ingroup SSMLOG
-     */
-    static rc_t            flush_until(lsn_t& anlsn, bool block=true);
-
-    /**
-     * \brief Allowing to access info about the current lsn.
-     * \ingroup SSMLOG
-     */
-    static rc_t            get_curr_lsn(lsn_t& anlsn);
-    /**
-     * \brief Allowing to access info about the durable lsn.
-     * \ingroup SSMLOG
-     */
-    static rc_t            get_durable_lsn(lsn_t& anlsn);
-
-    /**
-    * \brief Pretty-prints the content of log file to the given stream
-    * in a way we can easily debug single-page recovery.
-    * \ingroup Single-Page-Recovery
-    * \details
-    * This is for debugging, so performance is not guaranteed and also not thread-safe.
-    * @param[in] o   Stream to which to write the information.
-    * @param[in] pid If given, we only dump logs relevant to the page.
-    * @param[in] max_lsn If given, we only dump logs required to recover
-    * the page up to this LSN. We omit the logs after that.
-    */
-    static void             dump_page_lsn_chain(std::ostream &o, const PageID &pid,
-                                                const lsn_t &max_lsn);
-    /**
-     * Overload to receive only pid.
-     * \ingroup Single-Page-Recovery
-     * @copydoc dump_page_lsn_chain(std::ostream&, const PageID &, const lsn_t&)
-     */
-    static void             dump_page_lsn_chain(std::ostream &o, const PageID &pid);
-    /**
-     * Overload to receive neither.
-     * \ingroup Single-Page-Recovery
-     * @copydoc dump_page_lsn_chain(std::ostream&, const PageID &, const lsn_t&)
-     */
-    static void             dump_page_lsn_chain(std::ostream &o);
-
-    /**
-     * \brief Verifies consistency of all BTree indexes in the volume.
-     * \ingroup SSMVOL
-     * @copydetails btree_impl::_ux_verify_volume()
-     * @see verify_index()
-     */
-    static rc_t            verify_volume(
-        int hash_bits, verify_volume_result &result);
-
-
-
-    /**\addtogroup SSMSTORE
-     * Indexes and files are special cases of "stores".
-     * A store is a linked list of extents, and an extent is a
-     * contiguous group of pages.  So the store is the structure
-     * that holds together an ordered set of pages that can be
-     * used by a server and have an identifier (a store ID or StoreID).
-     *
-     * Indexes and files of records are built on stores.
-     *
-     * Stores have logging properties and
-     * other metadata associated with them.
-     *
-     * The property that determines the logging level of the store is
-     * \ref sm_store_property_t.
-     *
-     * Methods that let you get and change the metatdata are:
-     * - ss_m::get_store_property
-     * - ss_m::set_store_property
-     * - ss_m::get_store_info
-     * - \ref StoreID
-     *
-     * When a transaction deletes a file or index, the deletion of the
-     * underlying stores is delayed until the transaction commits so that
-     * the pages allocated to the stores remain reserved (lest the
-     * transaction aborts). The deleting transaction could, in theory,
-     * reuse the pages for another store, but in practice that is not done.
-     * Instead, when a store is deleted, the store is marked
-     * for deletion an put in a list for the transaction to delete upon
-     * commit.   At commit time, stores that have property t_load_file
-     * or t_insert_file are converted to t_regular.
-     */
-
-    //
-    // Functions for B+tree Indexes
-    //
-    /**\addtogroup SSMBTREE
-     * The storage manager supports B+-Tree indexes provide associative access
-     * to data by associating keys with values in 1:1 or many:1 relationships.
-     *
-     * The number of key-value pairs that an index can hold is limited by the
-     * space available on the volume containing the index.
-     * \anchor max_entry_size
-     * The combined sizes of the key (i.e., the number of actual data
-     * bytes it contains) and value must be less than or equal to \ref
-     * max_entry_size, which is a function of the page size, and is
-     * such that two entries of this size fit on a page along with all
-     * the page and entry metadata.  See sm_config_info_t and
-     * ss_m::config_info.
-     *
-     * The minimum size of a B-Tree index is 8 pages (1 extent).
-     */
-
 
     /**\brief Create a B+-Tree index.
      * \ingroup SSMBTREE
@@ -1361,8 +1048,6 @@ public:
         int           timeout = timeout_t::WAIT_SPECIFIED_BY_XCT
     );
 
-    static rc_t            activate_archiver();
-
     /** Start-up parameters for the storage engine. */
     static sm_options _options;
 
@@ -1371,16 +1056,6 @@ public:
 private:
 
     static int _instance_cnt;
-
-    void _set_option_logsize();
-
-    static rc_t            _set_store_property(
-        StoreID                stid,
-        store_property_t      property);
-
-    static rc_t            _get_store_property(
-        StoreID                stid,
-        store_property_t&     property);
 
     static rc_t         _begin_xct(
         sm_stats_info_t*      stats,  // allocated by caller
@@ -1408,39 +1083,8 @@ private:
 
     static rc_t            _rollback_work(const sm_save_point_t&        sp);
 
-    static rc_t            _get_store_info(
-        const StoreID  &       stid,
-        sm_store_info_t&      info);
-
-    //
-    // The following functions deal with files of records.
-    //
-
-    static store_flag_t     _make_store_flag(store_property_t property);
-    // reverse function:
-    // static store_property_t    _make_store_property(uint32_t flag);
-    // is in dir_vol_m
 
 };
-
-/**\brief Information about a store that can be queried by the client.
- * \details
- * This information is stored in a store directory on the volume.
- * It can be queried with ss_m::get_store_info.
- */
-class sm_store_info_t {
-public:
-    NORET sm_store_info_t() : store(0), root(0) {}
-
-    NORET ~sm_store_info_t() {  }
-
-    /// store number
-    StoreID    store;
-
-    /// Root page if this is an index.
-    PageID    root;
-};
-
 
 ostream& operator<<(ostream& o, const sm_stats_info_t& s);
 template<class ostream>

@@ -634,40 +634,6 @@ ss_m::rollback_work(const sm_save_point_t& sp)
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::num_active_xcts()                            *
- *--------------------------------------------------------------*/
-uint32_t
-ss_m::num_active_xcts()
-{
-    return xct_t::num_active_xcts();
-}
-/*--------------------------------------------------------------*
- *  ss_m::tid_to_xct()                                *
- *--------------------------------------------------------------*/
-xct_t* ss_m::tid_to_xct(const tid_t& tid)
-{
-    return xct_t::look_up(tid);
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::xct_to_tid()                                *
- *--------------------------------------------------------------*/
-tid_t ss_m::xct_to_tid(const xct_t* x)
-{
-    w_assert0(x != NULL);
-    return x->tid();
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::dump_xcts()                                           *
- *--------------------------------------------------------------*/
-rc_t ss_m::dump_xcts(ostream& o)
-{
-    xct_t::dump(o);
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
  *  ss_m::state_xct()                                *
  *--------------------------------------------------------------*/
 ss_m::xct_state_t ss_m::state_xct(const xct_t* x)
@@ -697,118 +663,6 @@ ss_m::chain_xct(bool lazy)
     return RCOK;
 }
 
-/*--------------------------------------------------------------*
- *  ss_m::checkpoint()
- *  For debugging, smsh
- *--------------------------------------------------------------*/
-rc_t
-ss_m::checkpoint()
-{
-    // Just kick the chkpt thread
-    chkpt->take();
-    return RCOK;
-}
-
-rc_t
-ss_m::activate_archiver()
-{
-    if (logArchiver) {
-        logArchiver->activate(lsn_t::null, false);
-    }
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::dump_buffers()                            *
- *  For debugging, smsh
- *--------------------------------------------------------------*/
-rc_t
-ss_m::dump_buffers(ostream &o)
-{
-    bf->debug_dump(o);
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::config_info()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::config_info(sm_config_info_t& info) {
-    info.page_size = ss_m::page_sz;
-
-    //however, fixable_page_h.space.acquire aligns() the whole mess (hdr + record)
-    //which rounds up the space needed, so.... we have to figure that in
-    //here: round up then subtract one aligned entity.
-    //
-    // OK, now that _data is already aligned, we don't have to
-    // lose those 4 bytes.
-    info.lg_rec_page_space = btree_page::data_sz;
-    info.buffer_pool_size = bf->get_block_cnt() * ss_m::page_sz / 1024;
-    info.max_btree_entry_size  = btree_m::max_entry_size();
-    info.exts_on_page  = 0;
-    info.pages_per_ext = smlevel_0::ext_sz;
-
-    info.logging  = (ss_m::log != 0);
-
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::sync_log()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::sync_log(bool block)
-{
-    return log? log->flush_all(block) : RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::flush_until()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::flush_until(lsn_t& anlsn, bool block)
-{
-  return log->flush(anlsn, block);
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::get_curr_lsn()                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_curr_lsn(lsn_t& anlsn)
-{
-  anlsn = log->curr_lsn();
-  return (RCOK);
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::get_durable_lsn()                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_durable_lsn(lsn_t& anlsn)
-{
-  anlsn = log->durable_lsn();
-  return (RCOK);
-}
-
-void ss_m::dump_page_lsn_chain(std::ostream &o) {
-    dump_page_lsn_chain(o, 0, lsn_t::max);
-}
-void ss_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid) {
-    dump_page_lsn_chain(o, pid, lsn_t::max);
-}
-void ss_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn) {
-    // using static method since restart_m is not guaranteed to be active
-    restart_m::dump_page_lsn_chain(o, pid, max_lsn);
-}
-
-rc_t ss_m::verify_volume(
-    int hash_bits, verify_volume_result &result)
-{
-    W_DO(btree_m::verify_volume(hash_bits, result));
-    return RCOK;
-}
-
 #if defined(__GNUC__) && __GNUC_MINOR__ > 6
 ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state)
 {
@@ -827,24 +681,6 @@ ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state)
     return o;
 }
 #endif
-
-
-/*--------------------------------------------------------------*
- *  ss_m::dump_locks()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::dump_locks(ostream &o)
-{
-    lm->dump(o);
-    return RCOK;
-}
-
-rc_t
-ss_m::dump_locks() {
-  return dump_locks(std::cout);
-}
-
-
 
 lil_global_table* ss_m::get_lil_global_table() {
     if (lm) {
@@ -1267,29 +1103,3 @@ operator<<(ostream &o, const sm_stats_info_t &s)
     return o;
 }
 
-
-extern "C" {
-/* Debugger-callable functions to dump various SM tables. */
-
-    void        sm_dumplocks()
-    {
-        if (smlevel_0::lm) {
-                W_IGNORE(ss_m::dump_locks(cout));
-        }
-        else
-                cout << "no smlevel_0::lm" << endl;
-        cout << flush;
-    }
-
-    void   sm_dumpxcts()
-    {
-        W_IGNORE(ss_m::dump_xcts(cout));
-        cout << flush;
-    }
-
-    void        sm_dumpbuffers()
-    {
-        W_IGNORE(ss_m::dump_buffers(cout));
-        cout << flush;
-    }
-}
