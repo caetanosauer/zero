@@ -712,7 +712,7 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_btree_split : return t_redo|t_multi|t_single_sys_xct;
 	case t_btree_compress_page : return t_redo|t_single_sys_xct;
 
-        default: w_assert0(false); return t_bad_cat;
+        default: return t_bad_cat;
     }
 }
 

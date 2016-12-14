@@ -56,6 +56,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <w_base.h>
 #include <sstream>
+#include <cmath>
 
 /*--------------------------------------------------------------*
  *  constants for w_base_t                                      *
@@ -187,7 +188,7 @@ w_base_t::is_infinite(const f8_t x)
 #if defined(MacOSX) && W_GCC_THIS_VER >= W_GCC_VER(3,0)
     value = !finite(x) && !__isnand(x);
 #else
-    value = !finite(x) && !::isnan(x);
+    value = !finite(x) && !std::isnan(x);
 #endif
     return value;
 }
@@ -199,7 +200,7 @@ w_base_t::is_nan(const f8_t x)
 #if defined(MacOSX) && W_GCC_THIS_VER >= W_GCC_VER(3,0)
     value = __isnand(x);
 #else
-    value = ::isnan(x);
+    value = std::isnan(x);
 #endif
     return value;
 }
