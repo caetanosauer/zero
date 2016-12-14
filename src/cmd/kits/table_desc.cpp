@@ -36,7 +36,7 @@
 #include "btree.h"
 
 table_desc_t::table_desc_t(const char* name, int fieldcnt, uint32_t pd)
-    : _name(name), _field_count(fieldcnt), _pd(pd), _db(NULL), _primary_idx(NULL),
+    : _name(name), _field_count(fieldcnt), _pd(pd), _primary_idx(NULL),
     _maxsize(0)
 {
     assert (fieldcnt>0);
@@ -81,16 +81,13 @@ table_desc_t::~table_desc_t()
  *
  *********************************************************************/
 
-w_rc_t table_desc_t::create_physical_table(ss_m* db)
+w_rc_t table_desc_t::create_physical_table()
 {
-    assert (db);
-    _db = db;
-
-    W_DO(create_physical_index(db, _primary_idx));
+    W_DO(create_physical_index(_primary_idx));
     w_assert0(_primary_idx);
 
     for (size_t i = 0; i < _indexes.size(); i++) {
-        W_DO(create_physical_index(db, _indexes[i]));
+        W_DO(create_physical_index(_indexes[i]));
     }
 
     return (RCOK);
@@ -106,7 +103,7 @@ w_rc_t table_desc_t::create_physical_table(ss_m* db)
  *
  *********************************************************************/
 
-w_rc_t table_desc_t::create_physical_index(ss_m* db, index_desc_t* index)
+w_rc_t table_desc_t::create_physical_index(index_desc_t* index)
 {
     // Create all the indexes of the table
     StoreID stid = 0;
@@ -214,11 +211,10 @@ StoreID table_desc_t::get_primary_stid()
 
 w_rc_t table_desc_t::load_stids()
 {
-    w_assert0(_db);
     StoreID cat_stid = get_catalog_stid();
-    W_DO(_primary_idx->load_stid(_db, cat_stid));
+    W_DO(_primary_idx->load_stid(cat_stid));
     for (size_t i = 0; i < _indexes.size(); i++) {
-        W_DO(_indexes[i]->load_stid(_db, cat_stid));
+        W_DO(_indexes[i]->load_stid(cat_stid));
     }
     return RCOK;
 }

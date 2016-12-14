@@ -21,5 +21,5 @@ void TruncateLog::run()
     ss_m::chkpt->take();
     cout << "OK" << endl;
 
-    ss_m::SSM->_truncate_log();
+    ss_m::_truncate_log();
 }

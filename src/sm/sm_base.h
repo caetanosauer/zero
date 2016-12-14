@@ -376,8 +376,6 @@ public:
     // Recovery manager
     static restart_m*  recovery;
 
-    static ss_m*    SSM;    // we will change to lower case later
-
     /**\brief Store property that controls logging of pages in the store.
      * \ingroup SSMSTORE
      * \details

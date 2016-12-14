@@ -107,7 +107,7 @@ const int SHORE_NUM_OF_RETRIES       = 3;
                 _inc_##trxlid##_failed();                               \
             else _inc_##trxlid##_dld();                                 \
             /*TRACE( TRACE_TRX_FLOW, "Xct (%d) aborted [0x%x]\n", xct_id, e.err_num());*/ \
-            w_rc_t e2 = _pssm->abort_xct();                             \
+            w_rc_t e2 = xct_t::abort();                             \
             if(e2.is_error()) TRACE( TRACE_ALWAYS, "Xct (%d) abort failed [0x%x]\n", xct_id, e2.err_num()); \
             prequest->notify_client();                                  \
             _request_pool.destroy(prequest);				\
@@ -347,8 +347,6 @@ public:
 
 protected:
 
-    ss_m*           _pssm;               // database handle
-
     // CS: parameters removed from envVar/shore.conf/SHORE_*_OPTIONS
     bool _clobber;
 
@@ -494,9 +492,6 @@ public:
     // loads the store ids for each table and index at kits side
     // needed when an already populated database is being used
     virtual w_rc_t load_and_register_fids()=0;
-
-    // inline access methods
-    inline ss_m* db() { return(_pssm); }
 
     bool is_initialized();
     bool is_loaded();

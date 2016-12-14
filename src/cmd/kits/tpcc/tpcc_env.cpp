@@ -80,15 +80,15 @@ void ShoreTPCCEnv::table_creator_t::work()
 {
     // Create the tables
     xct_t::begin();
-    W_COERCE(_env->_pwarehouse_desc->create_physical_table(_env->db()));
-    W_COERCE(_env->_pdistrict_desc->create_physical_table(_env->db()));
-    W_COERCE(_env->_pcustomer_desc->create_physical_table(_env->db()));
-    W_COERCE(_env->_phistory_desc->create_physical_table(_env->db()));
-    W_COERCE(_env->_pnew_order_desc->create_physical_table(_env->db()));
-    W_COERCE(_env->_porder_desc->create_physical_table(_env->db()));
-    W_COERCE(_env->_porder_line_desc->create_physical_table(_env->db()));
-    W_COERCE(_env->_pitem_desc->create_physical_table(_env->db()));
-    W_COERCE(_env->_pstock_desc->create_physical_table(_env->db()));
+    W_COERCE(_env->_pwarehouse_desc->create_physical_table());
+    W_COERCE(_env->_pdistrict_desc->create_physical_table());
+    W_COERCE(_env->_pcustomer_desc->create_physical_table());
+    W_COERCE(_env->_phistory_desc->create_physical_table());
+    W_COERCE(_env->_pnew_order_desc->create_physical_table());
+    W_COERCE(_env->_porder_desc->create_physical_table());
+    W_COERCE(_env->_porder_line_desc->create_physical_table());
+    W_COERCE(_env->_pitem_desc->create_physical_table());
+    W_COERCE(_env->_pstock_desc->create_physical_table());
     W_COERCE(xct_t::commit());
 
     // do the first transaction
@@ -246,15 +246,15 @@ w_rc_t ShoreTPCCEnv::load_schema()
 
 w_rc_t ShoreTPCCEnv::load_and_register_fids()
 {
-    W_DO(_pwarehouse_man->load_and_register_fid(db()));
-    W_DO(_pdistrict_man->load_and_register_fid(db()));
-    W_DO(_pstock_man->load_and_register_fid(db()));
-    W_DO(_porder_line_man->load_and_register_fid(db()));
-    W_DO(_pcustomer_man->load_and_register_fid(db()));
-    W_DO(_phistory_man->load_and_register_fid(db()));
-    W_DO(_porder_man->load_and_register_fid(db()));
-    W_DO(_pnew_order_man->load_and_register_fid(db()));
-    W_DO(_pitem_man->load_and_register_fid(db()));
+    W_DO(_pwarehouse_man->load_and_register_fid());
+    W_DO(_pdistrict_man->load_and_register_fid());
+    W_DO(_pstock_man->load_and_register_fid());
+    W_DO(_porder_line_man->load_and_register_fid());
+    W_DO(_pcustomer_man->load_and_register_fid());
+    W_DO(_phistory_man->load_and_register_fid());
+    W_DO(_porder_man->load_and_register_fid());
+    W_DO(_pnew_order_man->load_and_register_fid());
+    W_DO(_pitem_man->load_and_register_fid());
     return (RCOK);
 }
 
@@ -743,7 +743,6 @@ w_rc_t ShoreTPCCEnv::_post_init_impl()
 w_rc_t ShoreTPCCEnv::db_print(int /*lines*/)
 {
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 
@@ -773,20 +772,19 @@ w_rc_t ShoreTPCCEnv::db_print(int /*lines*/)
 w_rc_t ShoreTPCCEnv::db_fetch()
 {
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 
     // fetch tables
-    W_DO(_pnew_order_man->fetch_table(_pssm));
-    W_DO(_porder_line_man->fetch_table(_pssm));
-    // W_DO(_phistory_man->fetch_table(_pssm));
-    W_DO(_porder_man->fetch_table(_pssm));
-    W_DO(_pitem_man->fetch_table(_pssm));
-    W_DO(_pcustomer_man->fetch_table(_pssm));
-    W_DO(_pwarehouse_man->fetch_table(_pssm));
-    W_DO(_pdistrict_man->fetch_table(_pssm));
-    W_DO(_pstock_man->fetch_table(_pssm));
+    W_DO(_pnew_order_man->fetch_table());
+    W_DO(_porder_line_man->fetch_table());
+    // W_DO(_phistory_man->fetch_table());
+    W_DO(_porder_man->fetch_table());
+    W_DO(_pitem_man->fetch_table());
+    W_DO(_pcustomer_man->fetch_table());
+    W_DO(_pwarehouse_man->fetch_table());
+    W_DO(_pdistrict_man->fetch_table());
+    W_DO(_pstock_man->fetch_table());
 
     return (RCOK);
 }

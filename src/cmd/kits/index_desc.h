@@ -109,7 +109,7 @@ public:
     StoreID& stid() { return _stid; }
     void set_stid(StoreID const &stid) { _stid = stid; }
 
-    w_rc_t load_stid(ss_m* db, StoreID cat_stid);
+    w_rc_t load_stid(StoreID cat_stid);
 
     /* ---------------------- */
     /* --- access methods --- */

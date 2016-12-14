@@ -46,11 +46,9 @@
  *********************************************************************/
 
 template<class T>
-w_rc_t table_man_t<T>::load_and_register_fid(ss_m* db)
+w_rc_t table_man_t<T>::load_and_register_fid()
 {
     assert (_ptable);
-    assert (db);
-    _ptable->set_db(db);
 
     // fetch stid of all indexes from catalog index
     W_DO(_ptable->load_stids());
@@ -71,7 +69,7 @@ w_rc_t table_man_t<T>::load_and_register_fid(ss_m* db)
  *********************************************************************/
 
 template<class T>
-w_rc_t table_man_t<T>::index_probe(ss_m* db,
+w_rc_t table_man_t<T>::index_probe(
                                 index_desc_t* pindex,
                                 table_row_t*  ptuple,
                                 lock_mode_t   /* lock_mode */,
@@ -162,7 +160,7 @@ w_rc_t table_man_t<T>::index_probe(ss_m* db,
  *********************************************************************/
 
 template<class T>
-w_rc_t table_man_t<T>::add_tuple(ss_m* db,
+w_rc_t table_man_t<T>::add_tuple(
                               table_row_t* ptuple,
                               const lock_mode_t /* lock_mode */,
                               const PageID& /* primary_root */)
@@ -223,7 +221,7 @@ w_rc_t table_man_t<T>::add_tuple(ss_m* db,
  *********************************************************************/
 
 template<class T>
-w_rc_t table_man_t<T>::add_index_entry(ss_m* db,
+w_rc_t table_man_t<T>::add_index_entry(
 				    const char* idx_name,
 				    table_row_t* ptuple,
 				    const lock_mode_t /* lock_mode */,
@@ -276,7 +274,7 @@ w_rc_t table_man_t<T>::add_index_entry(ss_m* db,
  *********************************************************************/
 
 template<class T>
-w_rc_t table_man_t<T>::delete_tuple(ss_m* db,
+w_rc_t table_man_t<T>::delete_tuple(
                                  table_row_t* ptuple,
                                  const lock_mode_t /* lock_mode */,
                                  const PageID& /* primary_root */)
@@ -335,7 +333,7 @@ w_rc_t table_man_t<T>::delete_tuple(ss_m* db,
  *********************************************************************/
 
 template<class T>
-w_rc_t table_man_t<T>::delete_index_entry(ss_m* db,
+w_rc_t table_man_t<T>::delete_index_entry(
 				       const char* idx_name,
 				       table_row_t* ptuple,
 				       const lock_mode_t /* lock_mode */,
@@ -390,7 +388,7 @@ w_rc_t table_man_t<T>::delete_index_entry(ss_m* db,
  *********************************************************************/
 
 template<class T>
-w_rc_t table_man_t<T>::update_tuple(ss_m* db,
+w_rc_t table_man_t<T>::update_tuple(
                                  table_row_t* ptuple,
                                  const lock_mode_t  /* lock_mode */) // physical_design_t
 {
@@ -553,9 +551,8 @@ w_rc_t table_man_t<T>::print_index(unsigned ind, ostream& os,
  *********************************************************************/
 
 template<class T>
-w_rc_t table_man_t<T>::fetch_table(ss_m* db, lock_mode_t /* alm */)
+w_rc_t table_man_t<T>::fetch_table(lock_mode_t /* alm */)
 {
-    assert (db);
     assert (_ptable);
 
     bool eof = false;

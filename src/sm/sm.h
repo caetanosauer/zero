@@ -442,80 +442,9 @@ public:
     typedef smlevel_0::xct_state_t xct_state_t;
 
   public:
-    /**\brief  Initialize the storage manager.
-     * \ingroup SSMINIT
-     * \details
-     * @param[in] options Start-up parameters.
-     * @param[in] warn   A callback function. This is called
-     * when/if the log is in danger of becoming "too full".
-     * @param[in] get   A callback function. This is called
-     * when the storage manager needs an archived log file to be restored.
-     *
-     * When an ss_m object is created, the storage manager initializes itself
-     * and,
-     * if the sthreads package has not already been initialized by virtue
-     * of an sthread_t running, the sthreads package is initialized now.
-     *
-     * The log is read and recovery is performed (\ref MHLPS),
-     * and control returns to
-     * the caller, after which time
-     * storage manager threads (instances of smthread_t) may be constructed and
-     * storage manager may be used.
-     *
-     * The storage manager is used by invoking its static methods.
-     * You may use them as follows:
-     * \code
-     * ss_m *UNIQ = new ss_m();
-     *
-     * W_DO(UNIQ->mount_vol(...))
-     *     // or
-     * W_DO(ss_m::mount_vol(...))
-     * \endcode
-     * ).
-     *
-     * Only one ss_m object may be extant at any time. If you try
-     * to create another while the one exists, a fatal error will occur
-     * (your program will choke with a message about your mistake).
-     *
-     * The callback argument given to the storage manager constructor
-     * is called when the storage manager determines that it is in danger
-     * of running out of log space.  Heuristics are used to guess when
-     * this is the case.
-     *
-     * If the function \a warn archives and removes log files, the function
-     * \a get must be provided to restore those log files when the
-     * storage manager needs them.
-     *
-     * For details and examples, see  \ref smlevel_0::LOG_WARN_CALLBACK_FUNC,
-     *  \ref smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC, and
-     *  \ref SSMLOG.
-     */
-    ss_m(const sm_options &options);
+    static void startup(const sm_options&);
 
-    /**\brief  Shut down the storage manager.
-     * \ingroup SSMINIT
-     * \details
-     * When the storage manager object is deleted, it shuts down.
-     * Thereafter it is not usable until another ss_m object is
-     * constructed.
-     */
-    ~ss_m();
-
-    // Manually start the store if the store is not running already.
-    // Only one instance of store can be running at any time.
-    // The function starts the store using the input parameters from sm constructor,
-    // no change allowed after the ss_m constructor
-    // Internal settings will be reset, i.e. shutting_down, shutdown_clean flags
-    // Return: true if store started successfully
-    //             false if store was running already
-    bool startup();
-
-    // Manually stop a running store.  If the store was not running, no-op.
-    // Only one instance of store can be running at any time.
-    // The shutdown process obeys the internal settings,
-    // i.e. shutting_down, shutdown_clean flags
-    // Return: if store shutdown successfully or was not running
-    bool shutdown();
+    static void shutdown();
 
     /**\brief Cause the storage manager's shutting down do be done cleanly
      * or to simulate a crash.
@@ -538,11 +467,12 @@ public:
      */
     static void         set_shutdown_flag(bool clean);
 
-    rc_t                _truncate_log(bool truncate_archive = false);
+    static rc_t _truncate_log(bool truncate_archive = false);
 
 private:
-    void                _construct_once();
-    void                _destruct_once();
+    // disable cosntructor and destructor
+    ss_m();
+    ~ss_m();
 
 public:
 
@@ -579,9 +509,6 @@ public:
 
     static const sm_options& get_options() { return _options; }
 
-private:
-
-    static int _instance_cnt;
 };
 
 ostream& operator<<(ostream& o, const sm_stats_info_t& s);

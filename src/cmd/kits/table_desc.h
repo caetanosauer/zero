@@ -138,8 +138,6 @@ protected:
     /* --- table schema -- */
     /* ------------------- */
 
-    ss_m*           _db;                 // the SM
-
     field_desc_t*   _desc;               // schema - set of field descriptors
 
     // primary index for index-organized table (replaces Heap of Shore-MT)
@@ -164,9 +162,9 @@ public:
     /* --- create physical table and indexes --- */
     /* ----------------------------------------- */
 
-    w_rc_t create_physical_table(ss_m* db);
+    w_rc_t create_physical_table();
 
-    w_rc_t create_physical_index(ss_m* db, index_desc_t* index);
+    w_rc_t create_physical_index(index_desc_t* index);
 
     StoreID get_catalog_stid()
     {
@@ -249,12 +247,6 @@ public:
     const char*   name() const { return _name.c_str(); }
     unsigned        field_count() const { return _field_count; }
     uint32_t       get_pd() const { return _pd; }
-
-    /* ---------- */
-    /* --- db --- */
-    /* ---------- */
-    void set_db(ss_m* db) { _db = db; }
-    ss_m* db() { return (_db); }
 
     /* ----------------- */
     /* --- debugging --- */

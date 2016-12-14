@@ -105,7 +105,7 @@ void index_desc_t::print_desc(ostream& os)
     os << endl;
 }
 
-w_rc_t index_desc_t::load_stid(ss_m* db, StoreID cat_stid)
+w_rc_t index_desc_t::load_stid(StoreID cat_stid)
 {
     smsize_t size = sizeof(StoreID);
     w_keystr_t kstr;

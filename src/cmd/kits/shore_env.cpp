@@ -95,7 +95,6 @@ void env_stats_t::print_env_stats() const
 
 ShoreEnv::ShoreEnv(po::variables_map& vm)
     : db_iface(),
-      _pssm(NULL),
       _initialized(false), _init_mutex(thread_mutex_create()),
       _loaded(false), _load_mutex(thread_mutex_create()),
       _statmap_mutex(thread_mutex_create()),
@@ -703,18 +702,10 @@ int ShoreEnv::close_sm()
 {
     TRACE( TRACE_ALWAYS, "Closing Shore storage manager...\n");
 
-    if (!_pssm) {
-        TRACE( TRACE_ALWAYS, "sm already closed...\n");
-        return (1);
-    }
-
     // Final stats
     gatherstats_sm();
 
-    /*
-     *  destroying the ss_m instance causes the SSM to shutdown
-     */
-    delete (_pssm);
+    ss_m::shutdown();
 
     // If we reached this point the sm is closed
     return (0);
@@ -777,7 +768,7 @@ int ShoreEnv::start_sm()
     TRACE( TRACE_DEBUG, "Starting Shore...\n");
 
     if (_initialized == false) {
-        _pssm = new ss_m(_popts);
+        ss_m::startup(_popts);
         // _logger = new kits_logger_t(_pssm);
     }
     else {
@@ -786,8 +777,6 @@ int ShoreEnv::start_sm()
     }
 
     // format and mount the database...
-
-    assert (_pssm);
 
     if (_clobber) {
         // if didn't clobber then the db is already loaded

@@ -92,10 +92,10 @@ w_rc_t ShoreTPCBEnv::load_schema()
 
 w_rc_t ShoreTPCBEnv::load_and_register_fids()
 {
-    W_DO(branch_man->load_and_register_fid(db()));
-    W_DO(teller_man->load_and_register_fid(db()));
-    W_DO(account_man->load_and_register_fid(db()));
-    W_DO(history_man->load_and_register_fid(db()));
+    W_DO(branch_man->load_and_register_fid());
+    W_DO(teller_man->load_and_register_fid());
+    W_DO(account_man->load_and_register_fid());
+    W_DO(history_man->load_and_register_fid());
     return (RCOK);
 }
 
@@ -343,10 +343,10 @@ void ShoreTPCBEnv::table_creator_t::work()
     // Create the tables, if any partitioning is to be applied, that has already
     // been set at update_partitioning()
     xct_t::begin();
-    W_COERCE(_env->branch_man->table()->create_physical_table(_env->db()));
-    W_COERCE(_env->teller_man->table()->create_physical_table(_env->db()));
-    W_COERCE(_env->account_man->table()->create_physical_table(_env->db()));
-    W_COERCE(_env->history_man->table()->create_physical_table(_env->db()));
+    W_COERCE(_env->branch_man->table()->create_physical_table());
+    W_COERCE(_env->teller_man->table()->create_physical_table());
+    W_COERCE(_env->account_man->table()->create_physical_table());
+    W_COERCE(_env->history_man->table()->create_physical_table());
     W_COERCE(xct_t::commit());
 
     // Create 10k accounts in each partition to buffer
@@ -858,7 +858,6 @@ w_rc_t ShoreTPCBEnv::_pad_TELLERS()
 w_rc_t ShoreTPCBEnv::db_print(int /*lines*/)
 {
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 
@@ -883,7 +882,6 @@ w_rc_t ShoreTPCBEnv::db_print(int /*lines*/)
 w_rc_t ShoreTPCBEnv::db_fetch()
 {
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 

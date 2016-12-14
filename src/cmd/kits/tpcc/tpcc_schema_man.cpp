@@ -47,28 +47,28 @@ namespace tpcc {
 
 
 w_rc_t
-warehouse_man_impl::wh_index_probe(ss_m* db,
+warehouse_man_impl::wh_index_probe(
                                    warehouse_tuple* ptuple,
                                    const int w_id)
 {
     assert (ptuple);
     ptuple->set_value(0, w_id);
-    return (index_probe(db, _ptable->primary_idx(), ptuple));
+    return (index_probe(_ptable->primary_idx(), ptuple));
 }
 
 
 w_rc_t
-warehouse_man_impl::wh_index_probe_forupdate(ss_m* db,
+warehouse_man_impl::wh_index_probe_forupdate(
                                              warehouse_tuple* ptuple,
                                              const int w_id)
 {
     assert (ptuple);
     ptuple->set_value(0, w_id);
-    return (index_probe_forupdate(db, _ptable->primary_idx(), ptuple));
+    return (index_probe_forupdate(_ptable->primary_idx(), ptuple));
 }
 
 w_rc_t
-warehouse_man_impl::wh_update_ytd(ss_m* db,
+warehouse_man_impl::wh_update_ytd(
                                   warehouse_tuple* ptuple,
                                   const double amount)
 {
@@ -80,7 +80,7 @@ warehouse_man_impl::wh_update_ytd(ss_m* db,
     ptuple->get_value(8, ytd);
     ytd += amount;
     ptuple->set_value(8, ytd);
-    W_DO(update_tuple(db, ptuple));
+    W_DO(update_tuple(ptuple));
     return (RCOK);
 }
 
@@ -91,7 +91,7 @@ warehouse_man_impl::wh_update_ytd(ss_m* db,
 /* ---------------- */
 
 
-w_rc_t district_man_impl::dist_index_probe(ss_m* db,
+w_rc_t district_man_impl::dist_index_probe(
                                            district_tuple* ptuple,
                                            const int w_id,
                                            const int d_id)
@@ -99,10 +99,10 @@ w_rc_t district_man_impl::dist_index_probe(ss_m* db,
     assert (ptuple);
     ptuple->set_value(0, d_id);
     ptuple->set_value(1, w_id);
-    return (index_probe(db, _ptable->primary_idx(), ptuple));
+    return (index_probe(_ptable->primary_idx(), ptuple));
 }
 
-w_rc_t district_man_impl::dist_index_probe_forupdate(ss_m* db,
+w_rc_t district_man_impl::dist_index_probe_forupdate(
                                                      district_tuple* ptuple,
                                                      const int w_id,
                                                      const int d_id)
@@ -110,10 +110,10 @@ w_rc_t district_man_impl::dist_index_probe_forupdate(ss_m* db,
     assert (ptuple);
     ptuple->set_value(0, d_id);
     ptuple->set_value(1, w_id);
-    return (index_probe_forupdate(db, _ptable->primary_idx(), ptuple));
+    return (index_probe_forupdate(_ptable->primary_idx(), ptuple));
 }
 
-w_rc_t district_man_impl::dist_update_ytd(ss_m* db,
+w_rc_t district_man_impl::dist_update_ytd(
                                           district_tuple* ptuple,
                                           const double amount)
 {
@@ -125,11 +125,11 @@ w_rc_t district_man_impl::dist_update_ytd(ss_m* db,
     ptuple->get_value(9, d_ytd);
     d_ytd += amount;
     ptuple->set_value(9, d_ytd);
-    W_DO(update_tuple(db, ptuple));
+    W_DO(update_tuple(ptuple));
     return (RCOK);
 }
 
-w_rc_t district_man_impl::dist_update_next_o_id(ss_m* db,
+w_rc_t district_man_impl::dist_update_next_o_id(
                                                 district_tuple* ptuple,
                                                 const int next_o_id)
 {
@@ -138,7 +138,7 @@ w_rc_t district_man_impl::dist_update_next_o_id(ss_m* db,
     assert (ptuple);
 
     ptuple->set_value(10, next_o_id);
-    return (update_tuple(db, ptuple));
+    return (update_tuple(ptuple));
 }
 
 
@@ -147,7 +147,7 @@ w_rc_t district_man_impl::dist_update_next_o_id(ss_m* db,
 /* ---------------- */
 
 
-w_rc_t customer_man_impl::cust_get_iter_by_index(ss_m* /*db*/,
+w_rc_t customer_man_impl::cust_get_iter_by_index(
                                                  customer_index_iter* &iter,
                                                  customer_tuple* ptuple,
                                                  rep_row_t &replow,
@@ -192,7 +192,7 @@ w_rc_t customer_man_impl::cust_get_iter_by_index(ss_m* /*db*/,
     return (RCOK);
 }
 
-w_rc_t customer_man_impl::cust_index_probe(ss_m* db,
+w_rc_t customer_man_impl::cust_index_probe(
                                            customer_tuple* ptuple,
                                            const int w_id,
                                            const int d_id,
@@ -202,10 +202,10 @@ w_rc_t customer_man_impl::cust_index_probe(ss_m* db,
     ptuple->set_value(0, c_id);
     ptuple->set_value(1, d_id);
     ptuple->set_value(2, w_id);
-    return (index_probe(db, _ptable->primary_idx(), ptuple));
+    return (index_probe(_ptable->primary_idx(), ptuple));
 }
 
-w_rc_t customer_man_impl::cust_index_probe_by_name(ss_m* db,
+w_rc_t customer_man_impl::cust_index_probe_by_name(
                                                    const char* idx_name,
                                                    customer_tuple* ptuple,
                                                    const int w_id,
@@ -216,10 +216,10 @@ w_rc_t customer_man_impl::cust_index_probe_by_name(ss_m* db,
     ptuple->set_value(0, c_id);
     ptuple->set_value(1, d_id);
     ptuple->set_value(2, w_id);
-    return (index_probe_by_name(db, idx_name, ptuple));
+    return (index_probe_by_name(idx_name, ptuple));
 }
 
-w_rc_t customer_man_impl::cust_index_probe_forupdate(ss_m * db,
+w_rc_t customer_man_impl::cust_index_probe_forupdate(
                                                      customer_tuple* ptuple,
                                                      const int w_id,
                                                      const int d_id,
@@ -229,10 +229,10 @@ w_rc_t customer_man_impl::cust_index_probe_forupdate(ss_m * db,
     ptuple->set_value(0, c_id);
     ptuple->set_value(1, d_id);
     ptuple->set_value(2, w_id);
-    return (index_probe_forupdate(db, _ptable->primary_idx(), ptuple));
+    return (index_probe_forupdate(_ptable->primary_idx(), ptuple));
 }
 
-w_rc_t customer_man_impl::cust_update_tuple(ss_m* db,
+w_rc_t customer_man_impl::cust_update_tuple(
                                             customer_tuple* ptuple,
                                             const tpcc_customer_tuple& acustomer,
                                             const char* adata1,
@@ -249,12 +249,12 @@ w_rc_t customer_man_impl::cust_update_tuple(ss_m* db,
     if (adata2)
 	ptuple->set_value(21, adata2);
 
-    return (update_tuple(db, ptuple));
+    return (update_tuple(ptuple));
 }
 
 
 
-w_rc_t customer_man_impl::cust_update_discount_balance(ss_m* db,
+w_rc_t customer_man_impl::cust_update_discount_balance(
                                                        customer_tuple* ptuple,
                                                        const decimal discount,
                                                        const decimal balance)
@@ -263,7 +263,7 @@ w_rc_t customer_man_impl::cust_update_discount_balance(ss_m* db,
     assert (discount>=0);
     ptuple->set_value(15, discount);
     ptuple->set_value(16, balance);
-    return (update_tuple(db, ptuple));
+    return (update_tuple(ptuple));
 }
 
 
@@ -272,7 +272,7 @@ w_rc_t customer_man_impl::cust_update_discount_balance(ss_m* db,
 /* ----------------- */
 
 
-w_rc_t new_order_man_impl::no_get_iter_by_index(ss_m* /*db*/,
+w_rc_t new_order_man_impl::no_get_iter_by_index(
                                                 new_order_table_iter* &iter,
                                                 new_order_tuple* ptuple,
                                                 rep_row_t &replow,
@@ -309,7 +309,7 @@ w_rc_t new_order_man_impl::no_get_iter_by_index(ss_m* /*db*/,
 }
 
 
-w_rc_t new_order_man_impl::no_delete_by_index(ss_m* db,
+w_rc_t new_order_man_impl::no_delete_by_index(
                                               new_order_tuple* ptuple,
                                               const int w_id,
                                               const int d_id,
@@ -323,8 +323,8 @@ w_rc_t new_order_man_impl::no_delete_by_index(ss_m* db,
     ptuple->set_value(0, o_id);
     ptuple->set_value(1, d_id);
     ptuple->set_value(2, w_id);
-//     W_DO(index_probe_forupdate_by_name(db, "NO_IDX", ptuple));
-    W_DO(delete_tuple(db, ptuple));
+//     W_DO(index_probe_forupdate_by_name("NO_IDX", ptuple));
+    W_DO(delete_tuple(ptuple));
 
     return (RCOK);
 }
@@ -335,7 +335,7 @@ w_rc_t new_order_man_impl::no_delete_by_index(ss_m* db,
 /* ------------- */
 
 
-w_rc_t order_man_impl::ord_get_iter_by_index(ss_m* /*db*/,
+w_rc_t order_man_impl::ord_get_iter_by_index(
                                              order_index_iter* &iter,
                                              order_tuple* ptuple,
                                              rep_row_t &replow,
@@ -374,7 +374,7 @@ w_rc_t order_man_impl::ord_get_iter_by_index(ss_m* /*db*/,
 }
 
 
-w_rc_t order_man_impl::ord_update_carrier_by_index(ss_m* db,
+w_rc_t order_man_impl::ord_update_carrier_by_index(
                                                    order_tuple* ptuple,
                                                    const int carrier_id)
 {
@@ -383,10 +383,10 @@ w_rc_t order_man_impl::ord_update_carrier_by_index(ss_m* db,
     // 1. idx probe for update the order
     // 2. update carrier_id and update table
 
-    W_DO(index_probe_forupdate(db, _ptable->primary_idx(), ptuple));
+    W_DO(index_probe_forupdate(_ptable->primary_idx(), ptuple));
 
     ptuple->set_value(5, carrier_id);
-    W_DO(update_tuple(db, ptuple));
+    W_DO(update_tuple(ptuple));
 
     return (RCOK);
 }
@@ -397,7 +397,7 @@ w_rc_t order_man_impl::ord_update_carrier_by_index(ss_m* db,
 /* ----------------- */
 
 
-w_rc_t order_line_man_impl::ol_get_range_iter_by_index(ss_m* /*db*/,
+w_rc_t order_line_man_impl::ol_get_range_iter_by_index(
                                                        order_line_table_iter* &iter,
                                                        order_line_tuple* ptuple,
                                                        rep_row_t &replow,
@@ -441,7 +441,7 @@ w_rc_t order_line_man_impl::ol_get_range_iter_by_index(ss_m* /*db*/,
 }
 
 
-w_rc_t order_line_man_impl::ol_get_probe_iter_by_index(ss_m* /*db*/,
+w_rc_t order_line_man_impl::ol_get_probe_iter_by_index(
                                                        order_line_table_iter* &iter,
                                                        order_line_tuple* ptuple,
                                                        rep_row_t &replow,
@@ -485,22 +485,22 @@ w_rc_t order_line_man_impl::ol_get_probe_iter_by_index(ss_m* /*db*/,
 /* ------------ */
 
 
-w_rc_t item_man_impl::it_index_probe(ss_m* db,
+w_rc_t item_man_impl::it_index_probe(
                                      item_tuple* ptuple,
                                      const int i_id)
 {
     assert (ptuple);
     ptuple->set_value(0, i_id);
-    return (index_probe(db, _ptable->primary_idx(), ptuple));
+    return (index_probe(_ptable->primary_idx(), ptuple));
 }
 
-w_rc_t item_man_impl::it_index_probe_forupdate(ss_m* db,
+w_rc_t item_man_impl::it_index_probe_forupdate(
                                                item_tuple* ptuple,
                                                const int i_id)
 {
     assert (ptuple);
     ptuple->set_value(0, i_id);
-    return (index_probe_forupdate(db, _ptable->primary_idx(), ptuple));
+    return (index_probe_forupdate(_ptable->primary_idx(), ptuple));
 }
 
 
@@ -509,7 +509,7 @@ w_rc_t item_man_impl::it_index_probe_forupdate(ss_m* db,
 /* ------------- */
 
 
-w_rc_t stock_man_impl::st_index_probe(ss_m* db,
+w_rc_t stock_man_impl::st_index_probe(
                                       stock_tuple* ptuple,
                                       const int w_id,
                                       const int i_id)
@@ -517,10 +517,10 @@ w_rc_t stock_man_impl::st_index_probe(ss_m* db,
     assert (ptuple);
     ptuple->set_value(0, i_id);
     ptuple->set_value(1, w_id);
-    return (index_probe(db, _ptable->primary_idx(), ptuple));
+    return (index_probe(_ptable->primary_idx(), ptuple));
 }
 
-w_rc_t stock_man_impl::st_index_probe_forupdate(ss_m* db,
+w_rc_t stock_man_impl::st_index_probe_forupdate(
                                                 stock_tuple* ptuple,
                                                 const int w_id,
                                                 const int i_id)
@@ -528,10 +528,10 @@ w_rc_t stock_man_impl::st_index_probe_forupdate(ss_m* db,
     assert (ptuple);
     ptuple->set_value(0, i_id);
     ptuple->set_value(1, w_id);
-    return (index_probe_forupdate(db, _ptable->primary_idx(), ptuple));
+    return (index_probe_forupdate(_ptable->primary_idx(), ptuple));
 }
 
-w_rc_t  stock_man_impl::st_update_tuple(ss_m* db,
+w_rc_t  stock_man_impl::st_update_tuple(
                                         stock_tuple* ptuple,
                                         const tpcc_stock_tuple* pstock)
 {
@@ -543,8 +543,8 @@ w_rc_t  stock_man_impl::st_update_tuple(ss_m* db,
     ptuple->set_value(3, pstock->S_QUANTITY);
     ptuple->set_value(4, pstock->S_ORDER_CNT);
     ptuple->set_value(5, pstock->S_YTD);
-    //    return (table_man_impl<stock_t>::update_tuple(db, ptuple));
-    return (update_tuple(db, ptuple));
+    //    return (table_man_impl<stock_t>::update_tuple(ptuple));
+    return (update_tuple(ptuple));
 }
 
 };

@@ -54,15 +54,15 @@ public:
     ~branch_man_impl() { }
 
     // --- access specific tuples  ---
-    w_rc_t b_index_probe(ss_m* db,
+    w_rc_t b_index_probe(
 			 branch_tuple* ptuple,
 			 const int b_id);
 
-    w_rc_t b_index_probe_forupdate(ss_m* db,
+    w_rc_t b_index_probe_forupdate(
 				   branch_tuple* ptuple,
 				   const int b_id);
 
-    w_rc_t b_idx_nl(ss_m* db,
+    w_rc_t b_idx_nl(
                     branch_tuple* ptuple,
                     const int b_id);
 
@@ -83,11 +83,11 @@ public:
     ~teller_man_impl() { }
 
     // --- access specific tuples  ---
-    w_rc_t t_index_probe_forupdate(ss_m* db,
+    w_rc_t t_index_probe_forupdate(
 				   teller_tuple* ptuple,
 				   const int t_id);
 
-    w_rc_t t_idx_nl(ss_m* db,
+    w_rc_t t_idx_nl(
                     teller_tuple* ptuple,
                     const int t_id);
 
@@ -108,25 +108,25 @@ public:
     ~account_man_impl() { }
 
     // --- access specific tuples  ---
-    w_rc_t a_index_probe_forupdate(ss_m* db,
+    w_rc_t a_index_probe_forupdate(
 				   account_tuple* ptuple,
 				   const int a_id,
                                    const int b_id = 0, // PLP_MBENCH
                                    const double balance = 0);
 
-    w_rc_t a_delete_by_index(ss_m* db,
+    w_rc_t a_delete_by_index(
 			     account_tuple* ptuple,
 			     const int a_id,
 			     const int b_id = 0, // PLP_MBENCH
 			     const double balance = 0);
 
-    w_rc_t a_index_probe(ss_m* db,
+    w_rc_t a_index_probe(
 			 account_tuple* ptuple,
 			 const int a_id,
 			 const int b_id = 0, // PLP_MBENCH
 			 const double balance = 0);
 
-    w_rc_t a_idx_nl(ss_m* db,
+    w_rc_t a_idx_nl(
                     account_tuple* ptuple,
                     const int a_id,
                     const int b_id = 0, // PLP_MBENCH

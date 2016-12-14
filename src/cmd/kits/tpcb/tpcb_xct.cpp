@@ -270,7 +270,6 @@ w_rc_t ShoreTPCBEnv::xct_acct_update(const int /* xct_id */,
                                      acct_update_input_t& ppin)
 {
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 
@@ -305,10 +304,10 @@ w_rc_t ShoreTPCBEnv::xct_acct_update(const int /* xct_id */,
     double total;
 
     // 1. Update account
-    W_DO(account_man->a_index_probe_forupdate(_pssm, pracct, ppin.a_id));
+    W_DO(account_man->a_index_probe_forupdate(pracct, ppin.a_id));
     pracct->get_value(2, total);
     pracct->set_value(2, total + ppin.delta);
-    W_DO(account_man->update_tuple(_pssm, pracct));
+    W_DO(account_man->update_tuple(pracct));
 
     // 2. Write to History
     prhist->set_value(0, ppin.b_id);
@@ -319,19 +318,19 @@ w_rc_t ShoreTPCBEnv::xct_acct_update(const int /* xct_id */,
 #ifdef CFG_HACK
     prhist->set_value(5, "padding"); // PADDING
 #endif
-    W_DO(history_man->add_tuple(_pssm, prhist));
+    W_DO(history_man->add_tuple(prhist));
 
     // 3. Update teller
-    W_DO(teller_man->t_index_probe_forupdate(_pssm, prt, ppin.t_id));
+    W_DO(teller_man->t_index_probe_forupdate(prt, ppin.t_id));
     prt->get_value(2, total);
     prt->set_value(2, total + ppin.delta);
-    W_DO(teller_man->update_tuple(_pssm, prt));
+    W_DO(teller_man->update_tuple(prt));
 
     // 4. Update branch
-    W_DO(branch_man->b_index_probe_forupdate(_pssm, prb, ppin.b_id));
+    W_DO(branch_man->b_index_probe_forupdate(prb, ppin.b_id));
     prb->get_value(1, total);
     prb->set_value(1, total + ppin.delta);
-    W_DO(branch_man->update_tuple(_pssm, prb));
+    W_DO(branch_man->update_tuple(prb));
 
 #ifdef PRINT_TRX_RESULTS
     // at the end of the transaction
@@ -363,7 +362,6 @@ w_rc_t ShoreTPCBEnv::xct_populate_db(const int /* xct_id */,
                                      populate_db_input_t& ppin)
 {
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
 
     // account update trx touches 4 tables:
@@ -399,7 +397,7 @@ w_rc_t ShoreTPCBEnv::xct_populate_db(const int /* xct_id */,
 #ifdef CFG_HACK
 	    prb->set_value(2, "padding"); // PADDING
 #endif
-	    W_DO(branch_man->add_tuple(_pssm, prb));
+	    W_DO(branch_man->add_tuple(prb));
 	}
 	TRACE( TRACE_STATISTICS, "Loaded %d branches\n", ppin._sf);
 
@@ -410,7 +408,7 @@ w_rc_t ShoreTPCBEnv::xct_populate_db(const int /* xct_id */,
 #ifdef CFG_HACK
 	    prt->set_value(3, "padding"); // PADDING
 #endif
-	    W_DO(teller_man->add_tuple(_pssm, prt));
+	    W_DO(teller_man->add_tuple(prt));
 	}
 	TRACE( TRACE_STATISTICS, "Loaded %d tellers\n",
 	       ppin._sf*TPCB_TELLERS_PER_BRANCH);
@@ -425,7 +423,7 @@ w_rc_t ShoreTPCBEnv::xct_populate_db(const int /* xct_id */,
 #ifdef CFG_HACK
 	    pracct->set_value(3, "padding"); // PADDING
 #endif
-	    W_DO(account_man->add_tuple(_pssm, pracct));
+	    W_DO(account_man->add_tuple(pracct));
 	}
     }
     // The database loader which calls this xct does not use the xct wrapper,
@@ -458,7 +456,6 @@ w_rc_t ShoreTPCBEnv::xct_mbench_insert_only(const int /* xct_id */,
 					    mbench_insert_only_input_t& mioin)
 {
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 
@@ -482,7 +479,7 @@ w_rc_t ShoreTPCBEnv::xct_mbench_insert_only(const int /* xct_id */,
 #ifdef CFG_HACK
     pracct->set_value(3, "padding");
 #endif
-    W_DO(account_man->add_tuple(_pssm, pracct));
+    W_DO(account_man->add_tuple(pracct));
 
 #ifdef PRINT_TRX_RESULTS
     // at the end of the transaction
@@ -507,7 +504,6 @@ w_rc_t ShoreTPCBEnv::xct_mbench_delete_only(const int /* xct_id */,
 					    mbench_delete_only_input_t& mdoin)
 {
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 
@@ -525,7 +521,7 @@ w_rc_t ShoreTPCBEnv::xct_mbench_delete_only(const int /* xct_id */,
     pracct->_rep = &areprow;
 
     // 1. delete a tupple from accounts
-    W_DO(account_man->a_delete_by_index(_pssm, pracct, mdoin.a_id,
+    W_DO(account_man->a_delete_by_index(pracct, mdoin.a_id,
 					  mdoin.b_id, mdoin.balance));
 
 #ifdef PRINT_TRX_RESULTS
@@ -551,7 +547,6 @@ w_rc_t ShoreTPCBEnv::xct_mbench_probe_only(const int /* xct_id */,
 					   mbench_probe_only_input_t& mpoin)
 {
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 
@@ -569,7 +564,7 @@ w_rc_t ShoreTPCBEnv::xct_mbench_probe_only(const int /* xct_id */,
     pracct->_rep = &areprow;
 
     // 1. retrieve a tupple from accounts
-    w_rc_t e = account_man->a_index_probe(_pssm, pracct, mpoin.a_id,
+    w_rc_t e = account_man->a_index_probe(pracct, mpoin.a_id,
 					    mpoin.b_id, mpoin.balance);
     if (e.is_error() && (e.err_num() != se_TUPLE_NOT_FOUND)) {
 	W_DO(e);
@@ -593,7 +588,6 @@ w_rc_t ShoreTPCBEnv::xct_mbench_insert_delete(const int /* xct_id */,
     w_rc_t e = RCOK;
 
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 
@@ -616,11 +610,11 @@ w_rc_t ShoreTPCBEnv::xct_mbench_insert_delete(const int /* xct_id */,
 	prb->set_value(0, midin.b_id);
 	prb->set_value(1, 0.0);
 	prb->set_value(2, "padding");
-	e = branch_man->add_tuple(_pssm, prb);
+	e = branch_man->add_tuple(prb);
 	if (e.is_error()) { goto done; }
 
 	// 2. delete a tupple from branches
-	e = branch_man->delete_tuple(_pssm, prb);
+	e = branch_man->delete_tuple(prb);
 	if (e.is_error()) { goto done; }
 
     } // goto
@@ -652,7 +646,6 @@ w_rc_t ShoreTPCBEnv::xct_mbench_insert_probe(const int /* xct_id */,
     w_rc_t e = RCOK;
 
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 
@@ -675,11 +668,11 @@ w_rc_t ShoreTPCBEnv::xct_mbench_insert_probe(const int /* xct_id */,
 	prb->set_value(0, mipin.b_id);
 	prb->set_value(1, 0.0);
 	prb->set_value(2, "padding");
-	e = branch_man->add_tuple(_pssm, prb);
+	e = branch_man->add_tuple(prb);
 	if (e.is_error()) { goto done; }
 
 	// 2. retrive the inserted tupple from branches
-	e = branch_man->b_index_probe(_pssm, prb, mipin.b_id);
+	e = branch_man->b_index_probe(prb, mipin.b_id);
 	if (e.is_error()) { goto done; }
 
     } // goto
@@ -711,7 +704,6 @@ w_rc_t ShoreTPCBEnv::xct_mbench_delete_probe(const int /* xct_id */,
     w_rc_t e = RCOK;
 
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 
@@ -731,11 +723,11 @@ w_rc_t ShoreTPCBEnv::xct_mbench_delete_probe(const int /* xct_id */,
     { // make gotos safe
 
 	// 1. retrive a tupple from branches
-	e = branch_man->b_index_probe(_pssm, prb, mdpin.b_id);
+	e = branch_man->b_index_probe(prb, mdpin.b_id);
 	if (e.is_error()) { goto done; }
 
 	// 2. delete a tupple from branches
-	e = branch_man->delete_tuple(_pssm, prb);
+	e = branch_man->delete_tuple(prb);
 	if (e.is_error()) { goto done; }
 
     } // goto
@@ -767,7 +759,6 @@ w_rc_t ShoreTPCBEnv::xct_mbench_mix(const int /* xct_id */,
     w_rc_t e = RCOK;
 
     // ensure a valid environment
-    assert (_pssm);
     assert (_initialized);
     assert (_loaded);
 
@@ -790,15 +781,15 @@ w_rc_t ShoreTPCBEnv::xct_mbench_mix(const int /* xct_id */,
 	prb->set_value(0, mmin.b_id);
 	prb->set_value(1, 0.0);
 	prb->set_value(2, "padding");
-	e = branch_man->add_tuple(_pssm, prb);
+	e = branch_man->add_tuple(prb);
 	if (e.is_error()) { goto done; }
 
 	// 2. retrive the inserted tupple from branches
-	e = branch_man->b_index_probe(_pssm, prb, mmin.b_id);
+	e = branch_man->b_index_probe(prb, mmin.b_id);
 	if (e.is_error()) { goto done; }
 
 	// 3. delete a tupple from branches
-	e = branch_man->delete_tuple(_pssm, prb);
+	e = branch_man->delete_tuple(prb);
 	if (e.is_error()) { goto done; }
 
     } // goto

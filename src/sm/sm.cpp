@@ -109,99 +109,15 @@ chkpt_m* smlevel_0::chkpt = 0;
 
 restart_m* smlevel_0::recovery = 0;
 
-ss_m* smlevel_top::SSM = 0;
-
-/*
- *  Class ss_m code
- */
-
-/*
- *  Order is important!!
- */
-int ss_m::_instance_cnt = 0;
 sm_options ss_m::_options;
 
-
-static queue_based_block_lock_t ssm_once_mutex;
-ss_m::ss_m(const sm_options &options)
+void ss_m::startup(const sm_options &options)
 {
     _options = options;
 
-    // Start the store during ss_m constructor if caller is asking for it
-    bool started = startup();
-    // If error encountered, raise fatal error if it was not raised already
-    if (!started)
-        W_FATAL_MSG(eINTERNAL, << "Failed to start the store from ss_m constructor");
-}
-
-bool ss_m::startup()
-{
-    CRITICAL_SECTION(cs, ssm_once_mutex);
-    if (0 == _instance_cnt)
-    {
-        // Start the store if it is not running currently
-        // Caller can start and stop the store independent of construct and destory
-        // the ss_m object.
-
-        // Note: before each startup() call, including the initial one from ssm
-        //          constructor choicen (default setting currently), caller can
-        //          optionally clear the log files and data files if a clean start is
-        //          required (no recovery in this case).
-        //          If the log files and data files are intact from previous runs,
-        //          either normal or crash shutdowns, the startup() call will go
-        //          through the recovery logic when starting up the store.
-        //          After the store started, caller can call 'format_dev', 'mount_dev',
-        //          'generate_new_lvid', 'and create_vol' if caller would like to use
-        //          new devics and volumes for operations in the new run.
-
-        _construct_once();
-        return true;
-    }
-    // Store is already running, cannot have multiple instances running concurrently
-    return false;
-}
-
-bool ss_m::shutdown()
-{
-    CRITICAL_SECTION(cs, ssm_once_mutex);
-    if (0 < _instance_cnt)
-    {
-        // Stop the store if it is running currently,
-        // do not destroy the ss_m object, caller can start the store again using
-        // the same ss_m object, therefore all the option setting remain the same
-
-        // Note: If caller would like to use the simulated 'crash' shutdown logic,
-        //          caller must call set_shutdown_flag(false) to set the crash
-        //          shutdown flag before the shutdown() call.
-        //          The simulated crash shutdown flag would be reset in every
-        //          startup() call.
-
-        // This is a force shutdown, meaning:
-        // Clean shutdown - abort all active in-flight transactions, flush buffer pool
-        //                            take a checkpoint which would record the mounted vol
-        //                            then destroy all the managers and free memory
-        // Dirty shutdown (false == shutdown_clean) - destroy all active in-flight
-        //                            transactions without aborting, then destroy all the managers
-        //                            and free memory.  No flush and no checkpoint
-
-        _destruct_once();
-        return true;
-    }
-    // If the store is not running currently, no-op
-    return true;
-}
-
-void
-ss_m::_construct_once()
-{
     stopwatch_t timer;
 
     // smthread_t::init_fingerprint_map();
-
-    if (_instance_cnt++)  {
-        cerr << "ss_m cannot be instantiated more than once" << endl;
-        W_FATAL_MSG(eINTERNAL, << "instantiating sm twice");
-    }
 
     w_assert1(page_sz >= 1024);
 
@@ -287,8 +203,6 @@ ss_m::_construct_once()
         W_FATAL(eOUTOFMEMORY);
     }
 
-    SSM = this;
-
     smthread_t::mark_pin_count();
 
     do_prefetch = _options.get_bool_option("sm_prefetch", false);
@@ -328,29 +242,8 @@ ss_m::_construct_once()
     ERROUT(<< "[" << timer.time_ms() << "] Finished SM initialization");
 }
 
-ss_m::~ss_m()
+void ss_m::shutdown()
 {
-    // This looks like a candidate for pthread_once(), but then smsh
-    // would not be able to
-    // do multiple startups and shutdowns in one process, alas.
-    CRITICAL_SECTION(cs, ssm_once_mutex);
-
-    if (0 < _instance_cnt)
-        _destruct_once();
-}
-
-void
-ss_m::_destruct_once()
-{
-    --_instance_cnt;
-
-    if (_instance_cnt)  {
-        cerr << "ss_m::~ss_m() : \n"
-            << "\twarning --- destructor called more than once\n"
-            << "\tignored" << endl;
-        return;
-    }
-
     // CS TODO: get rid of this shutting_down flag, or at least use proper fences.
     // Set shutting_down so that when we disable bg flushing, if the
     // log flush daemon is running, it won't just try to re-activate it.
