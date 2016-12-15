@@ -1,6 +1,8 @@
 #ifndef LOGREC_SUPPORT_H
 #define LOGREC_SUPPORT_H
 
+#include "lock.h"
+
 /**
  * Classes used to store structured log record data used by certain
  * log record types.

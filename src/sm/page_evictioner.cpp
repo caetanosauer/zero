@@ -4,6 +4,11 @@
 #include "log_core.h"
 #include "btree_page_h.h"
 
+// Template definitions
+#include "bf_hashtable.cpp"
+
+constexpr unsigned MAX_ROUNDS = 1000;
+
 page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_options& options)
     :
     worker_thread_t(options.get_int_option("sm_evictioner_interval_millisec", 1000)),
