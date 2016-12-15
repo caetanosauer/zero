@@ -280,24 +280,9 @@ void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop, bool no_db_mode)
             // insideChkpt = true;
             break;
 
-            // CS TODO: why do we need this? Isn't it related to 2PC?
-            // case logrec_t::t_xct_freeing_space:
         case logrec_t::t_xct_end:
         case logrec_t::t_xct_abort:
             mark_xct_ended(r.tid());
-            break;
-
-        case logrec_t::t_xct_end_group:
-            {
-                // CS TODO: is this type of group commit still used?
-                w_assert0(false);
-                const xct_list_t* list = (xct_list_t*) r.data();
-                uint listlen = list->count;
-                for(uint i=0; i<listlen; i++) {
-                    tid_t tid = list->xrec[i].tid;
-                    mark_xct_ended(tid);
-                }
-            }
             break;
 
         case logrec_t::t_page_write:

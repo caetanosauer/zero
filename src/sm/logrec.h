@@ -161,9 +161,9 @@ public:
 	t_chkpt_end = 9,
 	t_add_backup = 10,
 	t_xct_abort = 11,
-	t_xct_freeing_space = 12,
+	// t_xct_freeing_space = 12,
 	t_xct_end = 13,
-	t_xct_end_group = 14,
+	// t_xct_end_group = 14,
 	t_xct_latency_dump = 15,
 	t_alloc_page = 16,
 	t_dealloc_page = 17,
@@ -689,9 +689,8 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 
 	case t_compensate : return t_logical;
 	case t_xct_abort : return t_logical;
-	case t_xct_freeing_space : return t_logical;
 	case t_xct_end : return t_logical;
-	case t_xct_end_group : return t_logical;
+	case t_add_backup : return t_logical;
 
 	case t_alloc_page : return t_redo|t_single_sys_xct;
 	case t_stnode_format : return t_redo|t_single_sys_xct;

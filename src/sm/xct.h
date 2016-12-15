@@ -207,7 +207,6 @@ public:
         //-- from xct.h ----------------------------------------------------
         tid_t                  _tid;
         int          _timeout; // default timeout value for lock reqs
-        bool                   _warn_on;
         xct_lock_info_t*       _lock_info;
         lil_private_table*     _lil_lock_info;
 
@@ -230,7 +229,6 @@ protected:
     xct_core* _core;
 
 protected:
-    enum commit_t { t_normal = 0, t_lazy = 1, t_chain = 2, t_group = 4 };
 
     enum loser_xct_state_t {
                  loser_false = 0x0,      // Not a loser transaction
@@ -242,9 +240,6 @@ protected:
 
 /**\cond skip */
 public:
-    static
-    rc_t                      group_commit(const xct_t *list[], int number);
-
     rc_t                      commit_free_locks(bool read_lock_only = false, lsn_t commit_lsn = lsn_t::null);
     rc_t                      early_lock_release();
 
@@ -306,10 +301,8 @@ public:
                                 }
     const sm_stats_info_t&      const_stats_ref() { return *__stats; }
     static rc_t commit(bool lazy = false, lsn_t* plastlsn=NULL);
-    rc_t                        commit_as_group_member();
     rc_t                        rollback(const lsn_t &save_pt);
     rc_t                        save_point(lsn_t& lsn);
-    rc_t                        chain(bool lazy = false);
     static rc_t abort(bool save_stats = false);
 
     // used by restart.cpp, some logrecs
@@ -356,33 +349,9 @@ public:
     void                        compensate_undo(const lsn_t&);
 /**\endcond skip */
 
-    // For handling log-space warnings
-    // If you've warned wrt a tx once, and the server doesn't
-    // choose to abort that victim, you don't want every
-    // ssm prologue to warn thereafter. This allows the
-    // callback function to turn off the warnings for the (non-)victim.
-    void                         log_warn_disable();
-    void                         log_warn_resume();
-    bool                         log_warn_is_on() const;
-
 public:
     //        logging functions
     rc_t                        update_last_logrec(logrec_t* l, lsn_t lsn);
-
-    //
-    //        Used by I/O layer
-    //
-    void                        AddStoreToFree(const StoreID& stid);
-    void                        AddLoadStore(const StoreID& stid);
-    //        Used by vol.cpp
-    void                        set_alloced() { }
-
-protected:
-    /////////////////////////////////////////////////////////////////
-    // the following is put here because smthread
-    // doesn't know about the structures
-    // and we have changed these to be a per-thread structures.
-    static lockid_t*            new_lock_hierarchy();
 
 public: // not quite public thing.. but convenient for experiments
     xct_lock_info_t*             lock_info() const;
@@ -398,22 +367,6 @@ public:
     static void                  assert_xlist_mutex_not_mine();
     static void                  assert_xlist_mutex_is_mine();
     static bool                  xlist_mutex_is_mine();
-
-
-    /* "poisons" the transaction so cannot block on locks (or remain
-       blocked if already so), instead aborting the offending lock
-       request with eDEADLOCK. We use eDEADLOCK instead of
-       eLOCKTIMEOUT because all transactions must expect the former
-       and must abort in response; transactions which specified
-       WAIT_FOREVER won't be expecting timeouts, and the SM uses
-       timeouts (WAIT_IMMEDIATE) as internal signals which do not
-       usually trigger a transaction abort.
-
-       chkpt::take uses this to ensure timely and deadlock-free
-       completion/termination of transactions which would prevent a
-       checkpoint from freeing up needed log space.
-     */
-    void                         force_nonblocking();
 
 
 /////////////////////////////////////////////////////////////////
@@ -435,14 +388,7 @@ private:
     lockid_t*                    __saved_lockid_t;
 
     // NB: must replicate because _xlist keys off it...
-    // NB: can't be const because we might chain...
     tid_t                        _tid;
-
-    /**
-     * number of previously committed xcts on this thread as a chain.
-     * If 0, there is no chained previous xct.
-     */
-    uint32_t                     _xct_chain_len;
 
     /**
      * \brief The count of consecutive SSXs conveyed by this transaction object.
@@ -473,12 +419,6 @@ private:
 
      /** whether this transaction will have at most one xlog entry*/
     bool                         _single_log_sys_xct;
-
-    /**
-     * whether to defer the logging and applying of the change made
-     * by single-log system transaxction (SSX). Experimental.
-     */
-    bool                         _deferred_ssx;
 
     /** whether in-query verification is on. */
     bool                         _inquery_verify;
@@ -576,7 +516,7 @@ private:
                                     bool                 reset);
 
     w_rc_t                     _sync_logbuf(bool block=true, bool signal=true);
-    void                       _teardown(bool is_chaining);
+    void                       _teardown();
 
 public:
     /**
@@ -645,11 +585,6 @@ protected: // all data members protected
 
     bool                         _rolling_back;// true if aborting OR
 
-    bool                         should_consume_rollback_resv(int t) const;
-    bool                         should_reserve_for_rollback(int t)
-                                 const {
-                                    return  ! should_consume_rollback_resv(t);
-                                 }
 private:
     lintel::Atomic<int> _in_compensated_op; // in the midst of a compensated operation
                                             // use an int because they can be nested.
@@ -673,7 +608,6 @@ public:
     tid_t                       tid() const {
                                     w_assert1(_core == NULL || _tid == _core->_tid);
                                     return _tid; }
-    uint32_t                    get_xct_chain_len() const { return _xct_chain_len;}
     uint32_t&                   ssx_chain_len() { return _ssx_chain_len;}
 
     const lsn_t&                get_read_watermark() const { return _read_watermark; }

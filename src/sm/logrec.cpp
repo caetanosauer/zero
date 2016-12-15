@@ -127,12 +127,8 @@ logrec_t::get_type_str(kind_t type)
 		return "add_backup";
 	case t_xct_abort :
 		return "xct_abort";
-	case t_xct_freeing_space :
-		return "xct_freeing_space";
 	case t_xct_end :
 		return "xct_end";
-	case t_xct_end_group :
-		return "xct_end_group";
 	case t_xct_latency_dump :
 		return "xct_latency_dump";
 	case t_alloc_page :
@@ -308,13 +304,7 @@ void logrec_t::redo(PagePtr page)
 	case t_xct_abort :
 		W_FATAL(eINTERNAL);
 		break;
-	case t_xct_freeing_space :
-		W_FATAL(eINTERNAL);
-		break;
 	case t_xct_end :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_xct_end_group :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_xct_latency_dump :
@@ -495,13 +485,7 @@ void logrec_t::undo(PagePtr page)
 	case t_xct_abort :
 		W_FATAL(eINTERNAL);
 		break;
-	case t_xct_freeing_space :
-		W_FATAL(eINTERNAL);
-		break;
 	case t_xct_end :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_xct_end_group :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_xct_latency_dump :
@@ -624,32 +608,6 @@ logrec_t::corrupt()
     memset(start_of_corruption, 0, bytes_to_corrupt);
 }
 
-/*********************************************************************
- *
- *  xct_freeing_space
- *
- *  Status Log to mark the end of transaction and the beginning
- *  of space recovery.
- *  Synchronous for commit. Async for abort.
- *
- *********************************************************************/
-void xct_freeing_space_log::construct()
-{
-}
-
-
-/*********************************************************************
- *
- *  xct_end_group_log
- *
- *  Status Log to mark the end of transaction and space recovery
- *  for a group of transactions.
- *
- *********************************************************************/
-void xct_end_group_log::construct(const xct_t *list[], int listlen)
-{
-    set_size((new (_data) xct_list_t(list, listlen))->size());
-}
 /*********************************************************************
  *
  *  xct_end_log

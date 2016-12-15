@@ -289,7 +289,6 @@ void LogConsumer::initLogScanner(LogScanner* logScanner)
     logScanner->setIgnore(logrec_t::t_chkpt_restore_tab);
     logScanner->setIgnore(logrec_t::t_xct_abort);
     logScanner->setIgnore(logrec_t::t_xct_end);
-    logScanner->setIgnore(logrec_t::t_xct_freeing_space);
     logScanner->setIgnore(logrec_t::t_restore_begin);
     logScanner->setIgnore(logrec_t::t_restore_segment);
     logScanner->setIgnore(logrec_t::t_restore_end);

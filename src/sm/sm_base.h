@@ -363,10 +363,10 @@ public:
                                            // because it is using the standard rollback logic
                                            // for loser txn, check the _loser_xct flag
                                            // in xct_t
-                        xct_chaining = 0x3,
+                        // xct_chaining = 0x3,
                         xct_committing = 0x4,
                         xct_aborting = 0x5,  // normal transaction abort
-                        xct_freeing_space = 0x6,
+                        // xct_freeing_space = 0x6,
                         xct_ended = 0x7
     };
 

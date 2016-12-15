@@ -100,19 +100,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     void construct ();
     };
 
-    struct xct_freeing_space_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_xct_freeing_space;
-    void construct ();
-    };
-
     struct xct_end_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_xct_end;
     void construct ();
-    };
-
-    struct xct_end_group_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_xct_end_group;
-    void construct (const xct_t** l, int llen);
     };
 
     struct xct_latency_dump_log : public logrec_t {
