@@ -95,18 +95,20 @@ bf_idx page_evictioner_base::pick_victim()
      */
 
      bf_idx idx = _current_frame;
+     unsigned rounds = 0;
      while(true) {
 
-        if(should_exit()) return 0; // in bf_tree.h, 0 is never used, means null
+        if (should_exit()) return 0; // in bf_tree.h, 0 is never used, means null
 
-        if(idx == _bufferpool->_block_cnt) {
-            DBG3(<< "Eviction did a full round");
-            idx = 1;
-        }
+        if (idx == _bufferpool->_block_cnt) { idx = 1; }
 
         if (idx == _current_frame - 1) {
             // We iterate over all pages and no victim was found.
+            DBG3(<< "Eviction did a full round");
             _bufferpool->wakeup_cleaner(false);
+            if (rounds++ == MAX_ROUNDS) {
+                W_FATAL_MSG(fcINTERNAL, << "Eviction got stuck!");
+            }
         }
 
         // CS TODO -- why do we latch CB manually instead of simply fixing
