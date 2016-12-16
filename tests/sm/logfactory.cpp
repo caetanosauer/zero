@@ -39,7 +39,7 @@ bool LogFactory::next(void* addr) {
 
     lr->header._type = stats.nextType();
     lr->header._len = stats.nextLength(lr->header._type);
-    lr->header._cat = fake_logrec_t::t_status;
+    lr->header._flags = 0;
     if(sorted) {
         lr->header._pid = nextSorted();
     }

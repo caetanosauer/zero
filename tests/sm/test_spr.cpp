@@ -11,7 +11,7 @@
 #include "sm_base.h"
 
 #include <vector>
-
+#include <fstream>
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -25,12 +25,12 @@ btree_test_env *test_env;
  */
 
 w_rc_t flush_and_evict(ss_m* ssm) {
-    smlevel_0::bf->get_cleaner()->wakeup(true);
-    // also, evict all to update EMLSN
-    uint32_t evicted_count, unswizzled_count;
-    W_DO(ssm->bf->evict_blocks(evicted_count, unswizzled_count, EVICT_COMPLETE));
-    // then flush it, this time just for root node
-    smlevel_0::bf->get_cleaner()->wakeup(true);
+    smlevel_0::bf->wakeup_cleaner(true, 1);
+    // restart buffer manager to evict all pages
+    // WARNING: no threads should be accessing it now
+    smlevel_0::bf->shutdown();
+    delete smlevel_0::bf;
+    smlevel_0::bf = new bf_tree_m(ss_m::get_options());
     return RCOK;
 }
 
@@ -61,7 +61,7 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, StoreID &stid, PageID
     }
     W_DO(ssm->commit_xct());
     W_DO(x_btree_verify(ssm, stid));
-    smlevel_0::bf->get_cleaner()->wakeup(true);
+    smlevel_0::bf->wakeup_cleaner(true, 1);
 
     {
         btree_page_h root_p;

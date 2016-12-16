@@ -359,7 +359,7 @@ bool verification_context::is_bitmap_clean () const
 rc_t btree_impl::_ux_verify_volume(
     int hash_bits, verify_volume_result &result)
 {
-    smlevel_0::bf->get_cleaner()->wakeup(true);
+    smlevel_0::bf->wakeup_cleaner(true, 1);
     vol_t *vol = ss_m::vol;
     w_assert1(vol);
     generic_page buf;
@@ -376,6 +376,8 @@ rc_t btree_impl::_ux_verify_volume(
         page.fix_nonbufferpool_page(&buf);
         if (page.tag() == t_btree_p && !page.is_to_be_deleted()) {
             verification_context *context = result.get_or_create_context(page.root(), hash_bits);
+            w_assert0(context);
+            w_assert0(result.get_context(page.root()));
             W_DO (_ux_verify_feed_page (page, *context));
 
             if (page.pid() == page.root()) {
