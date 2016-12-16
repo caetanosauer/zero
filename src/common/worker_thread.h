@@ -38,9 +38,9 @@ public:
      * If round <= rounds_completed, just wait for a notify instead of
      * whole rounds.
      */
-    void wait_for_round(unsigned long round = 0);
+    void wait_for_round(long round = 0);
 
-    unsigned long get_rounds_completed() const { return rounds_completed; };
+    long get_rounds_completed() const { return rounds_completed; };
     bool is_busy() const { return worker_busy; }
 
 protected:
@@ -84,7 +84,7 @@ private:
     /** whether this thread is currently busy (and not waiting for wakeup */
     bool worker_busy;
     /** number of do_work() rounds already completed by the worker */
-    unsigned long rounds_completed;
+    long rounds_completed;
 };
 
 #endif

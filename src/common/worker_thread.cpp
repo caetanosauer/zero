@@ -16,7 +16,7 @@ worker_thread_t::~worker_thread_t()
 
 void worker_thread_t::wakeup(bool wait, int rounds_to_wait)
 {
-    unsigned long this_round = 0;
+    long this_round = 0;
     {
         std::unique_lock<std::mutex> lck(cond_mutex);
 
@@ -36,7 +36,7 @@ void worker_thread_t::wakeup(bool wait, int rounds_to_wait)
     }
 }
 
-void worker_thread_t::wait_for_round(unsigned long round)
+void worker_thread_t::wait_for_round(long round)
 {
     std::unique_lock<std::mutex> lck(cond_mutex);
 

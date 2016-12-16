@@ -359,9 +359,6 @@ private:
      */
     bool   _is_active_idx (bf_idx idx) const;
 
-    /** Core implementation of evict_blocks(). */
-    w_rc_t _evict_blocks(EvictionContext &context);
-
     /**
      * Deletes the given block from this buffer pool. This method must be called when
      *  1. there is no concurrent accesses on the page (thus no latch)
