@@ -344,7 +344,7 @@ rc_t vol_t::sx_add_backup(const string& path, lsn_t backupLSN, bool redo)
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        Logger::log<add_backup_log>(path, backupLSN);
+        Logger::log_sys<add_backup_log>(path, backupLSN);
         W_DO(ssx.end_sys_xct(RCOK));
     }
 

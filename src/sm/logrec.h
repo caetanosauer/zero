@@ -685,13 +685,13 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_restore_segment : return t_system;
 	case t_restore_end : return t_system;
 	case t_xct_latency_dump : return t_system;
+	case t_add_backup : return t_system;
 
 	case t_compensate : return t_logical;
 	case t_xct_abort : return t_logical;
 	case t_xct_freeing_space : return t_logical;
 	case t_xct_end : return t_logical;
 	case t_xct_end_group : return t_logical;
-	case t_add_backup : return t_logical;
 
 	case t_alloc_page : return t_redo|t_single_sys_xct;
 	case t_stnode_format : return t_redo|t_single_sys_xct;
