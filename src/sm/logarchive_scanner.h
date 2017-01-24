@@ -55,6 +55,7 @@ public:
                 ArchiveIndex* index, size_t readSize = 0);
         ~RunScanner();
 
+        logrec_t* open();
         bool next(logrec_t*& lr);
 
         friend std::ostream& operator<< (std::ostream& os, const RunScanner& m);

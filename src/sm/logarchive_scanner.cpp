@@ -94,6 +94,33 @@ ArchiveScanner::RunScanner::~RunScanner()
     // delete[] buffer;
 }
 
+logrec_t* ArchiveScanner::RunScanner::open()
+{
+    logrec_t* lr = nullptr;
+    if (next(lr)) {
+        lsn_t lsn = lr->lsn();
+        PageID pid = lr->pid();
+        DBG(<< "Run scan opened on pid " << lr->pid() << " afer " << firstPID);
+
+        // advance index until firstPID is reached
+        if (pid < firstPID) {
+            bool hasNext = true;
+            while (hasNext && lr->pid() < firstPID) {
+                hasNext = next(lr);
+            }
+            if (hasNext) {
+                DBG(<< "Run scan advanced to pid " << lr->pid() << " afer " << firstPID);
+                pid = lr->pid();
+                lsn = lr->lsn();
+            }
+            else { return nullptr; }
+        }
+    }
+    else { return nullptr; }
+
+    return lr;
+}
+
 bool ArchiveScanner::RunScanner::nextBlock()
 {
     size_t blockSize = archIndex->getBlockSize();
@@ -149,33 +176,19 @@ std::ostream& operator<< (ostream& os,
 }
 
 ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
-    : active(true), runScan(runScan)
+    :  lr(nullptr), runScan(runScan)
 {
-    PageID startPID = runScan->firstPID;
     // bring scanner up to starting point
-    logrec_t* next = NULL;
-    if (runScan->next(next)) {
-        lr = next;
-        lsn = lr->lsn();
-        pid = lr->pid();
-        active = true;
-        DBG(<< "Run scan opened on pid " << lr->pid() << " afer " << startPID);
-
-        // advance index until startPID is reached
-        if (pid < startPID) {
-            bool hasNext = true;
-            while (hasNext && lr->pid() < startPID) {
-                hasNext = runScan->next(lr);
-            }
-            if (hasNext) {
-                DBG(<< "Run scan advanced to pid " << lr->pid() << " afer " << startPID);
-                pid = lr->pid();
-                lsn = lr->lsn();
-            }
-            else { active = false; }
-        }
+    logrec_t* first_lr = runScan->open();
+    if (!first_lr) {
+        active = false;
     }
-    else { active = false; }
+    else {
+        active = true;
+        lr = first_lr;
+        pid = lr->pid();
+        lsn = lr->lsn();
+    }
 }
 
 void ArchiveScanner::MergeHeapEntry::moveToNext()
