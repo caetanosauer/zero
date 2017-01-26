@@ -414,6 +414,9 @@ log_core::log_core(const sm_options& options)
         _ticker = new ticker_thread_t(msec);
     }
 
+    _group_commit_size = options.get_int_option("sm_group_commit_size", 0);
+    _group_commit_timeout = options.get_int_option("sm_group_commit_timeout", 100);
+
     // Load fetch buffers
     int fetchbuf_partitions = options.get_int_option("sm_log_fetch_buf_partitions", 0);
     if (fetchbuf_partitions > 0) {
@@ -1149,14 +1152,24 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
     auto p = _storage->get_partition_for_flush(start_lsn, start1, end1,
             start2, end2);
 
+    long write_size = (end2 - start2) + (end1 - start1);
+
+    // Do not flush if write size is less than group commit size
+    if (write_size < _group_commit_size) {
+        // Only supress flush if timeout hasn't expired
+        if (_group_commit_timer.time_ms() < _group_commit_timeout) {
+            return _durable_lsn;
+        }
+    }
+
     // Flush the log buffer
     W_COERCE(p->flush(start_lsn, _buf, start1, end1, start2, end2));
-
-    long written = (end2 - start2) + (end1 - start1);
-    p->set_size(start_lsn.lo()+written);
+    p->set_size(start_lsn.lo() + write_size);
 
     _durable_lsn = end_lsn;
     _start = new_start;
+
+    _group_commit_timer.reset();
 
     return end_lsn;
 }

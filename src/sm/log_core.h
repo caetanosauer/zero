@@ -80,6 +80,7 @@ class flush_daemon_thread_t;
 #include "mcs_lock.h"
 #include "tatas.h"
 #include "log_storage.h"
+#include "stopwatch.h"
 
 class log_core
 {
@@ -287,6 +288,24 @@ protected:
      * \ingroup CARRAY
      */
     ConsolidationArray*  _carray;
+
+    /**
+     * Group commit: only flush log if the given amount of unflushed bytes is
+     * available in the log buffer. This makes sure that all log writes are of
+     * at least this size, unless the group commit timeout expires (see below).
+     */
+    size_t _group_commit_size;
+
+    /// Timer object to keep track of group commit timeout
+    stopwatch_t _group_commit_timer;
+
+    /**
+     * Group commit timeout in miliseconds. The flush daemon will wait until
+     * the size above is reached before flushing. However, if it waits this
+     * long, it will flush whatever is in the log buffer, regardless of the
+     * write size.
+     */
+    long _group_commit_timeout;
 
 }; // log_core
 

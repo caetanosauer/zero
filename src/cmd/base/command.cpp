@@ -161,6 +161,10 @@ void Command::setupSMOptions(po::options_description& options)
         "Maximum number of partitions maintained in log directory")
     ("sm_log_delete_old_partitions", po::value<bool>()->default_value(true),
         "Whether to delete old log partitions as cleaner and chkpt make progress")
+    ("sm_group_commit_size", po::value<int>()->default_value(0),
+        "Size in bytes of group commit window (higher -> larger log writes)")
+    ("sm_group_commit_timeout", po::value<int>()->default_value(100),
+        "Max time to wait (in ms) to fill up group commit window")
     ("sm_bufpoolsize", po::value<int>()->default_value(1024),
         "Size of buffer pool in MB")
     ("sm_fakeiodelay-enable", po::value<int>()->default_value(0),
