@@ -421,15 +421,15 @@ ss_m::_destruct_once()
     ERROUT(<< "Terminating log archiver");
     if (logArchiver) { logArchiver->shutdown(); }
 
+    ERROUT(<< "Terminating buffer manager");
+    bf->shutdown();
+    delete bf; bf = 0;
+
     ERROUT(<< "Terminating other services");
     lm->assert_empty(); // no locks should be left
     bt->destruct_once();
     delete bt; bt = 0; // btree manager
     delete lm; lm = 0;
-
-    ERROUT(<< "Terminating buffer manager");
-    bf->shutdown();
-    delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
 
     if(logArchiver) {
         delete logArchiver; // LL: decoupled cleaner in bf still needs archiver
