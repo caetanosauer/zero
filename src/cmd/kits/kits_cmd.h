@@ -16,6 +16,7 @@ public:
 
     virtual void setupOptions();
     virtual void run();
+    void crash(unsigned);
 	bool running();
 	ShoreEnv* getShoreEnv();
 

@@ -19,7 +19,7 @@ std::string http_headers::get_response(HandleKits &kits)
      ssOut << "content-length: " << nSize << std::endl;
      ssOut << std::endl;
 
-     ssOut.write((char*)data, nSize);
+     //ssOut.write((char*)data, nSize);
   }
   else if(url == "/")
   {
@@ -81,6 +81,10 @@ std::string http_headers::get_response(HandleKits &kits)
      ssOut << "content-length: " << json.length() << std::endl;
      ssOut << std::endl;
      ssOut <<   json;
+  }
+  else if(url == "/crash")
+  {
+      kits.crash();
   }
   else
   {
@@ -376,6 +380,13 @@ void HandleKits::runKits()
 
     t1 = new std::thread (counters, std::ref(countersJson), kits);
 };
+
+void HandleKits::crash()
+{
+    if (kits->running()) {
+        kits->crash(0);
+    }
+}
 
 string HandleKits::getStats()
 {

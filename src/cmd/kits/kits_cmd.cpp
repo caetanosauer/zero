@@ -176,12 +176,9 @@ void KitsCommand::run()
     }
 
     // Spawn crash thread if requested
-    CrashThread* crash_thread;
-    if (opt_crashDelay >= 0) {
-        crash_thread = new CrashThread(opt_crashDelay);
-        crash_thread->fork();
-    }
-
+    if (opt_crashDelay >= 0)
+        crash(opt_crashDelay);
+ 
     // Spawn failure thread if requested
     FailureThread* failure_thread = nullptr;
     if (opt_failDelay >= 0) {
@@ -202,6 +199,15 @@ void KitsCommand::run()
     }
     // crash_thread aborts the program, so we don't worry about joining it
 }
+
+void KitsCommand::crash(unsigned delay)
+{
+    CrashThread* crash_thread;
+    crash_thread = new CrashThread(delay);
+    crash_thread->fork();
+}
+
+
 
 void KitsCommand::init()
 {

@@ -26,6 +26,7 @@ private:
 public:
     HandleKits();
     void runKits();
+    void crash();
     string getStats();
     string aggLog();
     string getCounters();
