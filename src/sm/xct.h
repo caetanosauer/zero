@@ -81,6 +81,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <chrono>
 #include <set>
+#include <atomic>
 #include <AtomicCounter.hpp>
 #include "w_key.h"
 #include "lsn.h"
@@ -418,7 +419,8 @@ protected:
     static w_descend_list_t<xct_t, queue_based_lock_t, tid_t> _xlist;
     void                         put_in_order();
 
-    static tid_t                 _nxt_tid;// only safe for pre-emptive
+    // CS TODO: TID assignment could be thread-local
+    static std::atomic<tid_t>                 _nxt_tid;// only safe for pre-emptive
                                         // threads on 64-bit platforms
     static tid_t                 _oldest_tid;
 private:

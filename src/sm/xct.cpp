@@ -153,11 +153,9 @@ void  xct_t::release_xlist_mutex()
 /*********************************************************************
  *
  *  _nxt_tid is used to generate unique transaction id
- *  _1thread_name is the name of the mutex protecting the xct_t from
- *          multi-thread access
  *
  *********************************************************************/
-tid_t                                 xct_t::_nxt_tid = 0;
+std::atomic<tid_t> xct_t::_nxt_tid {0};
 
 /*********************************************************************
  *
@@ -313,6 +311,8 @@ xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
 {
     w_assert3(state() == xct_active);
     if (given_tid != 0 && _nxt_tid < given_tid) {
+        // CS: this should only happen during restart log analysis, which
+        // creates one transaction at a time (i.e., no concurrency)
         _nxt_tid = given_tid;
     }
 
@@ -344,6 +344,7 @@ xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
     }
     w_assert9(timeout_c() >= 0 || timeout_c() == timeout_t::WAIT_FOREVER);
 
+    // CS: acquires xlist mutex and adds thix xct to the list
     put_in_order();
 
     w_assert3(state() == xct_active);
@@ -720,7 +721,7 @@ xct_t::_teardown(bool is_chaining) {
 
     // find the new oldest xct
     xct_t* xd = _xlist.last();
-    _oldest_tid = xd ? xd->_tid : _nxt_tid;
+    _oldest_tid = xd ? xd->_tid : _nxt_tid.load();
     release_xlist_mutex();
 }
 
