@@ -307,6 +307,13 @@ protected:
      */
     long _group_commit_timeout;
 
+    /**
+     * Returns true iff the given log write size, under the current group
+     * commit policy, qualifies for a log flush. If false, flush daemon
+     * will not flush its buffer but wait for the next invocation.
+     */
+    bool _should_group_commit(long write_size);
+
 }; // log_core
 
 

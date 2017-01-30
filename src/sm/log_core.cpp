@@ -1047,6 +1047,19 @@ void log_core::flush_daemon()
         last_completed_flush_lsn=lsn) ;
 }
 
+bool log_core::_should_group_commit(long write_size)
+{
+    // Do not flush if write size is less than group commit size
+    if (write_size < _group_commit_size) {
+        // Only supress flush if timeout hasn't expired
+        if (_group_commit_timer.time_ms() < _group_commit_timeout) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 /**\brief Flush unflushed-portion of log buffer.
  * @param[in] old_mark Durable lsn from last flush. Flush records later than this.
  * \details
@@ -1065,7 +1078,7 @@ void log_core::flush_daemon()
 lsn_t log_core::flush_daemon_work(lsn_t old_mark)
 {
     lsn_t base_lsn_before, base_lsn_after;
-    long base, start1, end1, start2, end2;
+    long base, start1, end1, start2, end2, write_size;
     {
         CRITICAL_SECTION(cs, _flush_lock);
         base_lsn_before = _old_epoch.base_lsn;
@@ -1091,12 +1104,16 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
             if(start2 == end2) {
                 return old_mark;
             }
-            _cur_epoch.start = end2;
 
             start1 = start2; // fake start1 so the start_lsn calc below works
             end1 = start2;
 
+            // CS TODO: what is the purpose of old_mark? Do we ever use it?
+            write_size = (end2 - start2) + (end1 - start1);
+            if (!_should_group_commit(write_size)) { return old_mark; }
+
             base_lsn_before = base_lsn_after;
+            _cur_epoch.start = end2;
         }
         else if(base_lsn_before.file() == base_lsn_after.file()) {
             // wrapped within partition -- flush both
@@ -1105,12 +1122,15 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
             // it won't matter. Since insert already did the memcpy,
             // we are safe and can flush the entire amount.
             end2 = _cur_epoch.end;
-            _cur_epoch.start = end2;
 
             start1 = _old_epoch.start;
             end1 = _old_epoch.end;
-            _old_epoch.start = end1;
 
+            write_size = (end2 - start2) + (end1 - start1);
+            if (!_should_group_commit(write_size)) { return old_mark; }
+
+            _old_epoch.start = end1;
+            _cur_epoch.start = end2;
             w_assert1(base_lsn_before + segsize() == base_lsn_after);
         }
         else {
@@ -1152,18 +1172,9 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
     auto p = _storage->get_partition_for_flush(start_lsn, start1, end1,
             start2, end2);
 
-    long write_size = (end2 - start2) + (end1 - start1);
-
-    // Do not flush if write size is less than group commit size
-    if (write_size < _group_commit_size) {
-        // Only supress flush if timeout hasn't expired
-        if (_group_commit_timer.time_ms() < _group_commit_timeout) {
-            return _durable_lsn;
-        }
-    }
-
     // Flush the log buffer
     W_COERCE(p->flush(start_lsn, _buf, start1, end1, start2, end2));
+    write_size = (end2 - start2) + (end1 - start1);
     p->set_size(start_lsn.lo() + write_size);
 
     _durable_lsn = end_lsn;
