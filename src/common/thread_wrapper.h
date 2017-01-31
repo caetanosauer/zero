@@ -6,6 +6,7 @@
 
 #include "w_rc.h"
 #include "tls.h"
+#include "latch.h"
 
 /*
  * The sole purpose of this class is to replace sthread_t with as little code impact as
@@ -44,6 +45,9 @@ public:
         after_run();
 
         tls_tricks::tls_manager::thread_fini();
+
+        // latch_t maintains some static data structures that must be deleted manually
+        latch_t::on_thread_destroy();
     }
 
     w_rc_t fork()

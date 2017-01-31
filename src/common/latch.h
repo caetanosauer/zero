@@ -151,6 +151,9 @@ public:
     latch_t();
     ~latch_t();
 
+    /// Destroy TLS structures
+    static void on_thread_destroy();
+
     // Dump latch info to the ostream. Not thread-safe.
     ostream&                print(ostream &) const;
 

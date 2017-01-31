@@ -318,20 +318,6 @@ public:
         (latch_holder_t *)(NULL) : &(*_it); }
 }; // holder_search
 
-/**\cond skip */
-// For debugging purposes, let's string together all the thread_local
-// lists so that we can print all the latches and their
-// holders.   smthread_t calls on_thread_init and on_thread_destroy.
-// #include <map>
-// typedef std::map<sthread_t*, latch_holder_t**> holder_list_list_t;
-// static holder_list_list_t holder_list_list;
-
-// It's not that this needs to be queue-based, but we want to avoid
-// pthreads API use directly as much as possible.
-// static queue_based_block_lock_t    holder_list_list_lock;
-/**\endcond skip */
-
-
 w_rc_t
 latch_t::latch_acquire(latch_mode_t mode, int timeout_in_ms)
 {
@@ -558,13 +544,24 @@ void latch_holder_t::print(ostream &o) const
 {
     o << "Holder " << latch_t::latch_mode_str[int(_mode)]
         << " cnt=" << _count
-    << " threadid/" << ::hex << _threadid
     << " latch:";
     if(_latch) {
         o  << *_latch << endl;
     } else {
         o  << "NULL" << endl;
     }
+}
+
+void latch_t::on_thread_destroy()
+{
+    w_assert3(!latch_holder_t::thread_local_holders);
+    latch_holder_t* freelist = latch_holder_t::thread_local_freelist;
+    while(freelist) {
+        latch_holder_t* node = freelist;
+        freelist = node->_next;
+        delete node;
+    }
+    latch_holder_t::thread_local_freelist = NULL;
 }
 
 // return the number of times the latch is held by this thread
@@ -614,60 +611,3 @@ void print_my_latches()
     holders_print all(latch_holder_t::thread_local_holders);
 }
 
-// void print_all_latches()
-// {
-// // Don't protect: this is for use in a debugger.
-// // It's absolutely dangerous to use in a running
-// // storage manager, since these lists will be
-// // munged frequently.
-//     int count=0;
-//     {
-//         holder_list_list_t::iterator  iter;
-//         for(iter= holder_list_list.begin();
-//              iter != holder_list_list.end();
-//              iter ++) count++;
-//     }
-//     holder_list_list_t::iterator  iter;
-//     cerr << "ALL " << count << " LATCHES {" << endl;
-//     for(iter= holder_list_list.begin();
-//          iter != holder_list_list.end(); iter ++)
-//     {
-//         DBG(<<"");
-//         sthread_t* who = iter->first;
-//         DBG(<<" who " << (void *)(who));
-//         latch_holder_t **whoslist = iter->second;
-//         DBG(<<" whoslist " << (void *)(whoslist));
-//         if(who) {
-//         cerr << "{ Thread id:" << ::dec << who->id
-//          << " @ sthread/" << ::hex << uint64_t(who)
-//          // << " @ pthread/" << ::hex << uint64_t(who->myself())
-//          << endl << "\t";
-//         } else {
-//         cerr << "{ empty }"
-//          << endl << "\t";
-//         }
-//         DBG(<<"");
-//         holders_print whose(*whoslist);
-//         cerr <<  "} " << endl << flush;
-//     }
-//     cerr <<  "}" << endl << flush ;
-// }
-
-
-// void print_latch_holders(latch_t* latch)
-// {
-//     holder_list_list_t::iterator  iter;
-//     for(iter = holder_list_list.begin();
-//          iter != holder_list_list.end(); ++iter)
-//     {
-//         latch_holder_t **whoslist = iter->second;
-//         holder_list holders(*iter->second);
-//         holder_list::iterator it=holders.begin();
-//         for(; it!=holders.end() && it->_latch;  ++it)
-//         {
-//             if (it->_latch == latch) {
-//                 (*whoslist)->print(cout);
-//             }
-//         }
-//     }
-// }
