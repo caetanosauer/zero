@@ -227,6 +227,7 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
             // in most cases, the pid is always swizzled or always non-swizzled, thus accurate.
             W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow_opaqueptr));
         }
+        w_assert0(pid_to_follow_opaqueptr != 0);
 
         bool should_try_ex = false;
         if (leaf_latch_mode == LATCH_EX) {
