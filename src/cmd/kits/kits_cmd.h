@@ -7,6 +7,8 @@
 class ShoreEnv;
 class sm_options;
 
+extern std::atomic<bool> stop_benchmark;
+
 class KitsCommand : public Command
 {
 	using Command::setupOptions;
@@ -18,7 +20,8 @@ public:
     virtual void run();
     void crash(unsigned);
 	bool running();
-	ShoreEnv* getShoreEnv();
+    void set_stop_benchmark(bool);
+    ShoreEnv* getShoreEnv();
 
 protected:
     ShoreEnv* shoreEnv;
@@ -30,6 +33,7 @@ protected:
     int opt_num_trxs;
     unsigned opt_duration;
     unsigned opt_log_volume;
+    bool opt_no_stop;
     int opt_num_threads;
     int opt_select_trx;
     int opt_queried_sf;
@@ -65,7 +69,7 @@ protected:
 
     bool runBenchAfterLoad()
     {
-        return opt_duration > 0 || opt_num_trxs > 0 || opt_log_volume > 0;
+        return opt_duration > 0 || opt_num_trxs > 0 || opt_log_volume > 0 || opt_no_stop == true;
     }
 
 private:

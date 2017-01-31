@@ -70,6 +70,11 @@ private:
     bool* flag;
 };
 
+void KitsCommand::set_stop_benchmark(bool stop)
+{
+    stop_benchmark = stop;
+}
+
 void KitsCommand::setupOptions()
 {
     setupSMOptions(options);
@@ -89,6 +94,10 @@ void KitsCommand::setupOptions()
         ("duration", po::value<unsigned>(&opt_duration)->default_value(0),
             "Run benchmark for the given number of seconds (overrides the \
             logVolume option)")
+        ("no_stop", po::value<bool>(&opt_no_stop)->default_value(false)
+            ->implicit_value(true),
+            "Run benchmark continuously until a crash occurs (overrides the \
+            duration option)")
         ("threads,t", po::value<int>(&opt_num_threads)->default_value(4),
             "Number of threads to execute benchmark with")
         ("select_trx,s", po::value<int>(&opt_select_trx)->default_value(0),
@@ -178,7 +187,7 @@ void KitsCommand::run()
     // Spawn crash thread if requested
     if (opt_crashDelay >= 0)
         crash(opt_crashDelay);
- 
+
     // Spawn failure thread if requested
     FailureThread* failure_thread = nullptr;
     if (opt_failDelay >= 0) {
@@ -287,7 +296,10 @@ void KitsCommand::createClients()
 
     mtype = MT_UNDEF;
     int trxsPerThread = 0;
-    if (opt_duration > 0) {
+    if (opt_no_stop == true) {
+        mtype = MT_NO_STOP;
+    }
+    else if (opt_duration > 0) {
         mtype = MT_TIME_DUR;
     }
     else if (opt_num_trxs > 0) {
@@ -297,6 +309,7 @@ void KitsCommand::createClients()
     else if (opt_log_volume > 0) {
         mtype = MT_LOG_VOL;
     }
+
 
     for (int i = 0; i < opt_num_threads; i++) {
         // create & fork testing threads
@@ -396,6 +409,10 @@ void KitsCommand::doWork()
             }
             last_log_tail = log_tail;
         }
+    }
+    else if (mtype == MT_NO_STOP) {
+        // keep running until variable is externally set to true
+        while(!stop_benchmark);
     }
 }
 
