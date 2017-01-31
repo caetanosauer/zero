@@ -1217,7 +1217,7 @@ ss_m::gather_xct_stats(sm_stats_info_t& _stats, bool reset)
 rc_t
 ss_m::gather_stats(sm_stats_info_t& _stats)
 {
-    class GatherSmthreadStats : public SmthreadFunc
+    class GatherSmthreadStats
     {
     public:
         GatherSmthreadStats(sm_stats_info_t &s) : _stats(s)
@@ -1225,9 +1225,9 @@ ss_m::gather_stats(sm_stats_info_t& _stats)
             new (&_stats) sm_stats_info_t; // clear the stats
             // by invoking the constructor.
         };
-        void operator()(const smthread_t& t)
+        void operator()(sm_stats_info_t& st)
         {
-            t.add_from_TL_stats(_stats);
+            _stats += st;
         }
         void compute() { _stats.compute(); }
     private:
@@ -1239,6 +1239,8 @@ ss_m::gather_stats(sm_stats_info_t& _stats)
     // CS TODO: new thread stats mechanism!
     // smthread_t::for_each_smthread(F);
     // F.compute();
+    smthread_t::for_each_thread_stats(F);
+    F.compute();
 
     // Now add in the global stats.
     // Global stats contain all the per-thread stats that were collected

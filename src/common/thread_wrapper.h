@@ -39,11 +39,13 @@ public:
         // With C++11 and the thread_local specifier, it should be much easier to perform this
         // type of static initialization;
         tls_tricks::tls_manager::thread_init();
+        smthread_t::add_me_to_thread_list();
 
         before_run();
         run();
         after_run();
 
+        smthread_t::remove_me_from_thread_list();
         tls_tricks::tls_manager::thread_fini();
 
         // latch_t maintains some static data structures that must be deleted manually

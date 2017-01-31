@@ -74,6 +74,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #endif
 #include <w_bitvector.h>
 
+#include <mutex>
+#include <memory>
+#include <list>
+
 #include "timeout.h"
 #include "latches.h"
 #include "logrec.h"
@@ -82,17 +86,6 @@ class xct_t;
 class lockid_t;
 
 class smthread_t;
-
-/**\brief Callback class use with smthread::for_each_smthread()
- * \details
- * Derive your per-smthread processing function (callback) from this.
- */
-class SmthreadFunc {
-public:
-    virtual ~SmthreadFunc();
-
-    virtual void operator()(const smthread_t& smthread) = 0;
-};
 
 
 /**\cond skip */
@@ -258,9 +251,20 @@ class smthread_t {
             QUEUE_EXT_QNODE_INITIALIZE(_me3);
             QUEUE_EXT_QNODE_INITIALIZE(_xlist_mutex_node);
 
-            create_TL_stats();
+            if (outer) {
+                _TL_stats = outer->_TL_stats;
+            }
+            else {
+                create_TL_stats();
+            }
         }
-        ~tcb_t() { destroy_TL_stats(); }
+
+        ~tcb_t()
+        {
+            if (_depth == 1) {
+                destroy_TL_stats();
+            }
+        }
     };
 
 public:
@@ -283,16 +287,6 @@ public:
     static void          init_fingerprint_map();
     /**\endcond skip */
 
-    /**\brief Iterator over all smthreads. Thread-safe and so use carefully.
-     * \details
-     * @param[in] f Callback function.
-     * For each smthread, this calls the callback function \a f.
-     * Because this grabs a lock on the list of all shore threads,
-     * whether or not they are smthreads, this prevents new threads
-     * from starting and old ones from finishing, so don't use with
-     * long-running functions.
-     */
-    static void            for_each_smthread(SmthreadFunc& f);
 
     /**\cond skip
      **\brief Attach this thread to the given transaction.
@@ -480,6 +474,66 @@ private:
 public:
     /** Tells how many transactions are nested. */
     static inline size_t get_tcb_depth() { return tcb()._depth; }
+
+private:
+
+    class GlobalThreadList {
+    public:
+        void add_me()
+        {
+            std::unique_lock<std::mutex> lck {_mutex};
+            _tcb_list.push_back(tcb_ptr());
+        }
+
+        void remove_me()
+        {
+            std::unique_lock<std::mutex> lck {_mutex};
+            auto iter = _tcb_list.begin();
+            while (iter != _tcb_list.end()) {
+                if (*iter == tcb_ptr()) {
+                    iter = _tcb_list.erase(iter);
+                }
+                else { iter++; }
+            }
+        }
+
+        template <typename F>
+        void for_each_stats(F& f)
+        {
+            std::unique_lock<std::mutex> lck {_mutex};
+            for (auto p : _tcb_list) {
+                f(p->TL_stats());
+            }
+        }
+
+    private:
+        std::list<tcb_t*> _tcb_list;
+        std::mutex _mutex;
+    };
+
+    static std::shared_ptr<GlobalThreadList> thread_list()
+    {
+        static auto ptr = std::make_shared<GlobalThreadList>();
+        return ptr;
+    }
+
+public:
+
+    static void add_me_to_thread_list()
+    {
+        thread_list()->add_me();
+    }
+
+    static void remove_me_from_thread_list()
+    {
+        thread_list()->remove_me();
+    }
+
+    template <typename F>
+    static void for_each_thread_stats(F& f)
+    {
+        thread_list()->for_each_stats(f);
+    }
 };
 
 inline xct_t* xct()

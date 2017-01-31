@@ -6,10 +6,6 @@
 #include "xct.h"
 #include "sm_base.h"
 
-SmthreadFunc::~SmthreadFunc()
-{
-}
-
 /*
  * Thread map that will contain OR of all the smthread thread maps.
  * This is so that we can determine if we have got too dense and have
