@@ -93,6 +93,9 @@ void KitsCommand::setupOptions()
             "Transaction code or mix identifier (0 = all trxs)")
         ("queried_sf,q", po::value<int>(&opt_queried_sf)->default_value(1),
             "Scale factor to which to restrict queries")
+        ("asyncCommit", po::value<bool>(&opt_asyncCommit)->default_value(false)
+            ->implicit_value(true),
+            "Whether to use asynchronous commit (non-durable) for Kits transactions")
         ("spread", po::value<bool>(&opt_spread)->default_value(true)
             ->implicit_value(true),
             "Attach each worker thread to a fixed core for improved concurrency")
@@ -394,6 +397,7 @@ void KitsCommand::initShoreEnv()
     shoreEnv->set_sf(opt_queried_sf);
     shoreEnv->set_qf(opt_queried_sf);
     shoreEnv->set_loaders(opt_num_threads);
+    shoreEnv->setAsynchCommit(opt_asyncCommit);
 
     shoreEnv->init();
     shoreEnv->set_clobber(opt_load);

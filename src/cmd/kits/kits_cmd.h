@@ -32,6 +32,7 @@ protected:
     bool opt_eager;
     bool opt_skew;
     bool opt_spread;
+    bool opt_asyncCommit;
     unsigned opt_warmup;
     int opt_crashDelay;
     int opt_failDelay;
