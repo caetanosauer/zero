@@ -206,6 +206,8 @@ void Command::setupSMOptions(po::options_description& options)
         "No-database mode, a.k.a. log-structured mode, a.k.a. extreme write elision: \
          DB file is written and all fetched pages are rebuilt \
          using single-page recovery from scratch")
+    ("sm_batch_warmup", po::value<bool>()->implicit_value(true)->default_value(false),
+        "Fetch whole segments at a time when warming up buffer in no-db mode")
     ("sm_restart_instant", po::value<bool>(),
         "Enable instant restart")
     ("sm_restart_log_based_redo", po::value<bool>(),

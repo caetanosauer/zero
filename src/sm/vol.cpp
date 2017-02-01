@@ -456,7 +456,12 @@ rc_t vol_t::read_page(PageID pnum, generic_page* const buf)
 
 rc_t vol_t::read_page_verify(PageID pid, generic_page* const buf, lsn_t emlsn)
 {
-    W_DO(read_many_pages(pid, buf, 1));
+    if (!_no_db_mode) {
+        W_DO(read_many_pages(pid, buf, 1));
+    }
+    else {
+        memset(buf, '\0', sizeof(generic_page));
+    }
 
     // check for more recent LSN in dirty page table
     lsn_t dirty_lsn = get_dirty_page_emlsn(pid);

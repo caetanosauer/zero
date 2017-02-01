@@ -104,7 +104,11 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     std::string replacement_policy =
         options.get_string_option("sm_bufferpool_replacement_policy", "clock");
 
+    // No-DB options
     _no_db_mode = options.get_bool_option("sm_no_db", false);
+    _batch_warmup = options.get_bool_option("sm_batch_warmup", true);
+    _batch_segment_size = options.get_int_option("sm_batch_segment_size", 128);
+    _warmup_done = false;
 
     _root_pages.fill(0);
 
@@ -302,6 +306,9 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
             }
         } // exit the scope to do the following out of the critical section
 
+        // no free frames -> warmup is done
+        set_warmup_done();
+
         // if the freelist was empty, let's evict some page.
         if (evict) {
             _evictioner->wakeup(true);
@@ -309,6 +316,15 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
         else { return RC(eBFFULL); }
     }
     return RCOK;
+}
+
+void bf_tree_m::set_warmup_done()
+{
+    // CS: no CC needed, threads can race on blind updates and visibility not an issue
+    if (!_warmup_done) {
+        _warmup_done = true;
+        _restore_coord = nullptr;
+    }
 }
 
 void bf_tree_m::_add_free_block(bf_idx idx)
@@ -319,6 +335,17 @@ void bf_tree_m::_add_free_block(bf_idx idx)
     ++_freelist_len;
     _freelist[idx] = FREELIST_HEAD;
     FREELIST_HEAD = idx;
+}
+
+void bf_tree_m::post_init()
+{
+    if (_batch_warmup) {
+        auto vol_pages = smlevel_0::vol->num_used_pages();
+        auto segcount = vol_pages  / _batch_segment_size
+            + (vol_pages % _batch_segment_size ? 1 : 0);
+        _restore_coord = std::make_shared<RestoreCoord>
+            (_batch_segment_size, segcount, SegmentRestorer::bf_restore);
+    }
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////
@@ -354,6 +381,13 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         page = &(_buffer[idx]);
 
         return RCOK;
+    }
+
+    // Wait for restore before attempting to fix anything
+    if (!virgin_page && _batch_warmup && !_warmup_done) {
+        // copy into local variable to avoid race condition with setting member to null
+        auto restore = _restore_coord;
+        if (restore) { restore->fetch(pid); }
     }
 
 #if W_DEBUG_LEVEL>0
@@ -437,6 +471,11 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                     return read_rc;
                 }
                 cb.init(pid, page->lsn);
+            }
+            else {
+                // initialize contents of virgin page
+                ::memset(page, 0, sizeof(generic_page));
+                page->pid = pid;
             }
 
             w_assert1(_is_active_idx(idx));

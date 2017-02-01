@@ -15,6 +15,7 @@
 #include <iosfwd>
 #include "page_cleaner.h"
 #include "page_evictioner.h"
+#include "restore.h"
 
 #include <array>
 
@@ -75,6 +76,7 @@ class bf_tree_m {
     friend class WarmupThread;
     friend class page_cleaner_decoupled;
     friend class page_evictioner_gclock;
+    friend class GenericPageIterator;
 
 public:
     /** constructs the buffer pool. */
@@ -82,6 +84,8 @@ public:
 
     /** destructs the buffer pool.  */
     ~bf_tree_m ();
+
+    void post_init();
 
     void shutdown();
 
@@ -382,6 +386,8 @@ private:
     w_rc_t _sx_update_child_emlsn(btree_page_h &parent,
                                   general_recordid_t child_slotid, lsn_t child_emlsn);
 
+    void set_warmup_done();
+
 private:
     /** count of blocks (pages) in this bufferpool. */
     bf_idx               _block_cnt;
@@ -425,6 +431,14 @@ private:
     bool _cleaner_decoupled;
 
     bool _no_db_mode;
+
+    bool _batch_warmup;
+    size_t _batch_segment_size;
+    bool _warmup_done;
+
+    using RestoreCoord = RestoreCoordinator<
+        std::function<decltype(SegmentRestorer::bf_restore)>>;
+    std::shared_ptr<RestoreCoord> _restore_coord;
 };
 
 /**
@@ -479,6 +493,77 @@ public:
 
     virtual void run();
     void fixChildren(btree_page_h& parent, size_t& fixed, size_t max);
+};
+
+class GenericPageIterator
+{
+public:
+    generic_page* operator*()
+    {
+        if (!_current || _current_pid >= _first + _count) { return nullptr; }
+        return _current;
+    }
+
+    GenericPageIterator& operator++()
+    {
+        if (!_current) { return *this; }
+
+        unfix_current();
+
+        _current_pid++;
+        if (_current_pid >= _first + _count) { return *this; }
+
+        fix_current();
+        return *this;
+    }
+
+    /// This essentially yields an "end" iterator
+    GenericPageIterator()
+        : _first(0), _count(0), _virgin(false), _current(nullptr),
+        _current_pid(0)
+    {
+    }
+
+    /// This essentially yields a "begin" iterator
+    GenericPageIterator(PageID first, PageID count, bool virgin)
+        : _first(first), _count(count), _virgin(virgin)
+    {
+        if (count > 0) {
+            _current_pid = _first;
+            fix_current();
+        }
+    }
+
+    bool operator==(GenericPageIterator& other)
+    {
+        if (!_current && !other._current) { return true; }
+        return other._current_pid == _current_pid && _current && other._current;
+    }
+
+    bool operator!=(GenericPageIterator& other)
+    {
+        return !(*this == other);
+    }
+
+private:
+    const PageID _first;
+    const PageID _count;
+    const bool _virgin;
+
+    generic_page* _current;
+    PageID _current_pid;
+
+    void fix_current()
+    {
+        W_COERCE(smlevel_0::bf->fix(nullptr, _current, _current_pid, LATCH_EX,
+                false, _virgin));
+    }
+
+    void unfix_current()
+    {
+        smlevel_0::bf->unfix(_current);
+        _current = nullptr;
+    }
 };
 
 // tiny macro to help swizzled-LRU and freelist access

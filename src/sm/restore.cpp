@@ -5,6 +5,7 @@
 #include "restore.h"
 #include "logarchiver.h"
 #include "log_core.h"
+#include "bf_tree.h"
 #include "vol.h"
 #include "sm_options.h"
 #include "backup_reader.h"
@@ -235,6 +236,58 @@ bool RestoreScheduler::next(PageID& next, unsigned thread_id, bool peek)
     if (next > lastUsedPid) { return false; }
 
     return true;
+}
+
+void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize)
+{
+    PageID first_pid = segment * segmentSize;
+    GenericPageIterator pbegin {first_pid, segmentSize, true /*virgin*/};
+    GenericPageIterator pend;
+
+    ArchiveScanner logScan {smlevel_0::logArchiver->getIndex()};
+    auto logiter = logScan.open(first_pid, 0, lsn_t::null, 0);
+
+    LogReplayer::replay(logiter, pbegin, pend);
+
+    logiter->close();
+    logScan.close(logiter);
+}
+
+template <class LogScan, class PageIter>
+void LogReplayer::replay(LogScan logs, PageIter pagesBegin, PageIter pagesEnd)
+{
+    fixable_page_h fixable;
+    auto page = pagesBegin;
+    logrec_t* lr;
+
+    lsn_t prev_lsn = lsn_t::null;
+    PageID prev_pid = 0;
+    unsigned replayed = 0;
+
+    while (logs->next(lr)) {
+        auto pid = lr->pid();
+        w_assert0(pid > prev_pid || (pid == prev_pid && lr->lsn() > prev_lsn));
+
+        while (page != pagesEnd && (*page)->pid < pid) {
+            ++page;
+        }
+        if (page == pagesEnd) { return; }
+
+        auto p = *page;
+
+        fixable.setup_for_restore(p);
+
+        if (lr->lsn() > fixable.get_page_lsn()) {
+            w_assert0(lr->page_prev_lsn() == lsn_t::null ||
+                    lr->page_prev_lsn() == p->lsn);
+
+            lr->redo(&fixable);
+        }
+
+        prev_pid = pid;
+        prev_lsn = lr->lsn();
+        replayed++;
+    }
 }
 
 // void RestoreScheduler::setSinglePass(bool singlePass)

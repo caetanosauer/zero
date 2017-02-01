@@ -189,7 +189,7 @@ bool fixable_page_h::upgrade_latch_conditional(latch_mode_t mode) {
 
 void fixable_page_h::setup_for_restore(generic_page* pp)
 {
-    w_assert1(!is_bufferpool_managed());
+    // w_assert1(!is_bufferpool_managed());
 
     // make assertions happy, even though this is not a buffer pool page
     _mode = LATCH_EX;

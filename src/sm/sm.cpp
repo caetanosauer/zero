@@ -335,6 +335,8 @@ ss_m::_construct_once()
         // }
     }
 
+    bf->post_init();
+
     ERROUT(<< "[" << timer.time_ms() << "] Finished SM initialization");
 }
 

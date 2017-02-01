@@ -10,7 +10,10 @@
 #include <queue>
 #include <map>
 #include <vector>
+#include <unordered_map>
 #include <atomic>
+#include <mutex>
+#include <condition_variable>
 
 class sm_options;
 class RestoreBitmap;
@@ -389,6 +392,87 @@ protected:
     PageID firstNotRestored;
     std::vector<PageID> firstNotRestoredPerThread;
     unsigned segmentsPerThread;
+};
+
+/** \brief Coordinator that synchronizes multi-threaded decentralized restore
+ * (i.e., without RestoreMgr)
+ */
+template <typename RestoreFunctor>
+class RestoreCoordinator
+{
+public:
+
+    RestoreCoordinator(size_t segSize, size_t segCount, RestoreFunctor f)
+        : _segmentSize{segSize}, _bitmap{new RestoreBitmap {segCount}},
+        _restoreFunctor{f}
+    {
+    }
+
+    void fetch(PageID pid)
+    {
+        auto segment = pid / _segmentSize;
+        if (segment >= _bitmap->getSize() || _bitmap->is_restored(segment)) {
+            return;
+        }
+
+        std::unique_lock<std::mutex> lck {_mutex};
+
+        // Segment not restored yet: we must attempt to restore it ourselves or
+        // wait on a ticket if it's already being restored
+        auto ticket = getWaitingTicket(segment);
+
+        if (_bitmap->attempt_restore(segment)) {
+            lck.unlock();
+            doRestore(segment, ticket);
+        }
+        else {
+            auto pred = [this, segment] { return _bitmap->is_replayed(segment); };
+            ticket->wait(lck, pred);
+        }
+    }
+
+private:
+    using Ticket = std::shared_ptr<std::condition_variable>;
+
+    const size_t _segmentSize;
+
+    std::mutex _mutex;
+    std::unordered_map<unsigned, Ticket> _waiting_table;
+    std::unique_ptr<RestoreBitmap> _bitmap;
+    RestoreFunctor _restoreFunctor;
+
+    Ticket getWaitingTicket(unsigned segment)
+    {
+        auto it = _waiting_table.find(segment);
+        if (it == _waiting_table.end()) {
+            auto ticket = make_shared<std::condition_variable>();
+            _waiting_table[segment] = ticket;
+            return ticket;
+        }
+        else { return it->second; }
+    }
+
+    void doRestore(unsigned segment, Ticket ticket)
+    {
+        _restoreFunctor(segment, _segmentSize);
+
+        _bitmap->mark_replayed(segment);
+        ticket->notify_all();
+
+        std::unique_lock<std::mutex> lck {_mutex};
+        _waiting_table.erase(segment);
+    }
+};
+
+struct LogReplayer
+{
+    template <class LogScan, class PageIter>
+    static void replay(LogScan logs, PageIter pagesBegin, PageIter pagesEnd);
+};
+
+struct SegmentRestorer
+{
+    static void bf_restore(unsigned segment, size_t segmentSize);
 };
 
 inline unsigned RestoreMgr::getSegmentForPid(const PageID& pid)
