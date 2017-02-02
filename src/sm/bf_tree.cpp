@@ -406,9 +406,9 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         if (_hashtable->lookup(pid, p)) {
             idx = p.first;
             if (parent && p.second != parent - _buffer) {
-                // need to fix update parent pointer
-                // p.second = parent - _buffer;
-                // _hashtable->update(pid, p);
+                // need to update parent pointer
+                p.second = parent - _buffer;
+                _hashtable->update(pid, p);
             }
         }
 
