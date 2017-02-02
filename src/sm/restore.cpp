@@ -248,9 +248,6 @@ void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize)
     auto logiter = logScan.open(first_pid, 0, lsn_t::null, 0);
 
     LogReplayer::replay(logiter, pbegin, pend);
-
-    logiter->close();
-    logScan.close(logiter);
 }
 
 template <class LogScan, class PageIter>
@@ -547,7 +544,8 @@ bool RestoreMgr::requestRestore(const PageID& pid, generic_page* addr)
 }
 
 void RestoreMgr::restoreSegment(char* workspace,
-        ArchiveScanner::RunMerger* merger, PageID firstPage, unsigned thread_id)
+        std::shared_ptr<ArchiveScanner::RunMerger> merger, PageID firstPage,
+        unsigned thread_id)
 {
     INC_TSTAT(restore_invocations);
     stopwatch_t timer;
@@ -703,8 +701,7 @@ void RestoreMgr::restoreLoop(unsigned id)
 
         lsn_t backupLSN = volume->get_backup_lsn();
 
-        ArchiveScanner::RunMerger* merger =
-            logScan.open(startPID, endPID, backupLSN, 0);
+        auto merger = logScan.open(startPID, endPID, backupLSN, 0);
 
         DBG3(<< "RunMerger opened with " << merger->heapSize() << " runs"
                 << " starting on LSN " << backupLSN);
@@ -723,8 +720,6 @@ void RestoreMgr::restoreLoop(unsigned id)
                 << firstPage << " - " << firstPage + segmentSize << ")");
 
         restoreSegment(workspace, merger, firstPage, id);
-
-        delete merger;
     }
 
     DBG(<< "Restore thread finished! " << numRestoredPages

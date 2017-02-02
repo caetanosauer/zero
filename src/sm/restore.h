@@ -260,7 +260,7 @@ protected:
      * less than the segment size when the last segment is restored.
      */
     void restoreSegment(char* workspace,
-            ArchiveScanner::RunMerger* merger,
+            std::shared_ptr<ArchiveScanner::RunMerger> merger,
             PageID firstPage, unsigned thread_id);
 
     /** \brief Concludes restore of a segment

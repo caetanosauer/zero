@@ -302,12 +302,10 @@ void MergeScanner::run()
     // opt.set_int_option("sm_archiver_block_size", blockSize);
     opt.set_int_option("sm_archiver_bucket_size", bucketSize);
 
-    ArchiveIndex* directory = new
-        ArchiveIndex(opt);
+    ArchiveIndex* directory = new ArchiveIndex(opt);
     ArchiveScanner logScan(directory);
 
-    ArchiveScanner::RunMerger* merger =
-        logScan.open(0, 0, lsn_t::null, blockSize);
+    auto merger = logScan.open(0, 0, lsn_t::null, blockSize);
 
     logrec_t* lr;
 

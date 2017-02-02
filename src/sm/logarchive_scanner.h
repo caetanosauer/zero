@@ -2,6 +2,7 @@
 #define LOGARCHIVE_SCANNER_H
 
 #include <iostream>
+#include <memory>
 
 #include "basics.h"
 #include "lsn.h"
@@ -20,18 +21,13 @@ class logrec_t;
  */
 class ArchiveScanner {
 public:
-    ArchiveScanner(ArchiveIndex*);
+    ArchiveScanner(ArchiveIndex* = nullptr);
     virtual ~ArchiveScanner() {};
 
     struct RunMerger;
 
-    RunMerger* open(PageID startPID, PageID endPID, lsn_t startLSN,
+    std::shared_ptr<RunMerger> open(PageID startPID, PageID endPID, lsn_t startLSN,
             size_t readSize);
-
-    void close (RunMerger* merger)
-    {
-        delete merger;
-    }
 
     struct RunScanner {
         const lsn_t runBegin;
@@ -107,7 +103,10 @@ public:
             : heap(cmp), started(false), endPID(0)
         {}
 
-        virtual ~RunMerger() {}
+        virtual ~RunMerger()
+        {
+            close();
+        }
 
         void addInput(RunScanner* r);
         bool next(logrec_t*& lr);

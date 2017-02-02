@@ -19,11 +19,11 @@ ArchiveScanner::ArchiveScanner(ArchiveIndex* index)
     }
 }
 
-ArchiveScanner::RunMerger*
+std::shared_ptr<ArchiveScanner::RunMerger>
 ArchiveScanner::open(PageID startPID, PageID endPID,
         lsn_t startLSN, size_t readSize)
 {
-    RunMerger* merger = new RunMerger();
+    auto merger = std::make_shared<RunMerger>();
     vector<ArchiveIndex::ProbeResult> probes;
 
     // probe for runs
@@ -47,8 +47,8 @@ ArchiveScanner::open(PageID startPID, PageID endPID,
 
     if (merger->heapSize() == 0) {
         // all runs pruned from probe
-        delete merger;
-        return NULL;
+        merger = nullptr;
+        return merger;
     }
 
     INC_TSTAT(la_open_count);

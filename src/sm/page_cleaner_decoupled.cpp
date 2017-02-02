@@ -31,8 +31,7 @@ void page_cleaner_decoupled::do_work()
 
     ArchiveScanner logScan(smlevel_0::logArchiver->getIndex());
     // CS TODO block size
-    ArchiveScanner::RunMerger* merger = logScan.open(0, 0,
-            _clean_lsn, 1048576);
+    auto merger = logScan.open(0, 0, _clean_lsn, 1048576);
 
     generic_page* page = nullptr;
     PageID currentPid = 0, firstPid = 0;
@@ -78,8 +77,6 @@ void page_cleaner_decoupled::do_work()
 
         DBGOUT(<<"Replayed log record " << lr->lsn_ck() << " for page " << page->pid);
     }
-
-    if (merger) { delete merger; }
 
     if(page && currentPid - firstPid > 0) {
         page->checksum = page->calculate_checksum();

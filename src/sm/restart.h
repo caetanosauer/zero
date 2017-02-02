@@ -98,8 +98,7 @@ private:
     std::list<uint32_t> lr_offsets;
     std::list<uint32_t>::const_iterator lr_iter;
     std::unique_ptr<ArchiveScanner> archive_scan;
-    // CS TODO unify ArchiveScanner and RunMerger
-    std::unique_ptr<ArchiveScanner::RunMerger> merger;
+    std::shared_ptr<ArchiveScanner::RunMerger> merger;
 
     lsn_t last_lsn;
     unsigned replayed_count;
