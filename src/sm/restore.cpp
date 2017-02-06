@@ -248,6 +248,8 @@ void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize)
     auto logiter = logScan.open(first_pid, 0, lsn_t::null, 0);
 
     LogReplayer::replay(logiter, pbegin, pend);
+
+    Logger::log_sys<restore_segment_log>(segment);
 }
 
 template <class LogScan, class PageIter>
@@ -816,7 +818,7 @@ void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
 
     if (!redo) {
         sys_xct_section_t ssx(true);
-        Logger::log<restore_segment_log>(segment);
+        Logger::log_sys<restore_segment_log>(segment);
         smlevel_0::log->flush(smlevel_0::log->curr_lsn());
         ssx.end_sys_xct(RCOK);
     }

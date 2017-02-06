@@ -351,7 +351,8 @@ void logrec_t::redo(PagePtr page)
 		((restore_begin_log *) this)->redo(page);
 		break;
 	case t_restore_segment :
-		((restore_segment_log *) this)->redo(page);
+		W_FATAL(eINTERNAL);
+		// ((restore_segment_log *) this)->redo(page);
 		break;
 	case t_restore_end :
 		((restore_end_log *) this)->redo(page);
