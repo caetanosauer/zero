@@ -428,6 +428,8 @@ private:
     /** whether to swizzle non-root pages. */
     bool                 _enable_swizzling;
 
+    bool _write_elision;
+
     bool _cleaner_decoupled;
 
     bool _no_db_mode;

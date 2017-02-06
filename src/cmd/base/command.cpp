@@ -319,6 +319,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Use random page order in restore scheduler")
     ("sm_bufferpool_swizzle", po::value<bool>(),
         "Enable/Disable bufferpool swizzle")
+    ("sm_write_elision", po::value<bool>(),
+        "Enable/Disable write elision in buffer pool")
     ("sm_archiver_eager", po::value<bool>(),
         "Enable/Disable eager archiving")
     ("sm_archiver_read_whole_blocks", po::value<bool>(),

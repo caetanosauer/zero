@@ -168,13 +168,15 @@ bool page_evictioner_base::unswizzle_and_update_emlsn(bf_idx idx)
     PageID pid = _bufferpool->_buffer[idx].pid;
     bf_idx_pair idx_pair;
     bool found = _bufferpool->_hashtable->lookup(pid, idx_pair);
+    w_assert1(found);
 
     bf_idx parent_idx = idx_pair.second;
     w_assert1(!found || idx == idx_pair.first);
 
-    // Index zero is never used, so it means invalid pointer
-    if (!found || parent_idx == 0) {
-        return false;
+    // If there is no parent, but write elision is off and the frame is not swizzled,
+    // then it's OK to evict
+    if (parent_idx == 0) {
+        return !_bufferpool->_write_elision && !cb._swizzled;
     }
 
     bf_tree_cb_t& parent_cb = _bufferpool->get_cb(parent_idx);

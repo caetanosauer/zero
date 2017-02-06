@@ -104,6 +104,8 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     std::string replacement_policy =
         options.get_string_option("sm_bufferpool_replacement_policy", "clock");
 
+    _write_elision = options.get_bool_option("sm_write_elision", false);
+
     // No-DB options
     _no_db_mode = options.get_bool_option("sm_no_db", false);
     _batch_warmup = options.get_bool_option("sm_batch_warmup", true);
@@ -409,6 +411,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                 // need to update parent pointer
                 p.second = parent - _buffer;
                 _hashtable->update(pid, p);
+                INC_TSTAT(bf_fix_adjusted_parent);
             }
         }
 

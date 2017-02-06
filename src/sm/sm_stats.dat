@@ -328,6 +328,7 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long bf_fix_nonroot_count          Fix a non-root page
     u_long bf_fix_nonroot_swizzled_count Fix a non-root page, which is already swizzled
     u_long bf_fix_nonroot_miss_count  Cache miss when fixing a non-root page
+    u_long bf_fix_adjusted_parent     Parent pointer adjusted in hash table while performing a fix
 
     // Restart stats
     u_long restart_log_analysis_time    Time spend with log analysis (usec)
