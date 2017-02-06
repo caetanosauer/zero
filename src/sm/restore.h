@@ -321,24 +321,59 @@ public:
     };
 
     RestoreBitmap(size_t size)
-        : states(size, State::UNRESTORED)
+        : _size(size)
     {
+        states = new std::atomic<State>[size];
+        for (size_t i = 0; i < size; i++) {
+            states[i] = State::UNRESTORED;
+        }
     }
 
     ~RestoreBitmap()
     {
+        delete[] states;
     }
 
-    size_t getSize() { return states.size(); }
+    size_t getSize() { return _size; }
 
-    bool attempt_restore(unsigned i);
-    void mark_restored(unsigned i);
-    void mark_replayed(unsigned i);
 
-    bool is_unrestored(unsigned i);
-    bool is_restoring(unsigned i);
-    bool is_replayed(unsigned i);
-    bool is_restored(unsigned i);
+    bool is_unrestored(unsigned i)
+    {
+        return states[i] == State::UNRESTORED;
+    }
+
+    bool is_restoring(unsigned i)
+    {
+        return states[i] == State::RESTORING;
+    }
+
+    bool is_replayed(unsigned i)
+    {
+        return states[i] >= State::REPLAYED;
+    }
+
+    bool is_restored(unsigned i)
+    {
+        return states[i] == State::RESTORED;
+    }
+
+    bool attempt_restore(unsigned i)
+    {
+        auto expected = State::UNRESTORED;
+        return states[i].compare_exchange_strong(expected, State::RESTORING);
+    }
+
+    void mark_replayed(unsigned i)
+    {
+        w_assert1(states[i] == State::RESTORING);
+        states[i] = State::REPLAYED;
+    }
+
+    void mark_restored(unsigned i)
+    {
+        w_assert1(states[i] == State::REPLAYED);
+        states[i] = State::RESTORED;
+    }
 
     // void serialize(char* buf, size_t from, size_t to);
     // void deserialize(char* buf, size_t from, size_t to);
@@ -352,8 +387,8 @@ public:
     // void getBoundaries(size_t& lowestFalse, size_t& highestTrue);
 
 protected:
-    std::vector<State> states;
-    srwlock_t mutex;
+    std::atomic<State>* states;
+    const size_t _size;
 };
 
 /** \brief Scheduler for restore operations. Decides what page to restore next.

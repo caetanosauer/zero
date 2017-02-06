@@ -16,54 +16,6 @@
 
 #include "stopwatch.h"
 
-bool RestoreBitmap::is_unrestored(unsigned i)
-{
-    spinlock_read_critical_section cs(&mutex);
-    return states[i] == State::UNRESTORED;
-}
-
-bool RestoreBitmap::is_restoring(unsigned i)
-{
-    spinlock_read_critical_section cs(&mutex);
-    return states[i] == State::RESTORING;
-}
-
-bool RestoreBitmap::is_replayed(unsigned i)
-{
-    spinlock_read_critical_section cs(&mutex);
-    return states[i] >= State::REPLAYED;
-}
-
-bool RestoreBitmap::is_restored(unsigned i)
-{
-    spinlock_read_critical_section cs(&mutex);
-    return states[i] == State::RESTORED;
-}
-
-bool RestoreBitmap::attempt_restore(unsigned i)
-{
-    spinlock_write_critical_section cs(&mutex);
-    if (states[i] != State::UNRESTORED) {
-        return false;
-    }
-    states[i] = State::RESTORING;
-    return true;
-}
-
-void RestoreBitmap::mark_replayed(unsigned i)
-{
-    spinlock_write_critical_section cs(&mutex);
-    w_assert1(states[i] == State::RESTORING);
-    states[i] = State::REPLAYED;
-}
-
-void RestoreBitmap::mark_restored(unsigned i)
-{
-    spinlock_write_critical_section cs(&mutex);
-    w_assert1(states[i] == State::REPLAYED);
-    states[i] = State::RESTORED;
-}
-
 // void RestoreBitmap::serialize(char* buf, size_t from, size_t to)
 // {
 //     spinlock_read_critical_section cs(&mutex);
