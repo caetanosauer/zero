@@ -359,6 +359,8 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                                    bool conditional, bool virgin_page, bool only_if_hit,
                                    lsn_t emlsn)
 {
+    stopwatch_t timer;
+
     if (is_swizzled_pointer(pid)) {
         w_assert1(!virgin_page);
 
@@ -388,8 +390,10 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
     // Wait for restore before attempting to fix anything
     if (!virgin_page && _batch_warmup && !_warmup_done) {
         // copy into local variable to avoid race condition with setting member to null
+        timer.reset();
         auto restore = _restore_coord;
         if (restore) { restore->fetch(pid); }
+        ADD_TSTAT(bf_batch_wait_time, timer.time_us());
     }
 
 #if W_DEBUG_LEVEL>0
