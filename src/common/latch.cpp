@@ -554,14 +554,14 @@ void latch_holder_t::print(ostream &o) const
 
 void latch_t::on_thread_destroy()
 {
-    w_assert3(!latch_holder_t::thread_local_holders);
-    latch_holder_t* freelist = latch_holder_t::thread_local_freelist;
-    while(freelist) {
-        latch_holder_t* node = freelist;
-        freelist = node->_next;
-        delete node;
-    }
-    latch_holder_t::thread_local_freelist = NULL;
+    // w_assert3(!latch_holder_t::thread_local_holders);
+    // latch_holder_t* freelist = latch_holder_t::thread_local_freelist;
+    // while(freelist) {
+    //     latch_holder_t* node = freelist;
+    //     freelist = node->_next;
+    //     delete node;
+    // }
+    // latch_holder_t::thread_local_freelist = NULL;
 }
 
 // return the number of times the latch is held by this thread
