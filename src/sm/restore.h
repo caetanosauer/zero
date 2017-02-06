@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <atomic>
 #include <mutex>
+#include <chrono>
 #include <condition_variable>
 
 class sm_options;
@@ -410,12 +411,17 @@ public:
 
     void fetch(PageID pid)
     {
+        using namespace std::chrono_literals;
+
         auto segment = pid / _segmentSize;
-        if (segment >= _bitmap->getSize() || _bitmap->is_restored(segment)) {
+        if (segment >= _bitmap->getSize() || _bitmap->is_replayed(segment)) {
             return;
         }
 
         std::unique_lock<std::mutex> lck {_mutex};
+
+        // check again in critical section
+        if (_bitmap->is_replayed(segment)) { return; }
 
         // Segment not restored yet: we must attempt to restore it ourselves or
         // wait on a ticket if it's already being restored
@@ -427,7 +433,7 @@ public:
         }
         else {
             auto pred = [this, segment] { return _bitmap->is_replayed(segment); };
-            ticket->wait(lck, pred);
+            while (!pred()) { ticket->wait_for(lck, 1ms, pred); }
         }
     }
 
