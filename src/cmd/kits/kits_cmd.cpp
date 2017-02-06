@@ -75,6 +75,13 @@ void KitsCommand::set_stop_benchmark(bool stop)
     stop_benchmark = stop;
 }
 
+void KitsCommand::crash_filthy()
+{
+    shoreEnv->set_sm_shudown_filthy(true);
+    stop_benchmark = true;
+}
+
+
 void KitsCommand::setupOptions()
 {
     setupSMOptions(options);

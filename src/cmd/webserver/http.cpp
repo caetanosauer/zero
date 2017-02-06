@@ -368,7 +368,7 @@ void HandleKits::runKits()
         kits->setupOptions();
     }
     int argc=8;
-    char* argv[8]={"zapps", "kits", "-b", "tpcc", "--no_stop", "-t", "1", "--load"};
+    char* argv[8]={"zapps", "kits", "-b", "tpcc", "--no_stop", "-t", "1"};
     po::store(po::parse_command_line(argc,argv,kits->getOptions()), vm);
     po::notify(vm);
     kits->setOptionValues(vm);
@@ -384,7 +384,7 @@ void HandleKits::runKits()
 void HandleKits::crash()
 {
     if (kits->running()) {
-        kits->set_stop_benchmark(true);
+        kits->crash_filthy();
     }
 }
 

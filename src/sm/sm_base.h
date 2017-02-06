@@ -323,6 +323,7 @@ public:
     static memalign_allocator<char, IO_ALIGN> aligned_allocator;
 
     static bool         shutdown_clean;
+    static bool         shutdown_filthy;
     static bool         shutting_down;
     static bool         logging_enabled;
     static bool         lock_caching_default;
@@ -554,4 +555,3 @@ ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state);
 /*<std-footer incl-file-exclusion='SM_BASE_H'>  -- do not edit anything below this line -- */
 
 #endif          /*</std-footer>*/
-

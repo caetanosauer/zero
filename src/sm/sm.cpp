@@ -84,6 +84,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 
 bool         smlevel_0::shutdown_clean = false;
+bool         smlevel_0::shutdown_filthy = false;
 bool         smlevel_0::shutting_down = false;
 
 
@@ -382,6 +383,8 @@ ss_m::~ss_m()
 void
 ss_m::_destruct_once()
 {
+    if (shutdown_filthy)
+        shutdown_clean = false;
     --_instance_cnt;
 
     if (_instance_cnt)  {
@@ -450,11 +453,15 @@ ss_m::_destruct_once()
     }
 
     delete chkpt; chkpt = 0;
+    bf->shutdown();
 
     ERROUT(<< "Terminating log archiver");
     if (logArchiver) {
         logArchiver->shutdown();
     }
+
+    lsn_t lsn_to_shutdown_filthy = log->durable_lsn();
+    fs::path current_log_path = log->get_storage()->make_log_path(lsn_to_shutdown_filthy.hi());
 
     nprepared = xct_t::cleanup(true /* now dispose of prepared xcts */);
     w_assert1(nprepared == 0);
@@ -475,7 +482,6 @@ ss_m::_destruct_once()
 
 
     ERROUT(<< "Terminating buffer manager");
-    bf->shutdown();
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
 
     if(logArchiver) {
@@ -505,6 +511,17 @@ ss_m::_destruct_once()
         cerr << "ss_m: Warning: set_bufsize(0):" << endl << e << endl;
      }
 
+     if (shutdown_filthy) {
+         ERROUT(<< "Executing Shutdown Filthy");
+         auto offset = lsn_to_shutdown_filthy.lo();
+         resize_file(current_log_path, offset);
+         if ((offset % partition_t::XFERSIZE)> 0 )
+    	     offset = (offset/ partition_t::XFERSIZE + 1) * partition_t::XFERSIZE;
+         resize_file(current_log_path, offset);
+     }
+
+     shutdown_filthy = false;
+     shutdown_clean = true;
      ERROUT(<< "SM shutdown complete!");
 }
 
@@ -542,6 +559,10 @@ void ss_m::set_shutdown_flag(bool clean)
     shutdown_clean = clean;
 }
 
+void ss_m::set_shutdown_filthy(bool filthy)
+{
+    shutdown_filthy = filthy;
+}
 
 /*--------------------------------------------------------------*
  *  ss_m::begin_xct()                                *

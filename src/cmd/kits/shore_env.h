@@ -466,6 +466,8 @@ public:
     ShoreEnv(po::variables_map& vm);
     virtual ~ShoreEnv();
 
+    void set_sm_shudown_filthy(bool filthy);
+
     sm_options& get_opts() { return _popts; }
     po::variables_map& get_optionValues(){ return optionValues; };
     // DB INTERFACE

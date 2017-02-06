@@ -19,6 +19,7 @@ public:
     virtual void setupOptions();
     virtual void run();
     void crash(unsigned);
+    void crash_filthy();
 	bool running();
     void set_stop_benchmark(bool);
     ShoreEnv* getShoreEnv();

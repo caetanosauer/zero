@@ -732,7 +732,17 @@ int ShoreEnv::close_sm()
     return (0);
 }
 
-
+/********************************************************************
+ *
+ *  @fn:     set_sm_shudown_filthy
+ *
+ *  @brief:  Set flag in sm to execute a filthy shutdown
+ *
+ ********************************************************************/
+ void ShoreEnv::set_sm_shudown_filthy(bool filthy)
+ {
+     _pssm->set_shutdown_filthy(filthy);
+ }
 /********************************************************************
  *
  *  @fn:     gatherstats_sm

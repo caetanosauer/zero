@@ -195,6 +195,7 @@ w_rc_t base_client_t::run_xcts(int xct_type, int num_xct)
             _cp->wait();
         }
 
+    stop_benchmark = false;
     // wait for the last batch to complete...
     _cp->wait();
 

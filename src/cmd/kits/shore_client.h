@@ -179,7 +179,7 @@ public:
     {
         assert (_env);
         assert (_measure_type != MT_UNDEF);
-        assert (_notrxs || (_measure_type == MT_TIME_DUR) || (_measure_type == MT_LOG_VOL));
+        assert (_notrxs || (_measure_type == MT_TIME_DUR) || (_measure_type == MT_LOG_VOL) || (_measure_type == MT_NO_STOP));
         _cp = new condex_pair();
     }
 
