@@ -114,7 +114,7 @@ btree_impl::_sx_grow_tree(btree_page_h& rp)
 {
     PageID new_pid;
     // allocate a page as separate system transaction
-    W_DO(smlevel_0::vol->alloc_a_page(new_pid));
+    W_DO(smlevel_0::vol->alloc_a_page(new_pid, rp.store()));
 
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());

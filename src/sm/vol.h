@@ -88,7 +88,7 @@ public:
     bool            set_fake_disk_latency(const int adelay);
     void            fake_disk_latency(long start);
 
-    rc_t            alloc_a_page(PageID& pid, bool redo = false);
+    rc_t            alloc_a_page(PageID& pid, StoreID stid = 0, bool redo = false);
     rc_t            deallocate_page(const PageID& pid, bool redo = false);
 
     bool                is_allocated_page(PageID pid) const;

@@ -36,7 +36,7 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, PageID &new_page_id) {
     w_assert1 (xct()->is_single_log_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
 
-    W_DO(smlevel_0::vol->alloc_a_page(new_page_id));
+    W_DO(smlevel_0::vol->alloc_a_page(new_page_id, page.store()));
     btree_page_h new_page;
     w_rc_t rc;
     rc = new_page.fix_nonroot(page, new_page_id, LATCH_EX, false, true);
@@ -98,7 +98,7 @@ rc_t btree_impl::_sx_split_foster(btree_page_h& page, PageID& new_page_id,
     /*
      * Step 1: Allocate a new page for the foster child
      */
-    W_DO(smlevel_0::vol->alloc_a_page(new_page_id));
+    W_DO(smlevel_0::vol->alloc_a_page(new_page_id, page.store()));
 
     /*
      * Step 2: Create new foster child and move records into it, logging its

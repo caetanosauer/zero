@@ -5,6 +5,7 @@
 #include "sm_base.h"
 #include "vol.h"
 #include "stnode_page.h"
+#include "alloc_cache.h"
 #include "xct_logger.h"
 
 constexpr PageID stnode_page::stpid = 1;
@@ -84,20 +85,26 @@ rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum, bool redo) 
     }
 
     spage->set_root(snum, root_pid);
+    spage->set_last_extent(snum, 0);
 
     if (!redo) { Logger::log_p<create_store_log>(&p, root_pid, snum); }
     return RCOK;
 }
 
-rc_t stnode_cache_t::sx_append_extent(extent_id_t ext, bool redo) const
+rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext, bool redo) const
 {
     fixable_page_h p;
     W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX));
     auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
 
-    spage->set_last_extent(ext);
+    spage->set_last_extent(snum, ext);
 
-    if (!redo) { Logger::log_p<append_extent_log>(&p, ext); }
+    if (!redo) {
+        fixable_page_h p2;
+        W_COERCE(p2.fix_direct(ext / alloc_cache_t::extent_size, LATCH_EX));
+
+        Logger::log_p<append_extent_log>(&p, &p2, snum, ext);
+    }
     return RCOK;
 }
 
@@ -108,22 +115,22 @@ void stnode_cache_t::dump(std::ostream& out) const
     auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
 
     out << "STNODE CACHE:" << endl;
-    for (size_t i = 1; i < stnode_page::max; ++i) {
+    for (size_t i = 0; i < stnode_page::max; ++i) {
         stnode_t s = spage->get(i);
-        if (s.is_used()) {
+        if (i == 0 || s.is_used()) {
             out << "stid: " << i
                 << " root: " << s.root
+                << " last_extent: " << s.last_extent
                 << endl;
         }
     }
-    cout << "last_extent: " << spage->get_last_extent() << endl;
 }
 
-extent_id_t stnode_cache_t::get_last_extent() const
+extent_id_t stnode_cache_t::get_last_extent(StoreID snum) const
 {
     fixable_page_h p;
     W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_SH));
     auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
 
-    return spage->get_last_extent();
+    return spage->get_last_extent(snum);
 }

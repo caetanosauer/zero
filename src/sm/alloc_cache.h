@@ -31,9 +31,11 @@ public:
     /**
      * Allocates one page. (System transaction)
      * @param[out] pid allocated page ID.
+     * @param[in] stid StoreID to which this page will belong -- this is used for
+     *              clustering pages of the same store in the same extents
      * @param[in] redo If redoing the operation (no log generated)
      */
-    rc_t sx_allocate_page(PageID &pid, bool redo = false);
+    rc_t sx_allocate_page(PageID &pid, StoreID stid = 0, bool redo = false);
 
     /**
      * Deallocates one page. (System transaction)
@@ -59,7 +61,12 @@ public:
 
     bool is_allocated (PageID pid);
 
+    /// Returns last allocated PID of a given store
+    PageID get_last_allocated_pid(StoreID s) const;
+
+    /// Returns last allocated PID of ALL stores
     PageID get_last_allocated_pid() const;
+    PageID _get_last_allocated_pid_internal() const;
 
     lsn_t get_page_lsn(PageID pid);
 
@@ -83,8 +90,12 @@ private:
      * Policies that trade off allocation performance for fragmentation by
      * managing allocations from both contiguous and non-contiguous space would
      * be the more flexible and robust option.
+     *
+     * In Feb 2017, this was extended to support clustering pages by store ID,
+     * which requires assigning extents to stores exclusively, which means
+     * that we must keep track of page allocation on a per-store basis.
      */
-    PageID last_alloc_page;
+    std::vector<PageID> last_alloc_page;
 
     typedef unordered_set<PageID> pid_set;
     pid_set freed_pages;

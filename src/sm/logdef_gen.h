@@ -155,7 +155,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
     struct append_extent_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_append_extent;
-    template <class Ptr> void construct (Ptr, extent_id_t ext);
+    template <class Ptr> void construct (Ptr, Ptr, StoreID, extent_id_t ext);
     template <class Ptr> void redo(Ptr);
     };
 

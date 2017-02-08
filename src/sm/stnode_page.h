@@ -20,9 +20,9 @@
   *
  * These are contained in \ref stnode_page's.
  */
-struct stnode_t {
+struct alignas(8) stnode_t {
     /// also okay to initialize via memset
-    stnode_t() : root(0)
+    stnode_t() : root(0), last_extent(0), clustered(false)
     { }
 
     /**
@@ -30,7 +30,21 @@ struct stnode_t {
      * the special store number 0, which is used to keep track of the last
      * extent allocated which was not assigned to a specific store.
      */
-    PageID         root;      // +4 -> 4
+    PageID         root;
+
+    /**
+     * If this store is clustered (see flag below), this keeps track of the
+     * last extent allocated to this store. If clustering is disabled globally,
+     * then the last (global) extent is stored in stnode 0 (see method
+     * set_last_extent)
+     */
+    extent_id_t last_extent;
+
+    /**
+     * Wheter this store is clustered, i.e., whether it has whole extents
+     * assigned exclusively to its pages.
+     */
+    bool clustered;
 
     bool is_used() const  { return root != 0; }
 };
@@ -46,8 +60,7 @@ public:
     /// max # \ref stnode_t's on a single stnode_page; thus, the
     /// maximum number of stores per volume
     static constexpr size_t max =
-        (page_sz - sizeof(generic_page_header) - sizeof(extent_id_t))
-        / sizeof(stnode_t);
+        (page_sz - sizeof(generic_page_header)) / sizeof(stnode_t);
 
     // Page ID used by the stnode page
     static const PageID stpid;
@@ -62,24 +75,28 @@ public:
         stnode[index].root = root;
     }
 
-    void set_last_extent(extent_id_t ext) { last_extent = ext; }
+    void set_last_extent(size_t index, extent_id_t ext)
+    {
+        w_assert1(index < max);
+        stnode[index].last_extent = ext;
+    }
 
-    extent_id_t get_last_extent() { return last_extent; }
+    extent_id_t get_last_extent(size_t index)
+    {
+        w_assert1(index < max);
+        return stnode[index].last_extent;
+    }
 
     void format_empty() {
         memset(this, 0, sizeof(generic_page_header));
         pid = stnode_page::stpid;
         tag = t_stnode_p;
 
-        last_extent = 0;
         memset(&stnode, 0, sizeof(stnode_t) * max);
     }
 
 
 private:
-    // ID of the lastly allocated extent
-    extent_id_t last_extent;
-
     /// stnode[i] is the stnode_t for store # i of this volume
     stnode_t stnode[max];
 };
@@ -123,11 +140,11 @@ public:
 
     rc_t sx_create_store(PageID root_pid, StoreID& snum, bool redo = false) const;
 
-    rc_t sx_append_extent(extent_id_t ext, bool redo = false) const;
+    rc_t sx_append_extent(StoreID store, extent_id_t ext, bool redo = false) const;
 
     void dump(std::ostream& out) const;
 
-    extent_id_t get_last_extent() const;
+    extent_id_t get_last_extent(StoreID stid) const;
 
 private:
     /// Returns the first StoreID that can be used for a new store in

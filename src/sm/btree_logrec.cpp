@@ -366,7 +366,8 @@ void btree_norec_alloc_log::redo(PagePtr p) {
         // we are recovering "page2", which is foster-child.
         w_assert0(target_pid == dp->_page2_pid);
         // This log is also a page-allocation log, so redo the page allocation.
-        W_COERCE(smlevel_0::vol->alloc_a_page(dp->_page2_pid, true /* redo */));
+        W_COERCE(smlevel_0::vol->alloc_a_page(dp->_page2_pid, header._stid,
+                    true /* redo */));
         PageID pid = dp->_page2_pid;
         // initialize as an empty child:
         bp.format_steal(new_lsn, pid, header._stid,

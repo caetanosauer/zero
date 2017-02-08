@@ -13,7 +13,7 @@
 const size_t alloc_cache_t::extent_size = alloc_page::bits_held;
 
 alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
-    : last_alloc_page(0), stcache(stcache)
+    : stcache(stcache)
 {
     vector<StoreID> stores;
     stcache.get_used_stores(stores);
@@ -21,13 +21,19 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
     if (virgin) {
         // Extend 0 and stnode pid are always allocated
         loaded_extents.push_back(true);
-        last_alloc_page = stnode_page::stpid;
+        // first extent (which has stnode page) is assigned to store 0,
+        // which baiscally means the extent does not belong to any particular
+        // store
+        last_alloc_page.push_back(stnode_page::stpid);
     }
     else {
         // Load last extent eagerly and the rest of them on demand
-        extent_id_t ext = stcache.get_last_extent();
-        loaded_extents.resize(ext + 1, false);
-        W_COERCE(load_alloc_page(ext, true));
+        for (auto s : stores) {
+            last_alloc_page.resize(s, 0);
+            extent_id_t ext = stcache.get_last_extent(s);
+            loaded_extents.resize(ext + 1, false);
+            W_COERCE(load_alloc_page(ext, true));
+        }
     }
 }
 
@@ -43,13 +49,12 @@ rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, bool is_last_ext)
     PageID alloc_pid = ext * extent_size;
     fixable_page_h p;
     W_DO(p.fix_direct(alloc_pid, LATCH_EX, false, false));
+    alloc_page* page = (alloc_page*) p.get_generic_page();
 
     if (is_last_ext) {
         // we know that at least all pids in lower extents were once allocated
-        last_alloc_page = alloc_pid;
+        last_alloc_page[page->store_id] = alloc_pid;
     }
-
-    alloc_page* page = (alloc_page*) p.get_generic_page();
 
     size_t last_alloc = 0;
     size_t j = alloc_page::bits_held;
@@ -58,7 +63,7 @@ rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, bool is_last_ext)
             if (last_alloc == 0) {
                 last_alloc = j;
                 if (is_last_ext) {
-                    last_alloc_page = alloc_pid + j;
+                    last_alloc_page[page->store_id] = alloc_pid + j;
                 }
             }
         }
@@ -78,10 +83,25 @@ rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, bool is_last_ext)
     return RCOK;
 }
 
+PageID alloc_cache_t::get_last_allocated_pid(StoreID s) const
+{
+    spinlock_read_critical_section cs(&_latch);
+    return last_alloc_page[s];
+}
+
 PageID alloc_cache_t::get_last_allocated_pid() const
 {
     spinlock_read_critical_section cs(&_latch);
-    return last_alloc_page;
+    return _get_last_allocated_pid_internal();
+}
+
+PageID alloc_cache_t::_get_last_allocated_pid_internal() const
+{
+    PageID max = 0;
+    for (auto p : last_alloc_page) {
+        if (p > max) { max = p; }
+    }
+    return max;
 }
 
 lsn_t alloc_cache_t::get_page_lsn(PageID pid)
@@ -101,25 +121,27 @@ bool alloc_cache_t::is_allocated(PageID pid)
         W_COERCE(load_alloc_page(ext, false));
     }
 
+    auto max_pid = get_last_allocated_pid();
+
     spinlock_read_critical_section cs(&_latch);
 
     // loaded cannot go from true to false, so this is safe
     w_assert0(loaded_extents[ext]);
 
-    if (pid > last_alloc_page) { return false; }
+    if (pid > max_pid) { return false; }
 
     pid_set::const_iterator iter = freed_pages.find(pid);
     return (iter == freed_pages.end());
 }
 
-rc_t alloc_cache_t::sx_allocate_page(PageID& pid, bool redo)
+rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid, bool redo)
 {
     spinlock_write_critical_section cs(&_latch);
 
     if (redo) {
         // all space before this pid must not be contiguous free space
-        if (last_alloc_page < pid) {
-            last_alloc_page = pid;
+        if (last_alloc_page[stid] < pid) {
+            last_alloc_page[stid] = pid;
         }
         // if pid is on freed list, remove
         pid_set::iterator iter = freed_pages.find(pid);
@@ -128,16 +150,20 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, bool redo)
         }
     }
     else {
-        pid = last_alloc_page + 1;
-        w_assert1(pid != stnode_page::stpid);
-
-        if (pid % extent_size == 0) {
-            extent_id_t ext = last_alloc_page / extent_size + 1;
-            pid = ext * extent_size + 1;
-            W_DO(stcache.sx_append_extent(ext));
+        if (last_alloc_page.size() <= stid) {
+            last_alloc_page.resize(stid + 1, 0);
         }
 
-        last_alloc_page = pid;
+        pid = last_alloc_page[stid] + 1;
+        w_assert1(stid != 0 || pid != stnode_page::stpid);
+
+        if (pid == 1 || pid % extent_size == 0) {
+            extent_id_t ext = _get_last_allocated_pid_internal() / extent_size + 1;
+            pid = ext * extent_size + 1;
+            W_DO(stcache.sx_append_extent(stid, ext));
+        }
+
+        last_alloc_page[stid] = pid;
 
         // CS TODO: page allocation should transfer ownership instead of just
         // marking the page as allocated; otherwise, zombie pages may appear
@@ -179,7 +205,7 @@ rc_t alloc_cache_t::write_dirty_pages(lsn_t rec_lsn)
     // those are the only ones which were modified since the system started.
     {
         spinlock_read_critical_section cs (&_latch);
-        last_extent = last_alloc_page / extent_size;
+        last_extent = get_last_allocated_pid() / extent_size;
     }
 
     map<PageID, lsn_t>::const_iterator iter;

@@ -357,10 +357,10 @@ void vol_t::shutdown(bool abrupt)
     W_COERCE(dismount(abrupt));
 }
 
-rc_t vol_t::alloc_a_page(PageID& shpid, bool redo)
+rc_t vol_t::alloc_a_page(PageID& shpid, StoreID stid, bool redo)
 {
     w_assert1(_alloc_cache);
-    W_DO(_alloc_cache->sx_allocate_page(shpid, redo));
+    W_DO(_alloc_cache->sx_allocate_page(shpid, stid, redo));
     INC_TSTAT(page_alloc_cnt);
 
     return RCOK;

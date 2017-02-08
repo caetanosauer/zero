@@ -1214,18 +1214,36 @@ void create_store_log::redo(PagePtr page)
 }
 
 template <class PagePtr>
-void append_extent_log::construct(PagePtr, extent_id_t ext)
+void append_extent_log::construct(PagePtr, PagePtr, StoreID snum, extent_id_t ext)
 {
-    memcpy(data_ssx(), &ext, sizeof(extent_id_t));
-    set_size(sizeof(extent_id_t));
+    char* data = data_ssx();
+    new (data) multi_page_log_t {ext * alloc_cache_t::extent_size};
+    data += sizeof(multi_page_log_t);
+
+    memcpy(data, &ext, sizeof(extent_id_t));
+    data += sizeof(extent_id_t);
+
+    memcpy(data, &snum, sizeof(StoreID));
+    data += sizeof(StoreID);
+
+    set_size(data - data_ssx());
 }
 
 template <class PagePtr>
 void append_extent_log::redo(PagePtr page)
 {
     extent_id_t ext = *((extent_id_t*) data_ssx());
-    stnode_page* stpage = (stnode_page*) page->get_generic_page();
-    stpage->set_last_extent(ext);
+    StoreID snum = *((StoreID*) (data_ssx() + sizeof(extent_id_t)));
+    if (page->pid() == stnode_page::stpid) {
+        stnode_page* stpage = (stnode_page*) page->get_generic_page();
+        stpage->set_last_extent(snum, ext);
+    }
+    else {
+        w_assert0(page->pid() == ext / alloc_cache_t::extent_size);
+        alloc_page* apage = (alloc_page*) page->get_generic_page();
+        apage->extent_id = ext;
+        apage->store_id = snum;
+    }
 }
 
 #if LOGREC_ACCOUNTING
@@ -1424,4 +1442,4 @@ template void page_evict_log::template construct<btree_page_h*>(btree_page_h* p,
 template void page_img_format_log::template construct<btree_page_h*>(btree_page_h*);
 
 template void create_store_log::template construct<fixable_page_h*>(fixable_page_h*, PageID, StoreID);
-template void append_extent_log::template construct<fixable_page_h*>(fixable_page_h*, extent_id_t);
+template void append_extent_log::template construct<fixable_page_h*>(fixable_page_h*, fixable_page_h*, StoreID, extent_id_t);

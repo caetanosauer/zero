@@ -29,11 +29,12 @@ class alloc_page : public generic_page_header {
 public:
 
     extent_id_t extent_id;
+    StoreID store_id;
 
     // Fill first section of page with char array (unused part). This is
     // currently 4KB, whereas the bitmap occupies the rest 4KB.
     char _fill[sizeof(generic_page)/2 - sizeof(generic_page_header)
-                - sizeof(extent_id_t)];
+                - sizeof(extent_id_t) - sizeof(StoreID)];
 
 
     /**
