@@ -122,13 +122,13 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
     struct alloc_page_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_alloc_page;
-    void construct (PageID pid);
+    template <class Ptr> void construct (Ptr, PageID pid);
     template <class Ptr> void redo(Ptr);
     };
 
     struct dealloc_page_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_dealloc_page;
-    void construct (PageID pid);
+    template <class Ptr> void construct (Ptr, PageID pid);
     template <class Ptr> void redo(Ptr);
     };
 
@@ -155,7 +155,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
     struct append_extent_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_append_extent;
-    template <class Ptr> void construct (Ptr, Ptr, StoreID, extent_id_t ext);
+    template <class Ptr> void construct (Ptr, StoreID, extent_id_t ext);
     template <class Ptr> void redo(Ptr);
     };
 

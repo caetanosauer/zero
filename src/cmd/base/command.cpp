@@ -253,8 +253,6 @@ void Command::setupSMOptions(po::options_description& options)
         "Page cleaner only writes clusters of pages with this minimum size")
     ("sm_cleaner_min_write_ignore_freq", po::value<int>(),
         "Ignore min_write_size every N rounds of cleaning")
-    ("sm_cleaner_ignore_metadata", po::value<bool>(),
-        "Do not write metadata pages (stnode and alloc caches) in cleaner")
     ("sm_cleaner_async_candidate_collection", po::value<bool>(),
         "Collect candidate frames to be cleaned in an asynchronous thread")
     ("sm_archiver_workspace_size", po::value<int>(),

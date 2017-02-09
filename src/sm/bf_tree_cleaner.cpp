@@ -43,7 +43,6 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& option
     num_candidates = options.get_int_option("sm_cleaner_num_candidates", 0);
     min_write_size = options.get_int_option("sm_cleaner_min_write_size", 1);
     min_write_ignore_freq = options.get_int_option("sm_cleaner_min_write_ignore_freq", 0);
-    ignore_metadata = options.get_bool_option("sm_cleaner_ignore_metadata", false);
     async_candidate_collection =
         options.get_bool_option("sm_cleaner_async_candidate_collection", false);
 
@@ -86,12 +85,6 @@ void bf_tree_cleaner::do_work()
     if (curr_candidates->size() > 0) {
         clean_candidates();
     }
-
-    if (!ignore_metadata) {
-        lsn_t dur_lsn = smlevel_0::log->durable_lsn();
-        W_COERCE(smlevel_0::vol->get_alloc_cache()->write_dirty_pages(dur_lsn));
-    }
-
     // synchronize with asynchronous collector
     if (collector) {
         collector->wait_for_round(round + 1);

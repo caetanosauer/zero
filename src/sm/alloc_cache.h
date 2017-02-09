@@ -43,22 +43,6 @@ public:
      */
     rc_t sx_deallocate_page(PageID pid, bool redo = false);
 
-    /**
-     * Writes out any allocation page whose page LSN is greater than the given
-     * rec_lsn. Since we don't maintain a page image by flipping a bit and
-     * marking a page dirty upon every allocation (allocating a page requires
-     * just incrementing a counter and generating an SSX log record), this
-     * requires rebuilding the page images. We use single-page recovery for
-     * that, but only on the pages that require propagation, i.e., only those
-     * of loaded extents with greater PageLSN.
-     *
-     * For any extent for which loaded_extents[ext] == true, all free pages
-     * with id lower than last_alloc_page are guaranteed to be in the free
-     * list. Extents for which loaded_extents[ext] == false, on the other hand,
-     * are guaranteed to be up-do-date on disk.
-     */
-    rc_t write_dirty_pages(lsn_t rec_lsn);
-
     bool is_allocated (PageID pid);
 
     /// Returns last allocated PID of a given store
@@ -97,32 +81,13 @@ private:
      */
     std::vector<PageID> last_alloc_page;
 
-    typedef unordered_set<PageID> pid_set;
-    pid_set freed_pages;
-
-    /**
-     * Bitmap of extents whose allocation pages were already loaded. This is
-     * needed because the allocation information of each extent is loaded on
-     * demand.
-     */
-    vector<bool> loaded_extents;
-
-    /**
-     * CS TODO
-     * This map is needed for the sole purpose of maintaining per-page
-     * log-record chains. It keeps track of the current pageLSN of each
-     * alloc page. Since we don't apply allocation operations on the pages
-     * directly (i.e., no page fix is performed), this is required to
-     * generate a correct prev_page pointer when logging allocations.
-     */
-    map<PageID, lsn_t> page_lsns;
-
     stnode_cache_t& stcache;
 
-    /** all operations in this object are protected by this lock. */
+    /** This lath protects access to last_alloc_page */
     mutable srwlock_t _latch;
 
-    rc_t load_alloc_page(extent_id_t ext, bool is_last_ext);
+    /** Reads the alloc page of given extent to update last_alloc_page */
+    rc_t load_alloc_page(StoreID stid, extent_id_t ext);
 };
 
 #endif // ALLOC_CACHE_H

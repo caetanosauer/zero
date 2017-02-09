@@ -995,45 +995,33 @@ void restore_segment_log::redo(PagePtr)
     volume->redo_segment_restore(segment);
 }
 
-void alloc_page_log::construct(PageID pid)
+template <class PagePtr>
+void alloc_page_log::construct(PagePtr, PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
-    // CS TODO: not necessary -- XctLogger sets alloc pid correctly
-    PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
-    // fill(alloc_pid, 0, 0, sizeof(PageID));
     set_size(sizeof(PageID));
-    // CS TODO: clean up eventlog.cpp and get rid of this
-    set_pid(alloc_pid);
 }
 
 template <class PagePtr>
 void alloc_page_log::redo(PagePtr p)
 {
     PageID pid = *((PageID*) data_ssx());
-
-    alloc_page* apage = (alloc_page*) p->get_generic_page();
-    uint32_t index = pid % alloc_page::bits_held;
-    apage->set_bit(index);
+    // Store ID is irrelevant for REDO
+    smlevel_0::vol->get_alloc_cache()->sx_allocate_page(pid, 0, true);
 }
 
-void dealloc_page_log::construct(PageID pid)
+template <class PagePtr>
+void dealloc_page_log::construct(PagePtr, PageID pid)
 {
     memcpy(data_ssx(), &pid, sizeof(PageID));
-    PageID alloc_pid = pid - (pid % alloc_cache_t::extent_size);
-    // fill(alloc_pid, 0, 0, sizeof(PageID));
     set_size(sizeof(PageID));
-    // CS TODO: clean up eventlog.cpp and get rid of this
-    set_pid(alloc_pid);
 }
 
 template <class PagePtr>
 void dealloc_page_log::redo(PagePtr p)
 {
     PageID pid = *((PageID*) data_ssx());
-
-    alloc_page* apage = (alloc_page*) p->get_generic_page();
-    uint32_t index = pid % alloc_page::bits_held;
-    apage->unset_bit(index);
+    smlevel_0::vol->get_alloc_cache()->sx_deallocate_page(pid, true);
 }
 
 template <class PagePtr>
@@ -1214,11 +1202,9 @@ void create_store_log::redo(PagePtr page)
 }
 
 template <class PagePtr>
-void append_extent_log::construct(PagePtr, PagePtr, StoreID snum, extent_id_t ext)
+void append_extent_log::construct(PagePtr, StoreID snum, extent_id_t ext)
 {
     char* data = data_ssx();
-    new (data) multi_page_log_t {ext * alloc_cache_t::extent_size};
-    data += sizeof(multi_page_log_t);
 
     memcpy(data, &ext, sizeof(extent_id_t));
     data += sizeof(extent_id_t);
@@ -1234,16 +1220,7 @@ void append_extent_log::redo(PagePtr page)
 {
     extent_id_t ext = *((extent_id_t*) data_ssx());
     StoreID snum = *((StoreID*) (data_ssx() + sizeof(extent_id_t)));
-    if (page->pid() == stnode_page::stpid) {
-        stnode_page* stpage = (stnode_page*) page->get_generic_page();
-        stpage->set_last_extent(snum, ext);
-    }
-    else {
-        w_assert0(page->pid() == ext / alloc_cache_t::extent_size);
-        alloc_page* apage = (alloc_page*) page->get_generic_page();
-        apage->extent_id = ext;
-        apage->store_id = snum;
-    }
+    smlevel_0::vol->get_stnode_cache()->sx_append_extent(snum, ext, true);
 }
 
 #if LOGREC_ACCOUNTING
@@ -1442,4 +1419,7 @@ template void page_evict_log::template construct<btree_page_h*>(btree_page_h* p,
 template void page_img_format_log::template construct<btree_page_h*>(btree_page_h*);
 
 template void create_store_log::template construct<fixable_page_h*>(fixable_page_h*, PageID, StoreID);
-template void append_extent_log::template construct<fixable_page_h*>(fixable_page_h*, fixable_page_h*, StoreID, extent_id_t);
+template void append_extent_log::template construct<fixable_page_h*>(fixable_page_h*, StoreID, extent_id_t);
+
+template void alloc_page_log::template construct<fixable_page_h*>(fixable_page_h*, PageID);
+template void dealloc_page_log::template construct<fixable_page_h*>(fixable_page_h*, PageID);

@@ -19,66 +19,34 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
     stcache.get_used_stores(stores);
 
     if (virgin) {
-        // Extend 0 and stnode pid are always allocated
-        loaded_extents.push_back(true);
         // first extent (which has stnode page) is assigned to store 0,
         // which baiscally means the extent does not belong to any particular
         // store
         last_alloc_page.push_back(stnode_page::stpid);
     }
     else {
-        // Load last extent eagerly and the rest of them on demand
+        // Load last allocated PID of each store using the last extent
+        // recorded in the stnode page
+        last_alloc_page.resize(stores.size() + 1, 0);
         for (auto s : stores) {
-            last_alloc_page.resize(s, 0);
             extent_id_t ext = stcache.get_last_extent(s);
-            loaded_extents.resize(ext + 1, false);
-            W_COERCE(load_alloc_page(ext, true));
+            W_COERCE(load_alloc_page(s, ext));
         }
     }
 }
 
-rc_t alloc_cache_t::load_alloc_page(extent_id_t ext, bool is_last_ext)
+rc_t alloc_cache_t::load_alloc_page(StoreID stid, extent_id_t ext)
 {
     spinlock_write_critical_section cs(&_latch);
 
-    // protect against race on concurrent loads
-    if (loaded_extents[ext]) {
-        return RCOK;
-    }
-
     PageID alloc_pid = ext * extent_size;
     fixable_page_h p;
-    W_DO(p.fix_direct(alloc_pid, LATCH_EX, false, false));
+    W_DO(p.fix_direct(alloc_pid, LATCH_SH, false, false));
     alloc_page* page = (alloc_page*) p.get_generic_page();
 
-    if (is_last_ext) {
-        // we know that at least all pids in lower extents were once allocated
-        last_alloc_page[page->store_id] = alloc_pid;
-    }
+    auto last_set = page->get_last_set_bit();
 
-    size_t last_alloc = 0;
-    size_t j = alloc_page::bits_held;
-    while (j > 0) {
-        if (page->get_bit(j)) {
-            if (last_alloc == 0) {
-                last_alloc = j;
-                if (is_last_ext) {
-                    last_alloc_page[page->store_id] = alloc_pid + j;
-                }
-            }
-        }
-        else if (last_alloc != 0) {
-            freed_pages.insert(alloc_pid + j);
-        }
-
-        j--;
-    }
-
-    page_lsns[p.pid()] = p.lsn();
-    loaded_extents[ext] = true;
-
-    // pass argument evict=true because we won't be maintaining the page
-    p.unfix(true);
+    last_alloc_page[stid] = alloc_pid + last_set;
 
     return RCOK;
 }
@@ -104,52 +72,24 @@ PageID alloc_cache_t::_get_last_allocated_pid_internal() const
     return max;
 }
 
-lsn_t alloc_cache_t::get_page_lsn(PageID pid)
-{
-    spinlock_read_critical_section cs(&_latch);
-    map<PageID, lsn_t>::const_iterator it = page_lsns.find(pid);
-    if (it == page_lsns.end()) { return lsn_t::null; }
-    return it->second;
-}
-
 bool alloc_cache_t::is_allocated(PageID pid)
 {
-    // No latching required to check if loaded. Any races will be
-    // resolved inside load_alloc_page
     extent_id_t ext = pid / extent_size;
-    if (!loaded_extents[ext]) {
-        W_COERCE(load_alloc_page(ext, false));
-    }
 
-    auto max_pid = get_last_allocated_pid();
+    PageID alloc_pid = ext * extent_size;
+    fixable_page_h p;
+    W_COERCE(p.fix_direct(alloc_pid, LATCH_SH, false, false));
+    alloc_page* page = (alloc_page*) p.get_generic_page();
 
-    spinlock_read_critical_section cs(&_latch);
-
-    // loaded cannot go from true to false, so this is safe
-    w_assert0(loaded_extents[ext]);
-
-    if (pid > max_pid) { return false; }
-
-    pid_set::const_iterator iter = freed_pages.find(pid);
-    return (iter == freed_pages.end());
+    return page->get_bit(pid - alloc_pid);
 }
 
 rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid, bool redo)
 {
-    spinlock_write_critical_section cs(&_latch);
+    // get pid and update last_alloc_page in critical section
+    if (!redo) {
+        spinlock_write_critical_section cs(&_latch);
 
-    if (redo) {
-        // all space before this pid must not be contiguous free space
-        if (last_alloc_page[stid] < pid) {
-            last_alloc_page[stid] = pid;
-        }
-        // if pid is on freed list, remove
-        pid_set::iterator iter = freed_pages.find(pid);
-        if (iter != freed_pages.end()) {
-            freed_pages.erase(iter);
-        }
-    }
-    else {
         if (last_alloc_page.size() <= stid) {
             last_alloc_page.resize(stid + 1, 0);
         }
@@ -170,71 +110,34 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid, bool redo)
         // due to system failures after allocation but before setting the
         // pointer on the new owner/parent page. To fix this, an SSX to
         // allocate an emptry b-tree child would be the best option.
-
-        // Entry in page_lsns array is updated by the log insertion
-        extent_id_t ext = pid / extent_size;
-        Logger::log_page_chain<alloc_page_log>(page_lsns[ext * extent_size], pid);
     }
+    w_assert1(pid % extent_size > 0);
+
+
+    // Now set the corresponding bit in the alloc page
+    fixable_page_h p;
+    PageID alloc_pid = pid - (pid % extent_size);
+    W_DO(p.fix_direct(alloc_pid, LATCH_EX, false, false));
+    alloc_page* page = (alloc_page*) p.get_generic_page();
+    w_assert1(!page->get_bit(pid - alloc_pid));
+    page->set_bit(pid - alloc_pid);
+    if (!redo) { Logger::log_p<alloc_page_log>(&p, pid); }
 
     return RCOK;
 }
 
 rc_t alloc_cache_t::sx_deallocate_page(PageID pid, bool redo)
 {
-    spinlock_write_critical_section cs(&_latch);
+    w_assert1(pid % extent_size > 0);
 
-    // Just add to list of freed pages
-    freed_pages.insert(pid);
-
-    if (!redo) {
-        // Entry in page_lsns array is updated by the log insertion
-        extent_id_t ext = pid / extent_size;
-        Logger::log_page_chain<dealloc_page_log>(page_lsns[ext * extent_size], pid);
-    }
-
-    return RCOK;
-}
-
-rc_t alloc_cache_t::write_dirty_pages(lsn_t rec_lsn)
-{
-    generic_page* buf = NULL;
-    lsn_t page_lsn = lsn_t::null;
-    extent_id_t last_extent = 0;
-
-    // We just have to iterate over the extents in the page_lsns table, since
-    // those are the only ones which were modified since the system started.
-    {
-        spinlock_read_critical_section cs (&_latch);
-        last_extent = get_last_allocated_pid() / extent_size;
-    }
-
-    map<PageID, lsn_t>::const_iterator iter;
-    for (extent_id_t ext = 0; ext <= last_extent; ext++) {
-        PageID alloc_pid = ext * extent_size;
-        // While in the critical section, just verify if the extent alloc page
-        // needs to be written, to avoid blocking threads trying to allocate
-        // pages for too long.
-        {
-            spinlock_read_critical_section cs(&_latch);
-            iter = page_lsns.find(alloc_pid);
-            if (iter == page_lsns.end()) { continue; }
-            if (iter->second > rec_lsn) { continue; }
-            page_lsn = iter->second;
-        }
-
-        if (!buf) {
-            int res = posix_memalign((void**) &buf, SM_PAGESIZE, SM_PAGESIZE);
-            w_assert0(res == 0);
-        }
-
-        // Read old page image into buffer, replay updates with SPR, and write
-        // it back
-        W_DO(smlevel_0::vol->read_page_verify(alloc_pid, buf, page_lsn));
-        W_DO(smlevel_0::vol->write_page(alloc_pid, buf));
-        Logger::log_sys<page_write_log>(alloc_pid, rec_lsn, 1);
-    }
-
-    if (buf) { delete[] buf; }
+    // Just unset the corresponding bit in the alloc page
+    fixable_page_h p;
+    PageID alloc_pid = pid - (pid % extent_size);
+    W_DO(p.fix_direct(alloc_pid, LATCH_EX, false, false));
+    alloc_page* page = (alloc_page*) p.get_generic_page();
+    w_assert1(page->get_bit(pid - alloc_pid));
+    page->unset_bit(pid - alloc_pid);
+    if (!redo) { Logger::log_p<dealloc_page_log>(&p, pid); }
 
     return RCOK;
 }

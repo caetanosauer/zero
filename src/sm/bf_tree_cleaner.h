@@ -105,9 +105,6 @@ private:
     // Ignore min write size every N rounds (0 for never)
     size_t min_write_ignore_freq;
 
-    /// Do not clean alloc/stnode pages, which are not managed in the buffer pool
-    bool ignore_metadata;
-
     /// Use an asynchronous thread to collect candidates, thus allowing overlap
     /// of CPU utilization and I/O
     bool async_candidate_collection;

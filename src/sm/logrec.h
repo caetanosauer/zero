@@ -697,7 +697,7 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_stnode_format : return t_redo|t_single_sys_xct;
 	case t_dealloc_page : return t_redo|t_single_sys_xct;
 	case t_create_store : return t_redo|t_single_sys_xct;
-	case t_append_extent : return t_redo|t_multi|t_single_sys_xct;
+	case t_append_extent : return t_redo|t_single_sys_xct;
 	case t_page_img_format : return t_redo | t_undo;
 	case t_page_evict : return t_redo|t_single_sys_xct;
 	case t_btree_norec_alloc : return t_redo|t_multi|t_single_sys_xct;

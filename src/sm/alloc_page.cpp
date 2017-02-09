@@ -30,3 +30,12 @@ void alloc_page::set_bits(uint32_t from, uint32_t to)
         set_bit(i);
     }
 }
+
+uint32_t alloc_page::get_last_set_bit()
+{
+    uint32_t res = 0;
+    for (uint32_t i = 0; i < bits_held; i++) {
+        if (get_bit(i)) { res = i; }
+    }
+    return res;
+}

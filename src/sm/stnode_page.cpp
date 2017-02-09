@@ -99,12 +99,13 @@ rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext, bool redo) 
 
     spage->set_last_extent(snum, ext);
 
-    if (!redo) {
-        fixable_page_h p2;
-        W_COERCE(p2.fix_direct(ext / alloc_cache_t::extent_size, LATCH_EX));
+    // There is no format log record for alloc page, so we just perform
+    // a virgin fix to format it here (just set PID and null LSN).
+    fixable_page_h alloc_p;
+    W_COERCE(alloc_p.fix_direct(ext * alloc_cache_t::extent_size, LATCH_EX,
+                false, true /* virgin */));
 
-        Logger::log_p<append_extent_log>(&p, &p2, snum, ext);
-    }
+    if (!redo) { Logger::log_p<append_extent_log>(&p, snum, ext); }
     return RCOK;
 }
 

@@ -28,6 +28,7 @@ typedef uint32_t extent_id_t;
 class alloc_page : public generic_page_header {
 public:
 
+    // CS TODO: these two fields are unused!
     extent_id_t extent_id;
     StoreID store_id;
 
@@ -64,6 +65,7 @@ public:
     void unset_bit(uint32_t index) { bitmap[byte_place(index)] &= ~bit_mask(index); }
     void set_bit(uint32_t index) { bitmap[byte_place(index)] |=  bit_mask(index); }
 
+    uint32_t get_last_set_bit();
     void set_bits(uint32_t from, uint32_t to);
     void reset_all();
 };
