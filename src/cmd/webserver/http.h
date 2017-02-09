@@ -27,6 +27,7 @@ public:
     HandleKits();
     void runKits();
     void crash();
+    void mediaFailure();
     string getStats();
     string aggLog();
     string getCounters();

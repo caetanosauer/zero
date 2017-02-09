@@ -138,9 +138,8 @@ ShoreEnv* KitsCommand::getShoreEnv()
 }
 
 KitsCommand::KitsCommand()
-    : mtype(MT_UNDEF), clientsForked(false)
-{
-}
+    : mtype(MT_UNDEF), clientsForked(false), failure_thread(nullptr)
+{}
 
 /*
  * Thread object usied for the simple purpose of setting the skew parameters.
@@ -196,12 +195,8 @@ void KitsCommand::run()
         crash(opt_crashDelay);
 
     // Spawn failure thread if requested
-    FailureThread* failure_thread = nullptr;
-    if (opt_failDelay >= 0) {
-        hasFailed = false;
-        failure_thread = new FailureThread(opt_failDelay, &hasFailed);
-        failure_thread->fork();
-    }
+    if (opt_failDelay >= 0)
+        media_failure(opt_failDelay);
 
     if (runBenchAfterLoad()) {
         runBenchmark();
@@ -223,7 +218,13 @@ void KitsCommand::crash(unsigned delay)
     crash_thread->fork();
 }
 
-
+void KitsCommand::media_failure(unsigned delay)
+{
+    //FailureThread* failure_thread = nullptr;
+    hasFailed = false;
+    failure_thread = new FailureThread(delay, &hasFailed);
+    failure_thread->fork();
+}
 
 void KitsCommand::init()
 {
@@ -419,7 +420,23 @@ void KitsCommand::doWork()
     }
     else if (mtype == MT_NO_STOP) {
         // keep running until variable is externally set to true
-        while(!stop_benchmark);
+        while(!stop_benchmark){
+            hasFailed = false;
+            while (!hasFailed && !stop_benchmark) {
+                sleep(1);
+                lintel::atomic_thread_fence(lintel::memory_order_consume);
+            }
+            if (hasFailed) {
+                vol_t* vol = smlevel_0::vol;
+                w_assert0(vol);
+
+                // Now wait for device to be restored -- check every 1 second
+                while (vol->is_failed()) {
+                    sleep(1);
+                    vol->check_restore_finished();
+                }
+            }
+        }
     }
 }
 

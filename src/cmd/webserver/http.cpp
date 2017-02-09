@@ -85,6 +85,24 @@ std::string http_headers::get_response(HandleKits &kits)
   else if(url == "/crash")
   {
       kits.crash();
+      std::string sHTML = "{\"hasCrashed\":true}";
+      ssOut << "HTTP/1.1 200 OK" << std::endl;
+      ssOut << "Access-Control-Allow-Origin: *" << std::endl;
+      ssOut << "content-type: application/json" << std::endl;
+      ssOut << "content-length: " << sHTML.length() << std::endl;
+      ssOut << std::endl;
+      ssOut << sHTML;
+  }
+  else if(url == "/mediafailure")
+  {
+      kits.mediaFailure();
+      std::string sHTML = "{\"hasMediaFailured\":true}";
+      ssOut << "HTTP/1.1 200 OK" << std::endl;
+      ssOut << "Access-Control-Allow-Origin: *" << std::endl;
+      ssOut << "content-type: application/json" << std::endl;
+      ssOut << "content-length: " << sHTML.length() << std::endl;
+      ssOut << std::endl;
+      ssOut << sHTML;
   }
   else
   {
@@ -367,8 +385,8 @@ void HandleKits::runKits()
         kits = new KitsCommand();
         kits->setupOptions();
     }
-    int argc=8;
-    char* argv[8]={"zapps", "kits", "-b", "tpcc", "--no_stop", "-t", "1"};
+    int argc=9;
+    char* argv[9]={"zapps", "kits", "-b", "tpcc", "--no_stop", "-t", "1", "--sm_archiving", "true"};
     po::store(po::parse_command_line(argc,argv,kits->getOptions()), vm);
     po::notify(vm);
     kits->setOptionValues(vm);
@@ -385,6 +403,13 @@ void HandleKits::crash()
 {
     if (kits->running()) {
         kits->crash_filthy();
+    }
+}
+
+void HandleKits::mediaFailure()
+{
+    if (kits->running()) {
+        kits->media_failure(0);
     }
 }
 

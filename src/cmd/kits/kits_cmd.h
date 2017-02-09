@@ -6,6 +6,7 @@
 
 class ShoreEnv;
 class sm_options;
+class FailureThread;
 
 extern std::atomic<bool> stop_benchmark;
 
@@ -19,6 +20,7 @@ public:
     virtual void setupOptions();
     virtual void run();
     void crash(unsigned);
+    void media_failure(unsigned);
     void crash_filthy();
 	bool running();
     void set_stop_benchmark(bool);
@@ -76,6 +78,7 @@ protected:
 private:
     std::vector<base_client_t*> clients;
     bool clientsForked;
+    FailureThread* failure_thread;
 };
 
 #endif
