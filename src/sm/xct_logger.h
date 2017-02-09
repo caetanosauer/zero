@@ -180,36 +180,6 @@ public:
         return lsn;
     }
 
-    /*
-     * log_page_chain is used for in-memory data structures that do not
-     * maintain data directly in a page but must use chained log records
-     * to keep track of their versions and dirty states. Used by
-     * stnode_cache and alloc_cache
-     */
-    template <class Logrec, class... Args>
-    static void log_page_chain(lsn_t& prev_page_lsn, const Args&... args)
-    {
-        // this should use TLS allocator, so it's fast
-        // (see macro DEFINE_SM_ALLOC in allocator.h and logrec.cpp)
-        logrec_t* logrec = new logrec_t;
-
-        new (logrec) Logrec;
-        logrec->init_header(Logrec::TYPE);
-        logrec->init_xct_info();
-        reinterpret_cast<Logrec*>(logrec)->construct(args...);
-        w_assert1(logrec->valid_header());
-
-        // CS TODO: all uses of log_page_chain are on a root page
-        logrec->set_root_page();
-
-        lsn_t lsn;
-        logrec->set_page_prev_lsn(prev_page_lsn);
-        W_COERCE(ss_m::log->insert(*logrec, &lsn));
-
-        delete logrec;
-        prev_page_lsn = lsn;
-    }
-
     template <class PagePtr>
     static void _update_page_lsns(PagePtr page, lsn_t new_lsn)
     {
