@@ -522,18 +522,50 @@ public:
     /// This essentially yields an "end" iterator
     GenericPageIterator()
         : _first(0), _count(0), _virgin(false), _current(nullptr),
-        _current_pid(0)
+        _current_pid(0), fix_depth(0)
     {
     }
 
     /// This essentially yields a "begin" iterator
     GenericPageIterator(PageID first, PageID count, bool virgin)
-        : _first(first), _count(count), _virgin(virgin)
+        : _first(first), _count(count), _virgin(virgin), _current(nullptr),
+        fix_depth(0)
     {
         if (count > 0) {
             _current_pid = _first;
             fix_current();
         }
+    }
+
+    GenericPageIterator(const GenericPageIterator& other)
+        : _first(other._first), _count(other._count),
+        _virgin(other._virgin), _current(nullptr), fix_depth(0)
+    {
+        if (_count > 0) {
+            _current_pid = _first;
+            fix_current();
+        }
+    }
+
+    ~GenericPageIterator()
+    {
+        unfix_current();
+        w_assert1(fix_depth == 0);
+    }
+
+    GenericPageIterator& operator=(GenericPageIterator other)
+    {
+        swap(*this, other);
+        return *this;
+    }
+
+    friend void swap(GenericPageIterator& a, GenericPageIterator& b)
+    {
+        swap(a._first, b._first);
+        swap(a._count, b._count);
+        swap(a._virgin, b._virgin);
+        swap(a._current, b._current);
+        swap(a.fix_depth, b.fix_depth);
     }
 
     bool operator==(GenericPageIterator& other)
@@ -548,23 +580,30 @@ public:
     }
 
 private:
-    const PageID _first;
-    const PageID _count;
-    const bool _virgin;
+    PageID _first;
+    PageID _count;
+    bool _virgin;
+    int fix_depth;
 
     generic_page* _current;
     PageID _current_pid;
 
     void fix_current()
     {
+        w_assert1(fix_depth == 0);
         W_COERCE(smlevel_0::bf->fix(nullptr, _current, _current_pid, LATCH_EX,
                 false, _virgin));
+        fix_depth++;
     }
 
     void unfix_current()
     {
-        smlevel_0::bf->unfix(_current);
-        _current = nullptr;
+        if (_current) {
+            w_assert1(fix_depth == 1);
+            smlevel_0::bf->unfix(_current);
+            _current = nullptr;
+            fix_depth--;
+        }
     }
 };
 
