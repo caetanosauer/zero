@@ -28,10 +28,12 @@ public:
     void runKits();
     void crash();
     void mediaFailure();
+    void singlePageFailure();
     string getStats();
     string aggLog();
     string getCounters();
     string isRunning();
+
     //void counters(std::vector<std::string> &countersJson);
 };
 

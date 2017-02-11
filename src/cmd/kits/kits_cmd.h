@@ -20,8 +20,9 @@ public:
     virtual void setupOptions();
     virtual void run();
     void crash(unsigned);
-    void media_failure(unsigned);
-    void crash_filthy();
+    void mediaFailure(unsigned);
+    void randomRootPageFailure();
+    void crashFilthy();
 	bool running();
     void set_stop_benchmark(bool);
     ShoreEnv* getShoreEnv();

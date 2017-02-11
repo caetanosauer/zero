@@ -466,8 +466,6 @@ public:
     ShoreEnv(po::variables_map& vm);
     virtual ~ShoreEnv();
 
-    void set_sm_shudown_filthy(bool filthy);
-
     sm_options& get_opts() { return _popts; }
     po::variables_map& get_optionValues(){ return optionValues; };
     // DB INTERFACE
@@ -574,6 +572,9 @@ public:
     // crash delay
     void set_crash_delay(int);
     int get_crash_delay() { return _crash_delay; }
+
+    //shutdown filthy
+    void set_sm_shudown_filthy(bool);
 
     // load imbalance related
     virtual void set_skew(int area, int load, int start_imbalance, int skew_type);

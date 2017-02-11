@@ -104,6 +104,17 @@ std::string http_headers::get_response(HandleKits &kits)
       ssOut << std::endl;
       ssOut << sHTML;
   }
+  else if(url == "/singlepagefailure")
+  {
+      kits.singlePageFailure();
+      std::string sHTML = "{\"hasPageFailed\":true}";
+      ssOut << "HTTP/1.1 200 OK" << std::endl;
+      ssOut << "Access-Control-Allow-Origin: *" << std::endl;
+      ssOut << "content-type: application/json" << std::endl;
+      ssOut << "content-length: " << sHTML.length() << std::endl;
+      ssOut << std::endl;
+      ssOut << sHTML;
+  }
   else
   {
      std::string sHTML = "<html><body><h1>404 Not Found</h1><p>There's nothing here.</p></body></html>";
@@ -402,14 +413,21 @@ void HandleKits::runKits()
 void HandleKits::crash()
 {
     if (kits->running()) {
-        kits->crash_filthy();
+        kits->crashFilthy();
     }
 }
 
 void HandleKits::mediaFailure()
 {
     if (kits->running()) {
-        kits->media_failure(0);
+        kits->mediaFailure(0);
+    }
+}
+
+void HandleKits::singlePageFailure()
+{
+    if (kits->running()) {
+        kits->randomRootPageFailure();
     }
 }
 

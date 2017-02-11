@@ -75,7 +75,7 @@ void KitsCommand::set_stop_benchmark(bool stop)
     stop_benchmark = stop;
 }
 
-void KitsCommand::crash_filthy()
+void KitsCommand::crashFilthy()
 {
     shoreEnv->set_sm_shudown_filthy(true);
     stop_benchmark = true;
@@ -196,7 +196,7 @@ void KitsCommand::run()
 
     // Spawn failure thread if requested
     if (opt_failDelay >= 0)
-        media_failure(opt_failDelay);
+        mediaFailure(opt_failDelay);
 
     if (runBenchAfterLoad()) {
         runBenchmark();
@@ -218,12 +218,27 @@ void KitsCommand::crash(unsigned delay)
     crash_thread->fork();
 }
 
-void KitsCommand::media_failure(unsigned delay)
+void KitsCommand::mediaFailure(unsigned delay)
 {
     //FailureThread* failure_thread = nullptr;
     hasFailed = false;
     failure_thread = new FailureThread(delay, &hasFailed);
     failure_thread->fork();
+}
+
+void KitsCommand::randomRootPageFailure()
+{
+    std::vector<StoreID> stores;
+    smlevel_0::vol->get_stnode_cache()->get_used_stores(stores);
+    int randomStore = random()%(stores.size() -1);
+    StoreID stid = stores.at(randomStore);
+    PageID root_pid = smlevel_0::vol->get_stnode_cache()->get_root_pid(stid);
+    fixable_page_h page;
+
+    page.fix_root(stores.at(randomStore), LATCH_EX);
+    generic_page* raw_page = page.get_generic_page();
+    raw_page->lsn = lsn_t(1, 0);
+    page.unfix(true);
 }
 
 void KitsCommand::init()
