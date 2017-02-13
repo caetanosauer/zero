@@ -356,4 +356,19 @@ inline std::istream& operator>>(std::istream& i, lsn_t& l)
     l = lsn_t(f, d);
     return i;
 }
+
+namespace std {
+    /// Hash function for lsn_t
+    /// http://stackoverflow.com/q/17016175/1268568
+    template<> struct hash<lsn_t>
+    {
+        using argument_type = lsn_t;
+        using result_type = std::size_t;
+        result_type operator()(argument_type const& a) const
+        {
+            return std::hash<lsndata_t>()(a.data());
+        }
+    };
+}
+
 #endif

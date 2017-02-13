@@ -3,16 +3,48 @@
 
 #include <vector>
 #include <list>
+#include <unordered_map>
 
 #define BOOST_FILESYSTEM_NO_DEPRECATED
 #include <boost/filesystem.hpp>
 namespace fs = boost::filesystem;
 
 #include "basics.h"
+#include "latches.h"
 #include "lsn.h"
 #include "sm_options.h"
 
 class RunRecycler;
+
+struct RunId {
+    lsn_t beginLSN;
+    lsn_t endLSN;
+    unsigned level;
+
+    bool operator==(const RunId& other) const
+    {
+        return beginLSN == other.beginLSN && endLSN == other.endLSN
+            && level == other.level;
+    }
+};
+
+namespace std
+{
+    /// Hash function for RunId objects
+    /// http://stackoverflow.com/q/17016175/1268568
+    template<> struct hash<RunId>
+    {
+        using argument_type = RunId;
+        using result_type = std::size_t;
+        result_type operator()(argument_type const& a) const
+        {
+            result_type const h1 ( std::hash<lsn_t>()(a.beginLSN) );
+            result_type const h2 ( std::hash<lsn_t>()(a.endLSN) );
+            result_type const h3 ( std::hash<unsigned>()(a.level) );
+            return ((h1 ^ (h2 << 1)) >> 1) ^ (h3 << 1);
+        }
+    };
+}
 
 /** \brief Encapsulates all file and I/O operations on the log archive
  *
@@ -40,12 +72,6 @@ public:
     ArchiveIndex(const sm_options& options);
     virtual ~ArchiveIndex();
 
-    struct RunId {
-        lsn_t beginLSN;
-        lsn_t endLSN;
-        unsigned level;
-    };
-
     struct ProbeResult {
         PageID pidBegin;
         PageID pidEnd;
@@ -56,7 +82,6 @@ public:
         size_t runIndex;
     };
 
-public:
     struct BlockEntry {
         size_t offset;
         PageID pid;
@@ -98,9 +123,9 @@ public:
     rc_t closeCurrentRun(lsn_t runEndLSN, unsigned level);
 
     // run scanning methods
-    rc_t openForScan(int& fd, lsn_t runBegin, lsn_t runEnd, unsigned level);
+    rc_t openForScan(int& fd, const RunId& runid);
     rc_t readBlock(int fd, char* buf, size_t& offset, size_t readSize = 0);
-    rc_t closeScan(int& fd);
+    rc_t closeScan(int fd, const RunId& runid);
 
     void listFiles(std::vector<std::string>& list, int level = -1);
     void listFileStats(std::list<RunId>& list, int level = -1);
@@ -110,8 +135,6 @@ public:
 
     static bool parseRunFileName(string fname, RunId& fstats);
     static size_t getFileSize(int fd);
-
-public:
 
     void newBlock(const vector<pair<PageID, size_t> >& buckets, unsigned level);
 
@@ -176,6 +199,10 @@ private:
     std::unique_ptr<RunRecycler> runRecycler;
 
     mutable srwlock_t _mutex;
+
+    /// Cache for open files (for scans only)
+    std::unordered_map<RunId, std::pair<int, int>> _open_files;
+    mutable srwlock_t _open_file_mutex;
 
     fs::path make_run_path(lsn_t begin, lsn_t end, unsigned level = 1) const;
     fs::path make_current_run_path(unsigned level) const;

@@ -10,8 +10,6 @@
 // CS TODO isolate this to log archive code
 const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
 
-using RunId = ArchiveIndex::RunId;
-
 const auto& parseRunFileName = ArchiveIndex::parseRunFileName;
 
 void BaseScanner::handle(logrec_t* lr)

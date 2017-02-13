@@ -121,9 +121,9 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
                 continue;
             }
 
-            W_COERCE(openForScan(fd, fstats.beginLSN, fstats.endLSN, fstats.level));
+            W_COERCE(openForScan(fd, fstats));
             W_COERCE(loadRunInfo(fd, fstats));
-            W_COERCE(closeScan(fd));
+            W_COERCE(closeScan(fd, fstats));
 
             if (fstats.level > maxLevel) { maxLevel = fstats.level; }
         }
@@ -153,10 +153,10 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
                 auto startLSN = lsn_t(nextPartition, 0);
                 openNewRun(1);
                 closeCurrentRun(startLSN, 1);
-                W_COERCE(openForScan(fd, lsn_t(1,0), startLSN, 1));
                 RunId fstats = {lsn_t(1,0), startLSN, 1};
+                W_COERCE(openForScan(fd, fstats));
                 W_COERCE(loadRunInfo(fd, fstats));
-                W_COERCE(closeScan(fd));
+                W_COERCE(closeScan(fd, fstats));
             }
         }
     }
@@ -308,15 +308,24 @@ rc_t ArchiveIndex::append(char* data, size_t length, unsigned level)
     return RCOK;
 }
 
-rc_t ArchiveIndex::openForScan(int& fd, lsn_t runBegin,
-        lsn_t runEnd, unsigned level)
+rc_t ArchiveIndex::openForScan(int& fd, const RunId& runid)
 {
-    fs::path fpath = make_run_path(runBegin, runEnd, level);
+    spinlock_write_critical_section cs(&_open_file_mutex);
 
-    // Using direct I/O
-    int flags = O_RDONLY | O_DIRECT;
-    fd = ::open(fpath.string().c_str(), flags, 0744 /*mode*/);
-    CHECK_ERRNO(fd);
+    auto res = _open_files.emplace(runid, std::make_pair<int,int>(-1, 0));
+    auto& p = res.first->second;
+
+    if (p.second == 0) {
+        fs::path fpath = make_run_path(runid.beginLSN, runid.endLSN, runid.level);
+
+        // Using direct I/O
+        int flags = O_RDONLY | O_DIRECT;
+        p.first = ::open(fpath.string().c_str(), flags, 0744 /*mode*/);
+    }
+
+    CHECK_ERRNO(p.first);
+    p.second++;
+    fd = p.first;
 
     return RCOK;
 }
@@ -362,11 +371,23 @@ rc_t ArchiveIndex::readBlock(int fd, char* buf,
     return RCOK;
 }
 
-rc_t ArchiveIndex::closeScan(int& fd)
+rc_t ArchiveIndex::closeScan(int fd, const RunId& runid)
 {
-    auto ret = ::close(fd);
-    CHECK_ERRNO(ret);
-    fd = -1;
+    spinlock_write_critical_section cs(&_open_file_mutex);
+
+    auto it = _open_files.find(runid);
+    w_assert1(it != _open_files.end());
+    w_assert0(fd == it->second.first);
+
+    auto& count = it->second.second;
+    count--;
+
+    if (count == 0) {
+        auto ret = ::close(fd);
+        CHECK_ERRNO(ret);
+        _open_files.erase(it);
+    }
+
     return RCOK;
 }
 
@@ -544,7 +565,7 @@ lsn_t ArchiveIndex::getFirstLSN(unsigned level)
     return runs[level][0].firstLSN;
 }
 
-rc_t ArchiveIndex::loadRunInfo(int fd, const ArchiveIndex::RunId& fstats)
+rc_t ArchiveIndex::loadRunInfo(int fd, const RunId& fstats)
 {
     RunInfo run;
     {

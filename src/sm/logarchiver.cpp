@@ -657,8 +657,6 @@ void MergerDaemon::do_work()
     doMerge(1, _fanin);
 }
 
-typedef ArchiveIndex::RunId RunId;
-
 bool runComp(const RunId& a, const RunId& b)
 {
     return a.beginLSN < b.beginLSN;
