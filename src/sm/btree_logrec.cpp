@@ -349,34 +349,35 @@ void btree_norec_alloc_log::construct(const PagePtr p, const PagePtr,
 
 template <class PagePtr>
 void btree_norec_alloc_log::redo(PagePtr p) {
-    w_assert1(is_single_sys_xct());
-    borrowed_btree_page_h bp(p);
-    btree_norec_alloc_t<PagePtr> *dp =
-        reinterpret_cast<btree_norec_alloc_t<PagePtr>*>(data_ssx());
+    // CS TODO: norec alloc currently not supported!
+    // w_assert1(is_single_sys_xct());
+    // borrowed_btree_page_h bp(p);
+    // btree_norec_alloc_t<PagePtr> *dp =
+    //     reinterpret_cast<btree_norec_alloc_t<PagePtr>*>(data_ssx());
 
-    const lsn_t &new_lsn = lsn_ck();
-    w_keystr_t fence, chain_high;
-    fence.construct_from_keystr(dp->_data, dp->_fence_len);
-    chain_high.construct_from_keystr(dp->_data + dp->_fence_len, dp->_chain_high_len);
+    // const lsn_t &new_lsn = lsn_ck();
+    // w_keystr_t fence, chain_high;
+    // fence.construct_from_keystr(dp->_data, dp->_fence_len);
+    // chain_high.construct_from_keystr(dp->_data + dp->_fence_len, dp->_chain_high_len);
 
-    PageID target_pid = p->pid();
-    DBGOUT3 (<< *this << ": new_lsn=" << new_lsn
-        << ", target_pid=" << target_pid << ", bp.lsn=" << bp.get_page_lsn());
-    if (target_pid == dp->_page2_pid) {
-        // we are recovering "page2", which is foster-child.
-        w_assert0(target_pid == dp->_page2_pid);
-        // This log is also a page-allocation log, so redo the page allocation.
-        W_COERCE(smlevel_0::vol->alloc_a_page(dp->_page2_pid, header._stid,
-                    true /* redo */));
-        PageID pid = dp->_page2_pid;
-        // initialize as an empty child:
-        bp.format_steal(new_lsn, pid, header._stid,
-                        dp->_root_pid, dp->_btree_level, 0, lsn_t::null,
-                        dp->_foster_pid, dp->_foster_emlsn, fence, fence, chain_high, false);
-    } else {
-        // we are recovering "page", which is foster-parent.
-        bp.accept_empty_child(new_lsn, dp->_page2_pid, true /*from redo*/);
-    }
+    // PageID target_pid = p->pid();
+    // DBGOUT3 (<< *this << ": new_lsn=" << new_lsn
+    //     << ", target_pid=" << target_pid << ", bp.lsn=" << bp.get_page_lsn());
+    // if (target_pid == dp->_page2_pid) {
+    //     // we are recovering "page2", which is foster-child.
+    //     w_assert0(target_pid == dp->_page2_pid);
+    //     // This log is also a page-allocation log, so redo the page allocation.
+    //     W_COERCE(smlevel_0::vol->alloc_a_page(dp->_page2_pid, header._stid,
+    //                 true /* redo */));
+    //     PageID pid = dp->_page2_pid;
+    //     // initialize as an empty child:
+    //     bp.format_steal(new_lsn, pid, header._stid,
+    //                     dp->_root_pid, dp->_btree_level, 0, lsn_t::null,
+    //                     dp->_foster_pid, dp->_foster_emlsn, fence, fence, chain_high, false);
+    // } else {
+    //     // we are recovering "page", which is foster-parent.
+    //     bp.accept_empty_child(new_lsn, dp->_page2_pid, true /*from redo*/);
+    // }
 }
 
 template <class PagePtr>

@@ -1005,9 +1005,11 @@ void alloc_page_log::construct(PagePtr, PageID pid)
 template <class PagePtr>
 void alloc_page_log::redo(PagePtr p)
 {
+    PageID alloc_pid = p->pid();
     PageID pid = *((PageID*) data_ssx());
-    // Store ID is irrelevant for REDO
-    smlevel_0::vol->get_alloc_cache()->sx_allocate_page(pid, 0, true);
+    alloc_page* page = (alloc_page*) p->get_generic_page();
+    w_assert1(!page->get_bit(pid - alloc_pid));
+    page->set_bit(pid - alloc_pid);
 }
 
 template <class PagePtr>
@@ -1020,8 +1022,11 @@ void dealloc_page_log::construct(PagePtr, PageID pid)
 template <class PagePtr>
 void dealloc_page_log::redo(PagePtr p)
 {
+    PageID alloc_pid = p->pid();
     PageID pid = *((PageID*) data_ssx());
-    smlevel_0::vol->get_alloc_cache()->sx_deallocate_page(pid, true);
+    alloc_page* page = (alloc_page*) p->get_generic_page();
+    w_assert1(page->get_bit(pid - alloc_pid));
+    page->unset_bit(pid - alloc_pid);
 }
 
 template <class PagePtr>
@@ -1199,6 +1204,7 @@ void create_store_log::redo(PagePtr page)
         stpage->pid = stnode_page::stpid;
     }
     stpage->set_root(snum, root_pid);
+    stpage->set_last_extent(snum, 0);
 }
 
 template <class PagePtr>
@@ -1220,7 +1226,8 @@ void append_extent_log::redo(PagePtr page)
 {
     extent_id_t ext = *((extent_id_t*) data_ssx());
     StoreID snum = *((StoreID*) (data_ssx() + sizeof(extent_id_t)));
-    smlevel_0::vol->get_stnode_cache()->sx_append_extent(snum, ext, true);
+    auto spage = reinterpret_cast<stnode_page*>(page->get_generic_page());
+    spage->set_last_extent(snum, ext);
 }
 
 #if LOGREC_ACCOUNTING

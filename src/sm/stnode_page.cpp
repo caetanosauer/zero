@@ -73,7 +73,7 @@ void stnode_cache_t::get_used_stores(std::vector<StoreID>& ret) const
     }
 }
 
-rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum, bool redo) const
+rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum) const
 {
     fixable_page_h p;
     W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX));
@@ -87,11 +87,11 @@ rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum, bool redo) 
     spage->set_root(snum, root_pid);
     spage->set_last_extent(snum, 0);
 
-    if (!redo) { Logger::log_p<create_store_log>(&p, root_pid, snum); }
+    Logger::log_p<create_store_log>(&p, root_pid, snum);
     return RCOK;
 }
 
-rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext, bool redo) const
+rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext) const
 {
     fixable_page_h p;
     W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX));
@@ -105,7 +105,7 @@ rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext, bool redo) 
     W_COERCE(alloc_p.fix_direct(ext * alloc_cache_t::extent_size, LATCH_EX,
                 false, true /* virgin */));
 
-    if (!redo) { Logger::log_p<append_extent_log>(&p, snum, ext); }
+    Logger::log_p<append_extent_log>(&p, snum, ext);
     return RCOK;
 }
 

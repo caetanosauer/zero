@@ -138,9 +138,9 @@ public:
     /// Returns the StoreID of all allocated stores in the volume.
     void get_used_stores(std::vector<StoreID>&) const;
 
-    rc_t sx_create_store(PageID root_pid, StoreID& snum, bool redo = false) const;
+    rc_t sx_create_store(PageID root_pid, StoreID& snum) const;
 
-    rc_t sx_append_extent(StoreID store, extent_id_t ext, bool redo = false) const;
+    rc_t sx_append_extent(StoreID store, extent_id_t ext) const;
 
     void dump(std::ostream& out) const;
 

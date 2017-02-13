@@ -84,10 +84,10 @@ bool alloc_cache_t::is_allocated(PageID pid)
     return page->get_bit(pid - alloc_pid);
 }
 
-rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid, bool redo)
+rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid)
 {
     // get pid and update last_alloc_page in critical section
-    if (!redo) {
+    {
         spinlock_write_critical_section cs(&_latch);
 
         if (last_alloc_page.size() <= stid) {
@@ -121,12 +121,12 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid, bool redo)
     alloc_page* page = (alloc_page*) p.get_generic_page();
     w_assert1(!page->get_bit(pid - alloc_pid));
     page->set_bit(pid - alloc_pid);
-    if (!redo) { Logger::log_p<alloc_page_log>(&p, pid); }
+    Logger::log_p<alloc_page_log>(&p, pid);
 
     return RCOK;
 }
 
-rc_t alloc_cache_t::sx_deallocate_page(PageID pid, bool redo)
+rc_t alloc_cache_t::sx_deallocate_page(PageID pid)
 {
     w_assert1(pid % extent_size > 0);
 
@@ -137,7 +137,7 @@ rc_t alloc_cache_t::sx_deallocate_page(PageID pid, bool redo)
     alloc_page* page = (alloc_page*) p.get_generic_page();
     w_assert1(page->get_bit(pid - alloc_pid));
     page->unset_bit(pid - alloc_pid);
-    if (!redo) { Logger::log_p<dealloc_page_log>(&p, pid); }
+    Logger::log_p<dealloc_page_log>(&p, pid);
 
     return RCOK;
 }

@@ -33,15 +33,14 @@ public:
      * @param[out] pid allocated page ID.
      * @param[in] stid StoreID to which this page will belong -- this is used for
      *              clustering pages of the same store in the same extents
-     * @param[in] redo If redoing the operation (no log generated)
      */
-    rc_t sx_allocate_page(PageID &pid, StoreID stid = 0, bool redo = false);
+    rc_t sx_allocate_page(PageID &pid, StoreID stid = 0);
 
     /**
      * Deallocates one page. (System transaction)
      * @param[in] pid page ID to deallocate.
      */
-    rc_t sx_deallocate_page(PageID pid, bool redo = false);
+    rc_t sx_deallocate_page(PageID pid);
 
     bool is_allocated (PageID pid);
 
