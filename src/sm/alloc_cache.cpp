@@ -23,6 +23,8 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
         // which baiscally means the extent does not belong to any particular
         // store
         last_alloc_page.push_back(stnode_page::stpid);
+	// create first extent and format first alloc page
+	stcache.sx_append_extent(0, 0);
     }
     else {
         // Load last allocated PID of each store using the last extent
