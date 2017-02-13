@@ -657,16 +657,16 @@ void MergerDaemon::do_work()
     doMerge(1, _fanin);
 }
 
-typedef ArchiveIndex::RunFileStats RunFileStats;
+typedef ArchiveIndex::RunId RunId;
 
-bool runComp(const RunFileStats& a, const RunFileStats& b)
+bool runComp(const RunId& a, const RunId& b)
 {
     return a.beginLSN < b.beginLSN;
 }
 
 rc_t MergerDaemon::doMerge(unsigned level, unsigned fanin)
 {
-    list<RunFileStats> stats, statsNext;
+    list<RunId> stats, statsNext;
     indir->listFileStats(stats, level);
     indir->listFileStats(statsNext, level+1);
 
@@ -710,7 +710,7 @@ rc_t MergerDaemon::doMerge(unsigned level, unsigned fanin)
         outdir->openNewRun(level+1);
 
         DBGOUT1(<< "doMerge");
-        list<RunFileStats>::const_iterator iter = begin;
+        list<RunId>::const_iterator iter = begin;
         while (iter != end) {
             DBGOUT1(<< "Merging " << iter->beginLSN << "-" << iter->endLSN);
             ArchiveScanner::RunScanner* runScanner =

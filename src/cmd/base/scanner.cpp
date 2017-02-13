@@ -10,7 +10,7 @@
 // CS TODO isolate this to log archive code
 const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
 
-using RunFileStats = ArchiveIndex::RunFileStats;
+using RunId = ArchiveIndex::RunId;
 
 const auto& parseRunFileName = ArchiveIndex::parseRunFileName;
 
@@ -196,7 +196,7 @@ LogArchiveScanner::LogArchiveScanner(const po::variables_map& options)
 
 bool runCompare (string a, string b)
 {
-    RunFileStats fstats;
+    RunId fstats;
     parseRunFileName(a, fstats);
     lsn_t lsn_a = fstats.beginLSN;
     parseRunFileName(b, fstats);
@@ -226,7 +226,7 @@ void LogArchiveScanner::run()
         runFiles.push_back(restrictFile);
     }
 
-    RunFileStats fstats;
+    RunId fstats;
     parseRunFileName(runFiles[0], fstats);
     runBegin = fstats.beginLSN;
     runEnd = fstats.endLSN;

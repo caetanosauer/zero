@@ -40,7 +40,7 @@ public:
     ArchiveIndex(const sm_options& options);
     virtual ~ArchiveIndex();
 
-    struct RunFileStats {
+    struct RunId {
         lsn_t beginLSN;
         lsn_t endLSN;
         unsigned level;
@@ -103,12 +103,12 @@ public:
     rc_t closeScan(int& fd);
 
     void listFiles(std::vector<std::string>& list, int level = -1);
-    void listFileStats(std::list<RunFileStats>& list, int level = -1);
+    void listFileStats(std::list<RunId>& list, int level = -1);
     void deleteRuns(unsigned replicationFactor = 0);
 
     size_t getSkipLogrecSize() const;
 
-    static bool parseRunFileName(string fname, RunFileStats& fstats);
+    static bool parseRunFileName(string fname, RunId& fstats);
     static size_t getFileSize(int fd);
 
 public:
@@ -120,7 +120,7 @@ public:
             PageID startPID, PageID endPID, lsn_t startLSN);
 
     rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
-    rc_t loadRunInfo(int fd, const RunFileStats&);
+    rc_t loadRunInfo(int fd, const RunId&);
     void startNewRun(unsigned level);
 
     unsigned getMaxLevel() const { return maxLevel; }

@@ -52,7 +52,7 @@ skip_log SKIP_LOGREC;
         W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
     }
 
-bool ArchiveIndex::parseRunFileName(string fname, RunFileStats& fstats)
+bool ArchiveIndex::parseRunFileName(string fname, RunId& fstats)
 {
     boost::regex run_rx(run_regex, boost::regex::perl);
     boost::smatch res;
@@ -115,7 +115,7 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
     for (; it != eod; it++) {
         fs::path fpath = it->path();
         string fname = fpath.filename().string();
-        RunFileStats fstats;
+        RunId fstats;
 
         if (parseRunFileName(fname, fstats)) {
             if (reformat) {
@@ -156,7 +156,7 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
                 openNewRun(1);
                 closeCurrentRun(startLSN, 1);
                 W_COERCE(openForScan(fd, lsn_t(1,0), startLSN, 1));
-                RunFileStats fstats = {lsn_t(1,0), startLSN, 1};
+                RunId fstats = {lsn_t(1,0), startLSN, 1};
                 W_COERCE(loadRunInfo(fd, fstats));
                 W_COERCE(closeScan(fd));
             }
@@ -189,7 +189,7 @@ void ArchiveIndex::listFiles(std::vector<std::string>& list,
     fs::directory_iterator it(archpath), eod;
     for (; it != eod; it++) {
         string fname = it->path().filename().string();
-        RunFileStats fstats;
+        RunId fstats;
         if (parseRunFileName(fname, fstats)) {
             if (level < 0 || level == static_cast<int>(fstats.level)) {
                 list.push_back(fname);
@@ -198,7 +198,7 @@ void ArchiveIndex::listFiles(std::vector<std::string>& list,
     }
 }
 
-void ArchiveIndex::listFileStats(list<RunFileStats>& list,
+void ArchiveIndex::listFileStats(list<RunId>& list,
         int level)
 {
     list.clear();
@@ -207,7 +207,7 @@ void ArchiveIndex::listFileStats(list<RunFileStats>& list,
     vector<string> fnames;
     listFiles(fnames, level);
 
-    RunFileStats stats;
+    RunId stats;
     for (size_t i = 0; i < fnames.size(); i++) {
         parseRunFileName(fnames[i], stats);
         list.push_back(stats);
@@ -548,7 +548,7 @@ lsn_t ArchiveIndex::getFirstLSN(unsigned level)
     return runs[level][0].firstLSN;
 }
 
-rc_t ArchiveIndex::loadRunInfo(int fd, const ArchiveIndex::RunFileStats& fstats)
+rc_t ArchiveIndex::loadRunInfo(int fd, const ArchiveIndex::RunId& fstats)
 {
     RunInfo run;
     {
