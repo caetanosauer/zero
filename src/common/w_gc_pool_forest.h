@@ -505,8 +505,21 @@ struct GcPoolForest {
     size_t              active_generations() const { return tail_nowrap - head_nowrap; }
     GcGeneration<T>*    head_generation() { return generations[head()]; }
     GcGeneration<T>*    curr_generation() { return generations[curr()]; }
-    bool                is_valid_generation(gc_generation generation) const {
-        return generation != 0 && generation >= head() && generation < tail();
+
+    bool is_valid_generation(gc_generation generation) const
+    {
+        // CS: changed check conditions because otherwise the tail might wrap
+        // around and in that case it will be greater than the given generation
+        // return generation != 0 && generation >= head() && generation < tail();
+        if (generation == 0) { return false; }
+        if (head() < tail()) {
+            return generation >= head() && generation < tail();
+        }
+        else if (tail() < head()) {
+            return (generation >= head() && generation < GC_MAX_GENERATIONS)
+                || generation < tail();
+        }
+        return false;
     }
 
     /**
