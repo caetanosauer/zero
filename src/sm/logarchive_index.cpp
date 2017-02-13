@@ -80,8 +80,6 @@ size_t ArchiveIndex::getFileSize(int fd)
 
 ArchiveIndex::ArchiveIndex(const sm_options& options)
 {
-    DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
-
     archdir = options.get_string_option("sm_archdir", "archive");
     // CS TODO: archiver currently only works with 1MB blocks
     blockSize = DFT_BLOCK_SIZE;
@@ -176,8 +174,6 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
 ArchiveIndex::~ArchiveIndex()
 {
     if (runRecycler) { runRecycler->stop(); }
-
-    DO_PTHREAD(pthread_mutex_destroy(&mutex));
 }
 
 void ArchiveIndex::listFiles(std::vector<std::string>& list,
@@ -260,7 +256,7 @@ rc_t ArchiveIndex::closeCurrentRun(lsn_t runEndLSN, unsigned level)
     lsn_t lastLSN = getLastLSN(level);
     w_assert1(!lastLSN.is_null() && (lastLSN < runEndLSN || runEndLSN.is_null()));
 
-    CRITICAL_SECTION(cs, mutex);
+    spinlock_write_critical_section cs(&_mutex);
 
     if (appendFd[level] >= 0) {
         if (lastLSN != runEndLSN && !runEndLSN.is_null()) {
@@ -376,7 +372,7 @@ rc_t ArchiveIndex::closeScan(int& fd)
 
 void ArchiveIndex::deleteRuns(unsigned replicationFactor)
 {
-    CRITICAL_SECTION(cs, mutex);
+    spinlock_write_critical_section cs(&_mutex);
 
     if (replicationFactor == 0) { // delete all runs
         fs::directory_iterator it(archpath), eod;
@@ -422,7 +418,7 @@ size_t ArchiveIndex::getSkipLogrecSize() const
 void ArchiveIndex::newBlock(const vector<pair<PageID, size_t> >&
         buckets, unsigned level)
 {
-    CRITICAL_SECTION(cs, mutex);
+    spinlock_write_critical_section cs(&_mutex);
 
     w_assert1(bucketSize > 0);
 
@@ -517,13 +513,13 @@ void ArchiveIndex::appendNewRun(unsigned level)
 
 void ArchiveIndex::startNewRun(unsigned level)
 {
-    CRITICAL_SECTION(cs, mutex);
+    spinlock_write_critical_section cs(&_mutex);
     appendNewRun(level);
 }
 
 lsn_t ArchiveIndex::getLastLSN(unsigned level)
 {
-    CRITICAL_SECTION(cs, mutex);
+    spinlock_read_critical_section cs(&_mutex);
 
     if (level > maxLevel) {
         return lsn_t(1,0);
@@ -759,7 +755,7 @@ void ArchiveIndex::probeInRun(ProbeResult& res)
 void ArchiveIndex::probe(std::vector<ProbeResult>& probes,
         PageID startPID, PageID endPID, lsn_t startLSN)
 {
-    CRITICAL_SECTION(cs, mutex);
+    spinlock_read_critical_section cs(&_mutex);
 
     probes.clear();
     unsigned level = maxLevel;

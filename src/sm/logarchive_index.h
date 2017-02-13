@@ -175,9 +175,7 @@ private:
 
     std::unique_ptr<RunRecycler> runRecycler;
 
-    // closeCurrentRun needs mutual exclusion because it is called by both
-    // the writer thread and the archiver thread in processFlushRequest
-    pthread_mutex_t mutex;
+    mutable srwlock_t _mutex;
 
     fs::path make_run_path(lsn_t begin, lsn_t end, unsigned level = 1) const;
     fs::path make_current_run_path(unsigned level) const;
