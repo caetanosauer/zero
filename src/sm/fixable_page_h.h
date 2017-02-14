@@ -146,6 +146,10 @@ public:
     void update_page_lsn(const lsn_t & lsn) const;
     lsn_t get_page_lsn() const;
 
+    /// Gets the vaue of the update counter in the CB
+    uint16_t get_update_count();
+    void reset_update_count();
+
     /// Updates lsn field inside generic_page (i.e., in the page image)
     void set_img_page_lsn(const lsn_t& lsn);
 
@@ -206,7 +210,6 @@ public:
      * log record interface requires a fixable_page_h to perform REDO.
      */
      void setup_for_restore(generic_page* pp);
-
 
 protected:
     friend class borrowed_btree_page_h;

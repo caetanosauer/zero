@@ -132,8 +132,10 @@ struct bf_tree_cb_t {
     /// Reference count incremented only by X-latching
     uint16_t _ref_count_ex; // +2 -> 12
 
-    /// Filler
-    uint16_t _fill14;        // +2 -> 14
+    /// Count number of updates (for page_img logrec compression, see xct_logger.h)
+    uint16_t _update_count;        // +2 -> 14
+    uint16_t get_update_count() { return _update_count; }
+    void set_update_count(uint16_t c) { _update_count = c; }
 
     /// true if this block is actually used
     std::atomic<bool> _used;          // +1  -> 15

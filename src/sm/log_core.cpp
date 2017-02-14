@@ -417,6 +417,8 @@ log_core::log_core(const sm_options& options)
     _group_commit_size = options.get_int_option("sm_group_commit_size", 0);
     _group_commit_timeout = options.get_int_option("sm_group_commit_timeout", 100);
 
+    _page_img_compression = options.get_int_option("sm_page_img_compression", 0);
+
     // Load fetch buffers
     int fetchbuf_partitions = options.get_int_option("sm_log_fetch_buf_partitions", 0);
     if (fetchbuf_partitions > 0) {

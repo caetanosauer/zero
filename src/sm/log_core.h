@@ -139,6 +139,8 @@ public:
 
     static lsn_t first_lsn(uint32_t pnum) { return lsn_t(pnum, 0); }
 
+    unsigned get_page_img_compression() { return _page_img_compression; }
+
 protected:
 
     char*                _buf; // log buffer: _segsize buffer into which
@@ -313,6 +315,15 @@ protected:
      * will not flush its buffer but wait for the next invocation.
      */
     bool _should_group_commit(long write_size);
+
+    /**
+     * Enables page-image compression in the log. For every N updates on a page,
+     * a page_img_format log record is generated rather than a log record describing
+     * that individual update. This makes recovery of that page more efficient by
+     * pruning the chain of log records that must be applied during redo. If set
+     * to zero, page-image compression is turned off.
+     */
+    unsigned _page_img_compression;
 
 }; // log_core
 

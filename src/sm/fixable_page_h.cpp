@@ -128,6 +128,18 @@ void fixable_page_h::set_img_page_lsn(const lsn_t & lsn)
     if (_pp) { _pp->lsn = lsn; }
 }
 
+uint16_t fixable_page_h::get_update_count()
+{
+    if (!_pp) { return 0; }
+    return smlevel_0::bf->get_update_count(_pp);
+}
+
+void fixable_page_h::reset_update_count()
+{
+    w_assert1(_pp);
+    smlevel_0::bf->reset_update_count(_pp);
+}
+
 bool fixable_page_h::is_to_be_deleted() {
     return (_pp->page_flags&t_to_be_deleted) != 0;
 }

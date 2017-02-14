@@ -60,7 +60,21 @@ public:
         bool should_log = smlevel_0::log && smlevel_0::logging_enabled && xd;
         if (!should_log)  { return lsn_t::null; }
 
+        if (_should_apply_img_compression(Logrec::TYPE, p)) {
+            // page_img_format only works with btree pages
+            // CS: I know this looks ugly, but that's what we have to do with all this
+            // cumbersome "page handler" stuff
+            borrowed_btree_page_h borrowed {p};
+            auto btree_p = reinterpret_cast<btree_page_h*>(&borrowed);
+
+            // log this page image as an SX to keep it out of the xct undo chain
+            sys_xct_section_t sx {false};
+            log_p<page_img_format_log>(btree_p);
+            sx.end_sys_xct(RCOK);
+        }
+
         logrec_t* logrec = _get_logbuf(xd);
+
         new (logrec) Logrec;
         logrec->init_header(Logrec::TYPE);
         logrec->init_xct_info();
@@ -184,6 +198,22 @@ public:
     static void _update_page_lsns(PagePtr page, lsn_t new_lsn)
     {
         page->update_page_lsn(new_lsn);
+    }
+
+    template <class PagePtr>
+    static bool _should_apply_img_compression(logrec_t::kind_t type, PagePtr page)
+    {
+        if (type == logrec_t::t_page_img_format) { return false; }
+        if (page->tag() != t_btree_p) { return false; }
+
+        auto comp = ss_m::log->get_page_img_compression();
+        if (comp == 0) { return false; }
+        auto count = page->get_update_count();
+        if (count % comp == 0) {
+            page->reset_update_count();
+            return true;
+        }
+        return false;
     }
 
     static logrec_t* _get_logbuf(xct_t* xd)

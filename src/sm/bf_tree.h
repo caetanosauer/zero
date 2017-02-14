@@ -208,12 +208,18 @@ public:
      */
     bool is_used (bf_idx idx) const;
 
-    /*
+    /**
      * Sets the page_lsn field on the control block. Used by every update
      * operation on a page, including redo.
      */
     void set_page_lsn(generic_page*, lsn_t);
     lsn_t get_page_lsn(generic_page*);
+
+    /**
+     * Gets the value of the update counter in the control block.
+     */
+    uint16_t get_update_count(generic_page*);
+    void reset_update_count(generic_page*);
 
     /**
      * Whenever the parent of a page is changed (adoption or de-adoption),
