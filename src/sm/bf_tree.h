@@ -583,10 +583,11 @@ private:
     PageID _first;
     PageID _count;
     bool _virgin;
-    int fix_depth;
 
     generic_page* _current;
     PageID _current_pid;
+
+    int fix_depth;
 
     void fix_current()
     {
