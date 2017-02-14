@@ -237,6 +237,8 @@ void LogReplayer::replay(LogScan logs, PageIter pagesBegin, PageIter pagesEnd)
 
         prev_pid = pid;
         prev_lsn = lr->lsn();
+
+        ADD_TSTAT(restore_log_volume, lr->length());
         replayed++;
     }
 }

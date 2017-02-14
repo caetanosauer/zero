@@ -327,6 +327,8 @@ rc_t ArchiveIndex::openForScan(int& fd, const RunId& runid)
     p.second++;
     fd = p.first;
 
+    INC_TSTAT(la_open_count);
+
     return RCOK;
 }
 
@@ -771,6 +773,7 @@ void ArchiveIndex::probeInRun(ProbeResult& res)
             res.offset = run->entries[entryBegin].offset;
         }
     }
+    INC_TSTAT(la_index_probes);
 }
 
 void ArchiveIndex::probe(std::vector<ProbeResult>& probes,

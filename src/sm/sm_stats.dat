@@ -359,10 +359,11 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long la_activations           How often log archiver was activated
     u_long la_read_volume           Number of bytes read during log archive scans
     u_long la_read_count            Number of read operations performed on the log archive
-    u_long la_open_count            Number of open calls on the log archive scanner
+    u_long la_open_count            Number of open calls on run files of the log archive scanner
     u_long la_read_time             Time spent reading blocks from log archive (usec)
     u_long la_block_writes          Number of blocks appended to the log archive
     u_long la_merge_heap_time       Time spent with log archiver merger operations (usec)
+    u_long la_index_probes          Number of probes in runs of the log archive index
 
     // Backup stats
     u_long backup_not_prefetched    How often a segment was fixed without being prefetched first

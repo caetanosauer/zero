@@ -51,8 +51,6 @@ ArchiveScanner::open(PageID startPID, PageID endPID,
         return merger;
     }
 
-    INC_TSTAT(la_open_count);
-
     return merger;
 }
 
