@@ -166,7 +166,7 @@ void Command::setupSMOptions(po::options_description& options)
     ("sm_group_commit_timeout", po::value<int>()->default_value(100),
         "Max time to wait (in ms) to fill up group commit window")
     ("sm_page_img_compression", po::value<int>()->default_value(0),
-        "Enables page-image compression for every N log records (N=0 turns off)")
+        "Enables page-image compression for every N log bytes (N=0 turns off)")
     ("sm_bufpoolsize", po::value<int>()->default_value(1024),
         "Size of buffer pool in MB")
     ("sm_fakeiodelay-enable", po::value<int>()->default_value(0),

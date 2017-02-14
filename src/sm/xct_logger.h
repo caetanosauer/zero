@@ -96,7 +96,7 @@ public:
             lsn_t lsn;
             W_COERCE( ss_m::log->insert(*logrec, &lsn) );
             w_assert1(lsn != lsn_t::null);
-            _update_page_lsns(p, lsn);
+            _update_page_lsns(p, lsn, logrec->length());
             DBGOUT3(<< " SSX logged: " << logrec->type() << "\n new_lsn= " << lsn);
             return lsn;
         }
@@ -106,7 +106,7 @@ public:
         logrec->set_xid_prev(xd->tid(), xd->last_lsn());
         W_COERCE(ss_m::log->insert(*logrec, &lsn));
         W_COERCE(xd->update_last_logrec(logrec, lsn));
-        _update_page_lsns(p, lsn);
+        _update_page_lsns(p, lsn, logrec->length());
 
         return lsn;
     }
@@ -149,8 +149,8 @@ public:
             lsn_t lsn;
             W_COERCE( ss_m::log->insert(*logrec, &lsn) );
             w_assert1(lsn != lsn_t::null);
-            _update_page_lsns(p, lsn);
-            _update_page_lsns(p2, lsn);
+            _update_page_lsns(p, lsn, logrec->length());
+            _update_page_lsns(p2, lsn, logrec->length());
             DBGOUT3(<< " SSX logged: " << logrec->type() << "\n new_lsn= " << lsn);
             return lsn;
         }
@@ -160,8 +160,8 @@ public:
         logrec->set_xid_prev(xd->tid(), xd->last_lsn());
         W_COERCE(ss_m::log->insert(*logrec, &lsn));
         W_COERCE(xd->update_last_logrec(logrec, lsn));
-        _update_page_lsns(p, lsn);
-        _update_page_lsns(p2, lsn);
+        _update_page_lsns(p, lsn, logrec->length());
+        _update_page_lsns(p2, lsn, logrec->length());
 
         return lsn;
     }
@@ -195,9 +195,10 @@ public:
     }
 
     template <class PagePtr>
-    static void _update_page_lsns(PagePtr page, lsn_t new_lsn)
+    static void _update_page_lsns(PagePtr page, lsn_t new_lsn, uint32_t size)
     {
         page->update_page_lsn(new_lsn);
+        page->increment_log_volume(size);
     }
 
     template <class PagePtr>
@@ -208,9 +209,9 @@ public:
 
         auto comp = ss_m::log->get_page_img_compression();
         if (comp == 0) { return false; }
-        auto count = page->get_update_count();
-        if (count % comp == 0) {
-            page->reset_update_count();
+        auto vol = page->get_log_volume();
+        if (vol >= comp) {
+            page->reset_log_volume();
             return true;
         }
         return false;

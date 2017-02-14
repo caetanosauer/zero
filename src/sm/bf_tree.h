@@ -216,10 +216,11 @@ public:
     lsn_t get_page_lsn(generic_page*);
 
     /**
-     * Gets the value of the update counter in the control block.
+     * Gets the value of the log volume counter in the control block.
      */
-    uint16_t get_update_count(generic_page*);
-    void reset_update_count(generic_page*);
+    uint32_t get_log_volume(generic_page*);
+    void reset_log_volume(generic_page*);
+    void increment_log_volume(generic_page*, uint32_t);
 
     /**
      * Whenever the parent of a page is changed (adoption or de-adoption),

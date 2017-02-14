@@ -128,16 +128,22 @@ void fixable_page_h::set_img_page_lsn(const lsn_t & lsn)
     if (_pp) { _pp->lsn = lsn; }
 }
 
-uint16_t fixable_page_h::get_update_count()
+uint32_t fixable_page_h::get_log_volume()
 {
     if (!_pp) { return 0; }
-    return smlevel_0::bf->get_update_count(_pp);
+    return smlevel_0::bf->get_log_volume(_pp);
 }
 
-void fixable_page_h::reset_update_count()
+void fixable_page_h::increment_log_volume(uint32_t v)
 {
     w_assert1(_pp);
-    smlevel_0::bf->reset_update_count(_pp);
+    smlevel_0::bf->increment_log_volume(_pp, v);
+}
+
+void fixable_page_h::reset_log_volume()
+{
+    w_assert1(_pp);
+    smlevel_0::bf->reset_log_volume(_pp);
 }
 
 bool fixable_page_h::is_to_be_deleted() {

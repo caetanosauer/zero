@@ -146,9 +146,10 @@ public:
     void update_page_lsn(const lsn_t & lsn) const;
     lsn_t get_page_lsn() const;
 
-    /// Gets the vaue of the update counter in the CB
-    uint16_t get_update_count();
-    void reset_update_count();
+    /// returns log volume in the CB
+    uint32_t get_log_volume();
+    void increment_log_volume(uint32_t);
+    void reset_log_volume();
 
     /// Updates lsn field inside generic_page (i.e., in the page image)
     void set_img_page_lsn(const lsn_t& lsn);

@@ -1074,7 +1074,6 @@ void bf_tree_m::set_page_lsn(generic_page* p, lsn_t lsn)
     w_assert1(cb.latch().mode() == LATCH_EX);
     w_assert1(cb.get_page_lsn() <= lsn);
     cb.set_page_lsn(lsn);
-    cb._update_count++;
 }
 
 lsn_t bf_tree_m::get_page_lsn(generic_page* p)
@@ -1084,18 +1083,25 @@ lsn_t bf_tree_m::get_page_lsn(generic_page* p)
     return get_cb(idx).get_page_lsn();
 }
 
-uint16_t bf_tree_m::get_update_count(generic_page* p)
+uint32_t bf_tree_m::get_log_volume(generic_page* p)
 {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
-    return get_cb(idx).get_update_count();
+    return get_cb(idx).get_log_volume();
 }
 
-void bf_tree_m::reset_update_count(generic_page* p)
+void bf_tree_m::increment_log_volume(generic_page* p, uint32_t v)
 {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
-    get_cb(idx).set_update_count(0);
+    get_cb(idx).increment_log_volume(v);
+}
+
+void bf_tree_m::reset_log_volume(generic_page* p)
+{
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    get_cb(idx).set_log_volume(0);
 }
 
 latch_mode_t bf_tree_m::latch_mode(const generic_page* p) {

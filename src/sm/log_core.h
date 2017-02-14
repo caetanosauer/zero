@@ -317,11 +317,12 @@ protected:
     bool _should_group_commit(long write_size);
 
     /**
-     * Enables page-image compression in the log. For every N updates on a page,
-     * a page_img_format log record is generated rather than a log record describing
-     * that individual update. This makes recovery of that page more efficient by
-     * pruning the chain of log records that must be applied during redo. If set
-     * to zero, page-image compression is turned off.
+     * Enables page-image compression in the log. For every N bytes of log
+     * generated for a page, a page_img_format log record is generated rather
+     * than a log record describing that individual update. This makes recovery
+     * of that page more efficient by pruning the chain of log records that
+     * must be applied during redo. If set to zero, page-image compression is
+     * turned off.
      */
     unsigned _page_img_compression;
 

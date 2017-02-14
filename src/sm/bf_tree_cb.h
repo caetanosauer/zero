@@ -132,10 +132,7 @@ struct bf_tree_cb_t {
     /// Reference count incremented only by X-latching
     uint16_t _ref_count_ex; // +2 -> 12
 
-    /// Count number of updates (for page_img logrec compression, see xct_logger.h)
-    uint16_t _update_count;        // +2 -> 14
-    uint16_t get_update_count() { return _update_count; }
-    void set_update_count(uint16_t c) { _update_count = c; }
+    uint16_t _fill14; // +2 -> 14
 
     /// true if this block is actually used
     std::atomic<bool> _used;          // +1  -> 15
@@ -156,14 +153,19 @@ struct bf_tree_cb_t {
 
     bool is_dirty() const { return _page_lsn > _clean_lsn; }
 
+    /// Log volume generated on this page (for page_img logrec compression, see xct_logger.h)
+    uint32_t _log_volume;        // +4 -> 36
+    uint16_t get_log_volume() { return _log_volume; }
+    void increment_log_volume(uint16_t c) { _log_volume += c; }
+    void set_log_volume(uint16_t c) { _log_volume = c; }
 
     /**
      * number of swizzled pointers to children; protected by ??
      */
-    uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 34
+    uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 38
 
     // Add padding to align control block at cacheline boundary (64 bytes)
-    uint8_t _fill63[29];    // +29 -> 63
+    uint8_t _fill63[25];    // +25 -> 63
 
     /* The bufferpool should alternate location of latches and control blocks
      * starting at an odd multiple of 64B as follows:
