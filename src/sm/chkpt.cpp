@@ -115,10 +115,12 @@ private:
     chkpt_thread_t&      operator=(const chkpt_thread_t&);
 };
 
-chkpt_m::chkpt_m(const sm_options& options, lsn_t last_chkpt_lsn)
-    : _chkpt_thread(NULL), _chkpt_count(0), _min_rec_lsn(0), _min_xct_lsn(0),
-    _last_end_lsn(last_chkpt_lsn)
+chkpt_m::chkpt_m(const sm_options& options, chkpt_t* chkpt_info)
+    : _chkpt_thread(NULL), _chkpt_count(0)
 {
+    _min_rec_lsn = chkpt_info->get_min_rec_lsn();
+    _min_xct_lsn = chkpt_info->get_min_xct_lsn();
+    _last_end_lsn = chkpt_info->get_last_scan_start();
     if (_last_end_lsn.is_null()) { _last_end_lsn = lsn_t(1, 0); }
     int interval = options.get_int_option("sm_chkpt_interval", -1);
     if (interval >= 0) {
