@@ -121,14 +121,14 @@ fixed_lists_mem_t::fixed_lists_mem_t(size_t bufsize, size_t incr, size_t max)
 {
     // make sure bufsize is multiple of max
     _bufsize = (bufsize / max) * max;
-    _buf = new char[bufsize];
+    _buf = new char[_bufsize];
     _lists = new list_header_t*[max/incr];
     ::memset(_lists, 0, max/incr * sizeof(list_header_t*));
 
     _first_non_empty = max;
     _last_non_empty = max;
 
-    size_t maxblock_count = bufsize / max;
+    size_t maxblock_count = _bufsize / max;
     for (size_t i = 0; i < maxblock_count; i++) {
         char* add = _buf + (max * i);
         add_to_list(max, add);

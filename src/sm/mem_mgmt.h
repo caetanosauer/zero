@@ -151,7 +151,7 @@ public:
     fixed_lists_mem_t(
             size_t bufsize = 8192 * 10240,
             size_t incr = 32,
-            size_t max = 8192);
+            size_t max = 16384);
     virtual ~fixed_lists_mem_t();
     rc_t allocate(size_t length, slot_t& slot);
     rc_t free(slot_t slot);
