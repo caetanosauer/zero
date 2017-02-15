@@ -44,6 +44,8 @@ class http_headers
    std::string version;
 
    std::map<std::string, std::string> headers;
+   std::map<std::string, std::string> options;
+
 public:
     http_headers();
        std::string get_response(HandleKits &kits);
@@ -51,6 +53,7 @@ public:
        int content_length();
        void on_read_header(std::string line);
        void on_read_request_line(std::string line);
+       void add_option(std::string, std::string);
        unsigned char* get_icon(int* pOut);
 
 };

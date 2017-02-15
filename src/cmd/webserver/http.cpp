@@ -255,9 +255,9 @@ unsigned char* http_headers::get_icon(int* pOut)
 
 int http_headers::content_length()
 {
-  if(headers.find("content-length") != headers.end())
+  if(headers.find("Content-Length") != headers.end())
   {
-     std::stringstream ssLength(headers.find("content-length")->second);
+     std::stringstream ssLength(headers.find("Content-Length")->second);
      int content_length;
      ssLength >> content_length;
      return content_length;
@@ -286,14 +286,55 @@ void http_headers::on_read_request_line(std::string line)
    std::cout << "request for resource: " << url << std::endl;
 };
 
-void session::read_body(std::shared_ptr<session> pThis)
+void http_headers::add_option(std::string key, std::string value)
 {
-  int nbuffer = 1000;
-  std::shared_ptr<std::vector<char>> bufptr = std::make_shared<std::vector<char>>(nbuffer);
-  asio::async_read(pThis->socket, boost::asio::buffer(*bufptr, nbuffer), [pThis](const boost::system::error_code& e, std::size_t s)
-  {
-  });
-};
+    options[key] = value;
+}
+
+void session::read_body(std::shared_ptr<session> pThis) {
+
+    std::cout << "read_body" << std::endl;
+
+    size_t nbuffer = pThis->headers.content_length();
+    std::cout << __FILE__ << ":" << __LINE__ << " nbuffer: " << nbuffer << "\n";
+
+    std::shared_ptr<std::vector<char> > bufptr = std::make_shared<std::vector<char> >(nbuffer);
+
+    auto partial = std::copy(
+            std::istreambuf_iterator<char>(&pThis->buff), {},
+            bufptr->begin());
+
+    std::size_t already_received = std::distance(bufptr->begin(), partial);
+
+    assert(nbuffer >= already_received);
+    nbuffer -= already_received;
+
+    asio::async_read(pThis->socket, boost::asio::buffer(&*bufptr->begin() + already_received, nbuffer),
+        [=](const boost::system::error_code& e, std::size_t s) {
+            // EOF is to be expected on client disconnect
+            if (e && e != boost::asio::error::eof) {
+                std::cerr << "Error:" << __LINE__ << " " << e.message() << "\n"; return;
+            }
+
+            std::string body(&*bufptr->begin(), already_received + s);
+
+            std::string::size_type p = 0;
+            for (int i = 0; i<2; ++i)
+                p = body.find_last_of("\r\n", p-1);
+
+            std::cout << "Tail: '" << body.substr(p+1) << "'\n";
+
+            std:stringstream bodyStream;
+            bodyStream << body;
+            std::string key, value;
+            while(std::getline(bodyStream, key, ':')) {
+                key.erase(std::remove(key.begin(), key.end(), ' '),key.end());
+                std::getline(bodyStream, value, ',');
+                value.erase(std::remove(value.begin(), value.end(), ' '),value.end());
+                pThis->headers.add_option(key,value);
+            }
+        });
+}
 
 void session::read_next_line(std::shared_ptr<session> pThis, HandleKits &kits)
 {
@@ -318,6 +359,11 @@ void session::read_next_line(std::shared_ptr<session> pThis, HandleKits &kits)
         else
         {
            pThis->read_body(pThis);
+           std::shared_ptr<std::string> str = std::make_shared<std::string>(pThis->headers.get_response(kits));
+           asio::async_write(pThis->socket, boost::asio::buffer(str->c_str(), str->length()), [pThis, str](const boost::system::error_code& e, std::size_t s)
+           {
+              //std::cout << "done" << std::endl;
+           });
         }
      }
      else
