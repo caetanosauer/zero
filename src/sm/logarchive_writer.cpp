@@ -1,5 +1,6 @@
 #include "logarchive_writer.h"
 
+#include "log_core.h"
 #include "ringbuffer.h"
 #include "logarchive_index.h"
 
@@ -8,7 +9,7 @@ const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
 
 BlockAssembly::BlockAssembly(ArchiveIndex* index, unsigned level)
     : dest(NULL), maxLSNInBlock(lsn_t::null), maxLSNLength(0),
-    lastRun(-1), bucketSize(0), nextBucket(0), level(level)
+    lastRun(-1), currentPID(0), bucketSize(0), nextBucket(0), level(level)
 {
     archIndex = index;
     blockSize = archIndex->getBlockSize();
@@ -19,6 +20,8 @@ BlockAssembly::BlockAssembly(ArchiveIndex* index, unsigned level)
 
     index->openNewRun(level);
     spaceToReserve = index->getSkipLogrecSize();
+
+    enableCompression = (smlevel_0::log->get_page_img_compression() > 0);
 }
 
 BlockAssembly::~BlockAssembly()
@@ -67,14 +70,18 @@ bool BlockAssembly::start(run_number_t run)
     }
     DBGTHRD(<< "Picked block for selection " << (void*) dest);
 
-    pos = sizeof(BlockHeader);
-
     if (run != lastRun) {
         archIndex->startNewRun(level);
         nextBucket = 0;
         fpos = 0;
         lastRun = run;
     }
+
+    pos = sizeof(BlockHeader);
+    currentPID = 0;
+    currentPIDpos = pos;
+    currentPIDfpos = fpos;
+    currentPIDprevLSN = lsn_t::null;
 
     buckets.clear();
 
@@ -85,13 +92,31 @@ bool BlockAssembly::add(logrec_t* lr)
 {
     w_assert0(dest);
 
+    // Verify if we still have space for this log record
     size_t available = blockSize - (pos + spaceToReserve);
     if (lr->length() > available) {
-        return false;
+        // If this is a page_img logrec, we might still have space for it because
+        // the preceding log records of the same PID will be dropped
+        if (lr->type() != logrec_t::t_page_img_format) {
+            size_t imgAvailable = blockSize - (currentPIDpos + spaceToReserve);
+            bool hasSpaceForPageImg = lr->pid() == currentPID && lr->length() > imgAvailable;
+            if (!hasSpaceForPageImg) { return false; }
+        }
+        else { return false; }
     }
 
-    if (firstPID == 0) {
-        firstPID = lr->pid();
+    // New PID coming in: reset current PID stuff and check if it's time to add new bucket
+    if (lr->pid() != currentPID) {
+        currentPID = lr->pid();
+        currentPIDpos = pos;
+        currentPIDfpos = fpos;
+        currentPIDprevLSN = lr->page_prev_lsn();
+
+        if (lr->pid() / bucketSize >= nextBucket) {
+            PageID shpid = (lr->pid() / bucketSize) * bucketSize;
+            buckets.emplace_back(shpid, fpos);
+            nextBucket = shpid / bucketSize + 1;
+        }
     }
 
     if (maxLSNInBlock < lr->lsn_ck()) {
@@ -99,11 +124,12 @@ bool BlockAssembly::add(logrec_t* lr)
         maxLSNLength = lr->length();
     }
 
-    if (lr->pid() / bucketSize >= nextBucket) {
-        PageID shpid = (lr->pid() / bucketSize) * bucketSize;
-        buckets.push_back(
-                pair<PageID, size_t>(shpid, fpos));
-        nextBucket = shpid / bucketSize + 1;
+    if (enableCompression && lr->type() == logrec_t::t_page_img_format) {
+        //  Simply discard all log records produced for the current PID do far
+        pos = currentPIDpos;
+        fpos = currentPIDfpos;
+        // Adjust per-page log chain to satisfy redo assertions
+        lr->set_page_prev_lsn(currentPIDprevLSN);
     }
 
     w_assert1(pos > 0 || fpos % blockSize == 0);
@@ -122,7 +148,6 @@ void BlockAssembly::finish()
 
     w_assert0(archIndex);
     archIndex->newBlock(buckets, level);
-    firstPID = 0;
 
     // write block header info
     BlockHeader* h = (BlockHeader*) dest;

@@ -111,11 +111,15 @@ private:
     size_t pos;
     size_t fpos;
 
-    PageID firstPID;
-    // PageID lastPID;
     lsn_t maxLSNInBlock;
     int maxLSNLength;
     run_number_t lastRun;
+
+    PageID currentPID;
+    size_t currentPIDpos;
+    size_t currentPIDfpos;
+    lsn_t currentPIDprevLSN;
+    bool enableCompression;
 
     // if using a variable-bucket index, this is the number of page IDs
     // that will be stored within a bucket (aka restore's segment)
