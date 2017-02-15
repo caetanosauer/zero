@@ -364,6 +364,8 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long la_block_writes          Number of blocks appended to the log archive
     u_long la_merge_heap_time       Time spent with log archiver merger operations (usec)
     u_long la_index_probes          Number of probes in runs of the log archive index
+    u_long la_img_compressed_bytes  Bytes saved by applying page image compression
+    u_long log_img_format_bytes     Bytes added to transaction log by generating page images
 
     // Backup stats
     u_long backup_not_prefetched    How often a segment was fixed without being prefetched first

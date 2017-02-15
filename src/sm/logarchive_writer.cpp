@@ -125,6 +125,8 @@ bool BlockAssembly::add(logrec_t* lr)
     }
 
     if (enableCompression && lr->type() == logrec_t::t_page_img_format) {
+        // Keep track of compression efficicency
+        ADD_TSTAT(la_img_compressed_bytes, pos - currentPIDpos);
         //  Simply discard all log records produced for the current PID do far
         pos = currentPIDpos;
         fpos = currentPIDfpos;

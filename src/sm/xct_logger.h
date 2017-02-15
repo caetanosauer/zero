@@ -71,6 +71,12 @@ public:
             sys_xct_section_t sx {false};
             log_p<page_img_format_log>(btree_p);
             sx.end_sys_xct(RCOK);
+
+            // Keep track of additional space created by page images on log
+            auto extra_space = p->get_log_volume();
+            w_assert3(extra_space > 0);
+            ADD_TSTAT(log_img_format_bytes, extra_space);
+            p->reset_log_volume();
         }
 
         logrec_t* logrec = _get_logbuf(xd);
