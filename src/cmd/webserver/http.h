@@ -54,7 +54,6 @@ public:
        void on_read_header(std::string line);
        void on_read_request_line(std::string line);
        void add_option(std::string, std::string);
-       unsigned char* get_icon(int* pOut);
 
 };
 
