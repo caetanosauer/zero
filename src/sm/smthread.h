@@ -251,19 +251,12 @@ class smthread_t {
             QUEUE_EXT_QNODE_INITIALIZE(_me3);
             QUEUE_EXT_QNODE_INITIALIZE(_xlist_mutex_node);
 
-            if (outer) {
-                _TL_stats = outer->_TL_stats;
-            }
-            else {
-                create_TL_stats();
-            }
+            create_TL_stats();
         }
 
         ~tcb_t()
         {
-            if (_depth == 1) {
-                destroy_TL_stats();
-            }
+            destroy_TL_stats();
         }
     };
 
