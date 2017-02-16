@@ -149,7 +149,7 @@ bool LogArchiver::selection()
 ArchiverHeap::ArchiverHeap(size_t workspaceSize)
     : currentRun(0), filledFirst(false), w_heap(heapCmp)
 {
-    workspace = new fixed_lists_mem_t(workspaceSize);
+    workspace = new fixed_lists_mem_t(workspaceSize, 32 /*incr*/, 16384 /*max*/);
 }
 
 ArchiverHeap::~ArchiverHeap()
@@ -179,6 +179,7 @@ slot_t ArchiverHeap::allocate(size_t length)
 
 bool ArchiverHeap::push(logrec_t* lr, bool duplicate)
 {
+    w_assert1(lr->valid_header(lsn_t::null));
     slot_t dest = allocate(lr->length());
     if (!dest.address) {
         DBGTHRD(<< "heap full for logrec: " << lr->type_str()
@@ -186,6 +187,7 @@ bool ArchiverHeap::push(logrec_t* lr, bool duplicate)
         return false;
     }
 
+    w_assert1(dest.length >= lr->length());
     PageID pid = lr->pid();
     lsn_t lsn = lr->lsn();
     memcpy(dest.address, lr, lr->length());
@@ -202,6 +204,7 @@ bool ArchiverHeap::push(logrec_t* lr, bool duplicate)
         // contents were already saved with the memcpy operation above.
         lr->set_pid(lr->pid2());
         lr->set_page_prev_lsn(lr->page2_prev_lsn());
+        w_assert1(lr->valid_header(lsn));
         if (!push(lr, false)) {
             // If duplicated did not fit, then insertion of the original must
             // also fail. We have to (1) restore the original contents of
@@ -209,6 +212,7 @@ bool ArchiverHeap::push(logrec_t* lr, bool duplicate)
             // from the workspace. Since nothing was added to the heap yet, it
             // stays untouched.
             memcpy(lr, dest.address, lr->length());
+            w_assert1(lr->valid_header(lsn));
             W_COERCE(workspace->free(dest));
             return false;
         }
@@ -242,6 +246,8 @@ void ArchiverHeap::pop()
 {
     // DBGTHRD(<< "Selecting for output: "
     //         << *((logrec_t*) w_heap.First().slot.address));
+    logrec_t* lr = ((logrec_t*) w_heap.First().slot.address);
+    w_assert1(lr->valid_header());
 
     W_COERCE(workspace->free(w_heap.First().slot));
     w_heap.RemoveFirst();
@@ -255,7 +261,9 @@ void ArchiverHeap::pop()
 
 logrec_t* ArchiverHeap::top()
 {
-    return (logrec_t*) w_heap.First().slot.address;
+    logrec_t* lr = (logrec_t*) w_heap.First().slot.address;
+    w_assert1(lr->valid_header());
+    return lr;
 }
 
 // gt is actually a less than function, to produce ascending order

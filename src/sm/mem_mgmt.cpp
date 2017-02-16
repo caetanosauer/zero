@@ -156,8 +156,9 @@ fixed_lists_mem_t::~fixed_lists_mem_t()
  */
 rc_t fixed_lists_mem_t::allocate(size_t length, slot_t& slot)
 {
+    // ERROUT(<< "ALLOC " << length);
     if (length > _max) {
-        DBG(<< "Cannot allocate block of " << length);
+        ERROUT(<< "Cannot allocate block of " << length);
         return RC(eINTERNAL);
     }
 
@@ -217,6 +218,7 @@ rc_t fixed_lists_mem_t::allocate(size_t length, slot_t& slot)
  */
 rc_t fixed_lists_mem_t::free(slot_t slot)
 {
+    // ERROUT(<< "DEALLOC " << slot.length);
     DBG(<< "Freeing block of " << slot.length);
     assert(slot.length % _incr == 0);
 
