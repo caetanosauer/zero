@@ -243,7 +243,7 @@ void ArchiverHeap::pop()
     // DBGTHRD(<< "Selecting for output: "
     //         << *((logrec_t*) w_heap.First().slot.address));
 
-    workspace->free(w_heap.First().slot);
+    W_COERCE(workspace->free(w_heap.First().slot));
     w_heap.RemoveFirst();
 
     if (size() == 0) {

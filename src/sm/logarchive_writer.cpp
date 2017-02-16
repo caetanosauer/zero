@@ -91,15 +91,16 @@ bool BlockAssembly::start(run_number_t run)
 bool BlockAssembly::add(logrec_t* lr)
 {
     w_assert0(dest);
+    w_assert1(lr->valid_header());
 
     // Verify if we still have space for this log record
     size_t available = blockSize - (pos + spaceToReserve);
     if (lr->length() > available) {
         // If this is a page_img logrec, we might still have space for it because
         // the preceding log records of the same PID will be dropped
-        if (lr->type() != logrec_t::t_page_img_format) {
+        if (enableCompression && lr->type() == logrec_t::t_page_img_format) {
             size_t imgAvailable = blockSize - (currentPIDpos + spaceToReserve);
-            bool hasSpaceForPageImg = lr->pid() == currentPID && lr->length() > imgAvailable;
+            bool hasSpaceForPageImg = lr->pid() == currentPID && lr->length() < imgAvailable;
             if (!hasSpaceForPageImg) { return false; }
         }
         else { return false; }
