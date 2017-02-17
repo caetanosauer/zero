@@ -309,6 +309,8 @@ public:
                             }
     void                 corrupt();
 
+    void remove_info_for_pid(PageID pid);
+
     // Tells whether this log record restores a full page image, meaning
     // that the previous history is not needed during log replay.
     bool has_page_img(PageID page_id)

@@ -19,6 +19,7 @@
 #include <sstream>
 #include "logrec_support.h"
 #include "btree_page_h.h"
+#include "btree_logrec.h"
 
 #include <iomanip>
 typedef        ios::fmtflags        ios_fmtflags;
@@ -623,6 +624,36 @@ logrec_t::corrupt()
     char* start_of_corruption = (char*)&header._type;
     size_t bytes_to_corrupt = end_of_corruption - start_of_corruption;
     memset(start_of_corruption, 0, bytes_to_corrupt);
+}
+
+void logrec_t::remove_info_for_pid(PageID pid)
+{
+    w_assert1(is_multi_page());
+    w_assert1(pid == this->pid() || pid == pid2());
+    lsn_t lsn = lsn_ck();
+
+    if (type() == t_btree_split) {
+        size_t img_offset = reinterpret_cast<btree_bulk_delete_t*>(data_ssx())->size();
+        char* img = data_ssx() + img_offset;
+        size_t img_size = reinterpret_cast<page_img_format_t<btree_page_h>*>(img)->size();
+        char* end = reinterpret_cast<char*>(this) + length();
+
+        if (pid == this->pid()) {
+            // just cut off 2nd half of logrec (page_img)
+            set_size(img_offset);
+        }
+        else if (pid == pid2()) {
+            // Use empty bulk delete and move page img
+            // CS TODO: create a normal page_img_format log record
+            btree_bulk_delete_t* bulk = new (data_ssx()) btree_bulk_delete_t(pid2(),
+                    this->pid());
+            ::memmove(data_ssx() + bulk->size(), img, end - img);
+            set_size(bulk->size() + img_size);
+        }
+    }
+
+    set_lsn_ck(lsn);
+    w_assert1(valid_header());
 }
 
 /*********************************************************************

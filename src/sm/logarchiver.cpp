@@ -202,6 +202,7 @@ bool ArchiverHeap::push(logrec_t* lr, bool duplicate)
         // If we have to duplciate the log record, make sure there is room by
         // calling recursively without duplication. Note that the original
         // contents were already saved with the memcpy operation above.
+        lr->remove_info_for_pid(lr->pid());
         lr->set_pid(lr->pid2());
         lr->set_page_prev_lsn(lr->page2_prev_lsn());
         w_assert1(lr->valid_header(lsn));
@@ -216,6 +217,10 @@ bool ArchiverHeap::push(logrec_t* lr, bool duplicate)
             W_COERCE(workspace->free(dest));
             return false;
         }
+        // now that a compressed log record of pid2 has been pushed, compress
+        // this log record, i.e., of pid1.
+        logrec_t* lr_comp = reinterpret_cast<logrec_t*>(dest.address);
+        lr_comp->remove_info_for_pid(lr_comp->pid2());
     }
     else {
         // If all records of the current run are gone, start new run. But only

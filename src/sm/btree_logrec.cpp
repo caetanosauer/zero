@@ -419,6 +419,8 @@ void btree_split_log::construct(
         const w_keystr_t& new_chain
 )
 {
+    // If you change this, please make according adjustments in
+    // logrec_t::remove_info_for_pid
     btree_bulk_delete_t* bulk =
         new (data_ssx()) btree_bulk_delete_t(parent_p->pid(),
                     child_p->pid(), move_count,

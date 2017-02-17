@@ -291,6 +291,12 @@ struct btree_bulk_delete_t : public multi_page_log_t {
         new_chain.serialize_as_keystr(_data + new_high_fence_len);
     }
 
+    // Constructs empty logrec
+    btree_bulk_delete_t(PageID foster_parent, PageID foster_child) :
+        multi_page_log_t(foster_parent),
+        move_count(0), new_high_fence_len(0), new_chain_len(0), new_foster_child(foster_child)
+    {}
+
     size_t size()
     {
         return fields_sz + new_high_fence_len + new_chain_len;
