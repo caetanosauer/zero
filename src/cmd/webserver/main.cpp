@@ -3,10 +3,11 @@
 #include "http.h"
 
 
-void accept_and_run(ip::tcp::acceptor& acceptor, io_service& io_service, HandleKits &kits)
+void accept_and_run(ip::tcp::acceptor& acceptor, io_service& io_service, HandleKits *kits)
 {
    std::shared_ptr<session> sesh = std::make_shared<session>(io_service);
-   acceptor.async_accept(sesh->socket, [sesh, &acceptor, &io_service, &kits](const boost::system::error_code& accept_error)
+   //std::shared_ptr<HandleKits> kitsSh = std::make_shared<HandleKits>(kits);
+   acceptor.async_accept(sesh->socket, [sesh, kits, &acceptor, &io_service](const boost::system::error_code& accept_error)
    {
       accept_and_run(acceptor, io_service, kits);
       if(!accept_error)
@@ -29,7 +30,7 @@ int main(int argc, char ** argv)
         }
     }
     cout << "Web server is running on port " << tcpPort << endl;
-    HandleKits kits;
+    HandleKits* kits = new HandleKits();
     io_service io_service;
     ip::tcp::endpoint endpoint{ip::tcp::v4(), tcpPort};
     ip::tcp::acceptor acceptor{io_service, endpoint};
