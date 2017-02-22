@@ -66,6 +66,7 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
     _readonly = options.get_bool_option("sm_vol_readonly", false);
     _prioritize_archive =
         options.get_bool_option("sm_recovery_prioritize_archive", true);
+    _cluster_stores = options.get_bool_option("sm_vol_cluster_stores", false);
 
     _no_db_mode = options.get_bool_option("sm_no_db", false);
     if (_no_db_mode) {
@@ -119,7 +120,7 @@ void vol_t::build_caches(bool truncate)
     w_assert1(_stnode_cache);
     _stnode_cache->dump(cerr);
 
-    _alloc_cache = new alloc_cache_t(*_stnode_cache, truncate);
+    _alloc_cache = new alloc_cache_t(*_stnode_cache, truncate, _cluster_stores);
     w_assert1(_alloc_cache);
 }
 
@@ -359,6 +360,7 @@ void vol_t::shutdown(bool abrupt)
 
 rc_t vol_t::alloc_a_page(PageID& shpid, StoreID stid)
 {
+    if (!_cluster_stores) { stid = 0; }
     w_assert1(_alloc_cache);
     W_DO(_alloc_cache->sx_allocate_page(shpid, stid));
     INC_TSTAT(page_alloc_cnt);

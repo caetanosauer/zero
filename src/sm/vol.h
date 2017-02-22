@@ -202,6 +202,9 @@ private:
     /** Whether to open file with O_DIRECT */
     bool _use_o_direct;
 
+    /** Whether to cluster pages of the same store in extents */
+    bool _cluster_stores;
+
     rc_t dismount(bool abrupt = false);
 
     /** Open backup file descriptor for retore or taking new backup */

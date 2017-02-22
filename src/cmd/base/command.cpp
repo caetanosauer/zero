@@ -195,6 +195,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Log Buffer part size")
     ("sm_carray_slots", po::value<int>(),
         "")
+    ("sm_vol_cluster_stores", po::value<bool>(),
+        "Cluster pages of the same store into extents")
     ("sm_vol_log_reads", po::value<bool>(),
         "Generate log records for every page read")
     ("sm_vol_log_writes", po::value<bool>(),

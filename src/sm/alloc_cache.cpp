@@ -12,21 +12,21 @@
 
 const size_t alloc_cache_t::extent_size = alloc_page::bits_held;
 
-alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
+alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin, bool clustered)
     : stcache(stcache)
 {
-    vector<StoreID> stores;
-    stcache.get_used_stores(stores);
-
     if (virgin) {
         // first extent (which has stnode page) is assigned to store 0,
         // which baiscally means the extent does not belong to any particular
         // store
-        last_alloc_page.push_back(stnode_page::stpid);
-	// create first extent and format first alloc page
-	stcache.sx_append_extent(0, 0);
+        PageID pid;
+        W_COERCE(sx_allocate_page(pid, 0));
+        w_assert1(pid == stnode_page::stpid);
     }
-    else {
+    else if (clustered) {
+        vector<StoreID> stores;
+        stcache.get_used_stores(stores);
+
         // Load last allocated PID of each store using the last extent
         // recorded in the stnode page
         last_alloc_page.resize(stores.size() + 1, 0);
@@ -34,6 +34,11 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin)
             extent_id_t ext = stcache.get_last_extent(s);
             W_COERCE(load_alloc_page(s, ext));
         }
+    }
+    else {
+        last_alloc_page.resize(1, 0);
+        extent_id_t ext = stcache.get_last_extent(0);
+        W_COERCE(load_alloc_page(0, ext));
     }
 }
 
@@ -97,9 +102,8 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid)
         }
 
         pid = last_alloc_page[stid] + 1;
-        w_assert1(stid != 0 || pid != stnode_page::stpid);
 
-        if (pid == 1 || pid % extent_size == 0) {
+        if ((stid != 0 && pid == 1) || pid % extent_size == 0) {
             extent_id_t ext = _get_last_allocated_pid_internal() / extent_size + 1;
             pid = ext * extent_size + 1;
             W_DO(stcache.sx_append_extent(stid, ext));

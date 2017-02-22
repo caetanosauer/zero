@@ -26,7 +26,7 @@ class bf_fixed_m;
  */
 class alloc_cache_t {
 public:
-    alloc_cache_t(stnode_cache_t& stcache, bool virgin);
+    alloc_cache_t(stnode_cache_t& stcache, bool virgin, bool clustered);
 
     /**
      * Allocates one page. (System transaction)
