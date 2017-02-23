@@ -1,13 +1,12 @@
 #include "logarchive_writer.h"
 
-#include "log_core.h"
 #include "ringbuffer.h"
 #include "logarchive_index.h"
 
 // CS TODO: use option
 const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
 
-BlockAssembly::BlockAssembly(ArchiveIndex* index, unsigned level)
+BlockAssembly::BlockAssembly(ArchiveIndex* index, unsigned level, bool compression)
     : dest(NULL), maxLSNInBlock(lsn_t::null), maxLSNLength(0),
     lastRun(-1), currentPID(0), bucketSize(0), nextBucket(0), level(level)
 {
@@ -21,7 +20,7 @@ BlockAssembly::BlockAssembly(ArchiveIndex* index, unsigned level)
     index->openNewRun(level);
     spaceToReserve = index->getSkipLogrecSize();
 
-    enableCompression = (smlevel_0::log->get_page_img_compression() > 0);
+    enableCompression = compression;
 }
 
 BlockAssembly::~BlockAssembly()

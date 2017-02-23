@@ -43,6 +43,7 @@ LogArchiver::LogArchiver(const sm_options& options)
             "sm_archiver_read_whole_blocks", DFT_READ_WHOLE_BLOCKS);
     slowLogGracePeriod = options.get_int_option(
             "sm_archiver_slow_log_grace_period", DFT_GRACE_PERIOD);
+    bool compression = options.get_int_option("sm_page_img_compression", 0);
 
     index = new ArchiveIndex(options);
     nextActLSN = index->getLastLSN();
@@ -50,7 +51,7 @@ LogArchiver::LogArchiver(const sm_options& options)
 
     consumer = new LogConsumer(index->getLastLSN(), blockSize);
     heap = new ArchiverHeap(workspaceSize);
-    blkAssemb = new BlockAssembly(index);
+    blkAssemb = new BlockAssembly(index, compression);
 
     merger = nullptr;
     if (options.get_bool_option("sm_archiver_merging", false)) {
@@ -659,6 +660,7 @@ MergerDaemon::MergerDaemon(const sm_options& options,
      indir(in), outdir(out)
 {
     _fanin = options.get_int_option("sm_archiver_fanin", 5);
+    _compression = options.get_int_option("sm_page_img_compression", 0);
     if (!outdir) { outdir = indir; }
     w_assert0(indir && outdir);
 }
@@ -717,7 +719,7 @@ rc_t MergerDaemon::doMerge(unsigned level, unsigned fanin)
 
     {
         ArchiveScanner::RunMerger merger;
-        BlockAssembly blkAssemb(outdir, level+1);
+        BlockAssembly blkAssemb(outdir, level+1, _compression);
         outdir->openNewRun(level+1);
 
         DBGOUT1(<< "doMerge");

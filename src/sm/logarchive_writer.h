@@ -84,7 +84,7 @@ public:
  */
 class BlockAssembly {
 public:
-    BlockAssembly(ArchiveIndex* index, unsigned level = 1);
+    BlockAssembly(ArchiveIndex* index, unsigned level = 1, bool compression = true);
     virtual ~BlockAssembly();
 
     bool start(run_number_t run);

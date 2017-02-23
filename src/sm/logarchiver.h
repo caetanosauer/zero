@@ -132,6 +132,7 @@ private:
     ArchiveIndex* indir;
     ArchiveIndex* outdir;
     unsigned _fanin;
+    bool _compression;
 };
 
 /** \brief Implementation of a log archiver using asynchronous reader and
