@@ -686,7 +686,7 @@ size_t ArchiveIndex::findRun(lsn_t lsn, unsigned level)
     }
 
     // skip empty runs
-    while (runs[level][result].entries.size() == 0 && result <= lf) {
+    while (runs[level][result].entries.size() == 0 && result < lf) {
         result++;
     }
 
