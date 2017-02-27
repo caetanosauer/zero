@@ -19,6 +19,11 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin, bool clustere
         // first extent (which has stnode page) is assigned to store 0,
         // which baiscally means the extent does not belong to any particular
         // store
+        {
+            // Initialize page 0
+            fixable_page_h p;
+            W_COERCE(p.fix_direct(0, LATCH_EX, false, true /*virgin*/));
+        }
         PageID pid;
         W_COERCE(sx_allocate_page(pid, 0));
         w_assert1(pid == stnode_page::stpid);
