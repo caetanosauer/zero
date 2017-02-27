@@ -22,6 +22,7 @@ void MergeRuns::setupOptions()
         ("fanin", po::value<size_t>(&fanin)->required(),
             "Merge fan-in (required, larger than 1)")
     ;
+    Command::setupSMOptions(options);
 }
 
 void MergeRuns::run()
@@ -34,6 +35,7 @@ void MergeRuns::run()
     opt.set_string_option("sm_archdir", indir);
     opt.set_int_option("sm_archiver_block_size", BLOCK_SIZE);
     opt.set_int_option("sm_archiver_bucket_size", BUCKET_SIZE);
+    opt.set_int_option("sm_page_img_compression", 16384);
     ArchiveIndex* in = new ArchiveIndex(opt);
 
     ArchiveIndex* out = in;

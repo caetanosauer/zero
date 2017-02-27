@@ -51,7 +51,7 @@ LogArchiver::LogArchiver(const sm_options& options)
 
     consumer = new LogConsumer(index->getLastLSN(), blockSize);
     heap = new ArchiverHeap(workspaceSize);
-    blkAssemb = new BlockAssembly(index, compression);
+    blkAssemb = new BlockAssembly(index, 1 /*level*/, compression);
 
     merger = nullptr;
     if (options.get_bool_option("sm_archiver_merging", false)) {
@@ -660,7 +660,7 @@ MergerDaemon::MergerDaemon(const sm_options& options,
      indir(in), outdir(out)
 {
     _fanin = options.get_int_option("sm_archiver_fanin", 5);
-    _compression = options.get_int_option("sm_page_img_compression", 0);
+    _compression = options.get_int_option("sm_page_img_compression", 0) > 0;
     if (!outdir) { outdir = indir; }
     w_assert0(indir && outdir);
 }
