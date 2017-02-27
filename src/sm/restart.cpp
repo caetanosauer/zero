@@ -75,7 +75,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sstream>
 
 restart_m::restart_m(const sm_options&)
-    : _restart_thread(NULL)
+    : _restart_thread(NULL), logAnalysisFinished(false)
 {
 }
 
@@ -135,6 +135,7 @@ void restart_m::log_analysis()
             << chkpt.buf_tab.size() << " dirty pages and "
             << chkpt.xct_tab.size() << " active transactions");
     // chkpt.dump(cerr);
+    logAnalysisFinished = true;
 }
 
 /*********************************************************************
@@ -567,4 +568,3 @@ void restart_thread_t::run()
     smlevel_0::recovery->undo_pass();
     smlevel_0::log->discard_fetch_buffers();
 };
-

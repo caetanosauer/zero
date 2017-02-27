@@ -769,7 +769,27 @@ void ShoreEnv::gatherstats_sm(ostream &stream)
     _last_sm_stats = stats;
 }
 
+size_t ShoreEnv::get_total_pages_to_recover()
+{
+    size_t pagesToRecover = 0;
+    if (smlevel_0::recovery)
+        smlevel_0::recovery->get_chkpt()->buf_tab.size();
+    return pagesToRecover;
+}
 
+size_t ShoreEnv::get_total_pages_redone()
+{
+    size_t totalPagesRedone = restart_m::get_redone_pages();
+    return totalPagesRedone;
+}
+
+bool ShoreEnv::has_log_analysis_finished()
+{
+    bool hasFinished = false;
+    if (smlevel_0::recovery)
+        hasFinished = smlevel_0::recovery->hasLogAnalysisFinished();
+    return hasFinished;
+}
 
 /********************************************************************
  *

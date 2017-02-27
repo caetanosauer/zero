@@ -101,6 +101,8 @@ public:
     void undo_pass();
 
     chkpt_t* get_chkpt() { return &chkpt; }
+    bool hasLogAnalysisFinished() {return logAnalysisFinished;}
+
 
 private:
 
@@ -108,6 +110,8 @@ private:
     chkpt_t chkpt;
 
     bool instantRestart;
+
+    bool logAnalysisFinished;
 
     // Child thread, used only if open system after Log Analysis phase while REDO and UNDO
     // will be performed with concurrent user transactions
@@ -179,6 +183,8 @@ public:
     */
     static rc_t recover_single_page(fixable_page_h &p, const lsn_t& emlsn);
 
+    static size_t get_redone_pages() { return redonePages;}
+
 private:
     // Function used for serialized operations, open system after the entire restart process finished
     // brief sub-routine of redo_pass() for logs that have pid.
@@ -187,6 +193,10 @@ private:
                                 PageID page_updated,
                                 bool &redone,                  // Out: did REDO occurred?  Validation purpose
                                 uint32_t &dirty_count);        // Out: dirty page count, validation purpose
+
+    static size_t redonePages;
+
 };
+
 
 #endif

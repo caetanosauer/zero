@@ -41,6 +41,7 @@
 #include "reqs.h"
 #include "table_desc.h"
 #include <boost/program_options.hpp>
+#include "restart.h"
 
 using std::map;
 
@@ -615,6 +616,11 @@ public:
     string sysname() { return (_sysname); }
 
     env_stats_t* get_env_stats() { return (&_env_stats); }
+
+    // restart recovery status
+    size_t get_total_pages_to_recover();
+    size_t get_total_pages_redone();
+    bool has_log_analysis_finished();
 
     // For temp throughput calculation
     unsigned get_trx_att() const;

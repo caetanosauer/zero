@@ -13,6 +13,8 @@
 #include "log_spr.h"
 #include "logrec.h"
 
+size_t restart_m::redonePages = 0;
+
 page_evict_log::page_evict_log (const btree_page_h& p,
                                 general_recordid_t child_slot, lsn_t child_lsn) {
     new (data_ssx()) page_evict_t(child_lsn, child_slot);
@@ -91,6 +93,7 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn)
 
     w_assert0(p.lsn() == emlsn);
     DBGOUT1(<< "Single-Page-Recovery done for page " << p.pid());
+    redonePages++;
     return RCOK;
 }
 

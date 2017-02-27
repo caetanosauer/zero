@@ -113,6 +113,17 @@ std::string http_headers::get_response(HandleKits* kits)
       ssOut << std::endl;
       ssOut << sHTML;
   }
+  else if(url == "/recoveryprogress")
+  {
+      std::string sHTML = "{\"redoProgress\":" + kits->redoProgress() +"}";
+      sHTML +=", {\"logAnalysisProgress\":" + kits->logAnalysisProgress() +"}";
+      ssOut << "HTTP/1.1 200 OK" << std::endl;
+      ssOut << "Access-Control-Allow-Origin: *" << std::endl;
+      ssOut << "content-type: application/json" << std::endl;
+      ssOut << "content-length: " << sHTML.length() << std::endl;
+      ssOut << std::endl;
+      ssOut << sHTML;
+  }
   else
   {
      std::string sHTML = "<html><body><h1>404 Not Found</h1><p>There's nothing here.</p></body></html>";
@@ -353,13 +364,10 @@ int HandleKits::runKits(std::vector<std::string> options)
     }
 
     if (kitsExecuted) {
-        std::cout << "EXECUTED  DDDDDD" << std::endl;
         delete kits;
         kits = new KitsCommand();
         kits->setupOptions();
     }
-    else
-        std::cout << "NOOOOT EXECUTED  DDDDDD" << std::endl;
 
     // the options should include at least the benchmark and the number of threads e.g.: -b tpcc -t 2
     if (options.size() < 4 || kits->running())
@@ -417,7 +425,30 @@ void HandleKits::singlePageFailure()
     }
 }
 
-string HandleKits::getStats()
+std::string HandleKits::redoProgress()
+{
+    std::string progress = "0";
+    if (kits->getShoreEnv()->has_log_analysis_finished()) {
+        size_t pToRecover = kits->getShoreEnv()->get_total_pages_to_recover();
+        size_t pRecovered = kits->getShoreEnv()->get_total_pages_redone();
+
+        if (pRecovered < pToRecover)
+            progress = std::to_string((static_cast<double>(pRecovered)/static_cast<double>(pToRecover))*100);
+        else if (pRecovered > pToRecover)
+            progress = "100";
+    }
+    return progress;
+}
+
+std::string HandleKits::logAnalysisProgress()
+{
+    std::string progress = "0";
+    if (kits->getShoreEnv()->has_log_analysis_finished())
+        progress = "100";
+    return progress;
+}
+
+std::string HandleKits::getStats()
 {
     std::string strReturn;
     if (kits->running()) {
@@ -433,7 +464,7 @@ string HandleKits::getStats()
     return strReturn;
 };
 
-string HandleKits::aggLog()
+std::string HandleKits::aggLog()
 {
     AggLog agglog;
     agglog.setupOptions();
@@ -449,7 +480,7 @@ string HandleKits::aggLog()
     return agglog.jsonReply();
 }
 
-string HandleKits::getCounters()
+std::string HandleKits::getCounters()
 {
     string json;
     if (!kits->running())
@@ -487,7 +518,7 @@ string HandleKits::getCounters()
     return json;
 };
 
-string HandleKits::isRunning()
+std::string HandleKits::isRunning()
 {
     string jsonReply = "{\"isRunning\" : false}";
 

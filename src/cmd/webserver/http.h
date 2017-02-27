@@ -29,10 +29,13 @@ public:
     void crash();
     void mediaFailure();
     void singlePageFailure();
-    string getStats();
-    string aggLog();
-    string getCounters();
-    string isRunning();
+    std::string getStats();
+    std::string aggLog();
+    std::string getCounters();
+    std::string isRunning();
+    std::string redoProgress();
+    std::string logAnalysisProgress();
+
 
     //void counters(std::vector<std::string> &countersJson);
 };
