@@ -125,7 +125,7 @@ public:
     // run scanning methods
     rc_t openForScan(int& fd, const RunId& runid);
     rc_t readBlock(int fd, char* buf, size_t& offset, size_t readSize = 0);
-    rc_t closeScan(int fd, const RunId& runid);
+    rc_t closeScan(int& fd, const RunId& runid);
 
     void listFiles(std::vector<std::string>& list, int level = -1);
     void listFileStats(std::list<RunId>& list, int level = -1);

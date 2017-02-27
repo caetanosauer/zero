@@ -373,7 +373,7 @@ rc_t ArchiveIndex::readBlock(int fd, char* buf,
     return RCOK;
 }
 
-rc_t ArchiveIndex::closeScan(int fd, const RunId& runid)
+rc_t ArchiveIndex::closeScan(int& fd, const RunId& runid)
 {
     spinlock_write_critical_section cs(&_open_file_mutex);
 
@@ -389,6 +389,8 @@ rc_t ArchiveIndex::closeScan(int fd, const RunId& runid)
         CHECK_ERRNO(ret);
         _open_files.erase(it);
     }
+
+    fd = -1;
 
     return RCOK;
 }
