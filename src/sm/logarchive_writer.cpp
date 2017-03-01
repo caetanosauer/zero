@@ -1,5 +1,6 @@
 #include "logarchive_writer.h"
 
+#include "logdef_gen.h"
 #include "ringbuffer.h"
 #include "logarchive_index.h"
 
@@ -21,6 +22,7 @@ BlockAssembly::BlockAssembly(ArchiveIndex* index, unsigned level, bool compressi
     spaceToReserve = index->getSkipLogrecSize();
 
     enableCompression = compression;
+    isCompressing = false;
 }
 
 BlockAssembly::~BlockAssembly()
@@ -84,20 +86,26 @@ bool BlockAssembly::start(run_number_t run)
 
     buckets.clear();
 
+    w_assert1(!isCompressing);
+
     return true;
 }
 
-bool BlockAssembly::add(logrec_t* lr)
+bool BlockAssembly::hasSpace(logrec_t* lr)
 {
-    w_assert0(dest);
-    w_assert1(lr->valid_header());
-
     // Verify if we still have space for this log record
     size_t available = blockSize - (pos + spaceToReserve);
+
+    // During compression, we must reserve space for the largest possible page_img logrec
+    if (isCompressing) {
+        size_t max_len = sizeof(generic_page) + sizeof(baseLogHeader) + sizeof(lsn_t);
+        return max_len <= available;
+    }
+
     if (lr->length() > available) {
         // If this is a page_img logrec, we might still have space for it because
         // the preceding log records of the same PID will be dropped
-        if (enableCompression && lr->type() == logrec_t::t_page_img_format) {
+        if (enableCompression && lr->has_page_img(lr->pid())) {
             size_t imgAvailable = blockSize - (currentPIDpos + spaceToReserve);
             bool hasSpaceForPageImg = lr->pid() == currentPID && lr->length() < imgAvailable;
             if (!hasSpaceForPageImg) { return false; }
@@ -105,26 +113,69 @@ bool BlockAssembly::add(logrec_t* lr)
         else { return false; }
     }
 
-    // New PID coming in: reset current PID stuff and check if it's time to add new bucket
-    if (lr->pid() != currentPID) {
-        currentPID = lr->pid();
-        currentPIDpos = pos;
-        currentPIDfpos = fpos;
-        currentPIDprevLSN = lr->page_prev_lsn();
+    return true;
+}
 
-        if (lr->pid() / bucketSize >= nextBucket) {
-            PageID shpid = (lr->pid() / bucketSize) * bucketSize;
-            buckets.emplace_back(shpid, fpos);
-            nextBucket = shpid / bucketSize + 1;
-        }
-    }
-
+void BlockAssembly::copyLogrec(logrec_t* lr)
+{
+    w_assert1(lr->valid_header());
     if (maxLSNInBlock < lr->lsn_ck()) {
         maxLSNInBlock = lr->lsn_ck();
         maxLSNLength = lr->length();
     }
 
-    if (enableCompression && lr->type() == logrec_t::t_page_img_format) {
+    memcpy(dest + pos, lr, lr->length());
+    pos += lr->length();
+    fpos += lr->length();
+}
+
+void BlockAssembly::copyCompressedLogrec()
+{
+    lrBuffer.init_header(logrec_t::t_page_img_format);
+    lrBuffer.init_page_info(&btree_p);
+    reinterpret_cast<page_img_format_log*>(&lrBuffer)->construct(&btree_p);
+    lrBuffer.set_lsn_ck(lastLSN);
+
+    w_assert1(hasSpace(&lrBuffer));
+    copyLogrec(&lrBuffer);
+    isCompressing = false;
+}
+
+bool BlockAssembly::add(logrec_t* lr)
+{
+    w_assert0(dest);
+    w_assert1(lr->valid_header());
+
+    if (!hasSpace(lr)) {
+        return false;
+    }
+
+    // New PID coming in: reset current PID stuff and check if it's time to add new bucket
+    if (lr->pid() != currentPID) {
+        if (isCompressing) {
+            copyCompressedLogrec();
+            // After page image, there might not be space for lr anymore
+            if (!hasSpace(lr)) { return false; }
+        }
+
+        currentPID = lr->pid();
+        currentPIDpos = pos;
+        currentPIDfpos = fpos;
+        currentPIDprevLSN = lr->page_prev_lsn();
+        currentPIDLSN = lr->lsn();
+    }
+
+    lastLSN = lr->lsn();
+
+    if (!isCompressing && enableCompression && lr->has_page_img(lr->pid())) {
+        isCompressing = true;
+
+        // there might not be space available after setting isCompressing above
+        if (!hasSpace(lr)) {
+            isCompressing = false;
+            return false;
+        }
+
         // Keep track of compression efficicency
         ADD_TSTAT(la_img_compressed_bytes, pos - currentPIDpos);
         //  Simply discard all log records produced for the current PID do far
@@ -132,13 +183,27 @@ bool BlockAssembly::add(logrec_t* lr)
         fpos = currentPIDfpos;
         // Adjust per-page log chain to satisfy redo assertions
         lr->set_page_prev_lsn(currentPIDprevLSN);
+
+        // apply page image on page buffer
+        ::memset(&compressedPage, 0, sizeof(generic_page));
+        btree_p.setup_for_restore(reinterpret_cast<generic_page*>(&compressedPage));
     }
 
     w_assert1(pos > 0 || fpos % blockSize == 0);
 
-    memcpy(dest + pos, lr, lr->length());
-    pos += lr->length();
-    fpos += lr->length();
+    if (isCompressing) {
+        lr->redo(&btree_p);
+    }
+    else {
+        copyLogrec(lr);
+    }
+
+    if (lr->pid() / bucketSize >= nextBucket) {
+        PageID shpid = (lr->pid() / bucketSize) * bucketSize;
+        buckets.emplace_back(shpid, fpos);
+        nextBucket = shpid / bucketSize + 1;
+    }
+
     return true;
 }
 
@@ -147,6 +212,10 @@ void BlockAssembly::finish()
     DBGTHRD("Selection produced block for writing " << (void*) dest <<
             " in run " << (int) lastRun << " with end " << pos);
     w_assert0(dest);
+
+    if (isCompressing) {
+        copyCompressedLogrec();
+    }
 
     w_assert0(archIndex);
     archIndex->newBlock(buckets, level);

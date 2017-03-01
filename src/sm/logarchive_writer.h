@@ -6,6 +6,8 @@
 #include "basics.h"
 #include "lsn.h"
 #include "thread_wrapper.h"
+#include "btree_page.h"
+#include "btree_page_h.h"
 
 class AsyncRingBuffer;
 class ArchiveIndex;
@@ -118,8 +120,15 @@ private:
     PageID currentPID;
     size_t currentPIDpos;
     size_t currentPIDfpos;
+    lsn_t currentPIDLSN;
     lsn_t currentPIDprevLSN;
+    lsn_t lastLSN;
+
     bool enableCompression;
+    btree_page_h btree_p;
+    btree_page compressedPage;
+    logrec_t lrBuffer;
+    bool isCompressing;
 
     // if using a variable-bucket index, this is the number of page IDs
     // that will be stored within a bucket (aka restore's segment)
@@ -133,6 +142,11 @@ private:
 
     // Amount of space to reserve in each block (e.g., for skip log record)
     size_t spaceToReserve;
+
+    bool hasSpace(logrec_t* lr);
+    void copyLogrec(logrec_t* lr);
+    void copyCompressedLogrec();
+
 public:
     struct BlockHeader {
         lsn_t lsn;

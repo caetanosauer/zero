@@ -120,7 +120,9 @@ lsn_t fixable_page_h::get_page_lsn() const
 void fixable_page_h::update_page_lsn(const lsn_t & lsn) const
 {
     w_assert1(_pp);
-    smlevel_0::bf->set_page_lsn(_pp, lsn);
+    if (smlevel_0::bf) {
+        smlevel_0::bf->set_page_lsn(_pp, lsn);
+    }
 }
 
 void fixable_page_h::set_img_page_lsn(const lsn_t & lsn)
