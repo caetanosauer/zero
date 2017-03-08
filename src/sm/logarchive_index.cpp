@@ -89,6 +89,8 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
 
     bool reformat = options.get_bool_option("sm_format", false);
 
+    directIO = options.get_bool_option("sm_arch_o_direct", true);
+
     if (archdir.empty()) {
         W_FATAL_MSG(fcINTERNAL,
                 << "Option for archive directory must be specified");
@@ -319,7 +321,8 @@ rc_t ArchiveIndex::openForScan(int& fd, const RunId& runid)
         fs::path fpath = make_run_path(runid.beginLSN, runid.endLSN, runid.level);
 
         // Using direct I/O
-        int flags = O_RDONLY | O_DIRECT;
+        int flags = O_RDONLY;
+        if (directIO) { flags |= O_DIRECT; }
         p.first = ::open(fpath.string().c_str(), flags, 0744 /*mode*/);
     }
 

@@ -204,6 +204,8 @@ private:
     std::unordered_map<RunId, std::pair<int, int>> _open_files;
     mutable srwlock_t _open_file_mutex;
 
+    bool directIO;
+
     fs::path make_run_path(lsn_t begin, lsn_t end, unsigned level = 1) const;
     fs::path make_current_run_path(unsigned level) const;
 

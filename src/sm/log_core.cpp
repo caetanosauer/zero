@@ -435,6 +435,8 @@ log_core::log_core(const sm_options& options)
     }
     _fetch_buf_loader = NULL;
 
+    directIO = options.get_bool_option("sm_arch_o_direct", true);
+
     if (1) {
         cerr << "Log _start " << start_byte() << " end_byte() " << end_byte() << endl
             << "Log _curr_lsn " << _curr_lsn << " _durable_lsn " << _durable_lsn << endl;
@@ -1266,6 +1268,7 @@ rc_t log_core::load_fetch_buffers()
 
         string fname = _storage->make_log_name(p);
         int flags = O_RDONLY;
+        if (directIO) { flags |= O_DIRECT; }
 
         // get file size and whether it exists
         struct stat file_info;

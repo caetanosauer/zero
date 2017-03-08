@@ -204,6 +204,10 @@ void Command::setupSMOptions(po::options_description& options)
     ("sm_vol_readonly", po::value<bool>(),
         "Volume will be opened in read-only mode and all writes from buffer pool \
          will be ignored (uses write elision and single-page recovery)")
+    ("sm_log_o_direct", po::value<bool>(),
+        "Whether to open log file with O_DIRECT")
+    ("sm_arch_o_direct", po::value<bool>(),
+        "Whether to open log archive files with O_DIRECT")
     ("sm_vol_o_direct", po::value<bool>(),
         "Whether to open volume (i.e., db file) with O_DIRECT")
     ("sm_no_db", po::value<bool>()->implicit_value(true)->default_value(false),

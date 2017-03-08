@@ -326,6 +326,8 @@ protected:
      */
     unsigned _page_img_compression;
 
+    bool directIO;
+
 }; // log_core
 
 
