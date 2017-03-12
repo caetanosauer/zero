@@ -35,6 +35,7 @@ public:
     std::string isRunning();
     std::string redoProgress();
     std::string logAnalysisProgress();
+    std::string mediaRecoveryProgress();
 
 
     //void counters(std::vector<std::string> &countersJson);

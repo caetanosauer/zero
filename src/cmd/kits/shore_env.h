@@ -621,6 +621,8 @@ public:
     size_t get_total_pages_to_recover();
     size_t get_total_pages_redone();
     bool has_log_analysis_finished();
+    size_t get_num_pages_vol();
+    size_t get_num_restored_pages_vol();
 
     // For temp throughput calculation
     unsigned get_trx_att() const;

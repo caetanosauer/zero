@@ -117,6 +117,7 @@ std::string http_headers::get_response(HandleKits* kits)
   {
       std::string sHTML = "{\"redoProgress\":" + kits->redoProgress() +"}";
       sHTML +=", {\"logAnalysisProgress\":" + kits->logAnalysisProgress() +"}";
+      sHTML +=", {\"mediaRecoveryProgress\":" + kits->mediaRecoveryProgress() +"}";
       ssOut << "HTTP/1.1 200 OK" << std::endl;
       ssOut << "Access-Control-Allow-Origin: *" << std::endl;
       ssOut << "content-type: application/json" << std::endl;
@@ -437,6 +438,19 @@ std::string HandleKits::redoProgress()
         else if (pRecovered > pToRecover)
             progress = "100";
     }
+    return progress;
+}
+
+std::string HandleKits::mediaRecoveryProgress()
+{
+    std::string progress = "100";
+        size_t pToRecover = kits->getShoreEnv()->get_num_pages_vol();
+        size_t pRecovered = kits->getShoreEnv()->get_num_restored_pages_vol();
+
+        if (pRecovered > 0)
+            progress = std::to_string((static_cast<double>(pRecovered)/static_cast<double>(pToRecover))*100);
+        else if (pRecovered > pToRecover)
+            progress = "100";
     return progress;
 }
 

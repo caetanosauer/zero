@@ -362,6 +362,13 @@ size_t vol_t::num_used_pages() const
     return _alloc_cache->get_last_allocated_pid();
 }
 
+size_t vol_t::get_num_restored_pages() const
+{
+    if (_restore_mgr == NULL)
+        return 0;
+    return _restore_mgr->getNumRestoredPages();
+}
+
 rc_t vol_t::create_store(PageID& root_pid, StoreID& snum)
 {
     W_DO(_alloc_cache->sx_allocate_page(root_pid));
@@ -769,4 +776,3 @@ bool vol_t::is_allocated_page(PageID pid) const
     w_assert1(_alloc_cache);
     return _alloc_cache->is_allocated(pid);
 }
-

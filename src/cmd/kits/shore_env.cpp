@@ -791,6 +791,20 @@ bool ShoreEnv::has_log_analysis_finished()
     return hasFinished;
 }
 
+size_t ShoreEnv::get_num_pages_vol()
+{
+  vol_t* vol = ss_m::vol;
+  w_assert0(vol);
+  return vol->num_used_pages();
+}
+
+size_t ShoreEnv::get_num_restored_pages_vol()
+{
+  vol_t* vol = ss_m::vol;
+  w_assert0(vol);
+  return vol->get_num_restored_pages();
+}
+
 /********************************************************************
  *
  *  @fn:     configure_sm

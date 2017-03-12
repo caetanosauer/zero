@@ -29,6 +29,8 @@ public:
 
     size_t      num_used_pages() const;
 
+    size_t  get_num_restored_pages() const;
+
     alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}
     stnode_cache_t*          get_stnode_cache() {return _stnode_cache;}
 
