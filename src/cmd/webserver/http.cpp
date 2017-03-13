@@ -115,9 +115,18 @@ std::string http_headers::get_response(HandleKits* kits)
   }
   else if(url == "/recoveryprogress")
   {
-      std::string sHTML = "{\"redoProgress\":" + kits->redoProgress() +"}";
-      sHTML +=", {\"logAnalysisProgress\":" + kits->logAnalysisProgress() +"}";
-      sHTML +=", {\"mediaRecoveryProgress\":" + kits->mediaRecoveryProgress() +"}";
+      std::string sHTML = "{\"redoProgress\":" + kits->redoProgress();
+      sHTML +=", \"logAnalysisProgress\":" + kits->logAnalysisProgress() +"}";
+      ssOut << "HTTP/1.1 200 OK" << std::endl;
+      ssOut << "Access-Control-Allow-Origin: *" << std::endl;
+      ssOut << "content-type: application/json" << std::endl;
+      ssOut << "content-length: " << sHTML.length() << std::endl;
+      ssOut << std::endl;
+      ssOut << sHTML;
+  }
+  else if(url == "/mediarecoveryprogress")
+  {
+      std::string sHTML = "{\"mediaRecoveryProgress\":" + kits->mediaRecoveryProgress() +"}";
       ssOut << "HTTP/1.1 200 OK" << std::endl;
       ssOut << "Access-Control-Allow-Origin: *" << std::endl;
       ssOut << "content-type: application/json" << std::endl;
@@ -443,13 +452,13 @@ std::string HandleKits::redoProgress()
 
 std::string HandleKits::mediaRecoveryProgress()
 {
-    std::string progress = "100";
+    std::string progress = "0";
         size_t pToRecover = kits->getShoreEnv()->get_num_pages_vol();
         size_t pRecovered = kits->getShoreEnv()->get_num_restored_pages_vol();
 
         if (pRecovered > 0)
             progress = std::to_string((static_cast<double>(pRecovered)/static_cast<double>(pToRecover))*100);
-        else if (pRecovered > pToRecover)
+        else if (pRecovered >= pToRecover)
             progress = "100";
     return progress;
 }
