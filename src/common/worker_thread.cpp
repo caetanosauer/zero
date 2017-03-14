@@ -105,3 +105,19 @@ void worker_thread_t::notify_all()
     std::lock_guard<std::mutex> lck(cond_mutex);
     done_condvar.notify_all();
 }
+
+void log_worker_thread_t::wakeup_until_lsn(lsn_t lsn, bool wait, int rounds_to_wait)
+{
+    // Only change endLSN if it's increasing
+    while (true) {
+        lsn_t curr = endLSN;
+        if (lsn < curr) { break; }
+        if (std::atomic_compare_exchange_strong(&endLSN, &curr, lsn))
+        {
+            break;
+        }
+    }
+
+    // Now send wakeup signal. No need to set LSN while holding mutex.
+    wakeup(wait, rounds_to_wait);
+}

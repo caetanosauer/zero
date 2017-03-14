@@ -3,7 +3,7 @@
 
 #include <bitset>
 
-#include "thread_wrapper.h"
+#include "worker_thread.h"
 #include "ringbuffer.h"
 #include "log_storage.h"
 
@@ -153,7 +153,7 @@ struct ArchiverControl {
  *
  * \author Caetano Sauer
  */
-class ReaderThread : public thread_wrapper_t {
+class ReaderThread : public log_worker_thread_t {
 protected:
     uint nextPartition;
     rc_t openPartition();
@@ -161,19 +161,13 @@ protected:
     AsyncRingBuffer* buf;
     int currentFd;
     off_t pos;
+    lsn_t localEndLSN;
 
-    bool shutdownFlag;
-    ArchiverControl control;
 public:
-    virtual void run();
+    virtual void do_work();
 
     ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN);
     virtual ~ReaderThread() {}
-
-    void shutdown();
-    void activate(lsn_t endLSN);
-
-    bool isActive() { return control.activated; }
 
     size_t getBlockSize() { return buf->getBlockSize(); }
 };

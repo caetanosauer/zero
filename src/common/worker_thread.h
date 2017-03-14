@@ -87,6 +87,25 @@ private:
     long rounds_completed;
 };
 
-#endif
+/**
+ * Specialization of worker_thread_t for threads that work on LSN ranges
+ */
+class log_worker_thread_t : public worker_thread_t
+{
+public:
+    log_worker_thread_t(int interval_ms = -1)
+        : worker_thread_t(interval_ms), endLSN(lsn_t::null)
+    {}
 
+    virtual ~log_worker_thread_t() {}
+
+    void wakeup_until_lsn(lsn_t lsn, bool wait = false, int rounds_to_wait = -1);
+
+    lsn_t getEndLSN() { return endLSN; }
+
+private:
+    std::atomic<lsn_t> endLSN;
+};
+
+#endif
 
