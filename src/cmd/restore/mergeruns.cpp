@@ -8,7 +8,6 @@ namespace fs = boost::filesystem;
 
 // CS TODO: LA metadata -- should be serialized on run files
 const size_t BLOCK_SIZE = 1048576;
-const size_t BUCKET_SIZE = 128;
 
 void MergeRuns::setupOptions()
 {
@@ -21,6 +20,8 @@ void MergeRuns::setupOptions()
             "Level whose runs will be merged (a run in level+1 will be created)")
         ("fanin", po::value<size_t>(&fanin)->required(),
             "Merge fan-in (required, larger than 1)")
+        ("bucket", po::value<size_t>(&bucketSize)->default_value(16),
+            "Size of log archive index bucked in output runs")
     ;
     Command::setupSMOptions(options);
 }
@@ -34,7 +35,7 @@ void MergeRuns::run()
     sm_options opt;
     opt.set_string_option("sm_archdir", indir);
     opt.set_int_option("sm_archiver_block_size", BLOCK_SIZE);
-    opt.set_int_option("sm_archiver_bucket_size", BUCKET_SIZE);
+    opt.set_int_option("sm_archiver_bucket_size", bucketSize);
     opt.set_int_option("sm_page_img_compression", 16384);
     ArchiveIndex* in = new ArchiveIndex(opt);
 
