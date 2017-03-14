@@ -4,6 +4,7 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/src/cmd/kits
   ${CMAKE_SOURCE_DIR}/src/cmd/webserver
   ${CMAKE_SOURCE_DIR}/src/cmd/loginspect
+  ${CMAKE_SOURCE_DIR}/src/cmd
   ${CMAKE_SOURCE_DIR}/config
   ${CMAKE_SOURCE_DIR}/src/sm
   ${CMAKE_SOURCE_DIR}/src/common
@@ -16,18 +17,19 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_BINARY_DIR}/src/common
 )
 
-add_subdirectory(base)
-add_subdirectory(restore)
-add_subdirectory(kits)
-add_subdirectory(webserver)
-add_subdirectory(loginspect)
+set(webserver_SRCS
+    ${CMAKE_CURRENT_SOURCE_DIR}/http.cpp
+    )
 
-add_executable(zapps main.cpp)
+add_library (webserverLib ${webserver_SRCS})
 
-set(zapps_LIBS
+add_executable(webserver main.cpp)
+
+set(webserver_LIBS
     # zapps components
-    zapps_base
+    webserverLib
     kits
+    zapps_base
     restore
     loginspect
     # Zero/Shore libraries
@@ -37,4 +39,4 @@ set(zapps_LIBS
     pthread
 )
 
-target_link_libraries(zapps ${zapps_LIBS})
+target_link_libraries(webserver ${webserver_LIBS})

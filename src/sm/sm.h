@@ -76,6 +76,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <string>
 #include "sm_options.h"
 
+#include <boost/filesystem.hpp>
+
 /* DOXYGEN Documentation : */
 
 /**\addtogroup SSMOPT
@@ -590,6 +592,16 @@ public:
      * at any time, presumably just before shutting down.
      */
     static void         set_shutdown_flag(bool clean);
+
+    /**\brief Cause the storage manager's shutting down to simulate a filthy
+     * crash, which worse than the dirty shutdown, because it truncates the log
+     * in order to make the log to represent an even dirtier state than the
+     * dirty shutdown.
+
+     * \note This method is not thread-safe, only one thread should use this
+     * at any time, presumably just before shutting down.
+     */
+    static void         set_shutdown_filthy(bool filthy);
 
     /**\brief Notify storage manager when a log file was archived by a
      * LOG_WARN_CALLBACK_FUNC.

@@ -132,11 +132,15 @@ public:
     void undo_pass();
 
     chkpt_t* get_chkpt() { return &chkpt; }
+    bool hasLogAnalysisFinished() {return logAnalysisFinished;}
+
 
 private:
 
     // System state object, updated by log analysis
     chkpt_t chkpt;
+
+    bool logAnalysisFinished;
 
     // Child thread, used only if open system after Log Analysis phase while REDO and UNDO
     // will be performed with concurrent user transactions
@@ -153,6 +157,8 @@ public:
      */
     static void dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn);
 
+    static size_t get_redone_pages() { return redonePages;}
+
 private:
     // Function used for serialized operations, open system after the entire restart process finished
     // brief sub-routine of redo_pass() for logs that have pid.
@@ -161,6 +167,9 @@ private:
                                 PageID page_updated,
                                 bool &redone,                  // Out: did REDO occurred?  Validation purpose
                                 uint32_t &dirty_count);        // Out: dirty page count, validation purpose
+
+    static size_t redonePages;
+
 };
 
 // CS: documentation code copied from old log_spr.h

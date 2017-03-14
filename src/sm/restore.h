@@ -118,6 +118,11 @@ public:
     bool all_pages_restored()
     { return numRestoredPages == lastUsedPid; }
 
+    size_t getNumRestoredPages()
+    {
+      return numRestoredPages;
+    }
+
     size_t getSegmentSize() { return segmentSize; }
     PageID getFirstDataPid() { return firstDataPid; }
     PageID getLastUsedPid() { return lastUsedPid; }

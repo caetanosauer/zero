@@ -721,7 +721,7 @@ int ShoreEnv::close_sm()
     }
 
     // Final stats
-    gatherstats_sm();
+    gatherstats_sm(std::cout);
 
     /*
      *  destroying the ss_m instance causes the SSM to shutdown
@@ -732,7 +732,17 @@ int ShoreEnv::close_sm()
     return (0);
 }
 
-
+/********************************************************************
+ *
+ *  @fn:     set_sm_shudown_filthy
+ *
+ *  @brief:  Set flag in sm to execute a filthy shutdown
+ *
+ ********************************************************************/
+ void ShoreEnv::set_sm_shudown_filthy(bool filthy)
+ {
+     _pssm->set_shutdown_filthy(filthy);
+ }
 /********************************************************************
  *
  *  @fn:     gatherstats_sm
@@ -743,7 +753,7 @@ int ShoreEnv::close_sm()
 
 static sm_stats_info_t oldstats;
 
-void ShoreEnv::gatherstats_sm()
+void ShoreEnv::gatherstats_sm(ostream &stream)
 {
     // sm_du_stats_t stats;
     // memset(&stats, 0, sizeof(stats));
@@ -755,11 +765,45 @@ void ShoreEnv::gatherstats_sm()
     diff -= _last_sm_stats;
 
     // Print the diff and save the latest reading
-    cout << diff << endl;
+    stream << diff << endl;
     _last_sm_stats = stats;
 }
 
+size_t ShoreEnv::get_total_pages_to_recover()
+{
+    size_t pagesToRecover = 0;
+    if (smlevel_0::recovery)
+        smlevel_0::recovery->get_chkpt()->buf_tab.size();
+    return pagesToRecover;
+}
 
+size_t ShoreEnv::get_total_pages_redone()
+{
+    size_t totalPagesRedone = restart_m::get_redone_pages();
+    return totalPagesRedone;
+}
+
+bool ShoreEnv::has_log_analysis_finished()
+{
+    bool hasFinished = false;
+    if (smlevel_0::recovery)
+        hasFinished = smlevel_0::recovery->hasLogAnalysisFinished();
+    return hasFinished;
+}
+
+size_t ShoreEnv::get_num_pages_vol()
+{
+  vol_t* vol = ss_m::vol;
+  w_assert0(vol);
+  return vol->num_used_pages();
+}
+
+size_t ShoreEnv::get_num_restored_pages_vol()
+{
+  vol_t* vol = ss_m::vol;
+  w_assert0(vol);
+  return vol->get_num_restored_pages();
+}
 
 /********************************************************************
  *

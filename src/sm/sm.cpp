@@ -73,6 +73,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "btree_page.h"
 #include "allocator.h"
 #include "log_core.h"
+#include "eventlog.h"
 
 
 sm_tls_allocator smlevel_0::allocator;
@@ -80,6 +81,7 @@ sm_tls_allocator smlevel_0::allocator;
 memalign_allocator<char, smlevel_0::IO_ALIGN> smlevel_0::aligned_allocator;
 
 
+bool         smlevel_0::shutdown_filthy = false;
 bool         smlevel_0::shutdown_clean = false;
 bool         smlevel_0::shutting_down = false;
             //controlled by AutoTurnOffLogging:
@@ -354,6 +356,8 @@ ss_m::~ss_m()
 void
 ss_m::_destruct_once()
 {
+    if (shutdown_filthy)
+        shutdown_clean = false;
     --_instance_cnt;
 
     if (_instance_cnt)  {
@@ -416,6 +420,7 @@ ss_m::_destruct_once()
     }
 
     delete chkpt; chkpt = 0;
+    bf->shutdown();
 
     ERROUT(<< "Terminating log archiver");
     if (logArchiver) { logArchiver->shutdown(); }
@@ -423,6 +428,9 @@ ss_m::_destruct_once()
     ERROUT(<< "Terminating buffer manager");
     bf->shutdown();
     delete bf; bf = 0;
+
+    lsn_t lsn_to_shutdown_filthy = log->durable_lsn();
+    fs::path current_log_path = log->get_storage()->make_log_path(lsn_to_shutdown_filthy.hi());
 
     ERROUT(<< "Terminating other services");
     lm->assert_empty(); // no locks should be left
@@ -449,6 +457,19 @@ ss_m::_destruct_once()
         delete log;
     }
     log = 0;
+
+
+     if (shutdown_filthy) {
+         ERROUT(<< "Executing Shutdown Filthy");
+         auto offset = lsn_to_shutdown_filthy.lo();
+         resize_file(current_log_path, offset);
+         if ((offset % partition_t::XFERSIZE)> 0 )
+    	     offset = (offset/ partition_t::XFERSIZE + 1) * partition_t::XFERSIZE;
+         resize_file(current_log_path, offset);
+     }
+
+     shutdown_filthy = false;
+     shutdown_clean = true;
 
      ERROUT(<< "SM shutdown complete!");
 }
@@ -487,6 +508,10 @@ void ss_m::set_shutdown_flag(bool clean)
     shutdown_clean = clean;
 }
 
+void ss_m::set_shutdown_filthy(bool filthy)
+{
+    shutdown_filthy = filthy;
+}
 
 /*--------------------------------------------------------------*
  *  ss_m::begin_xct()                                *

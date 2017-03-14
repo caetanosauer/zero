@@ -71,8 +71,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sstream>
 #include <iomanip>
 
+size_t restart_m::redonePages = 0;
+
 restart_m::restart_m(const sm_options& options)
-    : _restart_thread(NULL)
+    : _restart_thread(NULL), logAnalysisFinished(false)
 {
     _no_db_mode = options.get_bool_option("sm_no_db", false);
 }
@@ -133,6 +135,7 @@ void restart_m::log_analysis()
             << chkpt.buf_tab.size() << " dirty pages and "
             << chkpt.xct_tab.size() << " active transactions");
     // chkpt.dump(cerr);
+    logAnalysisFinished = true;
 }
 
 /*********************************************************************
@@ -769,3 +772,4 @@ void SprIterator::apply(fixable_page_h &p)
         prev_lsn = lr->lsn();
     }
 }
+

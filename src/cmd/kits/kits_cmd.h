@@ -6,6 +6,9 @@
 
 class ShoreEnv;
 class sm_options;
+class FailureThread;
+
+extern std::atomic<bool> stop_benchmark;
 
 class KitsCommand : public Command
 {
@@ -16,6 +19,14 @@ public:
 
     virtual void setupOptions();
     virtual void run();
+    void crash(unsigned);
+    void mediaFailure(unsigned);
+    void randomRootPageFailure();
+    void crashFilthy();
+	bool running();
+    void set_stop_benchmark(bool);
+    ShoreEnv* getShoreEnv();
+
 protected:
     ShoreEnv* shoreEnv;
 
@@ -26,6 +37,7 @@ protected:
     int opt_num_trxs;
     unsigned opt_duration;
     unsigned opt_log_volume;
+    bool opt_no_stop;
     int opt_num_threads;
     int opt_select_trx;
     int opt_queried_sf;
@@ -62,12 +74,13 @@ protected:
 
     bool runBenchAfterLoad()
     {
-        return opt_duration > 0 || opt_num_trxs > 0 || opt_log_volume > 0;
+        return opt_duration > 0 || opt_num_trxs > 0 || opt_log_volume > 0 || opt_no_stop == true;
     }
 
 private:
     std::vector<base_client_t*> clients;
     bool clientsForked;
+    FailureThread* failure_thread;
 };
 
 #endif

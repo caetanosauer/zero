@@ -52,6 +52,8 @@ bool base_client_t::is_test_aborted()
     return (_abort_test);
 }
 
+// Variable used in no_stop mode (i.e. MT_NO_STOP)
+std::atomic<bool> stop_benchmark(false);
 
 /*********************************************************************
  *
@@ -176,6 +178,29 @@ w_rc_t base_client_t::run_xcts(int xct_type, int num_xct)
 	_cp->wait();
         break;
 
+    // case no stop until variable stop_benchmark is seted to true
+    case MT_NO_STOP:
+
+    // submit the first two batches...
+    W_COERCE(submit_batch(xct_type, i, batchsz));
+    W_COERCE(submit_batch(xct_type, i, batchsz));
+    // wait for the first to complete
+    _cp->wait();
+
+    // main loop
+        while (!stop_benchmark) {
+            // submit a replacement batch...
+            W_COERCE(submit_batch(xct_type, i, batchsz));
+            // wait for to complete
+            _cp->wait();
+        }
+
+    stop_benchmark = false;
+    // wait for the last batch to complete...
+    _cp->wait();
+
+       break;
+
     default:
         assert (0); // UNSUPPORTED MEASUREMENT TYPE
         break;
@@ -184,5 +209,3 @@ w_rc_t base_client_t::run_xcts(int xct_type, int num_xct)
 
     return (RCOK);
 }
-
-

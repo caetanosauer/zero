@@ -41,6 +41,7 @@
 #include "reqs.h"
 #include "table_desc.h"
 #include <boost/program_options.hpp>
+#include "restart.h"
 
 using std::map;
 
@@ -573,6 +574,9 @@ public:
     void set_crash_delay(int);
     int get_crash_delay() { return _crash_delay; }
 
+    //shutdown filthy
+    void set_sm_shudown_filthy(bool);
+
     // load imbalance related
     virtual void set_skew(int area, int load, int start_imbalance, int skew_type);
     virtual void reset_skew();
@@ -602,7 +606,7 @@ public:
     int enable_fake_disk_latency(const int adelay);
 
     // Collects and print statistics from the SM
-    void gatherstats_sm();
+    void gatherstats_sm(ostream &);
 
     // Takes a checkpoint (forces dirty pages)
     int checkpoint();
@@ -612,6 +616,13 @@ public:
     string sysname() { return (_sysname); }
 
     env_stats_t* get_env_stats() { return (&_env_stats); }
+
+    // restart recovery status
+    size_t get_total_pages_to_recover();
+    size_t get_total_pages_redone();
+    bool has_log_analysis_finished();
+    size_t get_num_pages_vol();
+    size_t get_num_restored_pages_vol();
 
     // For temp throughput calculation
     unsigned get_trx_att() const;
@@ -684,4 +695,3 @@ protected:
 
 
 #endif /* __SHORE_ENV_H */
-

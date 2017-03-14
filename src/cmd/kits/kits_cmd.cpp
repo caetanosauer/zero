@@ -8,6 +8,7 @@
 namespace fs = boost::filesystem;
 
 #include "thread_wrapper.h"
+#include "fixable_page_h.h"
 #include "shore_env.h"
 #include "tpcb/tpcb_env.h"
 #include "tpcb/tpcb_client.h"
@@ -68,6 +69,18 @@ private:
     bool* flag;
 };
 
+void KitsCommand::set_stop_benchmark(bool stop)
+{
+    stop_benchmark = stop;
+}
+
+void KitsCommand::crashFilthy()
+{
+    shoreEnv->set_sm_shudown_filthy(true);
+    stop_benchmark = true;
+}
+
+
 void KitsCommand::setupOptions()
 {
     setupSMOptions(options);
@@ -87,6 +100,10 @@ void KitsCommand::setupOptions()
         ("duration", po::value<unsigned>(&opt_duration)->default_value(0),
             "Run benchmark for the given number of seconds (overrides the \
             logVolume option)")
+        ("no_stop", po::value<bool>(&opt_no_stop)->default_value(false)
+            ->implicit_value(true),
+            "Run benchmark continuously until a crash occurs (overrides the \
+            duration option)")
         ("threads,t", po::value<int>(&opt_num_threads)->default_value(4),
             "Number of threads to execute benchmark with")
         ("select_trx,s", po::value<int>(&opt_select_trx)->default_value(0),
@@ -117,10 +134,14 @@ void KitsCommand::setupOptions()
     options.add(kits);
 }
 
-KitsCommand::KitsCommand()
-    : mtype(MT_UNDEF), clientsForked(false)
+ShoreEnv* KitsCommand::getShoreEnv()
 {
+    return shoreEnv;
 }
+
+KitsCommand::KitsCommand()
+    : mtype(MT_UNDEF), clientsForked(false), failure_thread(nullptr)
+{}
 
 /*
  * Thread object usied for the simple purpose of setting the skew parameters.
@@ -172,19 +193,12 @@ void KitsCommand::run()
     }
 
     // Spawn crash thread if requested
-    CrashThread* crash_thread;
-    if (opt_crashDelay >= 0) {
-        crash_thread = new CrashThread(opt_crashDelay);
-        crash_thread->fork();
-    }
+    if (opt_crashDelay >= 0)
+        crash(opt_crashDelay);
 
     // Spawn failure thread if requested
-    FailureThread* failure_thread = nullptr;
-    if (opt_failDelay >= 0) {
-        hasFailed = false;
-        failure_thread = new FailureThread(opt_failDelay, &hasFailed);
-        failure_thread->fork();
-    }
+    if (opt_failDelay >= 0)
+        mediaFailure(opt_failDelay);
 
     if (runBenchAfterLoad()) {
         runBenchmark();
@@ -197,6 +211,36 @@ void KitsCommand::run()
         delete failure_thread;
     }
     // crash_thread aborts the program, so we don't worry about joining it
+}
+
+void KitsCommand::crash(unsigned delay)
+{
+    CrashThread* crash_thread;
+    crash_thread = new CrashThread(delay);
+    crash_thread->fork();
+}
+
+void KitsCommand::mediaFailure(unsigned delay)
+{
+    //FailureThread* failure_thread = nullptr;
+    hasFailed = false;
+    failure_thread = new FailureThread(delay, &hasFailed);
+    failure_thread->fork();
+}
+
+void KitsCommand::randomRootPageFailure()
+{
+    std::vector<StoreID> stores;
+    smlevel_0::vol->get_stnode_cache()->get_used_stores(stores);
+    int randomStore = random()%(stores.size() -1);
+    StoreID stid = stores.at(randomStore);
+    PageID root_pid = smlevel_0::vol->get_stnode_cache()->get_root_pid(stid);
+    fixable_page_h page;
+
+    page.fix_root(stores.at(randomStore), LATCH_EX);
+    generic_page* raw_page = page.get_generic_page();
+    raw_page->lsn = lsn_t(1, 0);
+    page.unfix(true);
 }
 
 void KitsCommand::init()
@@ -277,7 +321,10 @@ void KitsCommand::createClients()
 
     mtype = MT_UNDEF;
     int trxsPerThread = 0;
-    if (opt_duration > 0) {
+    if (opt_no_stop == true) {
+        mtype = MT_NO_STOP;
+    }
+    else if (opt_duration > 0) {
         mtype = MT_TIME_DUR;
     }
     else if (opt_num_trxs > 0) {
@@ -287,6 +334,7 @@ void KitsCommand::createClients()
     else if (opt_log_volume > 0) {
         mtype = MT_LOG_VOL;
     }
+
 
     for (int i = 0; i < opt_num_threads; i++) {
         // create & fork testing threads
@@ -387,6 +435,26 @@ void KitsCommand::doWork()
             last_log_tail = log_tail;
         }
     }
+    else if (mtype == MT_NO_STOP) {
+        // keep running until variable is externally set to true
+        while(!stop_benchmark){
+            hasFailed = false;
+            while (!hasFailed && !stop_benchmark) {
+                sleep(1);
+                lintel::atomic_thread_fence(lintel::memory_order_consume);
+            }
+            if (hasFailed) {
+                vol_t* vol = smlevel_0::vol;
+                w_assert0(vol);
+
+                // Now wait for device to be restored -- check every 1 second
+                while (vol->is_failed()) {
+                    sleep(1);
+                    vol->check_restore_finished();
+                }
+            }
+        }
+    }
 }
 
 template<class Environment>
@@ -473,4 +541,9 @@ void KitsCommand::finish()
 {
     // shoreEnv has stop() and close(), and close calls stop (confusing!)
     shoreEnv->close();
+}
+
+bool KitsCommand::running()
+{
+    return clientsForked;
 }

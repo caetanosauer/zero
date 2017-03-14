@@ -94,6 +94,8 @@ const int THINK_TIME = 0;
 int inst_test_env(int argc, char* argv[]);
 int close_test_env();
 
+// Variable used in no_stop mode (i.e. MT_NO_STOP)
+extern std::atomic<bool> stop_benchmark;
 
 /********************************************************************
  *
@@ -109,7 +111,8 @@ enum MeasurementType {
     MT_UNDEF,
     MT_NUM_OF_TRXS,
     MT_TIME_DUR,
-    MT_LOG_VOL
+    MT_LOG_VOL,
+    MT_NO_STOP
 };
 
 
@@ -176,7 +179,7 @@ public:
     {
         assert (_env);
         assert (_measure_type != MT_UNDEF);
-        assert (_notrxs || (_measure_type == MT_TIME_DUR) || (_measure_type == MT_LOG_VOL));
+        assert (_notrxs || (_measure_type == MT_TIME_DUR) || (_measure_type == MT_LOG_VOL) || (_measure_type == MT_NO_STOP));
         _cp = new condex_pair();
     }
 
