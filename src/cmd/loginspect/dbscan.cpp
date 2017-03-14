@@ -1,6 +1,7 @@
 #include "dbscan.h"
 
 #include "allocator.h"
+#include "bf_tree.h"
 
 void DBScan::setupOptions()
 {
@@ -37,6 +38,8 @@ void DBScan::run()
     static constexpr size_t BUFSIZE = 1024;
 
     _options.set_string_option("sm_dbfile", dbfile);
+
+    smlevel_0::bf = new bf_tree_m(_options);
 
     // CS TODO: manage SM sub-components with shared_ptr
     // auto vol = make_shared<vol_t>(_options);
