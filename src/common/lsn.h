@@ -256,7 +256,7 @@ public:
                 _data(from_file(f) | from_rba(r)) { }
 
     // copy operator
-    lsn_t(const lsn_t & other) : _data(other._data) { }
+    // lsn_t(const lsn_t & other) : _data(other._data) { }
 
     lsndata_t data()         const { return _data; }
     void set (lsndata_t data) {_data = data;}
