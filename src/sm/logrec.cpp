@@ -1036,7 +1036,13 @@ void alloc_page_log::construct(PagePtr, PageID pid)
 template <class PagePtr>
 void alloc_page_log::redo(PagePtr p)
 {
-    PageID alloc_pid = p->pid();
+    PageID alloc_pid = pid();
+    // CS TODO: little hack to fix bug quickly for my experiments
+    // Proper fix is to introduce a alloc_page_format log record
+    if (alloc_pid != p->pid()) {
+        ::memset(p->get_generic_page(), 0, sizeof(generic_page));
+        p->get_generic_page()->pid = alloc_pid;
+    }
     PageID pid = *((PageID*) data_ssx());
     alloc_page* page = (alloc_page*) p->get_generic_page();
     w_assert1(!page->get_bit(pid - alloc_pid));
