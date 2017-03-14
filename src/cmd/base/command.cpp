@@ -165,6 +165,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Size in bytes of group commit window (higher -> larger log writes)")
     ("sm_group_commit_timeout", po::value<int>()->default_value(100),
         "Max time to wait (in ms) to fill up group commit window")
+    ("sm_log_benchmark_start", po::value<bool>()->default_value(false),
+        "Whether to generate benchmark_start log record on SM constructor")
     ("sm_page_img_compression", po::value<int>()->default_value(0),
         "Enables page-image compression for every N log bytes (N=0 turns off)")
     ("sm_bufpoolsize", po::value<int>()->default_value(1024),

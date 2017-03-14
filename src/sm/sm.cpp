@@ -73,6 +73,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "btree_page.h"
 #include "allocator.h"
 #include "log_core.h"
+#include "xct_logger.h"
 
 
 sm_tls_allocator smlevel_0::allocator;
@@ -246,6 +247,10 @@ ss_m::_construct_once()
     }
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing restart manager");
+
+    if (_options.get_bool_option("sm_log_benchmark_start", false)) {
+            Logger::log_sys<benchmark_start_log>();
+    }
 
     // Log analysis provides info required to initialize vol_t
     recovery = new restart_m(_options);
