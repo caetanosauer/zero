@@ -94,6 +94,8 @@ bf_idx page_evictioner_base::pick_victim()
      * to implement and, most importantly, does not have concurrency bugs!
      */
 
+    bool ignore_dirty = _bufferpool->is_no_db_mode() || _bufferpool->_write_elision;
+
      bf_idx idx = _current_frame;
      unsigned rounds = 0;
      while(true) {
@@ -109,6 +111,7 @@ bf_idx page_evictioner_base::pick_victim()
             if (rounds++ == MAX_ROUNDS) {
                 W_FATAL_MSG(fcINTERNAL, << "Eviction got stuck!");
             }
+            INC_TSTAT(bf_eviction_stuck);
         }
 
         // CS TODO -- why do we latch CB manually instead of simply fixing
@@ -130,7 +133,7 @@ bf_idx page_evictioner_base::pick_victim()
         btree_page_h p;
         p.fix_nonbufferpool_page(_bufferpool->_buffer + idx);
         if (p.tag() != t_btree_p || !p.is_leaf()
-                || (!_bufferpool->is_no_db_mode() && cb.is_dirty())
+                || (!ignore_dirty && cb.is_dirty())
                 || !cb._used || p.pid() == p.root() || p.get_foster() != 0)
         {
             cb.latch().latch_release();

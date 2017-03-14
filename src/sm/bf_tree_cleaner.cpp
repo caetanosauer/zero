@@ -180,7 +180,7 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
 
     fixable_page_h page;
     page.fix_nonbufferpool_page(const_cast<generic_page*>(&page_buffer[idx]));
-    if (page.pid() != pid) {
+    if (page.pid() != pid || cb._pin_cnt < 0) {
         // New page was loaded in the frame -- skip it
         cb.latch().latch_release();
         return false;

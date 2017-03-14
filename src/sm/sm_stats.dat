@@ -63,6 +63,7 @@ SM Storage manager = 0x00060000 sm_stats_t {
 
     // bf cleaner percieves hot page
     u_long bf_already_evicted   Could not find page to copy for flushing (evicted)
+    u_long bf_eviction_stuck    Page eviction loop did not find victim
 
     u_long bf_dirty_page_cleaned      Found page already cleaned (hot)
     u_long bf_flushed_OHD_page        Non-cleaner thread had to flush an old-hot-dirty page synchronously
