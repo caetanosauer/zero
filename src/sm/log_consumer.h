@@ -195,8 +195,7 @@ public:
     virtual ~LogConsumer();
     void shutdown();
 
-    // CS TODO: make readWholeBlocks the only behavior
-    void open(lsn_t endLSN, bool readWholeBlocks);
+    void open(lsn_t endLSN, bool readWholeBlocks = false);
     bool next(logrec_t*& lr);
     lsn_t getNextLSN() { return nextLSN; }
 

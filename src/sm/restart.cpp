@@ -150,7 +150,7 @@ restart_thread_t::redo_log_pass()
 {
     stopwatch_t timer;
     // Perform log-based REDO without opening system (ARIES mode)
-    lsn_t end_logscan_lsn = smlevel_0::log->curr_lsn();
+    lsn_t cur_lsn = smlevel_0::log->curr_lsn();
     lsn_t redo_lsn = chkpt.get_min_rec_lsn();
 
     // How many pages have been changed from in_doubt to dirty?
@@ -159,48 +159,31 @@ restart_thread_t::redo_log_pass()
     // Open a forward scan of the recovery log, starting from the redo_lsn which
     // is the earliest lsn determined in the Log Analysis phase
     DBGOUT3(<<"Start redo scanning at redo_lsn = " << redo_lsn);
-    log_i scan(*smlevel_0::log, redo_lsn);
-    lsn_t cur_lsn = smlevel_0::log->curr_lsn();
+    const size_t blockSize = 1048576;
+    LogConsumer iter {redo_lsn, blockSize};
+    iter.open(cur_lsn);
+
     if(redo_lsn < cur_lsn) {
-        DBGOUT3(<< "Redoing log from " << redo_lsn
-                << " to " << cur_lsn);
-        cerr << "Redoing log from " << redo_lsn
-            << " to " << cur_lsn << endl;
+        DBGOUT3(<< "Redoing log from " << redo_lsn << " to " << cur_lsn);
+        cerr << "Redoing log from " << redo_lsn << " to " << cur_lsn << endl;
     }
-    DBGOUT3( << "LSN " << " A/R/I(pass): " << "LOGREC(TID, TYPE, FLAGS:F/U(fwd/rolling-back) PAGE <INFO>");
+    DBGOUT3( << "LSN " << " A/R/I(pass): "
+            << "LOGREC(TID, TYPE, FLAGS:F/U(fwd/rolling-back) PAGE <INFO>");
 
-    // Allocate a (temporary) log record buffer for reading
-    logrec_t r;
-
+    logrec_t* lr;
     lsn_t lsn;
-    lsn_t expected_lsn = redo_lsn;
     bool redone = false;
-    while (scan.xct_next(lsn, r))
+    while (iter.next(lr))
     {
         if (should_exit()) { return; }
 
-        if ((lsn > end_logscan_lsn))
-        {
-            // If concurrent recovery, user transactions would generate new log records
-            // stop forward scanning once we passed the end_logscan_lsn (passed in by caller)
-            break;
-        }
-
+        lsn = lr->lsn();
         redone = false;
         (void) redone; // Used only for debugging output
         DBGOUT3( << setiosflags(ios::right) << lsn
-                << resetiosflags(ios::right) << " R: " << r);
-        w_assert1(lsn == r.lsn_ck());
-        if (lsn == expected_lsn) {
-            expected_lsn.advance(r.length());
-        }
-        else {
-            w_assert1(lsn == lsn_t(expected_lsn.hi() + 1, 0));
-            expected_lsn = lsn;
-            expected_lsn.advance(r.length());
-        }
+                << resetiosflags(ios::right) << " R: " << *lr);
 
-        if ( r.is_redo() )
+        if ( lr->is_redo() )
         {
             // If the log record is marked as REDOable (correct marking is important)
             // Most of the log records are REDOable.
@@ -221,55 +204,42 @@ restart_thread_t::redo_log_pass()
              * by checking if page id is 0 AND if it's not an operation that
              * would apply to the alloc_page, which can have pid 0.
              */
-            if (r.pid() == 0 && r.type() != logrec_t::t_alloc_page &&
-                    r.type() != logrec_t::t_dealloc_page)
+            if (lr->pid() == 0 && lr->type() != logrec_t::t_alloc_page &&
+                    lr->type() != logrec_t::t_dealloc_page)
             {
-                if (!r.is_single_sys_xct() && r.tid() != 0)
-                {
+                if (!lr->is_single_sys_xct() && lr->tid() != 0) {
                     // Regular transaction with a valid txn id
-                    xct_t *xd = xct_t::look_up(r.tid());
-                    if (xd)
-                    {
-                        if (xd->state() == xct_t::xct_active)
-                        {
-                            DBGOUT3(<<"redo - no page, xct is " << r.tid());
-                            r.redo();
+                    xct_t *xd = xct_t::look_up(lr->tid());
+                    if (xd) {
+                        w_assert0(xd->state() == xct_t::xct_active);
+                        DBGOUT3(<<"redo - no page, xct is " << lr->tid());
+                        lr->redo();
 
-                            // No page involved, no need to update dirty_count
-                            redone = true;
-                        }
-                        else
-                        {
-                            // as there is no longer prepared xct, we shouldn't hit here.
-                            W_FATAL_MSG(fcINTERNAL,
-                                    << "REDO phase, no page transaction not in 'active' state - invalid");
-                        }
+                        // No page involved, no need to update dirty_count
+                        redone = true;
                     }
                 }
-                else
-                {
-                    if (!r.is_single_sys_xct())
-                    {
+                else {
+                    if (!lr->is_single_sys_xct()) {
                         // Regular transaction without a valid txn id
                         // It must be a mount or dismount log record
 
                         // CS TODO this case should not exist
                         w_assert0(false);
 
-                        r.redo();
+                        lr->redo();
                     }
-                    else
-                    {
+                    else {
                         if ( // CS TODO -- restore not supported yet
-                                r.type() != logrec_t::t_restore_begin
-                                && r.type() != logrec_t::t_restore_segment
-                                && r.type() != logrec_t::t_restore_end
+                                lr->type() != logrec_t::t_restore_begin
+                                && lr->type() != logrec_t::t_restore_segment
+                                && lr->type() != logrec_t::t_restore_end
                            )
                         {
                             DBGOUT3(<<"redo - no page, ssx");
                             sys_xct_section_t sxs (true); // single log!
                             w_assert1(!sxs.check_error_on_start().is_error());
-                            r.redo();
+                            lr->redo();
                             redone = true;
                             rc_t sxs_rc = sxs.end_sys_xct (RCOK);
                             w_assert1(!sxs_rc.is_error());
@@ -277,41 +247,21 @@ restart_thread_t::redo_log_pass()
                     }
                 }
             }
-            else
-            {
-
+            else {
                 // The log record contains a page number, ready to load and update the page
-
                 // It might be a compensate log record for aborted transaction before system crash,
                 // in such case, execute the compensate log reocrd as a normal log record to
                 // achieve the 'transaction abort' effect during REDO phase, no UNDO for
                 // aborted transaction (aborted txn are not kept in transaction table).
+                _redo_log_with_pid(*lr, lr->pid(), redone, dirty_count);
 
-                _redo_log_with_pid(r, r.pid(), redone, dirty_count);
-                if (r.is_multi_page())
-                {
-                    w_assert1(r.is_single_sys_xct());
-                    _redo_log_with_pid(r, r.pid2(), redone, dirty_count);
+                if (lr->is_multi_page()) {
+                    w_assert1(lr->is_single_sys_xct());
+                    _redo_log_with_pid(*lr, lr->pid2(), redone, dirty_count);
                 }
             }
         }
-        else if ( r.is_cpsn() )
-        {
-            // Compensate log record in recovery log, they are from aborted/rollback transaction
-            // before system crash, these transactions have been rollbacked before the system crash.
-            // The actual log records to compensate the actions are marked 'redo' and handled in
-            // the above 'if' case.
-            // The log records falling into this 'if' are 'compensation' log record which contains the
-            // original LSN which being compensated on, no other information.
-            // No REDO for these log records.
 
-            // Cannot be a multi-page log record
-            w_assert1(false == r.is_multi_page());
-
-            // If this compensation log record is for a previous compensation log record
-            // (r.xid_prev() is a cpsn log record), ignore it.
-            DBGOUT3(<<"redo - existing compensation log record, r.xid_prev(): " << r.xid_prev());
-        }
         DBGOUT3( << setiosflags(ios::right) << lsn
                 << resetiosflags(ios::right) << " R: "
                 << (redone ? " redone" : " skipped") );
