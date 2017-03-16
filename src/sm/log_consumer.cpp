@@ -17,7 +17,7 @@ const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
         W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
     }
 
-ArchiverControl::ArchiverControl(bool* shutdownFlag)
+ArchiverControl::ArchiverControl(std::atomic<bool>* shutdownFlag)
     : endLSN(lsn_t::null), activated(false), listening(false), shutdownFlag(shutdownFlag)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
@@ -88,8 +88,7 @@ bool ArchiverControl::waitForActivation()
     return true;
 }
 
-ReaderThread::ReaderThread(AsyncRingBuffer* readbuf,
-        lsn_t startLSN)
+ReaderThread::ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN)
     :
       log_worker_thread_t(-1 /* interval_ms */),
       buf(readbuf), currentFd(-1), pos(0), localEndLSN(0)
@@ -174,6 +173,11 @@ void ReaderThread::do_work()
             pos = localEndLSN.lo();
             DBGTHRD(<< "Reader thread reached endLSN -- sleeping."
                     << " New pos = " << pos);
+            break;
+        }
+
+        if (should_exit()) {
+            DBGTHRD(<< "Reader thread got shutdown request.");
             break;
         }
 
@@ -275,7 +279,6 @@ void LogConsumer::shutdown()
     if (!readbuf->isFinished()) {
         readbuf->set_finished();
         reader->stop();
-        reader->join();
     }
 }
 

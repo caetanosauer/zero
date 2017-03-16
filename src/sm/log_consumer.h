@@ -129,9 +129,9 @@ struct ArchiverControl {
     lsn_t endLSN;
     bool activated;
     bool listening;
-    bool* shutdownFlag;
+    std::atomic<bool>* shutdownFlag;
 
-    ArchiverControl(bool* shutdown);
+    ArchiverControl(std::atomic<bool>* shutdown);
     ~ArchiverControl();
     bool activate(bool wait, lsn_t lsn = lsn_t::null);
     bool waitForActivation();

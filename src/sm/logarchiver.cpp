@@ -76,16 +76,17 @@ void LogArchiver::shutdown()
 {
     // CS TODO BUG: we need some sort of pin mechanism (e.g., shared_ptr) for shutdown,
     // because threads may still be accessing the log archive here.
-    DBGTHRD(<< "LOG ARCHIVER SHUTDOWN STARTING");
+    ERROUT(<< "LOG ARCHIVER SHUTDOWN STARTING");
     // this flag indicates that reader and writer threads delivering null
     // blocks is not an error, but a termination condition
     shutdownFlag = true;
-    // make other threads see new shutdown value
-    lintel::atomic_thread_fence(lintel::memory_order_release);
-    join();
+    ERROUT(<< "CONSUMER SHUTDOWN STARTING");
     consumer->shutdown();
+    ERROUT(<< "BLKASSEMB SHUTDOWN STARTING");
     blkAssemb->shutdown();
+    ERROUT(<< "MERGER SHUTDOWN STARTING");
     if (merger) { merger->stop(); }
+    join();
 }
 
 LogArchiver::~LogArchiver()
@@ -377,7 +378,6 @@ bool LogArchiver::waitForActivation()
             ::usleep(1000);
             newEnd = smlevel_0::log->durable_lsn();
 
-            lintel::atomic_thread_fence(lintel::memory_order_consume);
             if (shutdownFlag) {
                 return false;
             }
@@ -403,7 +403,6 @@ bool LogArchiver::waitForActivation()
         }
     }
 
-    lintel::atomic_thread_fence(lintel::memory_order_consume);
     if (shutdownFlag) {
         return false;
     }
@@ -555,7 +554,7 @@ void LogArchiver::run()
         }
         INC_TSTAT(la_activations);
 
-        DBGTHRD(<< "Log archiver activated from " << nextActLSN << " to "
+        ERROUT(<< "Log archiver activated from " << nextActLSN << " to "
                 << control.endLSN);
 
         consumer->open(control.endLSN, readWholeBlocks && !logTooSlow);
@@ -577,7 +576,7 @@ void LogArchiver::run()
 
         // nextActLSN = consumer->getNextLSN();
         nextActLSN = control.endLSN;
-        DBGTHRD(<< "Log archiver consumed all log records until LSN "
+        ERROUT(<< "Log archiver consumed all log records until LSN "
                 << nextActLSN);
 
         if (!eager) {
@@ -588,8 +587,9 @@ void LogArchiver::run()
 
     // Perform selection until all remaining entries are flushed out of
     // the heap into runs. Last run boundary is also enqueued.
-    DBGTHRD(<< "Archiver exiting -- last round of selection to empty heap");
+    ERROUT(<< "Archiver exiting -- last round of selection to empty heap");
     while (selection()) {}
+    ERROUT(<< "Archiver done!");
 
     w_assert0(heap->size() == 0);
 }
