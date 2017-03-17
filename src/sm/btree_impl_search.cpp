@@ -383,6 +383,8 @@ rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current, PageID next
             W_DO(_sx_adopt_foster_sweep_approximate(next, 0));
         }
     }
+    // CS: what the hell is going on here?? why should we retry at this point?
+    // (I've got a case where all threads are stuck in this infinite loop for some reason)
     return RC(eGOODRETRY); // to be safe, let's restart.  this is anyway rare event
 }
 
