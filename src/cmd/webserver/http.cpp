@@ -37,7 +37,7 @@ std::string http_headers::get_response(HandleKits* kits)
      ssOut << std::endl;
      ssOut << sHTML;
      std::vector<std::string> kitsParameters = generate_kits_parameters();
-     int result = kits->runKits(kitsParameters);
+     kits->runKits(kitsParameters);
   }
   else if(url == "/counters")
   {
@@ -176,7 +176,7 @@ void http_headers::on_read_request_line(std::string line)
   ssRequestLine >> method;
   ssRequestLine >> url;
   ssRequestLine >> version;
-   std::cout << "request for resource: " << url << std::endl;
+   // std::cout << "request for resource: " << url << std::endl;
 };
 
 void http_headers::add_option(std::string key, std::string value)
@@ -218,7 +218,7 @@ std::vector<std::string> http_headers::generate_kits_parameters()
 
     }
 
-    for (int i = 0; i < parameters.size(); i++)
+    for (size_t i = 0; i < parameters.size(); i++)
         std::cout << parameters.at(i) << std::endl;
     return parameters;
 
@@ -257,7 +257,7 @@ void session::read_body(std::shared_ptr<session> pThis, HandleKits* kits) {
 
             std::cout << "Tail: '" << body.substr(p+1) << "'\n";
 
-            std:stringstream bodyStream;
+            std::stringstream bodyStream;
             bodyStream << body;
             std::string key, value;
             while(std::getline(bodyStream, key, ':')) {
@@ -267,7 +267,7 @@ void session::read_body(std::shared_ptr<session> pThis, HandleKits* kits) {
                 pThis->headers.add_option(key,value);
             }
             std::shared_ptr<std::string> str = std::make_shared<std::string>(pThis->headers.get_response(kits));
-            asio::async_write(pThis->socket, boost::asio::buffer(str->c_str(), str->length()), [pThis, str](const boost::system::error_code& e, std::size_t s)
+            asio::async_write(pThis->socket, boost::asio::buffer(str->c_str(), str->length()), [pThis, str](const boost::system::error_code& /*e*/, std::size_t /*s*/)
             {
                //std::cout << "done" << std::endl;
             });
@@ -277,7 +277,7 @@ void session::read_body(std::shared_ptr<session> pThis, HandleKits* kits) {
 
 void session::read_next_line(std::shared_ptr<session> pThis, HandleKits* kits)
 {
-  asio::async_read_until(pThis->socket, pThis->buff, '\r', [pThis, kits](const boost::system::error_code& e, std::size_t s)
+  asio::async_read_until(pThis->socket, pThis->buff, '\r', [pThis, kits](const boost::system::error_code& /*e*/, std::size_t /*s*/)
   {
      std::string line, ignore;
      std::istream stream {&pThis->buff};
@@ -290,7 +290,7 @@ void session::read_next_line(std::shared_ptr<session> pThis, HandleKits* kits)
         if(pThis->headers.content_length() == 0)
         {
            std::shared_ptr<std::string> str = std::make_shared<std::string>(pThis->headers.get_response(kits));
-           asio::async_write(pThis->socket, boost::asio::buffer(str->c_str(), str->length()), [pThis, str](const boost::system::error_code& e, std::size_t s)
+           asio::async_write(pThis->socket, boost::asio::buffer(str->c_str(), str->length()), [pThis, str](const boost::system::error_code& /*e*/, std::size_t /*s*/)
            {
               //std::cout << "done" << std::endl;
            });
@@ -309,7 +309,7 @@ void session::read_next_line(std::shared_ptr<session> pThis, HandleKits* kits)
 
 void session::read_first_line(std::shared_ptr<session> pThis, HandleKits* kits)
 {
-  asio::async_read_until(pThis->socket, pThis->buff, '\r', [pThis, kits](const boost::system::error_code& e, std::size_t s)
+  asio::async_read_until(pThis->socket, pThis->buff, '\r', [pThis, kits](const boost::system::error_code& /*e*/, std::size_t /*s*/)
   {
      std::string line, ignore;
      std::istream stream {&pThis->buff};
@@ -477,7 +477,7 @@ std::string HandleKits::getStats()
     std::string strReturn;
     if (kits && kits->running()) {
         strReturn = "{";
-        for (int i = 0; i < countersJson.size(); i++) {
+        for (size_t i = 0; i < countersJson.size(); i++) {
             //countersJson[i][countersJson[i].length()-2] = ']';
             strReturn += (countersJson[i]+ ", ");
             strReturn[strReturn.size()-4] = ']';
@@ -526,7 +526,7 @@ std::string HandleKits::getCounters()
 
     std::string jsonStats;
     //strReturn = "{";
-    for (int i = 0; i < countersJson.size(); i++) {
+    for (size_t i = 0; i < countersJson.size(); i++) {
         //countersJson[i][countersJson[i].length()-2] = ']';
         jsonStats += (countersJson[i]+ ", ");
         jsonStats[jsonStats.size()-4] = ']';
