@@ -326,19 +326,18 @@ void session::interact(std::shared_ptr<session> pThis, HandleKits* kits)
 };
 
 
-HandleKits::HandleKits():
-kitsExecuted(false),
-kitsJustStarted(false)
+HandleKits::HandleKits()
+    : kits(nullptr)
 {
-    kits = new KitsCommand();
-    kits->setupOptions();
 }
 
 
 void counters(std::vector<std::string> &counters, KitsCommand *kits)
 {
     //wait for kits runs
-    while(!kits->running());
+    while(kits && !kits->running()) {
+        std::this_thread::sleep_for (std::chrono::seconds(1));
+    }
     //kits started!
     std::stringstream ssOut;
     kits->getShoreEnv()->gatherstats_sm(ssOut);
@@ -348,12 +347,12 @@ void counters(std::vector<std::string> &counters, KitsCommand *kits)
         counters.push_back("\"" + varJson + "\" :  [0, ");
     }
 
-    while(kits->running()) {
+    while(kits && kits->running()) {
         //wait 1 second
         std::this_thread::sleep_for (std::chrono::seconds(1));
         std::stringstream ss;
         kits->getShoreEnv()->gatherstats_sm(ss);
-        for(int i = 0; i < counters.size(); i++) {
+        for(size_t i = 0; i < counters.size(); i++) {
             ss >> varJson;
             ss >> parJson;
             counters[i]+=(parJson + ", ");
@@ -368,16 +367,13 @@ void counters(std::vector<std::string> &counters, KitsCommand *kits)
 
 int HandleKits::runKits(std::vector<std::string> options)
 {
-    if (kits->running()) {
+    if (kits) {
         std::cout << "kits running!!!!" << std::endl;
-        kits->join();
+        return 1;
     }
 
-    if (kitsExecuted) {
-        delete kits;
-        kits = new KitsCommand();
-        kits->setupOptions();
-    }
+    kits = new KitsCommand();
+    kits->setupOptions();
 
     // the options should include at least the benchmark and the number of threads e.g.: -b tpcc -t 2
     if (options.size() < 4 || kits->running())
@@ -399,38 +395,41 @@ int HandleKits::runKits(std::vector<std::string> options)
         argv[i] = (char*) malloc(strlen(options.at(i-predefinedArgs).c_str()) + 1);
         strcpy(argv[i], options.at(i-predefinedArgs).c_str());
     }
-    std::cout <<"size: " << argc << std::endl;
+    std::cout <<"Arguments: " << argc << std::endl;
     for (int i = 0; i < argc ; i++)
-        std::cout << "aaaaa" << argv[i] << std::endl;
+        std::cout << "    " << argv[i] << std::endl;
+
+    po::variables_map vm;
     po::store(po::parse_command_line(argc,argv,kits->getOptions()), vm);
     po::notify(vm);
     kits->setOptionValues(vm);
 
     kits->fork();
 
-    kitsExecuted = true;
-    kitsJustStarted = true;
-
     t1 = new std::thread (counters, std::ref(countersJson), kits);
+    return 0;
 };
 
 void HandleKits::crash()
 {
-    if (kits->running()) {
+    if (kits) {
         kits->crashFilthy();
+        kits->join();
+        delete kits;
+        kits = nullptr;
     }
 }
 
 void HandleKits::mediaFailure()
 {
-    if (kits->running()) {
+    if (kits) {
         kits->mediaFailure(0);
     }
 }
 
 void HandleKits::singlePageFailure()
 {
-    if (kits->running()) {
+    if (kits) {
         kits->randomRootPageFailure();
     }
 }
@@ -438,7 +437,7 @@ void HandleKits::singlePageFailure()
 std::string HandleKits::redoProgress()
 {
     std::string progress = "0";
-    if (kits->getShoreEnv()->has_log_analysis_finished()) {
+    if (kits && kits->getShoreEnv()->has_log_analysis_finished()) {
         size_t pToRecover = kits->getShoreEnv()->get_total_pages_to_recover();
         size_t pRecovered = kits->getShoreEnv()->get_total_pages_redone();
 
@@ -453,6 +452,7 @@ std::string HandleKits::redoProgress()
 std::string HandleKits::mediaRecoveryProgress()
 {
     std::string progress = "0";
+    if (kits) {
         size_t pToRecover = kits->getShoreEnv()->get_num_pages_vol();
         size_t pRecovered = kits->getShoreEnv()->get_num_restored_pages_vol();
 
@@ -460,13 +460,14 @@ std::string HandleKits::mediaRecoveryProgress()
             progress = std::to_string((static_cast<double>(pRecovered)/static_cast<double>(pToRecover))*100);
         else if (pRecovered >= pToRecover)
             progress = "100";
+    }
     return progress;
 }
 
 std::string HandleKits::logAnalysisProgress()
 {
     std::string progress = "0";
-    if (kits->getShoreEnv()->has_log_analysis_finished())
+    if (kits && kits->getShoreEnv()->has_log_analysis_finished())
         progress = "100";
     return progress;
 }
@@ -474,7 +475,7 @@ std::string HandleKits::logAnalysisProgress()
 std::string HandleKits::getStats()
 {
     std::string strReturn;
-    if (kits->running()) {
+    if (kits && kits->running()) {
         strReturn = "{";
         for (int i = 0; i < countersJson.size(); i++) {
             //countersJson[i][countersJson[i].length()-2] = ']';
@@ -506,7 +507,7 @@ std::string HandleKits::aggLog()
 std::string HandleKits::getCounters()
 {
     string json;
-    if (!kits->running())
+    if (!kits || !kits->running())
         return json;
 
     AggLog agglog;
@@ -545,12 +546,9 @@ std::string HandleKits::isRunning()
 {
     string jsonReply = "{\"isRunning\" : false}";
 
-    if (kits->running()){
-        kitsJustStarted = false;
+    if (kits){
         jsonReply =  "{\"isRunning\" : true}";
     }
-    else if (kitsJustStarted)
-        jsonReply = "{\"isRunning\" : true}";
 
     return jsonReply;
 };
