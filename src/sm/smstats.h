@@ -127,33 +127,13 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
   */
 class sm_stats_t {
 public:
+    sm_stats_t() {
+        memset(this, '\0', sizeof (*this));
+    }
     void    compute();
 #include "sm_stats_t_struct_gen.h"
 };
 
-/**\brief Storage Manager Statistics
- *
- * The storage manager is instrumented; it collects the statistics
- * (mostly counters) that are described in *_stats.dat files (input
- * files to Perl scripts).
- * These statistics are incremented in per-thread structures, which
- * are gathered and available to the value-added server
- * under various circumstances, described in \ref SSMSTATS.
- */
-class sm_stats_info_t {
-public:
-    sm_stats_t       sm;
-    void    compute() {
-        sm.compute();
-    }
-    friend ostream& operator<<(ostream&, const sm_stats_info_t& s);
-    sm_stats_info_t() {
-        memset(this, '\0', sizeof (*this));
-    }
-};
-
-extern sm_stats_info_t &operator+=(sm_stats_info_t &s, const sm_stats_info_t &t);
-extern sm_stats_info_t &operator-=(sm_stats_info_t &s, const sm_stats_info_t &t);
 
 /**\brief Configuration Information
  * \details

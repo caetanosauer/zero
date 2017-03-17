@@ -71,7 +71,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sm_base.h>
 #endif
 
-#include <smstats.h> // declares sm_stats_info_t and sm_config_info_t
+#include <smstats.h> // declares sm_stats_t and sm_config_info_t
 #include <lsn.h>
 #include <string>
 #include "sm_options.h"
@@ -622,7 +622,7 @@ private:
 
     // Used for cosntructing xct object depending on chosen implementation
     static xct_t* _new_xct(
-            sm_stats_info_t* stats,
+            sm_stats_t* stats,
             int timeout,
             bool sys_xct,
             bool single_log_sys_xct = false);
@@ -678,7 +678,7 @@ public:
      * \sa int
      */
     static rc_t           begin_xct(
-        sm_stats_info_t*         stats,  // allocated by caller
+        sm_stats_t*         stats,  // allocated by caller
         int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Begin a transaction and return the transaction id.
@@ -713,7 +713,7 @@ public:
      */
     static rc_t           begin_sys_xct(
         bool single_log_sys_xct = false,
-        sm_stats_info_t*         stats = NULL,
+        sm_stats_t*         stats = NULL,
         int            timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD);
 
     /**\brief Commit a transaction.
@@ -748,7 +748,7 @@ public:
      * recovery of this transaction might not be possible.
      */
     static rc_t            commit_xct(
-                                    sm_stats_info_t*& stats,
+                                    sm_stats_t*& stats,
                                     bool              lazy = false,
                                     lsn_t*            plastlsn=NULL);
 
@@ -776,7 +776,7 @@ public:
      * recovery of this transaction might not be possible.
      */
     static rc_t            chain_xct(
-        sm_stats_info_t*&         stats,    /* in w/new, out w/old */
+        sm_stats_t*&         stats,    /* in w/new, out w/old */
         bool                      lazy = false);
 
     /**\brief Commit a transaction and start a new one, inheriting locks.
@@ -846,7 +846,7 @@ public:
      *
      * Abort the attached transaction and detach it, destroy it.
      */
-    static rc_t            abort_xct(sm_stats_info_t*&  stats);
+    static rc_t            abort_xct(sm_stats_t*&  stats);
     /**\brief Abort a transaction.
      *\ingroup SSMXCT
      * \details
@@ -1049,7 +1049,7 @@ public:
      * @param[in] reset  If true, the statistics for this transaction will be zeroed.
      */
     static rc_t            gather_xct_stats(
-        sm_stats_info_t&       stats,
+        sm_stats_t&       stats,
         bool                   reset = false);
 
     /**\brief Get a copy of the global statistics.
@@ -1058,7 +1058,7 @@ public:
      * @param[out] stats A pre-allocated structure.
      */
     static rc_t            gather_stats(
-        sm_stats_info_t&       stats
+        sm_stats_t&       stats
         );
 
     /**\brief Get a copy of configuration-dependent information.
@@ -1395,14 +1395,14 @@ private:
         store_property_t&     property);
 
     static rc_t         _begin_xct(
-        sm_stats_info_t*      stats,  // allocated by caller
+        sm_stats_t*      stats,  // allocated by caller
         tid_t&                tid,
         int         timeout,
         bool sys_xct = false,
         bool single_log_sys_xct = false);
 
     static rc_t            _commit_xct(
-        sm_stats_info_t*&     stats,
+        sm_stats_t*&     stats,
         bool                  lazy,
         lsn_t* plastlsn);
 
@@ -1410,11 +1410,11 @@ private:
         xct_t *               list[],
         int                   listlen);
     static rc_t            _chain_xct(
-        sm_stats_info_t*&      stats,
+        sm_stats_t*&      stats,
         bool                   lazy);
 
     static rc_t            _abort_xct(
-        sm_stats_info_t*&      stats);
+        sm_stats_t*&      stats);
 
     static rc_t            _save_work(sm_save_point_t& sp);
 
@@ -1454,7 +1454,7 @@ public:
 };
 
 
-ostream& operator<<(ostream& o, const sm_stats_info_t& s);
+ostream& operator<<(ostream& o, const sm_stats_t& s);
 template<class ostream>
 ostream& operator<<(ostream& o, const sm_config_info_t& s)
 {

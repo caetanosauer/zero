@@ -408,7 +408,7 @@ protected:
 
     // Stats
     env_stats_t        _env_stats;
-    sm_stats_info_t    _last_sm_stats;
+    sm_stats_t    _last_sm_stats;
 
     // Measurement state
     volatile uint _measure;

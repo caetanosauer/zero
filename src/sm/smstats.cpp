@@ -77,37 +77,22 @@ void sm_stats_t::compute()
     }
 }
 
-sm_stats_info_t &operator+=(sm_stats_info_t &s, const sm_stats_info_t &t)
-{
-    s.sm += t.sm;
-    return s;
-}
-
-sm_stats_info_t &operator-=(sm_stats_info_t &s, const sm_stats_info_t &t)
-{
-    s.sm -= t.sm;
-    return s;
-}
-
-
-sm_stats_info_t &operator-=(sm_stats_info_t &s, const sm_stats_info_t &t);
-
 /*
  * One static stats structure for collecting
  * statistics that might otherwise be lost:
  */
 namespace local_ns {
-    sm_stats_info_t _global_stats_;
+    sm_stats_t _global_stats_;
     static queue_based_block_lock_t _global_stats_mutex;
 }
 void
-smlevel_0::add_to_global_stats(const sm_stats_info_t &from)
+smlevel_0::add_to_global_stats(const sm_stats_t &from)
 {
     CRITICAL_SECTION(cs, local_ns::_global_stats_mutex);
     local_ns::_global_stats_ += from;
 }
 void
-smlevel_0::add_from_global_stats(sm_stats_info_t &to)
+smlevel_0::add_from_global_stats(sm_stats_t &to)
 {
     CRITICAL_SECTION(cs, local_ns::_global_stats_mutex);
     to += local_ns::_global_stats_;

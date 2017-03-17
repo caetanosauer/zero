@@ -255,7 +255,7 @@ public:
 
 public:
     NORET                       xct_t(
-            sm_stats_info_t*    stats = NULL,
+            sm_stats_t*    stats = NULL,
             int       timeout = timeout_t::WAIT_SPECIFIED_BY_THREAD,
             bool                sys_xct = false,
             bool                single_log_sys_xct = false,
@@ -286,19 +286,19 @@ public:
     bool                        is_instrumented() {
                                    return (__stats != 0);
                                 }
-    void                        give_stats(sm_stats_info_t* s) {
+    void                        give_stats(sm_stats_t* s) {
                                     w_assert1(__stats == 0);
                                     __stats = s;
                                 }
     void                        clear_stats() {
                                     memset(__stats,0, sizeof(*__stats));
                                 }
-    sm_stats_info_t*            steal_stats() {
-                                    sm_stats_info_t*s = __stats;
+    sm_stats_t*            steal_stats() {
+                                    sm_stats_t*s = __stats;
                                     __stats = 0;
                                     return         s;
                                 }
-    const sm_stats_info_t&      const_stats_ref() { return *__stats; }
+    const sm_stats_t&      const_stats_ref() { return *__stats; }
     rc_t                        commit(bool lazy = false, lsn_t* plastlsn=NULL);
     rc_t                        commit_as_group_member();
     rc_t                        rollback(const lsn_t &save_pt);
@@ -308,7 +308,7 @@ public:
 
     // used by restart.cpp, some logrecs
 protected:
-    sm_stats_info_t&            stats_ref() { return *__stats; }
+    sm_stats_t&            stats_ref() { return *__stats; }
     rc_t                        dispose();
     void                        change_state(state_t new_state);
     void                        set_first_lsn(const lsn_t &) ;
@@ -426,7 +426,7 @@ protected:
 private:
     static queue_based_lock_t    _xlist_mutex;
 
-    sm_stats_info_t*             __stats; // allocated by user
+    sm_stats_t*             __stats; // allocated by user
     lockid_t*                    __saved_lockid_t;
 
     // NB: must replicate because _xlist keys off it...

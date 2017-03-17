@@ -171,7 +171,7 @@ public:
 };
 */
 
-class sm_stats_info_t; // forward
+class sm_stats_t; // forward
 
 /**\brief Storage Manager thread.
  * \ingroup SSMINIT
@@ -214,7 +214,7 @@ class smthread_t {
         int16_t  _depth; // how many "outer" this has
         tcb_t*   _outer; // this forms a singly linked list
 
-        sm_stats_info_t*  _TL_stats; // thread-local stats
+        sm_stats_t*  _TL_stats; // thread-local stats
 
         // for lock_head_t::my_lock::get_me
         queue_based_lock_t::ext_qnode _me1;
@@ -231,8 +231,8 @@ class smthread_t {
         void    create_TL_stats();
         void    clear_TL_stats();
         void    destroy_TL_stats();
-        inline sm_stats_info_t& TL_stats() { return *_TL_stats;}
-        inline const sm_stats_info_t& TL_stats_const() const {
+        inline sm_stats_t& TL_stats() { return *_TL_stats;}
+        inline const sm_stats_t& TL_stats_const() const {
                                                  return *_TL_stats; }
 
         tcb_t(tcb_t* outer) :
@@ -349,16 +349,16 @@ public:
     static inline xct_t* xct() { return tcb().xct; }
 
     /// Return thread-local statistics collected for this thread.
-    static inline sm_stats_info_t& TL_stats() { return tcb().TL_stats(); }
+    static inline sm_stats_t& TL_stats() { return tcb().TL_stats(); }
 
     /// Add thread-local stats into the given structure.
-    static void add_from_TL_stats(sm_stats_info_t &w);
+    static void add_from_TL_stats(sm_stats_t &w);
 
     // NOTE: These macros don't have to be atomic since these thread stats
     // are stored in the smthread and collected when the smthread's tcb is
     // destroyed.
 
-#define GET_TSTAT(x) smthread_t::TL_stats().sm.x
+#define GET_TSTAT(x) smthread_t::TL_stats().x
 /**\def GET_TSTAT(x)
  *\brief Get per-thread statistic named x
 */
@@ -366,17 +366,17 @@ public:
 /**\def INC_TSTAT(x)
  *\brief Increment per-thread statistic named x by y
  */
-#define INC_TSTAT(x) smthread_t::TL_stats().sm.x++
+#define INC_TSTAT(x) smthread_t::TL_stats().x++
 
 /**\def ADD_TSTAT(x,y)
  *\brief Increment statistic named x by y
  */
-#define ADD_TSTAT(x,y) smthread_t::TL_stats().sm.x += (y)
+#define ADD_TSTAT(x,y) smthread_t::TL_stats().x += (y)
 
 /**\def SET_TSTAT(x,y)
  *\brief Set per-thread statistic named x to y
  */
-#define SET_TSTAT(x,y) smthread_t::TL_stats().sm.x = (y)
+#define SET_TSTAT(x,y) smthread_t::TL_stats().x = (y)
 
 
     /**\cond skip */

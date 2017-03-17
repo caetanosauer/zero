@@ -32,7 +32,7 @@ void clear_all_fingerprints()
  */
 void
 smthread_t::tcb_t::create_TL_stats() {
-    _TL_stats = new sm_stats_info_t;
+    _TL_stats = new sm_stats_t;
     // These things have no constructor
     clear_TL_stats();
 }
@@ -81,31 +81,31 @@ smthread_t::tcb_t::clear_TL_stats()
 {
     // Global stats are protected by a mutex
     smlevel_0::add_to_global_stats(TL_stats()); // before clearing them
-    memset(&TL_stats(),0, sizeof(sm_stats_info_t));
+    memset(&TL_stats(),0, sizeof(sm_stats_t));
 }
 
 /* Non-thread-safe add from the per-thread copy to another struct.
  * The caller must ensure thread-safety.
  * As it turns out, this gets called only from ss_m::gather_stats, which
- * assumes that the sm_stats_info_t structure passed in is local or
+ * assumes that the sm_stats_t structure passed in is local or
  * proteded by the vas, so the safety of argument w is ok, but
  * the thread_local stats might be being updated while this is
  * going on.
  */
 void
-smthread_t::add_from_TL_stats(sm_stats_info_t &w)
+smthread_t::add_from_TL_stats(sm_stats_t &w)
 {
-    const sm_stats_info_t &x = tcb().TL_stats_const();
+    const sm_stats_t &x = tcb().TL_stats_const();
     w += x;
 
     // pick these up from the sthread_t stats structure:
-    w.sm.rwlock_r_waits += sthread_stats::INSTANCE.rwlock_r_wait;
-    w.sm.rwlock_w_waits += sthread_stats::INSTANCE.rwlock_w_wait;
+    w.rwlock_r_waits += sthread_stats::INSTANCE.rwlock_r_wait;
+    w.rwlock_w_waits += sthread_stats::INSTANCE.rwlock_w_wait;
 
-    w.sm.need_latch_condl += sthread_stats::INSTANCE.needs_latch_condl;
-    w.sm.latch_condl_nowaits += sthread_stats::INSTANCE.latch_condl_nowait;
-    w.sm.need_latch_uncondl += sthread_stats::INSTANCE.needs_latch_uncondl;
-    w.sm.latch_uncondl_nowaits += sthread_stats::INSTANCE.latch_uncondl_nowait;
+    w.need_latch_condl += sthread_stats::INSTANCE.needs_latch_condl;
+    w.latch_condl_nowaits += sthread_stats::INSTANCE.latch_condl_nowait;
+    w.need_latch_uncondl += sthread_stats::INSTANCE.needs_latch_uncondl;
+    w.latch_uncondl_nowaits += sthread_stats::INSTANCE.latch_uncondl_nowait;
 }
 
 // CS TODO: clean this up -- we shouldn'n need constructor
@@ -218,13 +218,13 @@ smthread_t::add_from_TL_stats(sm_stats_info_t &w)
 
 //     if(failure) {
 //         // INC_TSTAT(nonunique_fingerprints);
-//         tcb()._TL_stats->sm.nonunique_fingerprints++;
+//         tcb()._TL_stats->nonunique_fingerprints++;
 //         // fprintf(stderr,
 //         // "Phooey! overlapping fingerprint map : %d bits used\n",
 //         // all_fingerprints.num_bits_set());
 //     } else {
 //         // INC_TSTAT(unique_fingerprints);
-//         tcb()._TL_stats->sm.unique_fingerprints++;
+//         tcb()._TL_stats->unique_fingerprints++;
 //     }
 
 // #define DEBUG_DEADLOCK 0
@@ -481,7 +481,7 @@ smthread_t::no_xct(xct_t *x)
             // NOTE: thread-safety comes from the fact that this is called from
             // xct_impl::detach_thread, which first grabs the 1thread-at-a-time
             // mutex.
-            sm_stats_info_t &s = x->stats_ref();
+            sm_stats_t &s = x->stats_ref();
             /*
             * s refers to the __stats passed in on begin_xct() for an
             * instrumented transaction.
@@ -491,7 +491,7 @@ smthread_t::no_xct(xct_t *x)
             *
             * Note also that this is a non-atomic add.
             */
-            s += TL_stats(); // sm_stats_info_t
+            s += TL_stats(); // sm_stats_t
 
             /*
             * The stats have been added into the xct's structure,

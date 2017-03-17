@@ -752,17 +752,17 @@ int ShoreEnv::close_sm()
  *
  ********************************************************************/
 
-static sm_stats_info_t oldstats;
+static sm_stats_t oldstats;
 
 void ShoreEnv::gatherstats_sm(ostream &stream)
 {
     // sm_du_stats_t stats;
     // memset(&stats, 0, sizeof(stats));
 
-    sm_stats_info_t stats;
+    sm_stats_t stats;
     ss_m::gather_stats(stats);
 
-    sm_stats_info_t diff = stats;
+    sm_stats_t diff = stats;
     diff -= _last_sm_stats;
 
     // Print the diff and save the latest reading

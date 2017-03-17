@@ -272,7 +272,7 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, int timeout)
  *  and the xct record is inserted into _xlist.
  *
  *********************************************************************/
-xct_t::xct_t(sm_stats_info_t* stats, int timeout, bool sys_xct,
+xct_t::xct_t(sm_stats_t* stats, int timeout, bool sys_xct,
            bool single_log_sys_xct, const tid_t& given_tid, const lsn_t& last_lsn,
            const lsn_t& undo_nxt, bool loser_xct
             )

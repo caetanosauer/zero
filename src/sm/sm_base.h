@@ -83,7 +83,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <climits>
 
 class ErrLog;
-class sm_stats_info_t;
+class sm_stats_t;
 class xct_t;
 class xct_i;
 
@@ -280,8 +280,8 @@ public:
 /**\cond skip */
 
 
-    static void  add_to_global_stats(const sm_stats_info_t &from);
-    static void  add_from_global_stats(sm_stats_info_t &to);
+    static void  add_to_global_stats(const sm_stats_t &from);
+    static void  add_from_global_stats(sm_stats_t &to);
 
     static BackupManager* bk;
     static vol_t* vol;

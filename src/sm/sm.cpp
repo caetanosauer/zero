@@ -509,7 +509,7 @@ void ss_m::set_shutdown_filthy(bool filthy)
  *--------------------------------------------------------------*/
 rc_t
 ss_m::begin_xct(
-        sm_stats_info_t*             _stats, // allocated by caller
+        sm_stats_t*             _stats, // allocated by caller
         int timeout)
 {
     tid_t tid;
@@ -535,7 +535,7 @@ ss_m::begin_xct(tid_t& tid, int timeout)
 }
 
 rc_t ss_m::begin_sys_xct(bool single_log_sys_xct,
-    sm_stats_info_t *stats, int timeout)
+    sm_stats_t *stats, int timeout)
 {
     tid_t tid;
     W_DO (_begin_xct(stats, tid, timeout, true, single_log_sys_xct));
@@ -547,7 +547,7 @@ rc_t ss_m::begin_sys_xct(bool single_log_sys_xct,
  *  ss_m::commit_xct()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::commit_xct(sm_stats_info_t*& _stats, bool lazy,
+ss_m::commit_xct(sm_stats_t*& _stats, bool lazy,
                  lsn_t* plastlsn)
 {
 
@@ -559,7 +559,7 @@ ss_m::commit_xct(sm_stats_info_t*& _stats, bool lazy,
 rc_t
 ss_m::commit_sys_xct()
 {
-    sm_stats_info_t *_stats = NULL;
+    sm_stats_t *_stats = NULL;
     W_DO(_commit_xct(_stats, true, NULL)); // always lazy commit
     return RCOK;
 }
@@ -581,7 +581,7 @@ rc_t
 ss_m::commit_xct(bool lazy, lsn_t* plastlsn)
 {
 
-    sm_stats_info_t*             _stats=0;
+    sm_stats_t*             _stats=0;
     W_DO(_commit_xct(_stats,lazy,plastlsn));
     /*
      * throw away the _stats, since user isn't harvesting...
@@ -595,7 +595,7 @@ ss_m::commit_xct(bool lazy, lsn_t* plastlsn)
  *  ss_m::abort_xct()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::abort_xct(sm_stats_info_t*&             _stats)
+ss_m::abort_xct(sm_stats_t*&             _stats)
 {
 
     // Temp removed for debugging purposes only
@@ -608,7 +608,7 @@ ss_m::abort_xct(sm_stats_info_t*&             _stats)
 rc_t
 ss_m::abort_xct()
 {
-    sm_stats_info_t*             _stats=0;
+    sm_stats_t*             _stats=0;
 
     W_DO(_abort_xct(_stats));
     /*
@@ -689,7 +689,7 @@ ss_m::xct_state_t ss_m::state_xct(const xct_t* x)
  *  ss_m::chain_xct()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::chain_xct( sm_stats_info_t*&  _stats, bool lazy)
+ss_m::chain_xct( sm_stats_t*&  _stats, bool lazy)
 {
     W_DO( _chain_xct(_stats, lazy) );
     return RCOK;
@@ -697,7 +697,7 @@ ss_m::chain_xct( sm_stats_info_t*&  _stats, bool lazy)
 rc_t
 ss_m::chain_xct(bool lazy)
 {
-    sm_stats_info_t        *_stats = 0;
+    sm_stats_t        *_stats = 0;
     W_DO( _chain_xct(_stats, lazy) );
     /*
      * throw away the _stats, since user isn't harvesting...
@@ -871,7 +871,7 @@ rc_t ss_m::lock(const lockid_t& n, const okvl_mode& m,
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::_begin_xct(sm_stats_info_t *_stats, int timeout) *
+ *  ss_m::_begin_xct(sm_stats_t *_stats, int timeout) *
  *
  * @param[in] _stats  If called by begin_xct without a _stats, then _stats is NULL here.
  *                    If not null, the transaction is instrumented.
@@ -880,7 +880,7 @@ rc_t ss_m::lock(const lockid_t& n, const okvl_mode& m,
  *                    commit_xct, abort_xct, prepare_xct, or chain_xct.
  *--------------------------------------------------------------*/
 rc_t
-ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, int timeout, bool sys_xct,
+ss_m::_begin_xct(sm_stats_t *_stats, tid_t& tid, int timeout, bool sys_xct,
     bool single_log_sys_xct)
 {
     w_assert1(!single_log_sys_xct || sys_xct); // SSX is always system-transaction
@@ -928,7 +928,7 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, int timeout, bool sys_xct,
 }
 
 xct_t* ss_m::_new_xct(
-        sm_stats_info_t* stats,
+        sm_stats_t* stats,
         int timeout,
         bool sys_xct,
         bool single_log_sys_xct)
@@ -940,7 +940,7 @@ xct_t* ss_m::_new_xct(
  *  ss_m::_commit_xct()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
+ss_m::_commit_xct(sm_stats_t*& _stats, bool lazy,
                   lsn_t* plastlsn)
 {
     w_assert3(xct() != 0);
@@ -1023,7 +1023,7 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
 
         if(x->is_instrumented()) {
             // remove the stats, delete them
-            sm_stats_info_t* _stats = x->steal_stats();
+            sm_stats_t* _stats = x->steal_stats();
             delete _stats;
         }
     }
@@ -1054,10 +1054,10 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
  *--------------------------------------------------------------*/
 rc_t
 ss_m::_chain_xct(
-        sm_stats_info_t*&  _stats, /* pass in a new one, get back the old */
+        sm_stats_t*&  _stats, /* pass in a new one, get back the old */
         bool lazy)
 {
-    sm_stats_info_t*  new_stats = _stats;
+    sm_stats_t*  new_stats = _stats;
     w_assert3(xct() != 0);
     xct_t* x = xct();
 
@@ -1076,7 +1076,7 @@ ss_m::_chain_xct(
  *  ss_m::_abort_xct()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::_abort_xct(sm_stats_info_t*&             _stats)
+ss_m::_abort_xct(sm_stats_t*&             _stats)
 {
     w_assert3(xct() != 0);
     xct_t* xp = xct();
@@ -1140,7 +1140,7 @@ ss_m::_rollback_work(const sm_save_point_t& sp)
  *  Doing this has the side-effect of clearing the per-thread copy.
  *--------------------------------------------------------------*/
 rc_t
-ss_m::gather_xct_stats(sm_stats_info_t& _stats, bool reset)
+ss_m::gather_xct_stats(sm_stats_t& _stats, bool reset)
 {
     w_assert3(xct() != 0);
     xct_t& x = *xct();
@@ -1224,23 +1224,23 @@ ss_m::gather_xct_stats(sm_stats_info_t& _stats, bool reset)
  *  NOTE: you do not have to be in a transaction to call this.
  *--------------------------------------------------------------*/
 rc_t
-ss_m::gather_stats(sm_stats_info_t& _stats)
+ss_m::gather_stats(sm_stats_t& _stats)
 {
     class GatherSmthreadStats
     {
     public:
-        GatherSmthreadStats(sm_stats_info_t &s) : _stats(s)
+        GatherSmthreadStats(sm_stats_t &s) : _stats(s)
         {
-            new (&_stats) sm_stats_info_t; // clear the stats
+            new (&_stats) sm_stats_t; // clear the stats
             // by invoking the constructor.
         };
-        void operator()(sm_stats_info_t& st)
+        void operator()(sm_stats_t& st)
         {
             _stats += st;
         }
         void compute() { _stats.compute(); }
     private:
-        sm_stats_info_t &_stats;
+        sm_stats_t &_stats;
     } F(_stats);
 
     //Gather all the threads' statistics into the copy given by
@@ -1264,18 +1264,11 @@ ss_m::gather_stats(sm_stats_info_t& _stats)
 extern void dump_all_sm_stats();
 void dump_all_sm_stats()
 {
-    static sm_stats_info_t s;
+    static sm_stats_t s;
     W_COERCE(ss_m::gather_stats(s));
     std::cerr << s << endl;
 }
 #endif
-
-ostream &
-operator<<(ostream &o, const sm_stats_info_t &s)
-{
-    o << s.sm;
-    return o;
-}
 
 
 extern "C" {
