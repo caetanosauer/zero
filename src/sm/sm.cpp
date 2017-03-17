@@ -113,7 +113,7 @@ char smlevel_0::zero_page[page_sz];
 
 chkpt_m* smlevel_0::chkpt = 0;
 
-restart_m* smlevel_0::recovery = 0;
+restart_thread_t* smlevel_0::recovery = 0;
 
 btree_m* smlevel_0::bt = 0;
 
@@ -254,7 +254,7 @@ ss_m::_construct_once()
     }
 
     // Log analysis provides info required to initialize vol_t
-    recovery = new restart_m(_options);
+    recovery = new restart_thread_t(_options);
     recovery->log_analysis();
     chkpt_t* chkpt_info = recovery->get_chkpt();
 
@@ -264,7 +264,7 @@ ss_m::_construct_once()
     ERROUT(<< "[" << timer.time_ms() << "] Initializing volume manager");
 
     // If not instant restart, pass null dirty page table, which disables REDO
-    // recovery based on SPR so that it is done explicitly by restart_m below.
+    // recovery based on SPR so that it is done explicitly by restart_thread_t below.
     vol = new vol_t(_options,
             instantRestart ? chkpt_info : NULL);
 
@@ -311,34 +311,14 @@ ss_m::_construct_once()
 
     ERROUT(<< "[" << timer.time_ms() << "] Performing offline recovery");
 
-    // If not using instant restart, perform log-based REDO before opening up
-    if (instantRestart) {
-        recovery->spawn_recovery_thread();
-    }
-    else {
-        if (_options.get_bool_option("sm_restart_log_based_redo", true)) {
-            recovery->redo_log_pass();
-        }
-        else {
-            recovery->redo_page_pass();
-        }
+    recovery->fork();
+    if (!instantRestart) {
+        recovery->join();
         // metadata caches can only be constructed now
         vol->build_caches(format);
         // system now ready for UNDO
         // CS TODO: can this be done concurrently by restart thread?
-        recovery->undo_pass();
-
-        log->discard_fetch_buffers();
-
-        // CS: added this for debugging, but consistency check fails
-        // even right after loading -- so it's not a recovery problem
-        // vector<StoreID> stores;
-        // vol->get_stnode_cache()->get_used_stores(stores);
-        // for (size_t i = 0; i < stores.size(); i++) {
-        //     bool consistent;
-        //     W_COERCE(ss_m::verify_index(stores[i], 31, consistent));
-        //     w_assert0(consistent);
-        // }
+        // recovery->undo_pass();
     }
 
     bf->post_init();
@@ -390,6 +370,7 @@ ss_m::_destruct_once()
         ::usleep(100 * 1000); // 100ms
     }
     if (recovery) {
+        recovery->stop();
         delete recovery;
         recovery = 0;
     }
@@ -826,8 +807,8 @@ void ss_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid) {
     dump_page_lsn_chain(o, pid, lsn_t::max);
 }
 void ss_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn) {
-    // using static method since restart_m is not guaranteed to be active
-    restart_m::dump_page_lsn_chain(o, pid, max_lsn);
+    // using static method since restart_thread_t is not guaranteed to be active
+    restart_thread_t::dump_page_lsn_chain(o, pid, max_lsn);
 }
 
 rc_t ss_m::verify_volume(

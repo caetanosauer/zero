@@ -93,7 +93,7 @@ struct okvl_mode;
 struct RawXct;
 class lockid_t; // forward
 class xct_i; // forward
-class restart_m; // forward
+class restart_thread_t; // forward
 class lock_m; // forward
 class lock_core_m; // forward
 class lock_request_t; // forward
@@ -181,7 +181,7 @@ class xct_t : public smlevel_0 {
 /**\cond skip */
     friend class xct_i;
     friend class smthread_t;
-    friend class restart_m;
+    friend class restart_thread_t;
     friend class lock_m;
     friend class lock_core_m;
     friend class lock_request_t;

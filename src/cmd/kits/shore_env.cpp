@@ -779,7 +779,7 @@ size_t ShoreEnv::get_total_pages_to_recover()
 
 size_t ShoreEnv::get_total_pages_redone()
 {
-    size_t totalPagesRedone = restart_m::get_redone_pages();
+    size_t totalPagesRedone = restart_thread_t::get_redone_pages();
     return totalPagesRedone;
 }
 

@@ -104,7 +104,7 @@ class sm_tls_allocator;
 template <typename T, size_t A> class memalign_allocator;
 
 class chkpt_m;
-class restart_m;
+class restart_thread_t;
 class btree_m;
 class ss_m;
 
@@ -378,7 +378,7 @@ public:
     static chkpt_m*    chkpt;
 
     // Recovery manager
-    static restart_m*  recovery;
+    static restart_thread_t*  recovery;
 
     static btree_m* bt;
 

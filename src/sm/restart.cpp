@@ -71,28 +71,25 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sstream>
 #include <iomanip>
 
-size_t restart_m::redonePages = 0;
+size_t restart_thread_t::redonePages = 0;
 
-restart_m::restart_m(const sm_options& options)
-    : _restart_thread(NULL), logAnalysisFinished(false)
+
+restart_thread_t::restart_thread_t(const sm_options& options)
+    : logAnalysisFinished(false)
 {
-    _no_db_mode = options.get_bool_option("sm_no_db", false);
-}
+    smthread_t::set_lock_timeout(timeout_t::WAIT_FOREVER);
 
-restart_m::~restart_m()
-{
-    if (_restart_thread)
-    {
-        W_COERCE(_restart_thread->join());
-        delete _restart_thread;
-    }
-}
+    instantRestart = options.get_bool_option("sm_restart_instant", true);
+    log_based = options.get_bool_option("sm_restart_log_based_redo", true);
+    no_db_mode = options.get_bool_option("sm_no_db", false);
+    if (instantRestart) { log_based = false; }
+};
 
-void restart_m::log_analysis()
+void restart_thread_t::log_analysis()
 {
     stopwatch_t timer;
 
-    chkpt.scan_log(lsn_t::null, _no_db_mode);
+    chkpt.scan_log(lsn_t::null, no_db_mode);
 
     //Re-create transactions
     xct_t::update_youngest_tid(chkpt.get_highest_tid());
@@ -140,7 +137,7 @@ void restart_m::log_analysis()
 
 /*********************************************************************
  *
- *  restart_m::redo_log_pass(redo_lsn, end_logscan_lsn, in_doubt_count)
+ *  restart_thread_t::redo_log_pass(redo_lsn, end_logscan_lsn, in_doubt_count)
  *
  *  Scan log forward from redo_lsn. Base on entries in buffer pool,
  *  apply redo if durable page is old.
@@ -149,7 +146,7 @@ void restart_m::log_analysis()
  *
  *********************************************************************/
 void
-restart_m::redo_log_pass()
+restart_thread_t::redo_log_pass()
 {
     stopwatch_t timer;
     // Perform log-based REDO without opening system (ARIES mode)
@@ -180,6 +177,8 @@ restart_m::redo_log_pass()
     bool redone = false;
     while (scan.xct_next(lsn, r))
     {
+        if (should_exit()) { return; }
+
         if ((lsn > end_logscan_lsn))
         {
             // If concurrent recovery, user transactions would generate new log records
@@ -329,7 +328,7 @@ restart_m::redo_log_pass()
 
 /*********************************************************************
 *
-*  restart_m::_redo_log_with_pid(r, lsn,end_logscan_lsn, page_updated, redone, dirty_count)
+*  restart_thread_t::_redo_log_with_pid(r, lsn,end_logscan_lsn, page_updated, redone, dirty_count)
 *
 *  For each log record, load the physical page if it is not in buffer pool yet, set the flags
 *  and apply the REDO based on log record if the page is old
@@ -338,7 +337,7 @@ restart_m::redo_log_pass()
 *  the operation, it cannot continue
 *
 *********************************************************************/
-void restart_m::_redo_log_with_pid(logrec_t& r, PageID pid,
+void restart_thread_t::_redo_log_with_pid(logrec_t& r, PageID pid,
         bool &redone, uint32_t &dirty_count)
 {
     redone = false;             // True if REDO happened
@@ -373,7 +372,7 @@ void restart_m::_redo_log_with_pid(logrec_t& r, PageID pid,
     }
 }
 
-void restart_m::redo_page_pass()
+void restart_thread_t::redo_page_pass()
 {
     generic_page* page;
     stopwatch_t timer;
@@ -389,14 +388,18 @@ void restart_m::redo_page_pass()
         smlevel_0::bf->unfix(page);
 
         iter++;
+
+        if (should_exit()) {
+            return;
+        }
     }
 
     ADD_TSTAT(restart_redo_time, timer.time_us());
-    ERROUT(<< "Finished concurrent REDO of " << chkpt.buf_tab.size() << " pages");
+    ERROUT(<< "Finished REDO of " << chkpt.buf_tab.size() << " pages");
     Logger::log_sys<redo_done_log>();
 }
 
-void restart_m::undo_pass()
+void restart_thread_t::undo_pass()
 {
     // If nothing in the transaction table, then nothing to process
     if (0 == xct_t::num_active_xcts())
@@ -551,16 +554,25 @@ void restart_m::undo_pass()
     Logger::log_sys<undo_done_log>();
 }
 
-//*********************************************************************
-// Main body of the child thread restart_thread_t for Recovery process
-// Only used if system is in concurrent recovery mode, while the system was
-// opened after Log Analysis phase to allow concurrent user transactions
-//*********************************************************************
-void restart_thread_t::run()
+void restart_thread_t::do_work()
 {
-    // CS TODO: add mechanism to interrupt restart thread and terminate
-    // before recovery is complete
-    smlevel_0::recovery->redo_page_pass();
+    // No redo recovery needed in no-db mode
+    if (no_db_mode)
+    {
+        smlevel_0::recovery->undo_pass();
+        smlevel_0::log->discard_fetch_buffers();
+        return;
+    }
+
+    if (log_based) {
+        smlevel_0::recovery->redo_log_pass();
+    }
+    else {
+        smlevel_0::recovery->redo_page_pass();
+    }
+
+    if (should_exit()) { return; }
+
     smlevel_0::recovery->undo_pass();
     smlevel_0::log->discard_fetch_buffers();
 };
@@ -569,7 +581,7 @@ void restart_thread_t::run()
  * SINGLE_PAGE RECOVERY
  */
 
-void restart_m::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn)
+void restart_thread_t::dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn)
 {
     lsn_t scan_start = smlevel_0::log->durable_lsn();
     log_i           scan(*smlevel_0::log, scan_start);

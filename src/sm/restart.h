@@ -37,7 +37,7 @@
 #include "w_defines.h"
 #include "w_heap.h"
 
-#include "thread_wrapper.h"
+#include "worker_thread.h"
 #include "sm_base.h"
 #include "chkpt.h"
 #include "lock.h"               // Lock re-acquisition
@@ -48,28 +48,56 @@
 // Child thread created by restart_m for concurrent recovery operation
 // It is to carry out the REDO and UNDO phases while the system is
 // opened for user transactions
-class restart_thread_t : public thread_wrapper_t
+class restart_thread_t : public worker_thread_t
 {
 public:
+    restart_thread_t(const sm_options& options);
 
-    restart_thread_t()
-    {
-        smthread_t::set_lock_timeout(timeout_t::WAIT_FOREVER);
-        working = false;
-    };
+    virtual void do_work();
 
-    // Main body of the child thread
-    void run();
-    bool in_restart() { return working; }
+    void redo_log_pass();
+    void redo_page_pass();
+    void undo_pass();
+
+    void log_analysis();
+    chkpt_t* get_chkpt() { return &chkpt; }
+    bool hasLogAnalysisFinished() {return logAnalysisFinished;}
+
+private:
+    bool log_based;
+    bool instantRestart;
+    bool no_db_mode;
+
+    // System state object, updated by log analysis
+    chkpt_t chkpt;
+
+    bool logAnalysisFinished;
+
+    // Child thread, used only if open system after Log Analysis phase while REDO and UNDO
+    // will be performed with concurrent user transactions
+    restart_thread_t*           _restart_thread;
+
+public:
+
+    /**
+     * \ingroup Single-Page-Recovery
+     * Defined in log_spr.cpp.
+     * @copydoc ss_m::dump_page_lsn_chain(std::ostream&, const PageID &, const lsn_t&)
+     */
+    static void dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn);
+
+    static size_t get_redone_pages() { return redonePages;}
 
 private:
 
-    bool working;
+    void                 _redo_log_with_pid(
+                                logrec_t& r,
+                                PageID page_updated,
+                                bool &redone,
+                                uint32_t &dirty_count);
 
-private:
-    // disabled
-    restart_thread_t(const restart_thread_t&);
-    restart_thread_t& operator=(const restart_thread_t&);
+    static size_t redonePages;
+
 };
 
 /*
@@ -102,75 +130,6 @@ private:
 
     lsn_t last_lsn;
     unsigned replayed_count;
-};
-
-class restart_m
-{
-    friend class restart_thread_t;
-
-public:
-    restart_m(const sm_options&);
-    ~restart_m();
-
-    // Function used for concurrent operations, open system after Log Analysis
-    // we need a child thread to carry out the REDO and UNDO operations
-    // while concurrent user transactions are coming in
-    void spawn_recovery_thread()
-    {
-        // CS TODO: concurrency?
-
-        if (_no_db_mode) { return; }
-
-        DBGOUT1(<< "Spawn child recovery thread");
-        _restart_thread = new restart_thread_t;
-        W_COERCE(_restart_thread->fork());
-        w_assert1(_restart_thread);
-    }
-
-    void log_analysis();
-    void redo_log_pass();
-    void redo_page_pass();
-    void undo_pass();
-
-    chkpt_t* get_chkpt() { return &chkpt; }
-    bool hasLogAnalysisFinished() {return logAnalysisFinished;}
-
-
-private:
-
-    // System state object, updated by log analysis
-    chkpt_t chkpt;
-
-    bool logAnalysisFinished;
-
-    // Child thread, used only if open system after Log Analysis phase while REDO and UNDO
-    // will be performed with concurrent user transactions
-    restart_thread_t*           _restart_thread;
-
-    bool _no_db_mode;
-
-public:
-
-    /**
-     * \ingroup Single-Page-Recovery
-     * Defined in log_spr.cpp.
-     * @copydoc ss_m::dump_page_lsn_chain(std::ostream&, const PageID &, const lsn_t&)
-     */
-    static void dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn);
-
-    static size_t get_redone_pages() { return redonePages;}
-
-private:
-    // Function used for serialized operations, open system after the entire restart process finished
-    // brief sub-routine of redo_pass() for logs that have pid.
-    void                 _redo_log_with_pid(
-                                logrec_t& r,                   // In: Incoming log record
-                                PageID page_updated,
-                                bool &redone,                  // Out: did REDO occurred?  Validation purpose
-                                uint32_t &dirty_count);        // Out: dirty page count, validation purpose
-
-    static size_t redonePages;
-
 };
 
 // CS: documentation code copied from old log_spr.h
