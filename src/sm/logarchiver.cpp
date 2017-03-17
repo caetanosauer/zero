@@ -76,17 +76,17 @@ void LogArchiver::shutdown()
 {
     // CS TODO BUG: we need some sort of pin mechanism (e.g., shared_ptr) for shutdown,
     // because threads may still be accessing the log archive here.
-    DBGOUT(<< "LOG ARCHIVER SHUTDOWN STARTING");
     // this flag indicates that reader and writer threads delivering null
     // blocks is not an error, but a termination condition
     shutdownFlag = true;
     DBGOUT(<< "CONSUMER SHUTDOWN STARTING");
     consumer->shutdown();
+    DBGOUT(<< "LOG ARCHIVER SHUTDOWN STARTING");
+    join();
     DBGOUT(<< "BLKASSEMB SHUTDOWN STARTING");
     blkAssemb->shutdown();
     DBGOUT(<< "MERGER SHUTDOWN STARTING");
     if (merger) { merger->stop(); }
-    join();
 }
 
 LogArchiver::~LogArchiver()
