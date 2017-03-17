@@ -97,19 +97,3 @@ set_target_properties (sm_mainmemory
     EXCLUDE_FROM_ALL ON
 )
 
-# generate stat header files with tools/stats.pl (sm_stat)
-set(SM_STATS_GENFILES_H sm_stats_t_collect_enum_gen.h sm_stats_t_msg_gen.h sm_stats_t_struct_gen.h )
-set(SM_STATS_GENFILES_CPP sm_stats_t_collect_gen.cpp sm_stats_t_dec_gen.cpp sm_stats_t_inc_gen.cpp sm_stats_t_out_gen.cpp)
-set(SM_STATS_GENFILES_FILES ${SM_STATS_GENFILES_H} ${SM_STATS_GENFILES_CPP})
-foreach(_file ${SM_STATS_GENFILES_FILES})
-    add_custom_command(OUTPUT ${_file}
-        COMMAND perl ${CMAKE_SOURCE_DIR}/tools/stats.pl ${CMAKE_CURRENT_SOURCE_DIR}/sm_stats.dat
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sm_stats.dat
-    )
-    set(SM_STATS_GENFILES_B_H ${SM_STATS_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
-endforeach()
-add_custom_target(SM_STATS_GENFILES DEPENDS ${SM_STATS_GENFILES_FILES})
-add_dependencies(sm SM_STATS_GENFILES)
-
-SET (GENFILES_H ${SM_STATS_GENFILES_B_H})
-
