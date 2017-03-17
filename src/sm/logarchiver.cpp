@@ -76,15 +76,15 @@ void LogArchiver::shutdown()
 {
     // CS TODO BUG: we need some sort of pin mechanism (e.g., shared_ptr) for shutdown,
     // because threads may still be accessing the log archive here.
-    ERROUT(<< "LOG ARCHIVER SHUTDOWN STARTING");
+    DBGOUT(<< "LOG ARCHIVER SHUTDOWN STARTING");
     // this flag indicates that reader and writer threads delivering null
     // blocks is not an error, but a termination condition
     shutdownFlag = true;
-    ERROUT(<< "CONSUMER SHUTDOWN STARTING");
+    DBGOUT(<< "CONSUMER SHUTDOWN STARTING");
     consumer->shutdown();
-    ERROUT(<< "BLKASSEMB SHUTDOWN STARTING");
+    DBGOUT(<< "BLKASSEMB SHUTDOWN STARTING");
     blkAssemb->shutdown();
-    ERROUT(<< "MERGER SHUTDOWN STARTING");
+    DBGOUT(<< "MERGER SHUTDOWN STARTING");
     if (merger) { merger->stop(); }
     join();
 }
@@ -554,7 +554,7 @@ void LogArchiver::run()
         }
         INC_TSTAT(la_activations);
 
-        ERROUT(<< "Log archiver activated from " << nextActLSN << " to "
+        DBGOUT(<< "Log archiver activated from " << nextActLSN << " to "
                 << control.endLSN);
 
         consumer->open(control.endLSN, readWholeBlocks && !logTooSlow);
@@ -576,7 +576,7 @@ void LogArchiver::run()
 
         // nextActLSN = consumer->getNextLSN();
         nextActLSN = control.endLSN;
-        ERROUT(<< "Log archiver consumed all log records until LSN "
+        DBGOUT(<< "Log archiver consumed all log records until LSN "
                 << nextActLSN);
 
         if (!eager) {
@@ -587,9 +587,9 @@ void LogArchiver::run()
 
     // Perform selection until all remaining entries are flushed out of
     // the heap into runs. Last run boundary is also enqueued.
-    ERROUT(<< "Archiver exiting -- last round of selection to empty heap");
+    DBGOUT(<< "Archiver exiting -- last round of selection to empty heap");
     while (selection()) {}
-    ERROUT(<< "Archiver done!");
+    DBGOUT(<< "Archiver done!");
 
     w_assert0(heap->size() == 0);
 }
