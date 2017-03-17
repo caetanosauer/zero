@@ -1273,7 +1273,6 @@ void dump_all_sm_stats()
 ostream &
 operator<<(ostream &o, const sm_stats_info_t &s)
 {
-    o << s.bfht;
     o << s.sm;
     return o;
 }

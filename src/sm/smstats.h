@@ -48,10 +48,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * a per-transaction basis or on a global basis.
  * These counters are not segregated by the semantics of the counters. Rather,
  * they are segregated by the thread that performed the action being measured.
- * In other words, an action is attributed to a transaction if it was 
+ * In other words, an action is attributed to a transaction if it was
  * performed by a thread while attached to that transaction.
  * This means that some actions, such as writing pages to disk, might not
- * be attributable to a transaction even though they are in some 
+ * be attributable to a transaction even though they are in some
  * sense logically
  * associated with that transaction.  If the write is performed by a
  * page writer (background thread), it will show up in the global statistics
@@ -60,12 +60,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * all pages for the store thus changed) it will be attributed to the
  * transaction.
  *
- * All statistics are collected on a per-smthread_t basis 
- * (thus avoiding expensive atomic updates on a per-counter basis).  
- * Each smthread has its own 
- * local sm_stats_info_t structure for these statistics. 
+ * All statistics are collected on a per-smthread_t basis
+ * (thus avoiding expensive atomic updates on a per-counter basis).
+ * Each smthread has its own
+ * local sm_stats_info_t structure for these statistics.
  * Any time this structure is cleared,
- * its contents are added to a single global statistics structure 
+ * its contents are added to a single global statistics structure
  * (protected by a mutex) before it is cleared.
  * The clearing happens in two circumstances:
  * - when an smthread_t is destroyed (in its destructor)
@@ -83,7 +83,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * The global statistics cannot be reset, and, indeed, they survive
  * the storage manager so that they can be gathered after the
  * storage manager shuts down. This means that to determine incremental
- * statistics, the value-added server has to keep the prior copy of 
+ * statistics, the value-added server has to keep the prior copy of
  * statistics and diff the current statistics from the prior statistics.
  * The sm_stats_info_t has a difference operator to make this easy.
  * \attention Gathering the per-thread statistics from running threads is
@@ -97,8 +97,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * Instrumenting a transaction
  * consists in allocating a structure in which to store the collected
  * statistics, and passing in that structure to the storage manager using
- * using the variants of begin_xct, commit_xct, etc that take 
- * an argument of this type.  
+ * using the variants of begin_xct, commit_xct, etc that take
+ * an argument of this type.
  *
  * When a transaction is detached from a thread,
  * the statistics it gathered up to that point by the thread are
@@ -107,25 +107,23 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *
  * A server may gather the per-transaction statistics for the
  * attached running transaction with
- * ss_m::gather_xct_stats.  
+ * ss_m::gather_xct_stats.
  *
  * A server may choose to reset the per-transaction statistics when it
  * gathers them; this facilitates gathering incremental statistics.
- * These counters aren't lost to the world, since their values were 
- * added to the global statistics before they were gathered in the first place. 
+ * These counters aren't lost to the world, since their values were
+ * added to the global statistics before they were gathered in the first place.
  *
- * \attention The per-transaction statistics structure is not 
+ * \attention The per-transaction statistics structure is not
  * protected against concurrently-attached threads, so
- * its values are best collected and reset when the server 
- * knows that only one thread is attached to the 
- * transaction when making the call. 
+ * its values are best collected and reset when the server
+ * knows that only one thread is attached to the
+ * transaction when making the call.
  */
 
  /**\brief Statistics (counters) for most of the storage manager.
   * \details
-  * This structure holds most of the storage manager's statictics, 
-  * those not specific to the buffer-manager's hash table.
-  * Those counters are in bf_htab_stats_t.
+  * This structure holds the storage manager's statictics
   */
 class sm_stats_t {
 public:
@@ -133,23 +131,10 @@ public:
 #include "sm_stats_t_struct_gen.h"
 };
 
- /**\brief Statistics (counters) for the buffer-manager hash table.
-  * \details
-  * This structure holds counters
-  * specific to the buffer-manager's hash table.
-  * Although it is not necessary,
-  * they are separated from the rest for ease of unit-testing.
-  */
-class bf_htab_stats_t {
-public:
-    void    compute();
-#include "bf_htab_stats_t_struct_gen.h"
-};
-
-/**\brief Storage Manager Statistics 
+/**\brief Storage Manager Statistics
  *
  * The storage manager is instrumented; it collects the statistics
- * (mostly counters) that are described in *_stats.dat files (input 
+ * (mostly counters) that are described in *_stats.dat files (input
  * files to Perl scripts).
  * These statistics are incremented in per-thread structures, which
  * are gathered and available to the value-added server
@@ -157,11 +142,9 @@ public:
  */
 class sm_stats_info_t {
 public:
-    bf_htab_stats_t  bfht;
     sm_stats_t       sm;
-    void    compute() { 
-        bfht.compute(); 
-        sm.compute(); 
+    void    compute() {
+        sm.compute();
     }
     friend ostream& operator<<(ostream&, const sm_stats_info_t& s);
     sm_stats_info_t() {
@@ -180,42 +163,42 @@ extern sm_stats_info_t &operator-=(sm_stats_info_t &s, const sm_stats_info_t &t)
  * run-time options.
  */
 struct sm_config_info_t {
-    /**\brief compile-time constant. Settable in 
-     * \code shore.def \endcode. 
+    /**\brief compile-time constant. Settable in
+     * \code shore.def \endcode.
      * Default is 8K.
      */
     u_long page_size;         // bytes in page, including all headers
 
     /**\brief Data space available on a page of a large record */
     //TODO: SHORE-KITS-API
-    // shore-kits needs max_small_rec; shore-sm-6.0.1 initializes this field at 
+    // shore-kits needs max_small_rec; shore-sm-6.0.1 initializes this field at
     // several places. Make sure Zero similarly initializes max_small_rec
     u_long max_small_rec;      // maximum number of bytes in a "small"
                 // (ie. on one page) record.  This is
                 // align(header_len)+align(body_len).
-    u_long lg_rec_page_space;    
+    u_long lg_rec_page_space;
 
     /**\brief Size in KB of buffer pool */
     u_long buffer_pool_size;    // buffer pool size in kilo-bytes
 
-    /**\brief Largest permissible size in bytes of an index entry 
+    /**\brief Largest permissible size in bytes of an index entry
      * (key,value pair) */
     u_long max_btree_entry_size;
 
     /**\brief Number of extent links on an extent page */
     u_long exts_on_page;
 
-    /**\brief Number of pages per extent (compile-time constant) 
+    /**\brief Number of pages per extent (compile-time constant)
      * \note The storage manager has not been tested with any value but 8.
      */
-    u_long pages_per_ext; 
+    u_long pages_per_ext;
 
     /**\brief True if logging is on.
-     * \note The multi-threaded storage manager has not been 
+     * \note The multi-threaded storage manager has not been
      * tested with logging turned off, so turning off logging is
      * not supported in this release.
      */
-    bool   logging; 
+    bool   logging;
 
     friend ostream& operator<<(ostream&, const sm_config_info_t& s);
 };

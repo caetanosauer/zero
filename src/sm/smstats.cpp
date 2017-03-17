@@ -42,20 +42,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_stats_t_inc_gen.cpp"
 #include "sm_stats_t_dec_gen.cpp"
 #include "sm_stats_t_out_gen.cpp"
-#include "bf_htab_stats_t_inc_gen.cpp"
-#include "bf_htab_stats_t_dec_gen.cpp"
-#include "bf_htab_stats_t_out_gen.cpp"
 
 // the strings:
 const char *sm_stats_t ::stat_names[] = {
-#include "bf_htab_stats_t_msg_gen.h"
 #include "sm_stats_t_msg_gen.h"
    ""
 };
-
-void bf_htab_stats_t::compute()
-{
-}
 
 void sm_stats_t::compute()
 {
@@ -75,7 +67,7 @@ void sm_stats_t::compute()
         // get the # bytes generated during forward processing.
         double x = log_bytes_generated - log_bytes_generated_rb;
         w_assert0(x >= 0.0);
-        // should always be > 0, since the log_bytes_generated is 
+        // should always be > 0, since the log_bytes_generated is
         // the total of fwd and rollback bytes.
         if(x>0.0) {
             log_bytes_rbfwd_ratio = double(log_bytes_generated_rb) / x;
@@ -87,14 +79,12 @@ void sm_stats_t::compute()
 
 sm_stats_info_t &operator+=(sm_stats_info_t &s, const sm_stats_info_t &t)
 {
-    s.bfht += t.bfht;
     s.sm += t.sm;
     return s;
 }
 
 sm_stats_info_t &operator-=(sm_stats_info_t &s, const sm_stats_info_t &t)
 {
-    s.bfht -= t.bfht;
     s.sm -= t.sm;
     return s;
 }

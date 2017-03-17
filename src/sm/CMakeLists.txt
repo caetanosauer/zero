@@ -111,19 +111,5 @@ endforeach()
 add_custom_target(SM_STATS_GENFILES DEPENDS ${SM_STATS_GENFILES_FILES})
 add_dependencies(sm SM_STATS_GENFILES)
 
-# generate stat header files with tools/stats.pl (htab_stat)
-set(BF_HTAB_STATS_GENFILES_H bf_htab_stats_t_collect_enum_gen.h bf_htab_stats_t_msg_gen.h bf_htab_stats_t_struct_gen.h )
-set(BF_HTAB_STATS_GENFILES_CPP bf_htab_stats_t_collect_gen.cpp bf_htab_stats_t_dec_gen.cpp bf_htab_stats_t_inc_gen.cpp bf_htab_stats_t_out_gen.cpp)
-set(BF_HTAB_STATS_GENFILES_FILES ${BF_HTAB_STATS_GENFILES_H} ${BF_HTAB_STATS_GENFILES_CPP})
-foreach(_file ${BF_HTAB_STATS_GENFILES_FILES})
-    add_custom_command(OUTPUT ${_file}
-        COMMAND perl ${CMAKE_SOURCE_DIR}/tools/stats.pl ${CMAKE_CURRENT_SOURCE_DIR}/bf_htab_stats.dat
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/bf_htab_stats.dat
-    )
-    set (BF_HTAB_STATS_GENFILES_B_H ${BF_HTAB_STATS_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
-endforeach()
-add_custom_target(BF_HTAB_STATS_GENFILES DEPENDS ${BF_HTAB_STATS_GENFILES_FILES})
-add_dependencies(sm BF_HTAB_STATS_GENFILES)
-
-SET (GENFILES_H ${SM_STATS_GENFILES_B_H} ${BF_HTAB_STATS_GENFILES_B_H})
+SET (GENFILES_H ${SM_STATS_GENFILES_B_H})
 
