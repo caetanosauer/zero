@@ -81,6 +81,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "timeout.h"
 #include "latches.h"
 #include "logrec.h"
+#include "smstats.h"
 
 class xct_t;
 class lockid_t;
@@ -171,8 +172,6 @@ public:
 };
 */
 
-class sm_stats_t; // forward
-
 /**\brief Storage Manager thread.
  * \ingroup SSMINIT
  * \details
@@ -214,7 +213,7 @@ class smthread_t {
         int16_t  _depth; // how many "outer" this has
         tcb_t*   _outer; // this forms a singly linked list
 
-        sm_stats_t*  _TL_stats; // thread-local stats
+        sm_stats_t  _TL_stats; // thread-local stats
 
         // for lock_head_t::my_lock::get_me
         queue_based_lock_t::ext_qnode _me1;
@@ -231,9 +230,9 @@ class smthread_t {
         void    create_TL_stats();
         void    clear_TL_stats();
         void    destroy_TL_stats();
-        inline sm_stats_t& TL_stats() { return *_TL_stats;}
+        inline sm_stats_t& TL_stats() { return _TL_stats;}
         inline const sm_stats_t& TL_stats_const() const {
-                                                 return *_TL_stats; }
+                                                 return _TL_stats; }
 
         tcb_t(tcb_t* outer) :
             xct(0),
@@ -243,8 +242,7 @@ class smthread_t {
             _in_sm(false),
             _is_update_thread(false),
             _depth(outer == NULL ? 1 : outer->_depth + 1),
-            _outer(outer),
-            _TL_stats(0)
+            _outer(outer)
         {
             QUEUE_EXT_QNODE_INITIALIZE(_me1);
             QUEUE_EXT_QNODE_INITIALIZE(_me2);
@@ -358,7 +356,7 @@ public:
     // are stored in the smthread and collected when the smthread's tcb is
     // destroyed.
 
-#define GET_TSTAT(x) smthread_t::TL_stats().x
+#define GET_TSTAT(x) smthread_t::TL_stats()[enum_to_base(sm_stat_id::x)]
 /**\def GET_TSTAT(x)
  *\brief Get per-thread statistic named x
 */
@@ -366,17 +364,17 @@ public:
 /**\def INC_TSTAT(x)
  *\brief Increment per-thread statistic named x by y
  */
-#define INC_TSTAT(x) smthread_t::TL_stats().x++
+#define INC_TSTAT(x) smthread_t::TL_stats()[enum_to_base(sm_stat_id::x)]++
 
 /**\def ADD_TSTAT(x,y)
  *\brief Increment statistic named x by y
  */
-#define ADD_TSTAT(x,y) smthread_t::TL_stats().x += (y)
+#define ADD_TSTAT(x,y) smthread_t::TL_stats()[enum_to_base(sm_stat_id::x)] += (y)
 
 /**\def SET_TSTAT(x,y)
  *\brief Set per-thread statistic named x to y
  */
-#define SET_TSTAT(x,y) smthread_t::TL_stats().x = (y)
+#define SET_TSTAT(x,y) smthread_t::TL_stats()[enum_to_base(sm_stat_id::x)] = (y)
 
 
     /**\cond skip */

@@ -163,6 +163,19 @@ sub pendif {
     }
 }
 
+sub justopen {
+    local(*FILE, $fname, $includes) = @_;
+
+    my $hdrExclName = uc($fname);
+    $hdrExclName =~ tr/A-Z0-9/_/c;
+
+    if($v) {
+        printf(STDERR 
+        "head: trying to open "."$fname\n");
+    }
+    open(FILE, ">$fname") or die "cannot open $fname: $!\n";
+}
+
 sub head {
     local(*FILE, $fname, $includes) = @_;
 
@@ -316,29 +329,13 @@ sub translate {
             }
 
             &pifdef(*STRUCT);
-            printf(STRUCT "public: \nfriend ostream &\n");
-            printf(STRUCT "    operator<<(ostream &o,const $class &t);\n");
             &pifdef(*STRUCT);
-            if ($wstat)  {
-				printf(STRUCT "public: \nfriend w_statistics_t &\n");
-				printf(STRUCT "    operator<<(w_statistics_t &s,const $class &t);\n");
-			}
-
-            printf(STRUCT "public: \nfriend $class &\n");
-            printf(STRUCT "    operator+=($class &s,const $class &t);\n");
-            printf(STRUCT "public: \nfriend $class &\n");
-            printf(STRUCT "    operator-=($class &s,const $class &t);\n");
-            printf(STRUCT "static const char    *stat_names[];\n");
-            printf(STRUCT "static const char    *stat_types;\n");
-
-            printf(STRUCT "#define W_$class  $maxw + 2\n");
             &pendif(*STRUCT);
         }
         }
 
         { # close files
             if (!$enumOnly)  {
-                &foot(*MSG,$MSG_fname);
                 if ($wstat)  {
                     &foot(*DEFWSTAT,$DEFWSTAT);
                     &foot(*CODEWSTAT,$CODEWSTAT);
@@ -421,7 +418,7 @@ sub translate {
             &head(*COLLECT,$COLLECT_fname); # false
 			# &head(*GENERIC,$GENERIC_fname); # false
             &head(*STRUCT,$STRUCT_fname,"true");
-            &head(*MSG,$MSG_fname); # false
+            &justopen(*MSG,$MSG_fname); # false
             }
             &head(ENUM,$ENUM_fname);
         }
@@ -429,24 +426,6 @@ sub translate {
 
         # stuff after boilerplate
         if (!$enumOnly)  {
-            &pifdef(*CODEINCR);
-            printf(CODEINCR "$class &\n");
-            printf(CODEINCR 
-                "operator+=($class &s,const $class &t)\n{\n");#}
-            &pendif(*CODEINCR);
-
-            &pifdef(*CODEDECR);
-            printf(CODEDECR "$class &\n");
-            printf(CODEDECR 
-                "operator-=($class &s,const $class &t)\n{\n");#}
-            &pendif(*CODEDECR);
-
-            # define operator<<  to ostream
-            &pifdef(*CODEOUTP);
-            printf(CODEOUTP "ostream &\n");
-            printf(CODEOUTP 
-                "operator<<(ostream &o,const $class &t)\n{\n");#}
-            &pendif(*CODEOUTP);
 
 
 			if ($wstat)  {
@@ -531,9 +510,9 @@ sub translate {
             "#define $BaseName"."_$def"."              0x%08x,$cnt\n",$base);
         }
 
-        printf(MSG "/* $BaseName%s%-18s */ \"%s\",\n",  '_', $def, $msg);
+        printf(MSG "case sm_stat_id::%s: return \"%s\";\n",  $def, $def);
 
-        printf(STRUCT " $typ $def;\n");
+        printf(STRUCT " $def,\n");
 
         # code for vtable_collect function and generic code
         if ($typ =~ m/base/) {

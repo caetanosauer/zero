@@ -117,7 +117,7 @@ void basethread_t::print_stats()
 {
     sm_stats_t stats;
     ss_m::gather_stats(stats);
-    cout << stats << endl;
+    print_sm_stats(stats, cout);
 }
 
 /*

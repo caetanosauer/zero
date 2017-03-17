@@ -39,41 +39,22 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 // smstats_info_t is the collected stats from various
 // sm parts.  Each part is separately-generate from .dat files.
 #include "smstats.h"
-#include "sm_stats_t_inc_gen.cpp"
-#include "sm_stats_t_dec_gen.cpp"
-#include "sm_stats_t_out_gen.cpp"
 
 // the strings:
-const char *sm_stats_t ::stat_names[] = {
-#include "sm_stats_t_msg_gen.h"
-   ""
-};
-
-void sm_stats_t::compute()
+const char* get_stat_name(sm_stat_id s)
 {
-    latch_uncondl_waits = need_latch_uncondl - latch_uncondl_nowaits;
-
-    await_vol_lock_r = need_vol_lock_r - nowait_vol_lock_r;
-    await_vol_lock_w = need_vol_lock_w - nowait_vol_lock_w;
-
-    if(log_bytes_written > 0) {
-        // skip-log and padding bytes -- actually,
-        // anything flushed more than once, although inserted
-        // bytes not yet flushed will tend to warp this number
-        // if the log wasn't recently flushed.
-        log_bytes_rewritten = log_bytes_written - log_bytes_generated;
+    switch (s) {
+#include "sm_stats_t_msg_gen.h"
     }
-    if(log_bytes_generated_rb > 0) {
-        // get the # bytes generated during forward processing.
-        double x = log_bytes_generated - log_bytes_generated_rb;
-        w_assert0(x >= 0.0);
-        // should always be > 0, since the log_bytes_generated is
-        // the total of fwd and rollback bytes.
-        if(x>0.0) {
-            log_bytes_rbfwd_ratio = double(log_bytes_generated_rb) / x;
-        }else {
-            log_bytes_rbfwd_ratio = 0.0;
-        }
+    return "UNKNOWN_STAT";
+}
+
+void print_sm_stats(sm_stats_t& stats, std::ostream& out)
+{
+    for (size_t i = 0; i < stats.size() - 1; i++) {
+        out << get_stat_name(static_cast<sm_stat_id>(i)) << " "
+            << stats[i]
+            << std::endl;
     }
 }
 
@@ -89,11 +70,15 @@ void
 smlevel_0::add_to_global_stats(const sm_stats_t &from)
 {
     CRITICAL_SECTION(cs, local_ns::_global_stats_mutex);
-    local_ns::_global_stats_ += from;
+    for (size_t i = 0; i < from.size(); i++) {
+        local_ns::_global_stats_[i] += from[i];
+    }
 }
 void
 smlevel_0::add_from_global_stats(sm_stats_t &to)
 {
     CRITICAL_SECTION(cs, local_ns::_global_stats_mutex);
-    to += local_ns::_global_stats_;
+    for (size_t i = 0; i < to.size(); i++) {
+        to[i] += local_ns::_global_stats_[i];
+    }
 }

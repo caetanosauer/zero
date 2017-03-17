@@ -83,7 +83,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <climits>
 
 class ErrLog;
-class sm_stats_t;
 class xct_t;
 class xct_i;
 

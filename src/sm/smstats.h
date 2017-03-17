@@ -35,6 +35,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SMSTATS_H
 
 #include "w_defines.h"
+#include <array>
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
@@ -121,19 +122,22 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * transaction when making the call.
  */
 
- /**\brief Statistics (counters) for most of the storage manager.
-  * \details
-  * This structure holds the storage manager's statictics
-  */
-class sm_stats_t {
-public:
-    sm_stats_t() {
-        memset(this, '\0', sizeof (*this));
-    }
-    void    compute();
-#include "sm_stats_t_struct_gen.h"
+
+template<typename E>
+constexpr auto enum_to_base(E e) -> typename std::underlying_type<E>::type
+{
+       return static_cast<typename std::underlying_type<E>::type>(e);
+}
+
+enum class sm_stat_id : size_t
+{
+    #include "sm_stats_t_struct_gen.h"
+    stat_max
 };
 
+using sm_stats_t = std::array<long, enum_to_base(sm_stat_id::stat_max)>;
+
+void print_sm_stats(sm_stats_t& stats, std::ostream& out);
 
 /**\brief Configuration Information
  * \details

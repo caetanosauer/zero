@@ -763,10 +763,12 @@ void ShoreEnv::gatherstats_sm(ostream &stream)
     ss_m::gather_stats(stats);
 
     sm_stats_t diff = stats;
-    diff -= _last_sm_stats;
+    for (size_t i = 0; i < diff.size(); i++) {
+        diff[i] -= _last_sm_stats[i];
+    }
 
     // Print the diff and save the latest reading
-    stream << diff << endl;
+    print_sm_stats(diff, stream);
     _last_sm_stats = stats;
 }
 

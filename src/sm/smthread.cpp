@@ -32,8 +32,6 @@ void clear_all_fingerprints()
  */
 void
 smthread_t::tcb_t::create_TL_stats() {
-    _TL_stats = new sm_stats_t;
-    // These things have no constructor
     clear_TL_stats();
 }
 
@@ -41,13 +39,9 @@ smthread_t::tcb_t::create_TL_stats() {
  */
 void
 smthread_t::tcb_t::destroy_TL_stats() {
-    if(_TL_stats) {
-        if (smlevel_0::statistics_enabled) {
-            // Global stats are protected by a mutex
-            smlevel_0::add_to_global_stats(TL_stats()); // before detaching them
-        }
-        delete _TL_stats;
-        _TL_stats = NULL;
+    if (smlevel_0::statistics_enabled) {
+        // Global stats are protected by a mutex
+        smlevel_0::add_to_global_stats(TL_stats()); // before detaching them
     }
 }
 
@@ -81,7 +75,7 @@ smthread_t::tcb_t::clear_TL_stats()
 {
     // Global stats are protected by a mutex
     smlevel_0::add_to_global_stats(TL_stats()); // before clearing them
-    memset(&TL_stats(),0, sizeof(sm_stats_t));
+    TL_stats().fill(0);
 }
 
 /* Non-thread-safe add from the per-thread copy to another struct.
@@ -96,7 +90,9 @@ void
 smthread_t::add_from_TL_stats(sm_stats_t &w)
 {
     const sm_stats_t &x = tcb().TL_stats_const();
-    w += x;
+    for (size_t i = 0; i < w.size(); i++) {
+        w[i] += x[i];
+    }
 }
 
 // CS TODO: clean this up -- we shouldn'n need constructor
@@ -482,7 +478,9 @@ smthread_t::no_xct(xct_t *x)
             *
             * Note also that this is a non-atomic add.
             */
-            s += TL_stats(); // sm_stats_t
+            for (size_t i = 0; i < s.size(); i++) {
+                s[i] += TL_stats()[i]; // sm_stats_t
+            }
 
             /*
             * The stats have been added into the xct's structure,

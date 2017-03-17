@@ -966,7 +966,6 @@ ss_m::_commit_xct(sm_stats_t*& _stats, bool lazy,
 
     if(x.is_instrumented()) {
         _stats = x.steal_stats();
-        _stats->compute();
     }
     bool was_sys_xct = x.is_sys_xct();
     delete xp;
@@ -1065,7 +1064,6 @@ ss_m::_chain_xct(
     w_assert3(xct() == x);
     if(x->is_instrumented()) {
         _stats = x->steal_stats();
-        _stats->compute();
     }
     x->give_stats(new_stats);
 
@@ -1093,7 +1091,6 @@ ss_m::_abort_xct(sm_stats_t*&             _stats)
     W_DO( x.abort(true /* save _stats structure */) );
     if(x.is_instrumented()) {
         _stats = x.steal_stats();
-        _stats->compute();
     }
 
     delete xp;
@@ -1231,14 +1228,14 @@ ss_m::gather_stats(sm_stats_t& _stats)
     public:
         GatherSmthreadStats(sm_stats_t &s) : _stats(s)
         {
-            new (&_stats) sm_stats_t; // clear the stats
-            // by invoking the constructor.
+            _stats.fill(0);
         };
         void operator()(sm_stats_t& st)
         {
-            _stats += st;
+            for (size_t i = 0; i < st.size(); i++) {
+                _stats[i] += st[i];
+            }
         }
-        void compute() { _stats.compute(); }
     private:
         sm_stats_t &_stats;
     } F(_stats);
@@ -1247,16 +1244,13 @@ ss_m::gather_stats(sm_stats_t& _stats)
     //the client.
     // CS TODO: new thread stats mechanism!
     // smthread_t::for_each_smthread(F);
-    // F.compute();
     smthread_t::for_each_thread_stats(F);
-    F.compute();
 
     // Now add in the global stats.
     // Global stats contain all the per-thread stats that were collected
     // before a per-thread stats structure was cleared.
     // (This happens when per-xct stats get gathered for instrumented xcts.)
     add_from_global_stats(_stats); // from finished threads and cleared stats
-	_stats.compute();
     return RCOK;
 }
 
