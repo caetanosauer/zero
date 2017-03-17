@@ -1,8 +1,8 @@
 #ifndef LATCHES_H
 #define LATCHES_H
 
+#include "w_base.h"
 #include "timeout.h"
-#include "sthread_stats.h"
 #include "w_pthread.h"
 #include "AtomicCounter.hpp"
 #include "tatas.h"

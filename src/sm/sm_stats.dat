@@ -43,6 +43,18 @@
 # contains a copy of *all* sm stats, including the TODO CLEAN THIS UP
 SM Storage manager = 0x00060000 sm_stats_t {
 
+# CS: these used to be in sthread_stats.dat
+	u_long	rwlock_r_wait		Number waits for read lock on srwlock
+	u_long	rwlock_w_wait		Number waits for write lock on srwlock
+	u_long	needs_latch_condl	Conditional latch requests
+	u_long	needs_latch_uncondl	Unconditional latch requests
+	u_long	latch_condl_nowait	Conditional requests satisfied immediately
+	// NOTE: latch_uncondl_nowait is not counted unless you
+	// #define EXPENSIVE_LATCH_COUNTS in latch.cpp
+	// There's a bit of a heisen-watch syndrome here, nevertheless, this
+	// could be useful
+	u_long	latch_uncondl_nowait	Unconditional requests satisfied immediately
+
     // page writers
     u_long bf_one_page_write     Single page written to volume
     u_long bf_two_page_write     Two-page writes to volume

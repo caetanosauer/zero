@@ -62,9 +62,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "w.h"
 #include "latch.h"
 #include "w_debug.h"
+#include "smthread.h"
 
 #include <cstring>
-#include <sthread_stats.h>
 #include <list>
 #include <algorithm>
 
@@ -406,7 +406,7 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
             // uncondl because the unconditional case is
             // the one we're trying to understand in the callers
             // (bf find, bf scan, btree latch
-            INC_STH_STATS(latch_uncondl_nowait);
+            INC_TSTAT(latch_uncondl_nowait);
 #endif
             return RCOK;
         } else if(new_mode == LATCH_EX && me->_mode == LATCH_SH) {
@@ -439,20 +439,20 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
         // uncondl because the unconditional case is
         // the one we're trying to understand in the callers
         // (bf find, bf scan, btree latch
-        INC_STH_STATS(latch_uncondl_nowait);
+        INC_TSTAT(latch_uncondl_nowait);
 #endif
     } else {
         if(timeout == timeout_t::WAIT_IMMEDIATE) {
-            INC_STH_STATS(needs_latch_condl);
+            INC_TSTAT(needs_latch_condl);
             bool success = (new_mode == LATCH_SH)?
                 _lock.attempt_read() : _lock.attempt_write();
             if(!success)
                 return RC(stTIMEOUT);
-            INC_STH_STATS(latch_condl_nowait);
+            INC_TSTAT(latch_condl_nowait);
         }
         else {
             // forever timeout
-            INC_STH_STATS(needs_latch_uncondl);
+            INC_TSTAT(needs_latch_uncondl);
             if(new_mode == LATCH_SH) {
 // NOTE: These stats are questionable in their
 // heiseneffect as well as in the fact that we might
@@ -463,7 +463,7 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
 // this reason.
 #if defined(EXPENSIVE_LATCH_COUNTS) && EXPENSIVE_LATCH_COUNTS>0
                 if(_lock.attempt_read()) {
-                    INC_STH_STATS(latch_uncondl_nowait);
+                    INC_TSTAT(latch_uncondl_nowait);
                 } else
 #endif
                 _lock.acquire_read();
@@ -473,7 +473,7 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
                 w_assert2(me->_count == 0);
 #if defined(EXPENSIVE_LATCH_COUNTS) && EXPENSIVE_LATCH_COUNTS>0
                 if(_lock.attempt_write()) {
-                    INC_STH_STATS(latch_uncondl_nowait);
+                    INC_TSTAT(latch_uncondl_nowait);
                 } else
 #endif
                 _lock.acquire_write();

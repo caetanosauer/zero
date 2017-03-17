@@ -1,7 +1,6 @@
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR})
 
 set(common_SRCS
-  ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.cpp # new stats infrastructure
   ${CMAKE_CURRENT_SOURCE_DIR}/worker_thread.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/w_debug.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/latches.cpp
@@ -18,24 +17,4 @@ set(common_SRCS
 
 add_library(common STATIC ${common_SRCS})
 target_link_libraries (common pthread rt)
-
-# generate stat header files with tools/stats.pl
-# again, this has to be a part of source tree.
-set(COMMON_GENFILES_H sthread_stats_collect_enum_gen.h sthread_stats_msg_gen.h sthread_stats_struct_gen.h)
-set(COMMON_GENFILES_CPP sthread_stats_collect_gen.cpp sthread_stats_dec_gen.cpp sthread_stats_inc_gen.cpp sthread_stats_out_gen.cpp)
-set(COMMON_GENFILES_FILES ${COMMON_GENFILES_H} ${COMMON_GENFILES_CPP})
-foreach(_file ${COMMON_GENFILES_FILES})
-    add_custom_command(OUTPUT ${_file}
-       COMMAND perl ${CMAKE_SOURCE_DIR}/tools/stats.pl ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat
-       DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat
-    )
-    set(COMMON_GENFILES_FILES_B ${COMMON_GENFILES_FILES_B} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
-endforeach()
-add_custom_target(COMMON_GENFILES DEPENDS ${COMMON_GENFILES_FILES})
-add_dependencies(common COMMON_GENFILES)
-
-SET (GENFILES_H ${COMMON_GENFILES_H})
-foreach(_file ${GENFILES_H})
-    set(GENFILES_B_H ${GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
-endforeach()
 
