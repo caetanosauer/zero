@@ -8,8 +8,6 @@ class ShoreEnv;
 class sm_options;
 class FailureThread;
 
-extern std::atomic<bool> stop_benchmark;
-
 class KitsCommand : public Command
 {
 	using Command::setupOptions;

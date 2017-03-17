@@ -71,13 +71,13 @@ private:
 
 void KitsCommand::set_stop_benchmark(bool stop)
 {
-    stop_benchmark = stop;
+    shoreEnv->set_stop_benchmark(stop);
 }
 
 void KitsCommand::crashFilthy()
 {
     shoreEnv->set_sm_shudown_filthy(true);
-    stop_benchmark = true;
+    set_stop_benchmark(true);
 }
 
 
@@ -437,11 +437,10 @@ void KitsCommand::doWork()
     }
     else if (mtype == MT_NO_STOP) {
         // keep running until variable is externally set to true
-        while(!stop_benchmark){
+        while(!shoreEnv->should_stop_benchmark()){
             hasFailed = false;
-            while (!hasFailed && !stop_benchmark) {
+            while (!hasFailed && !shoreEnv->should_stop_benchmark()) {
                 sleep(1);
-                lintel::atomic_thread_fence(lintel::memory_order_consume);
             }
             if (hasFailed) {
                 vol_t* vol = smlevel_0::vol;

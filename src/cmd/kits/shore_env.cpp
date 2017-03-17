@@ -112,6 +112,7 @@ ShoreEnv::ShoreEnv(po::variables_map& vm)
       _bAlarmSet(false),
       _start_imbalance(0),
       _skew_type(SKEW_NONE),
+      stop_benchmark(false),
       _request_pool(sizeof(trx_request_t)),
       _bUseSLI(false),
       _bUseELR(false),

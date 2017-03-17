@@ -52,9 +52,6 @@ bool base_client_t::is_test_aborted()
     return (_abort_test);
 }
 
-// Variable used in no_stop mode (i.e. MT_NO_STOP)
-std::atomic<bool> stop_benchmark(false);
-
 /*********************************************************************
  *
  *  @fn:    submit_batch
@@ -188,14 +185,13 @@ w_rc_t base_client_t::run_xcts(int xct_type, int num_xct)
     _cp->wait();
 
     // main loop
-        while (!stop_benchmark) {
+        while (!_env->should_stop_benchmark()) {
             // submit a replacement batch...
             W_COERCE(submit_batch(xct_type, i, batchsz));
             // wait for to complete
             _cp->wait();
         }
 
-    stop_benchmark = false;
     // wait for the last batch to complete...
     _cp->wait();
 

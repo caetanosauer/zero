@@ -94,9 +94,6 @@ const int THINK_TIME = 0;
 int inst_test_env(int argc, char* argv[]);
 int close_test_env();
 
-// Variable used in no_stop mode (i.e. MT_NO_STOP)
-extern std::atomic<bool> stop_benchmark;
-
 /********************************************************************
  *
  * @enum  MeasurementType
@@ -155,10 +152,7 @@ protected:
     int _id; // thread id
     int _rv;
 
-
-
     boost::program_options::variables_map optionValues;
-
 
 public:
 

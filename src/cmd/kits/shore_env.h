@@ -459,7 +459,7 @@ protected:
     int _start_imbalance;
     skew_type_t _skew_type;
 
-
+    std::atomic<bool> stop_benchmark;
 
     po::variables_map optionValues;
 public:
@@ -516,6 +516,16 @@ public:
         _measure = aMeasurementState;
     }
     inline MeasurementState get_measure() { return (MeasurementState(*&_measure)); }
+
+    bool should_stop_benchmark()
+    {
+        return stop_benchmark;
+    }
+
+    void set_stop_benchmark(bool v)
+    {
+        stop_benchmark = v;
+    }
 
 
     pthread_mutex_t* get_init_mutex() { return (&_init_mutex); }
