@@ -104,6 +104,7 @@ logrec_t* ArchiveScanner::RunScanner::open()
         if (pid < firstPID) {
             bool hasNext = true;
             while (hasNext && lr->pid() < firstPID) {
+		ADD_TSTAT(la_skipped_bytes, lr->length());
                 hasNext = next(lr);
             }
             if (hasNext) {

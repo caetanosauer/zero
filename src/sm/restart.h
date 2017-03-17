@@ -119,8 +119,9 @@ public:
     {
         // CS TODO: concurrency?
 
-        DBGOUT1(<< "Spawn child recovery thread");
+        if (_no_db_mode) { return; }
 
+        DBGOUT1(<< "Spawn child recovery thread");
         _restart_thread = new restart_thread_t;
         W_COERCE(_restart_thread->fork());
         w_assert1(_restart_thread);

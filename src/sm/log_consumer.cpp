@@ -17,7 +17,7 @@ const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
         W_FATAL_MSG(fcOS, << "Kernel errno code: " << errno); \
     }
 
-ArchiverControl::ArchiverControl(bool* shutdownFlag)
+ArchiverControl::ArchiverControl(std::atomic<bool>* shutdownFlag)
     : endLSN(lsn_t::null), activated(false), listening(false), shutdownFlag(shutdownFlag)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
@@ -88,29 +88,14 @@ bool ArchiverControl::waitForActivation()
     return true;
 }
 
-ReaderThread::ReaderThread(AsyncRingBuffer* readbuf,
-        lsn_t startLSN)
+ReaderThread::ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN)
     :
-      buf(readbuf), currentFd(-1), pos(0), shutdownFlag(false),
-      control(&shutdownFlag)
+      log_worker_thread_t(-1 /* interval_ms */),
+      buf(readbuf), currentFd(-1), pos(0), localEndLSN(0)
 {
     // position initialized to startLSN
     pos = startLSN.lo();
     nextPartition = startLSN.hi();
-}
-
-void ReaderThread::shutdown()
-{
-    shutdownFlag = true;
-    // make other threads see new shutdown value
-    lintel::atomic_thread_fence(lintel::memory_order_release);
-}
-
-void ReaderThread::activate(lsn_t endLSN)
-{
-    // pos = startLSN.lo();
-    DBGTHRD(<< "Activating reader thread until " << endLSN);
-    control.activate(true, endLSN);
 }
 
 rc_t ReaderThread::openPartition()
@@ -140,8 +125,8 @@ rc_t ReaderThread::openPartition()
      * the given endLSN was incorrect. If this is not the partition of
      * endLSN.hi(), then we simply assert that its size is not zero.
      */
-    if (control.endLSN.hi() == nextPartition) {
-        w_assert0(partSize >= control.endLSN.lo());
+    if (localEndLSN.hi() == nextPartition) {
+        w_assert0(partSize >= localEndLSN.lo());
     }
     else {
         w_assert1(partSize > 0);
@@ -154,98 +139,88 @@ rc_t ReaderThread::openPartition()
     return RCOK;
 }
 
-void ReaderThread::run()
+void ReaderThread::do_work()
 {
     auto blockSize = getBlockSize();
+    // copy endLSN into local var to avoid it changing in-between steps below
+    localEndLSN = getEndLSN();
+
+    DBGTHRD(<< "Reader thread activated until " << localEndLSN);
+
+    /*
+     * CS: The code was changed to not rely on the file size anymore,
+     * because we may read from a file that is still being appended to.
+     * The correct behavior is to rely on the given endLSN, which must
+     * be guaranteed to be persistent on the file. Therefore, we cannot
+     * read past the end of the file if we only read until endLSN.
+     * A physical read past the end is OK because we use pread_short().
+     * The position from which the first logrec will be read is set in pos
+     * by the activate method, which takes the startLSN as parameter.
+     */
 
     while(true) {
-        CRITICAL_SECTION(cs, control.mutex);
-
-        bool activated = control.waitForActivation();
-        if (!activated) {
+        unsigned currPartition =
+            currentFd == -1 ? nextPartition : nextPartition - 1;
+        if (localEndLSN.hi() == currPartition && pos >= localEndLSN.lo())
+        {
+            /*
+             * The requested endLSN is within a block which was already
+             * read. Stop and wait for next activation, which must start
+             * reading from endLSN, since anything beyond that might
+             * have been updated alread (usually, endLSN is the current
+             * end of log). Hence, we update pos with it.
+             */
+            pos = localEndLSN.lo();
+            DBGTHRD(<< "Reader thread reached endLSN -- sleeping."
+                    << " New pos = " << pos);
             break;
         }
 
-        lintel::atomic_thread_fence(lintel::memory_order_release);
-        if (shutdownFlag) {
+        if (should_exit()) {
+            DBGTHRD(<< "Reader thread got shutdown request.");
             break;
         }
 
-        DBGTHRD(<< "Reader thread activated until " << control.endLSN);
-
-        /*
-         * CS: The code was changed to not rely on the file size anymore,
-         * because we may read from a file that is still being appended to.
-         * The correct behavior is to rely on the given endLSN, which must
-         * be guaranteed to be persistent on the file. Therefore, we cannot
-         * read past the end of the file if we only read until endLSN.
-         * A physical read past the end is OK because we use pread_short().
-         * The position from which the first logrec will be read is set in pos
-         * by the activate method, which takes the startLSN as parameter.
-         */
-
-        while(true) {
-            unsigned currPartition =
-                currentFd == -1 ? nextPartition : nextPartition - 1;
-            if (control.endLSN.hi() == currPartition
-                    && pos >= control.endLSN.lo())
-            {
-                /*
-                 * The requested endLSN is within a block which was already
-                 * read. Stop and wait for next activation, which must start
-                 * reading from endLSN, since anything beyond that might
-                 * have been updated alread (usually, endLSN is the current
-                 * end of log). Hence, we update pos with it.
-                 */
-                pos = control.endLSN.lo();
-                DBGTHRD(<< "Reader thread reached endLSN -- sleeping."
-                        << " New pos = " << pos);
-                break;
-            }
-
-            // get buffer space to read into
-            char* dest = buf->producerRequest();
-            if (!dest) {
-                W_FATAL_MSG(fcINTERNAL,
-                     << "Error requesting block on reader thread");
-                break;
-            }
+        // get buffer space to read into
+        char* dest = buf->producerRequest();
+        if (!dest) {
+            W_FATAL_MSG(fcINTERNAL,
+                    << "Error requesting block on reader thread");
+            break;
+        }
 
 
-            if (currentFd == -1) {
-                W_COERCE(openPartition());
-            }
+        if (currentFd == -1) {
+            W_COERCE(openPartition());
+        }
 
-            // Read only the portion which was ignored on the last round
-            size_t blockPos = pos % blockSize;
-            int bytesRead = ::pread(currentFd, dest + blockPos, blockSize - blockPos, pos);
+        // Read only the portion which was ignored on the last round
+        size_t blockPos = pos % blockSize;
+        int bytesRead = ::pread(currentFd, dest + blockPos, blockSize - blockPos, pos);
+        CHECK_ERRNO(bytesRead);
+
+        if (bytesRead == 0) {
+            // Reached EOF -- open new file and try again
+            DBGTHRD(<< "Reader reached EOF (bytesRead = 0)");
+            W_COERCE(openPartition());
+            pos = 0;
+            blockPos = 0;
+            bytesRead = ::pread(currentFd, dest, blockSize, pos);
             CHECK_ERRNO(bytesRead);
-
             if (bytesRead == 0) {
-                // Reached EOF -- open new file and try again
-                DBGTHRD(<< "Reader reached EOF (bytesRead = 0)");
-                W_COERCE(openPartition());
-                pos = 0;
-                blockPos = 0;
-                bytesRead = ::pread(currentFd, dest, blockSize, pos);
-                CHECK_ERRNO(bytesRead);
-                if (bytesRead == 0) {
-                    W_FATAL_MSG(fcINTERNAL,
+                W_FATAL_MSG(fcINTERNAL,
                         << "Error reading from partition "
                         << nextPartition - 1);
-                }
             }
-
-            DBGTHRD(<< "Read block " << (void*) dest << " from fpos " << pos <<
-                    " with size " << bytesRead << " into blockPos "
-                    << blockPos);
-            w_assert0(bytesRead > 0);
-
-            pos += bytesRead;
-            buf->producerRelease();
         }
 
-        control.activated = false;
+        DBGTHRD(<< "Read block " << (void*) dest << " from fpos " << pos <<
+                " with size " << bytesRead << " into blockPos "
+                << blockPos);
+        w_assert0(bytesRead > 0);
+
+        pos += bytesRead;
+        buf->producerRelease();
     }
 }
 
@@ -303,8 +278,7 @@ void LogConsumer::shutdown()
 {
     if (!readbuf->isFinished()) {
         readbuf->set_finished();
-        reader->shutdown();
-        reader->join();
+        reader->stop();
     }
 }
 
@@ -313,7 +287,7 @@ void LogConsumer::open(lsn_t endLSN, bool readWholeBlocks)
     this->endLSN = endLSN;
     this->readWholeBlocks = readWholeBlocks;
 
-    reader->activate(endLSN);
+    reader->wakeup_until_lsn(endLSN);
 
     nextBlock();
 }

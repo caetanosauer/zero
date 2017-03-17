@@ -243,7 +243,7 @@ private:
     BlockAssembly* blkAssemb;
     MergerDaemon* merger;
 
-    bool shutdownFlag;
+    std::atomic<bool> shutdownFlag;
     ArchiverControl control;
     bool selfManaged;
     bool eager;

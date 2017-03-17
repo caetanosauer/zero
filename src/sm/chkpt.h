@@ -163,7 +163,8 @@ class chkpt_thread_t;
  *********************************************************************/
 class chkpt_m : public smlevel_0 {
 public:
-    chkpt_m(const sm_options&, lsn_t last_chkpt_lsn = lsn_t::null);
+    /// chkpt_info is obtained via log analysis
+    chkpt_m(const sm_options&, chkpt_t* chkpt_info = nullptr);
     virtual ~chkpt_m();
 
 public:
