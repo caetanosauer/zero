@@ -385,7 +385,7 @@ size_t vol_t::num_used_pages() const
 size_t vol_t::get_num_restored_pages() const
 {
     if (_restore_mgr == NULL)
-        return 0;
+        return _alloc_cache->get_last_allocated_pid();
     return _restore_mgr->getNumRestoredPages();
 }
 
