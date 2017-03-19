@@ -36,8 +36,7 @@ std::string http_headers::get_response(HandleKits* kits)
      ssOut << "content-length: " << sHTML.length() << std::endl;
      ssOut << std::endl;
      ssOut << sHTML;
-     std::vector<std::string> kitsParameters = generate_kits_parameters();
-     kits->runKits(kitsParameters);
+     kits->runKits(options);
   }
   else if(url == "/counters")
   {
@@ -179,51 +178,6 @@ void http_headers::on_read_request_line(std::string line)
    // std::cout << "request for resource: " << url << std::endl;
 };
 
-void http_headers::add_option(std::string key, std::string value)
-{
-    std::cout << "key: " << key << std::endl;
-    std::cout << "value: " << value << std::endl;
-    options[key] = value;
-};
-
-std::vector<std::string> http_headers::generate_kits_parameters()
-{
-    std::vector<std::string> parameters;
-    if ((options.find("benchmark") != options.end()) && options.find("threads") != options.end()) {
-        parameters.push_back("-b");
-        parameters.push_back(options["benchmark"]);
-        parameters.push_back("-t");
-        parameters.push_back(options["threads"]);
-    }
-    else
-    {
-        std::cout << "ERROR: Missing parameters 'thread' and 'benchmark'" << std::endl;
-        return parameters;
-    }
-
-    if (options.find("no_stop") != options.end()) {
-        parameters.push_back("--no_stop");
-    }
-    else if (options.find("duration") != options.end()) {
-        parameters.push_back("--duration");
-        parameters.push_back(options["duration"]);
-    }
-    else if (options.find("transactions") != options.end()) {
-        parameters.push_back("--trxs");
-        parameters.push_back(options["transactions"]);
-    }
-
-    if (options.find("load") != options.end()) {
-        parameters.push_back("--load");
-
-    }
-
-    for (size_t i = 0; i < parameters.size(); i++)
-        std::cout << parameters.at(i) << std::endl;
-    return parameters;
-
-}
-
 void session::read_body(std::shared_ptr<session> pThis, HandleKits* kits) {
 
     std::cout << "read_body" << std::endl;
@@ -257,15 +211,7 @@ void session::read_body(std::shared_ptr<session> pThis, HandleKits* kits) {
 
             std::cout << "Tail: '" << body.substr(p+1) << "'\n";
 
-            std::stringstream bodyStream;
-            bodyStream << body;
-            std::string key, value;
-            while(std::getline(bodyStream, key, ':')) {
-                key.erase(std::remove(key.begin(), key.end(), ' '),key.end());
-                std::getline(bodyStream, value, ',');
-                value.erase(std::remove(value.begin(), value.end(), ' '),value.end());
-                pThis->headers.add_option(key,value);
-            }
+            pThis->headers.options << body;
             std::shared_ptr<std::string> str = std::make_shared<std::string>(pThis->headers.get_response(kits));
             asio::async_write(pThis->socket, boost::asio::buffer(str->c_str(), str->length()), [pThis, str](const boost::system::error_code& /*e*/, std::size_t /*s*/)
             {
@@ -365,7 +311,7 @@ void counters(std::vector<std::string> &counters, KitsCommand *kits)
 };
 
 
-int HandleKits::runKits(std::vector<std::string> options)
+int HandleKits::runKits(std::stringstream &kits_options)
 {
     if (kits) {
         std::cout << "kits running!!!!" << std::endl;
@@ -375,32 +321,8 @@ int HandleKits::runKits(std::vector<std::string> options)
     kits = new KitsCommand();
     kits->setupOptions();
 
-    // the options should include at least the benchmark and the number of threads e.g.: -b tpcc -t 2
-    if (options.size() < 4 || kits->running())
-        return -1;
-
-    int predefinedArgs = 4;
-    int argc=options.size() + predefinedArgs;
-    char* argv[argc];//={"zapps", "kits", "-b", "tpcc", "--no_stop", "-t", "1", "--sm_archiving", "true"};
-    argv[0] = (char*)malloc(strlen("zapps") + 1);
-    strcpy(argv[0],"zapps");
-    argv[1] = (char*)malloc(strlen("kits") + 1);
-    strcpy(argv[1],"kits");
-    argv[2] = (char*)malloc(strlen("--sm_archiving") + 1);
-    strcpy(argv[2],"--sm_archiving");
-    argv[3] = (char*)malloc(strlen("true") + 1);
-    strcpy(argv[3],"true");
-
-    for (int i = predefinedArgs; i < argc; i++){
-        argv[i] = (char*) malloc(strlen(options.at(i-predefinedArgs).c_str()) + 1);
-        strcpy(argv[i], options.at(i-predefinedArgs).c_str());
-    }
-    std::cout <<"Arguments: " << argc << std::endl;
-    for (int i = 0; i < argc ; i++)
-        std::cout << "    " << argv[i] << std::endl;
-
     po::variables_map vm;
-    po::store(po::parse_command_line(argc,argv,kits->getOptions()), vm);
+    po::store(po::parse_config_file(kits_options, kits->getOptions()), vm);
     po::notify(vm);
     kits->setOptionValues(vm);
 

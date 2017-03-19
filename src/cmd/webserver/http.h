@@ -23,7 +23,7 @@ private:
 
 public:
     HandleKits();
-    int runKits(std::vector<std::string> options);
+    int runKits(std::stringstream &options);
     void crash();
     void mediaFailure();
     void singlePageFailure();
@@ -45,18 +45,15 @@ private:
    std::string method;
    std::string url;
    std::string version;
-
    std::map<std::string, std::string> headers;
-   std::map<std::string, std::string> options;
-   std::vector<std::string> generate_kits_parameters();
 
 public:
+    std::stringstream options;
     http_headers();
     std::string get_response(HandleKits* kits);
     int content_length();
     void on_read_header(std::string line);
     void on_read_request_line(std::string line);
-    void add_option(std::string, std::string);
 };
 
 
