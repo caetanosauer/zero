@@ -132,16 +132,11 @@ public:
 
     bool check_restore_finished();
 
-    void redo_segment_restore(unsigned segment);
-
-    /** Used for checkpointing bitmap of restored segments */
-    void chkpt_restore_progress(chkpt_restore_tab_t* tab);
-
     /** Return largest PID allocated for this volume yet **/
     PageID get_last_allocated_pid() const;
 
     /** Method to create _alloc_cache and _stnode_cache */
-    void build_caches(bool truncate);
+    void build_caches(bool truncate, chkpt_t* = nullptr);
 
     bool caches_ready() { return _alloc_cache && _stnode_cache; }
 

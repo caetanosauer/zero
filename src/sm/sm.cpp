@@ -263,10 +263,7 @@ ss_m::_construct_once()
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing volume manager");
 
-    // If not instant restart, pass null dirty page table, which disables REDO
-    // recovery based on SPR so that it is done explicitly by restart_thread_t below.
-    vol = new vol_t(_options,
-            instantRestart ? chkpt_info : NULL);
+    vol = new vol_t(_options, chkpt_info);
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer manager");
 
@@ -309,9 +306,10 @@ ss_m::_construct_once()
 
     do_prefetch = _options.get_bool_option("sm_prefetch", false);
 
-    ERROUT(<< "[" << timer.time_ms() << "] Performing offline recovery");
+    ERROUT(<< "[" << timer.time_ms() << "] Starting recovery thread");
 
     recovery->fork();
+    recovery->wakeup();
     if (!instantRestart) {
         recovery->join();
         // metadata caches can only be constructed now

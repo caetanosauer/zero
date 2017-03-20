@@ -131,6 +131,12 @@ void restart_thread_t::log_analysis()
     ERROUT(<< "Log analysis found "
             << chkpt.buf_tab.size() << " dirty pages and "
             << chkpt.xct_tab.size() << " active transactions");
+
+    if (chkpt.ongoing_restore) {
+        ERROUT(<< "Log analysis found ongoing restore with "
+                << chkpt.restore_tab.size() << " restored segments");
+    }
+
     // chkpt.dump(cerr);
     logAnalysisFinished = true;
 }

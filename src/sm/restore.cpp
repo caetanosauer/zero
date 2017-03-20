@@ -781,10 +781,19 @@ void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
 
     bitmap->mark_restored(segment);
 
-    // send signal to waiting threads (acquire mutex to avoid lost signal)
-    DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
-    DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
-    DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
+    if (!redo) {
+        // send signal to waiting threads (acquire mutex to avoid lost signal)
+        DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
+        DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
+        DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
+    }
+}
+
+void RestoreMgr::markRestoredFromList(const std::vector<uint32_t>& segments)
+{
+    for (auto s : segments) {
+        markSegmentRestored(s, true);
+    }
 }
 
 void RestoreMgr::start()

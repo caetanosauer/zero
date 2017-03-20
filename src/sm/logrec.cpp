@@ -877,45 +877,13 @@ void chkpt_backup_tab_log::redo(PagePtr)
 
 void chkpt_restore_tab_log::construct()
 {
-    chkpt_restore_tab_t* tab =
-        new (_data) chkpt_restore_tab_t();
-
-    smlevel_0::vol->chkpt_restore_progress(tab);
-    set_size(tab->length());
+    // CS TODO: cleanup!
 }
 
 template <class PagePtr>
 void chkpt_restore_tab_log::redo(PagePtr)
 {
-    // CS TODO should not be a redo logrec!
-    // CS TODO: disabled for now
-    return;
-
-    chkpt_restore_tab_t* tab = (chkpt_restore_tab_t*) _data;
-
-    vol_t* vol = smlevel_0::vol;
-
-    w_assert0(vol);
-    if (!vol->is_failed()) {
-        // Marking the device failed will kick-off the restore thread, initialize
-        // its state, and restore the metadata (even if already done - idempotence)
-        W_COERCE(vol->mark_failed(false /* evict */, true /* redo */));
-    }
-
-    for (size_t i = 0; i < tab->firstNotRestored; i++) {
-        vol->redo_segment_restore(i);
-    }
-
-    // CS TODO
-    // RestoreBitmap bitmap(vol->num_used_pages());
-    // bitmap.deserialize(tab->bitmap, tab->firstNotRestored,
-    //         tab->firstNotRestored + tab->bitmapSize);
-    // // Bitmap of RestoreMgr might have been initialized already
-    // for (size_t i = tab->firstNotRestored; i < bitmap.getSize(); i++) {
-    //     if (bitmap.get(i)) {
-    //         vol->redo_segment_restore(i);
-    //     }
-    // }
+    // CS TODO: cleanup!
 }
 
 void add_backup_log::construct(const string& path, lsn_t backupLSN)
@@ -1015,15 +983,7 @@ void restore_segment_log::construct(uint32_t segment)
 template <class PagePtr>
 void restore_segment_log::redo(PagePtr)
 {
-    return; // CS TODO: disabled for now
-
-    vol_t* volume = smlevel_0::vol;
-    // volume must be mounted and failed
-    w_assert0(volume && volume->is_failed());
-
-    uint32_t segment = *((uint32_t*) data_ssx());
-
-    volume->redo_segment_restore(segment);
+    // CS TODO: cleanup!
 }
 
 template <class PagePtr>

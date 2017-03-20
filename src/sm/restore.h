@@ -111,6 +111,11 @@ public:
      */
     void shutdown();
 
+    /** \brief Marks all segments in the given container as restored.
+     * Used during log analysis if there is a restore going on.
+     */
+    void markRestoredFromList(const std::vector<uint32_t>& segments);
+
     /** \brief True if all segments have been restored
      *
      * CS TODO -- concurrency control?

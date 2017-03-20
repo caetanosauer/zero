@@ -108,10 +108,24 @@ private:
     tid_t highest_tid;
     lsn_t last_scan_start;
 
+    /*
+     * CS: looking back at my design for checkpoints and log analysis, it would
+     * be better to store information such as ongoing restore processes and
+     * backups in normal B-trees (i.e., a kind of system catalog). That would
+     * simplify things tremendously, since log analysis and chekpoints would
+     * be simpler and that kind of system information would be maintained and
+     * recovered using the same basic infrastructure of "user" data (i.e.,
+     * dirty pages and active transactions only)
+     */
+
+    bool ignore_restore;
+
 public: // required for restart for now
     buf_tab_t buf_tab;
     xct_tab_t xct_tab;
     string bkp_path;
+    std::vector<uint32_t> restore_tab;
+    bool ongoing_restore;
 
 public:
     void scan_log(lsn_t scan_start = lsn_t::null, bool no_db_mode = false);

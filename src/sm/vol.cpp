@@ -73,8 +73,6 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
         _readonly = true;
     }
 
-    spinlock_write_critical_section cs(&_mutex);
-
     int open_flags = 0;
     open_flags |= _readonly ? O_RDONLY : O_RDWR;
     if (truncate) { open_flags |= O_TRUNC | O_CREAT; }
@@ -85,8 +83,13 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
     CHECK_ERRNO(fd);
     _fd = fd;
 
+    bool instantRestart = options.get_bool_option("sm_restart_instant", true);
     if (chkpt_info) {
-        _dirty_pages = new buf_tab_t(chkpt_info->buf_tab);
+        // If not instant restart, do not use dirty page table, which disables REDO
+        // recovery based on SPR so that it is done explicitly by restart_thread_t.
+        if (instantRestart) {
+            _dirty_pages = new buf_tab_t(chkpt_info->buf_tab);
+        }
     }
 }
 
@@ -114,7 +117,7 @@ void vol_t::sync()
     CHECK_ERRNO(ret);
 }
 
-void vol_t::build_caches(bool truncate)
+void vol_t::build_caches(bool truncate, chkpt_t* chkpt_info)
 {
     _stnode_cache = new stnode_cache_t(truncate);
     w_assert1(_stnode_cache);
@@ -122,6 +125,12 @@ void vol_t::build_caches(bool truncate)
 
     _alloc_cache = new alloc_cache_t(*_stnode_cache, truncate, _cluster_stores);
     w_assert1(_alloc_cache);
+
+    // kick out pre-failure restore
+    if (chkpt_info && chkpt_info->ongoing_restore) {
+        mark_failed(false, true);
+        _restore_mgr->markRestoredFromList(chkpt_info->restore_tab);
+    }
 }
 
 lsn_t vol_t::get_dirty_page_emlsn(PageID pid) const
@@ -212,35 +221,6 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
     return RCOK;
 }
 
-void vol_t::chkpt_restore_progress(chkpt_restore_tab_t* tab)
-{
-    w_assert0(tab);
-    spinlock_read_critical_section cs(&_mutex);
-
-    if (!_failed) { return; }
-    w_assert0(_restore_mgr);
-
-    // TODO
-    // RestoreBitmap* bitmap = _restore_mgr->getBitmap();
-    // size_t bitmapSize = bitmap->getSize();
-    // size_t firstNotRestored = 0;
-    // size_t lastRestored = 0;
-    // bitmap->getBoundaries(firstNotRestored, lastRestored);
-    // tab->firstNotRestored = firstNotRestored;
-    // tab->bitmapSize = bitmapSize - firstNotRestored;
-
-    // if (tab->bitmapSize > chkpt_restore_tab_t::maxSegments) {
-    //     W_FATAL_MSG(eINTERNAL,
-    //             << "RestoreBitmap of " << bitmapSize
-    //             << " does not fit in checkpoint");
-    // }
-
-    // if (firstNotRestored < lastRestored) {
-    //     // "to" is exclusive boundary
-    //     bitmap->serialize(tab->bitmap, firstNotRestored, lastRestored + 1);
-    // }
-}
-
 bool vol_t::check_restore_finished()
 {
     // with a read latch, check if finished -- most likely no
@@ -276,12 +256,6 @@ bool vol_t::check_restore_finished()
     }
 
     return false;
-}
-
-void vol_t::redo_segment_restore(unsigned segment)
-{
-    w_assert1(_restore_mgr && is_failed());
-    _restore_mgr->markSegmentRestored(segment, true /* redo */);
 }
 
 rc_t vol_t::dismount(bool abrupt)
