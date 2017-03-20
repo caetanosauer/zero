@@ -374,7 +374,7 @@ std::string HandleKits::redoProgress()
 std::string HandleKits::mediaRecoveryProgress()
 {
     std::string progress = "0";
-    if (kits) {
+    if (kits && kits->running()) {
         size_t pToRecover = kits->getShoreEnv()->get_num_pages_vol();
         size_t pRecovered = kits->getShoreEnv()->get_num_restored_pages_vol();
 
