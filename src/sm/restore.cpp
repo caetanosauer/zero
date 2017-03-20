@@ -303,7 +303,8 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     :
     archIndex(index), volume(volume), numRestoredPages(0),
     useBackup(useBackup), takeBackup(takeBackup),
-    failureLSN(lsn_t::null), pinCount(0)
+    failureLSN(lsn_t::null), pinCount(0),
+    shutdownFlag(false)
 {
     w_assert0(archIndex);
     w_assert0(volume);
@@ -383,17 +384,19 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     bitmap = new RestoreBitmap(lastUsedPid / segmentSize + 1);
 }
 
-bool RestoreMgr::try_shutdown()
+bool RestoreMgr::try_shutdown(bool wait)
 {
     if (pinCount < 0) {
         // we've already shut down
         return true;
     }
 
-    if (!all_pages_restored()) {
+    if (wait && !all_pages_restored()) {
         // restore not finished yet -- can't shutdown
         return false;
     }
+
+    shutdownFlag = true;
 
     // Try to atomically switch pin count from 0 to -1. If that fails, it means
     // someone is still using us and we can't shutdown.
@@ -536,6 +539,8 @@ void RestoreMgr::restoreSegment(char* workspace,
             page++;
             redoneOnPage = 0;
 
+            if (shutdownFlag) { return; }
+
             if (lrpid > lastUsedPid || getSegmentForPid(current) != segment) {
                 // Time to move to a new segment (multiple-segment restore)
                 ADD_TSTAT(restore_time_replay, timer.time_us());
@@ -637,6 +642,8 @@ void RestoreMgr::restoreLoop(unsigned id)
             usleep(2000); // 2 ms
             continue;
         }
+
+        if (shutdownFlag) { break; }
 
         timer.reset();
 
@@ -840,7 +847,7 @@ void RestoreMgr::start()
 void RestoreMgr::shutdown()
 {
     w_assert1(bufferedRequests.size() == 0);
-    while (!try_shutdown()) {
+    while (!try_shutdown(false)) {
         ::usleep(1000000); // 1 sec
     }
 }

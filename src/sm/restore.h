@@ -135,7 +135,7 @@ public:
     BackupReader* getBackup() { return backup; }
     unsigned getPrefetchWindow() { return prefetchWindow; }
 
-    bool try_shutdown();
+    bool try_shutdown(bool wait = true);
 
 protected:
     RestoreBitmap* bitmap;
@@ -291,6 +291,10 @@ protected:
      */
     void markSegmentRestored(unsigned segment, bool redo = false);
 
+    /** \brief Flag to signalize shutdown to restore threads
+     */
+    std::atomic<bool> shutdownFlag;
+
     // Allow protected access from vol_t (for recovery)
     friend class vol_t;
     // .. and from asynchronous writer (declared and defined on cpp file)
@@ -299,7 +303,6 @@ protected:
     friend class RestoreThread;
 };
 
-// TODO get rid of smthread_t and use std::thread
 struct RestoreThread : thread_wrapper_t
 {
     RestoreThread(RestoreMgr* mgr, unsigned id) : mgr(mgr), id(id) {};
