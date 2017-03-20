@@ -114,14 +114,19 @@ std::string http_headers::get_response(HandleKits* kits)
   }
   else if(url == "/recoveryprogress")
   {
-      std::string sHTML = "{\"redoProgress\":" + kits->redoProgress();
-      sHTML +=", \"logAnalysisProgress\":" + kits->logAnalysisProgress() +"}";
+      std::stringstream content;
+      content << "{\"redoProgress\":" << kits->redoProgress();
+      content << ", \"logAnalysisProgress\":" << kits->logAnalysisProgress();
+      content << ", \"undoProgress\":" << " 100"; // TODO
+      content << ", \"restoreProgress\":" << kits->mediaRecoveryProgress();
+      content << "}" << std::endl;
+
       ssOut << "HTTP/1.1 200 OK" << std::endl;
       ssOut << "Access-Control-Allow-Origin: *" << std::endl;
       ssOut << "content-type: application/json" << std::endl;
-      ssOut << "content-length: " << sHTML.length() << std::endl;
+      ssOut << "content-length: " << content.str().length() << std::endl;
       ssOut << std::endl;
-      ssOut << sHTML;
+      ssOut << content.str();
   }
   else if(url == "/mediarecoveryprogress")
   {
@@ -334,7 +339,7 @@ int HandleKits::runKits(std::stringstream &kits_options)
 
 void HandleKits::crash()
 {
-    if (kits) {
+    if (kits && kits->running()) {
         kits->crashFilthy();
         kits->join();
         delete kits;
@@ -344,14 +349,14 @@ void HandleKits::crash()
 
 void HandleKits::mediaFailure()
 {
-    if (kits) {
+    if (kits && kits->running()) {
         kits->mediaFailure(0);
     }
 }
 
 void HandleKits::singlePageFailure()
 {
-    if (kits) {
+    if (kits && kits->running()) {
         kits->randomRootPageFailure();
     }
 }
@@ -360,13 +365,15 @@ std::string HandleKits::redoProgress()
 {
     std::string progress = "0";
     if (kits && kits->getShoreEnv()->has_log_analysis_finished()) {
-        size_t pToRecover = kits->getShoreEnv()->get_total_pages_to_recover();
-        size_t pRecovered = kits->getShoreEnv()->get_total_pages_redone();
+        size_t dirty = kits->getShoreEnv()->get_total_pages_to_recover();
+        size_t redone = kits->getShoreEnv()->get_total_pages_redone();
 
-        if (pRecovered < pToRecover)
-            progress = std::to_string((static_cast<double>(pRecovered)/static_cast<double>(pToRecover))*100);
-        else if (pRecovered > pToRecover)
+        if (redone < dirty) {
+            progress = std::to_string((redone * 100) / dirty);
+        }
+        else {
             progress = "100";
+        }
     }
     return progress;
 }
@@ -375,19 +382,22 @@ std::string HandleKits::mediaRecoveryProgress()
 {
     std::string progress = "0";
     if (kits && kits->running()) {
-        size_t pToRecover = kits->getShoreEnv()->get_num_pages_vol();
-        size_t pRecovered = kits->getShoreEnv()->get_num_restored_pages_vol();
+        size_t dirty = kits->getShoreEnv()->get_num_pages_vol();
+        size_t redone = kits->getShoreEnv()->get_num_restored_pages_vol();
 
-        if (pRecovered > 0)
-            progress = std::to_string((static_cast<double>(pRecovered)/static_cast<double>(pToRecover))*100);
-        else if (pRecovered >= pToRecover)
+        if (redone < dirty) {
+            progress = std::to_string((redone * 100) / dirty);
+        }
+        else {
             progress = "100";
+        }
     }
     return progress;
 }
 
 std::string HandleKits::logAnalysisProgress()
 {
+    // TODO
     std::string progress = "0";
     if (kits && kits->getShoreEnv()->has_log_analysis_finished())
         progress = "100";
@@ -396,18 +406,15 @@ std::string HandleKits::logAnalysisProgress()
 
 std::string HandleKits::getStats()
 {
-    std::string strReturn;
+    std::stringstream strReturn;
     if (kits && kits->running()) {
-        strReturn = "{";
+        strReturn << "{";
         for (size_t i = 0; i < countersJson.size(); i++) {
-            //countersJson[i][countersJson[i].length()-2] = ']';
-            strReturn += (countersJson[i]+ ", ");
-            strReturn[strReturn.size()-4] = ']';
+            strReturn << countersJson[i] << ", ";
         }
-        strReturn[strReturn.length()-1] = ' ';
-        strReturn[strReturn.length()-2] = '}';
+        strReturn << "}";
     }
-    return strReturn;
+    return strReturn.str();
 };
 
 std::string HandleKits::aggLog()
@@ -428,7 +435,7 @@ std::string HandleKits::aggLog()
 
 std::string HandleKits::getCounters()
 {
-    string json;
+    string json = "";
     if (!kits || !kits->running())
         return json;
 
