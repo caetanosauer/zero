@@ -707,20 +707,6 @@ int ShoreEnv::close_sm()
         return (1);
     }
 
-
-    // Disabling fake io delay, if any
-    // _pssm->disable_fake_disk_latency(_vid);
-
-    // check if any active xcts
-    int activexcts = ss_m::num_active_xcts();
-    if (activexcts) {
-        TRACE (TRACE_ALWAYS, "\n*** Warning (%d) active xcts. Cannot dismount!!\n",
-               activexcts);
-
-        W_IGNORE(ss_m::dump_xcts(cout));
-        cout << flush;
-    }
-
     // Final stats
     gatherstats_sm(std::cout);
 
