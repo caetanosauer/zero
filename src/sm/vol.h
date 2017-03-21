@@ -25,7 +25,8 @@ public:
     vol_t(const sm_options&, chkpt_t* chkpt_info = nullptr);
     virtual ~vol_t();
 
-    void shutdown(bool abrupt = false);
+    void finish_restore();
+    void shutdown();
 
     size_t      num_used_pages() const;
 
@@ -144,7 +145,7 @@ public:
 
     PageID get_dirty_page_count() const;
 
-    void clear_dirty_pages();
+    bool grab_a_dirty_page(PageID& pid) const;
 
 private:
     // variables read from volume header -- remain constant after mount
@@ -207,8 +208,6 @@ private:
 
     /** Whether to cluster pages of the same store in extents */
     bool _cluster_stores;
-
-    rc_t dismount(bool abrupt = false);
 
     /** Open backup file descriptor for retore or taking new backup */
     void open_backup();

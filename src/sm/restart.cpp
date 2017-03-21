@@ -381,28 +381,21 @@ void restart_thread_t::redo_page_pass()
     generic_page* page;
     stopwatch_t timer;
 
-    buf_tab_t::const_iterator iter = chkpt.buf_tab.begin();
-    while (iter != chkpt.buf_tab.end()) {
-        PageID pid = iter->first;
-        lsn_t lastLSN = iter->second.page_lsn;
-
+    auto page_cnt = smlevel_0::vol->get_dirty_page_count();
+    PageID pid;
+    while (smlevel_0::vol->grab_a_dirty_page(pid)) {
         // simply fixing the page will take care of single-page recovery
-        W_COERCE(smlevel_0::bf->fix_nonroot(
-                    page, NULL, pid, LATCH_SH, false, false, false, lastLSN));
-        smlevel_0::bf->unfix(page);
+        fixable_page_h p;
+        p.fix_direct(pid, LATCH_SH, false, false);
 
-        iter++;
-
-        if (should_exit()) {
-            return;
-        }
+        if (should_exit()) { return; }
     }
 
     ADD_TSTAT(restart_redo_time, timer.time_us());
-    ERROUT(<< "Finished REDO of " << chkpt.buf_tab.size() << " pages");
+    ERROUT(<< "Finished REDO of " << page_cnt << " pages");
     Logger::log_sys<redo_done_log>();
 
-    smlevel_0::vol->clear_dirty_pages();
+    w_assert1(smlevel_0::vol->get_dirty_page_count() == 0);
 }
 
 void restart_thread_t::undo_pass()

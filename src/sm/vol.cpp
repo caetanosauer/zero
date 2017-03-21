@@ -160,14 +160,19 @@ void vol_t::delete_dirty_page(PageID pid)
     }
 }
 
-void vol_t::clear_dirty_pages()
+bool vol_t::grab_a_dirty_page(PageID& pid) const
 {
-    if (!_dirty_pages) { return; }
+    if (!_dirty_pages) { return false; }
 
-    spinlock_write_critical_section cs(&_mutex);
-    _dirty_pages->clear();
-    delete _dirty_pages;
-    _dirty_pages = nullptr;
+    spinlock_read_critical_section cs(&_mutex);
+    if (_dirty_pages->size() == 0) {
+        return false;
+    }
+
+    auto it = _dirty_pages->cbegin();
+    pid = it->first;
+    return true;
+
 }
 
 PageID vol_t::get_dirty_page_count() const
@@ -202,7 +207,12 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo, PageID lastUsedPid)
 {
     spinlock_write_critical_section cs(&_mutex);
 
-    if (_failed) { return RCOK; }
+    if (_failed) {
+        // failure-upon-failure -- just destroy current stat so we can start restore anew
+        _restore_mgr->shutdown();
+        delete _restore_mgr;
+        _restore_mgr = nullptr;
+    }
 
     bool useBackup = _backups.size() > 0;
 
@@ -286,41 +296,6 @@ bool vol_t::check_restore_finished()
     return false;
 }
 
-rc_t vol_t::dismount(bool abrupt)
-{
-    spinlock_write_critical_section cs(&_mutex);
-
-    DBG(<<" vol_t::dismount flush=" << flush);
-
-    // INC_TSTAT(vol_cache_clears);
-
-    w_assert1(_fd >= 0);
-
-    if (!abrupt) {
-        if (_failed) {
-            // wait for ongoing restore to complete
-            _restore_mgr->shutdown();
-            if (_backup_fd > 0) {
-                auto ret = close(_backup_fd);
-                CHECK_ERRNO(ret);
-                _backup_fd = -1;
-                _current_backup_lsn = lsn_t::null;
-            }
-            _failed = false;
-        }
-        // CS TODO -- also make sure no restart is ongoing
-    }
-    else if (_failed) {
-        DBG(<< "WARNING: Volume shutting down abruptly during restore!");
-    }
-
-    auto ret = close(_fd);
-    CHECK_ERRNO(ret);
-    _fd = -1;
-
-    return RCOK;
-}
-
 unsigned vol_t::num_backups() const
 {
     spinlock_read_critical_section cs(&_mutex);
@@ -354,10 +329,33 @@ rc_t vol_t::sx_add_backup(const string& path, lsn_t backupLSN, bool redo)
     return RCOK;
 }
 
-void vol_t::shutdown(bool abrupt)
+void vol_t::shutdown()
 {
-    // bf_uninstall causes a force on the volume through the bf_cleaner
-    W_COERCE(dismount(abrupt));
+    spinlock_write_critical_section cs(&_mutex);
+
+    DBG(<<" vol_t::dismount flush=" << flush);
+
+    // INC_TSTAT(vol_cache_clears);
+
+    w_assert1(_fd >= 0);
+
+    auto ret = close(_fd);
+    CHECK_ERRNO(ret);
+    _fd = -1;
+}
+
+void vol_t::finish_restore()
+{
+    if (_failed) {
+        _restore_mgr->shutdown();
+        if (_backup_fd > 0) {
+            auto ret = close(_backup_fd);
+            CHECK_ERRNO(ret);
+            _backup_fd = -1;
+            _current_backup_lsn = lsn_t::null;
+        }
+        _failed = false;
+    }
 }
 
 rc_t vol_t::alloc_a_page(PageID& shpid, StoreID stid)
@@ -508,9 +506,11 @@ rc_t vol_t::read_page_verify(PageID pid, generic_page* const buf, lsn_t emlsn)
         w_assert0(_no_db_mode || p.lsn() == emlsn);
         w_assert0(!_no_db_mode || p.lsn() >= emlsn);
         w_assert0(!p.lsn().is_null());
-
-        delete_dirty_page(pid);
         // cerr << "Recovered " << pid << " to LSN " << emlsn << endl;
+    }
+
+    if (!dirty_lsn.is_null()) {
+        delete_dirty_page(pid);
     }
 
     // if (buf->pid != pid) {

@@ -367,6 +367,7 @@ ss_m::_destruct_once()
         delete recovery;
         recovery = 0;
     }
+    vol->finish_restore();
 
     // retire chkpt thread (calling take() directly still possible)
     chkpt->retire_thread();
@@ -422,12 +423,8 @@ ss_m::_destruct_once()
     }
 
     ERROUT(<< "Terminating volume");
-    // this should come before xct and log shutdown so that any
-    // ongoing restore has a chance to finish cleanly. Should also come after
-    // shutdown of buffer, since forcing the buffer requires the volume.
-    // destroy() will stop cleaners
-    vol->shutdown(!shutdown_clean);
-    delete vol; vol = 0; // io manager
+    vol->shutdown();
+    delete vol; vol = 0;
 
     ERROUT(<< "Terminating log manager");
     if(log) {

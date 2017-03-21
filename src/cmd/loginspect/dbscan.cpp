@@ -62,6 +62,6 @@ void DBScan::run()
         }
     }
 
-    vol->shutdown(false);
+    vol->shutdown();
     delete vol;
 }

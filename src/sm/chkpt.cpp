@@ -276,6 +276,9 @@ void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop, bool no_db_mode)
             if (!ignore_restore) {
                 ongoing_restore = true;
                 restore_page_cnt = *((PageID*) r.data_ssx());
+                // this might be a failure-upon-failure, in which case we want to
+                // ignore the first failure
+                ignore_restore = true;
             }
         case logrec_t::t_restore_end:
             {
