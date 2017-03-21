@@ -71,9 +71,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sstream>
 #include <iomanip>
 
-size_t restart_thread_t::redonePages = 0;
-
-
 restart_thread_t::restart_thread_t(const sm_options& options)
     : logAnalysisFinished(false)
 {
@@ -404,6 +401,8 @@ void restart_thread_t::redo_page_pass()
     ADD_TSTAT(restart_redo_time, timer.time_us());
     ERROUT(<< "Finished REDO of " << chkpt.buf_tab.size() << " pages");
     Logger::log_sys<redo_done_log>();
+
+    smlevel_0::vol->clear_dirty_pages();
 }
 
 void restart_thread_t::undo_pass()

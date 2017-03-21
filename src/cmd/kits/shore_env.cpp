@@ -760,16 +760,12 @@ void ShoreEnv::gatherstats_sm(ostream &stream)
 
 size_t ShoreEnv::get_total_pages_to_recover()
 {
-    size_t pagesToRecover = 0;
-    if (smlevel_0::recovery)
-        smlevel_0::recovery->get_chkpt()->buf_tab.size();
-    return pagesToRecover;
+    return smlevel_0::recovery->get_chkpt()->buf_tab.size();
 }
 
-size_t ShoreEnv::get_total_pages_redone()
+size_t ShoreEnv::get_dirty_page_count()
 {
-    size_t totalPagesRedone = restart_thread_t::get_redone_pages();
-    return totalPagesRedone;
+    return smlevel_0::vol->get_dirty_page_count();
 }
 
 bool ShoreEnv::has_log_analysis_finished()

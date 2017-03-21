@@ -86,8 +86,6 @@ public:
      */
     static void dump_page_lsn_chain(std::ostream &o, const PageID &pid, const lsn_t &max_lsn);
 
-    static size_t get_redone_pages() { return redonePages;}
-
 private:
 
     void                 _redo_log_with_pid(
@@ -95,8 +93,6 @@ private:
                                 PageID page_updated,
                                 bool &redone,
                                 uint32_t &dirty_count);
-
-    static size_t redonePages;
 
 };
 

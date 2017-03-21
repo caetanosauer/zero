@@ -142,6 +142,10 @@ public:
 
     bool caches_ready() { return _alloc_cache && _stnode_cache; }
 
+    PageID get_dirty_page_count() const;
+
+    void clear_dirty_pages();
+
 private:
     // variables read from volume header -- remain constant after mount
     int              _fd;

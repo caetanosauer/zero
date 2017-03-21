@@ -109,6 +109,10 @@ vol_t::~vol_t()
     if (_restore_mgr) {
         delete _restore_mgr;
     }
+
+    if (_dirty_pages) {
+        delete _dirty_pages;
+    }
 }
 
 void vol_t::sync()
@@ -137,6 +141,8 @@ lsn_t vol_t::get_dirty_page_emlsn(PageID pid) const
 {
     if (!_dirty_pages) { return lsn_t::null; }
 
+    spinlock_read_critical_section cs(&_mutex);
+
     buf_tab_t::const_iterator it = _dirty_pages->find(pid);
     if (it == _dirty_pages->end()) { return lsn_t::null; }
     return it->second.page_lsn;
@@ -152,6 +158,24 @@ void vol_t::delete_dirty_page(PageID pid)
     if (it != _dirty_pages->end()) {
         _dirty_pages->erase(it);
     }
+}
+
+void vol_t::clear_dirty_pages()
+{
+    if (!_dirty_pages) { return; }
+
+    spinlock_write_critical_section cs(&_mutex);
+    _dirty_pages->clear();
+    delete _dirty_pages;
+    _dirty_pages = nullptr;
+}
+
+PageID vol_t::get_dirty_page_count() const
+{
+    if (!_dirty_pages) { return 0; }
+
+    spinlock_read_critical_section cs(&_mutex);
+    return _dirty_pages->size();
 }
 
 void vol_t::open_backup()

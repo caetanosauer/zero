@@ -366,11 +366,14 @@ std::string HandleKits::redoProgress()
 {
     std::string progress = "0";
     if (kits && kits->getShoreEnv()->has_log_analysis_finished()) {
-        size_t dirty = kits->getShoreEnv()->get_total_pages_to_recover();
-        size_t redone = kits->getShoreEnv()->get_total_pages_redone();
+        size_t total = kits->getShoreEnv()->get_total_pages_to_recover();
+        size_t dirty = kits->getShoreEnv()->get_dirty_page_count();
 
-        if (redone < dirty) {
-            progress = std::to_string((redone * 100) / dirty);
+        if (total > 0 && dirty > 0) {
+            progress = std::to_string(((total - dirty) * 100) / total);
+        }
+        else if (total == 0) {
+            progress = "0";
         }
         else {
             progress = "100";
