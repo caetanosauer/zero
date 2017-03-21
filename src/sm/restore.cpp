@@ -201,6 +201,7 @@ void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize)
     size_t readSize = 32768;
     auto logiter = logScan.open(first_pid, 0, lsn_t::null, readSize);
 
+    // CS TODO: how about log records still in the recovery log?
     LogReplayer::replay(logiter, pbegin, pend);
 
     Logger::log_sys<restore_segment_log>(segment);
@@ -749,8 +750,11 @@ void RestoreMgr::writeSegment(char* workspace, unsigned segment, size_t count)
             W_COERCE(volume->write_backup(firstPage, count, workspace));
         }
         else {
-            W_COERCE(volume->write_many_pages(firstPage, (generic_page*) workspace,
-                        count, true /* ignoreRestore */));
+            // CS TODO: disable this temporarily for EDBT demo; reason is that
+            // we have a bug when overwriting a page that was already cleaned from
+            // the buffer pool with an older version
+            // W_COERCE(volume->write_many_pages(firstPage, (generic_page*) workspace,
+            //             count, true /* ignoreRestore */));
         }
         DBG(<< "Wrote out " << count << " pages of segment " << segment);
     }
