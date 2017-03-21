@@ -38,30 +38,9 @@ std::string http_headers::get_response(HandleKits* kits)
      ssOut << sHTML;
      kits->runKits(options);
   }
-  else if(url == "/counters")
-  {
-     string json = kits->getCounters();
-
-     ssOut << "HTTP/1.1 200 OK" << std::endl;
-     ssOut << "Access-Control-Allow-Origin: *" << std::endl;
-     ssOut << "content-type: application/json" << std::endl;
-     ssOut << "content-length: " << json.length() << std::endl;
-     ssOut << std::endl;
-     ssOut <<   json;
-  }
   else if(url == "/getstats")
   {
      string json = kits->getStats();
-     ssOut << "HTTP/1.1 200 OK" << std::endl;
-     ssOut << "Access-Control-Allow-Origin: *" << std::endl;
-     ssOut << "content-type: application/json" << std::endl;
-     ssOut << "content-length: " << json.length() << std::endl;
-     ssOut << std::endl;
-     ssOut <<   json;
-  }
-  else if(url == "/agglog")
-  {
-     string json = kits->aggLog();
      ssOut << "HTTP/1.1 200 OK" << std::endl;
      ssOut << "Access-Control-Allow-Origin: *" << std::endl;
      ssOut << "content-type: application/json" << std::endl;
@@ -282,41 +261,6 @@ HandleKits::HandleKits()
 {
 }
 
-
-void counters(std::vector<std::string> &counters, KitsCommand *kits)
-{
-    //wait for kits runs
-    while(kits && !kits->running()) {
-        std::this_thread::sleep_for (std::chrono::seconds(1));
-    }
-    //kits started!
-    std::stringstream ssOut;
-    kits->getShoreEnv()->gatherstats_sm(ssOut);
-    string varJson, parJson;
-    while (ssOut >> varJson) {
-        ssOut >> parJson;
-        counters.push_back("\"" + varJson + "\" :  [0");
-    }
-
-    while(kits && kits->running()) {
-        //wait 1 second
-        std::this_thread::sleep_for (std::chrono::seconds(1));
-        std::stringstream ss;
-        kits->getShoreEnv()->gatherstats_sm(ss);
-        auto max = counters.size();
-        for(size_t i = 0; i < max; i++) {
-            ss >> varJson;
-            ss >> parJson;
-            counters[i] += ", " + parJson;
-        }
-
-        //string strReturn = ssReturn.str();
-        //strReturn[strReturn.length()-1] = '\0';
-        //strReturn[strReturn.length()-2] = '}';
-    }
-};
-
-
 int HandleKits::runKits(std::stringstream &kits_options)
 {
     if (kits) {
@@ -334,7 +278,6 @@ int HandleKits::runKits(std::stringstream &kits_options)
 
     kits->fork();
 
-    t1 = new std::thread (counters, std::ref(countersJson), kits);
     return 0;
 };
 
@@ -410,73 +353,41 @@ std::string HandleKits::logAnalysisProgress()
 
 std::string HandleKits::getStats()
 {
-    std::stringstream strReturn;
+    stats.emplace_back();
+    auto& st = stats[stats.size() - 1];
+    st.fill(0);
+
     if (kits && kits->running()) {
-        strReturn << "{";
-        auto max = countersJson.size();
-        for (size_t i = 0; i < max; i++) {
-            strReturn << countersJson[i] << "]";
-            if (i < max - 1 ) {
+        ss_m::gather_stats(st);
+    }
+    else if (stats.size() > 1) {
+        auto& st2 = stats[stats.size() - 2];
+        for (size_t i = 0; i < st.size(); i++) {
+            st[i] = st2[i];
+        }
+    }
+
+    std::stringstream strReturn;
+    strReturn << "{" << std::endl;
+    auto cnt = st.size();
+    for (size_t i = 0; i < cnt; i++) {
+        strReturn << "\"" << get_stat_name(static_cast<sm_stat_id>(i)) << "\" : [";
+        auto max = stats.size();
+        for (size_t j = 0; j < max; j++) {
+            strReturn << stats[j][i];
+            if (j < max - 1 ) {
                 strReturn << ", ";
             }
         }
-        strReturn << "}";
+        strReturn << "]";
+        if (i < cnt-1) {
+            strReturn << ", ";
+        }
+        strReturn << std::endl;
     }
+    strReturn << "}";
+
     return strReturn.str();
-};
-
-std::string HandleKits::aggLog()
-{
-    AggLog agglog;
-    agglog.setupOptions();
-    int argc=4;
-    char* argv[4]={"zapps", "agglog", "-l", "log"};
-    po::variables_map varMap;
-    po::store(po::parse_command_line(argc,argv,agglog.getOptions()), varMap);
-    po::notify(varMap);
-    agglog.setOptionValues(varMap);
-
-    agglog.fork();
-    agglog.join();
-    return agglog.jsonReply();
-}
-
-std::string HandleKits::getCounters()
-{
-    string json = "";
-    if (!kits || !kits->running())
-        return json;
-
-    AggLog agglog;
-    agglog.setupOptions();
-    int argc=4;
-    char* argv[4]={"zapps", "agglog", "-l", "log"};
-    po::variables_map varMap;
-    po::store(po::parse_command_line(argc,argv,agglog.getOptions()), varMap);
-    po::notify(varMap);
-    agglog.setOptionValues(varMap);
-
-    agglog.fork();
-    agglog.join();
-    json = agglog.jsonReply();
-    json[json.length() -2] = ',';
-
-    std::string jsonStats;
-    //strReturn = "{";
-    for (size_t i = 0; i < countersJson.size(); i++) {
-        //countersJson[i][countersJson[i].length()-2] = ']';
-        jsonStats += (countersJson[i]+ ", ");
-        jsonStats[jsonStats.size()-4] = ']';
-    }
-    if (jsonStats.length()>1) {
-        jsonStats[jsonStats.length()-1] = ' ';
-        jsonStats[jsonStats.length()-2] = '}';
-        json +=jsonStats;
-    }
-    else
-        json[json.length()-2] = '}';
-
-    return json;
 };
 
 std::string HandleKits::isRunning()

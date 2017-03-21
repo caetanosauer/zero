@@ -7,7 +7,6 @@
 #include <boost/asio.hpp>
 #include <string>
 #include <memory>
-#include <thread>
 #include <chrono>         // std::chrono::seconds
 
 using namespace boost;
@@ -18,8 +17,7 @@ class HandleKits
 {
 private:
     KitsCommand *kits;
-    std::thread *t1;
-    std::vector<std::string> countersJson;
+    std::vector<sm_stats_t> stats;
 
 public:
     HandleKits();
@@ -28,15 +26,10 @@ public:
     void mediaFailure();
     void singlePageFailure();
     std::string getStats();
-    std::string aggLog();
-    std::string getCounters();
     std::string isRunning();
     std::string redoProgress();
     std::string logAnalysisProgress();
     std::string mediaRecoveryProgress();
-
-
-    //void counters(std::vector<std::string> &countersJson);
 };
 
 class http_headers
