@@ -295,7 +295,7 @@ void counters(std::vector<std::string> &counters, KitsCommand *kits)
     string varJson, parJson;
     while (ssOut >> varJson) {
         ssOut >> parJson;
-        counters.push_back("\"" + varJson + "\" :  [0, ");
+        counters.push_back("\"" + varJson + "\" :  [0");
     }
 
     while(kits && kits->running()) {
@@ -303,10 +303,11 @@ void counters(std::vector<std::string> &counters, KitsCommand *kits)
         std::this_thread::sleep_for (std::chrono::seconds(1));
         std::stringstream ss;
         kits->getShoreEnv()->gatherstats_sm(ss);
-        for(size_t i = 0; i < counters.size(); i++) {
+        auto max = counters.size();
+        for(size_t i = 0; i < max; i++) {
             ss >> varJson;
             ss >> parJson;
-            counters[i]+=(parJson + ", ");
+            counters[i] += ", " + parJson;
         }
 
         //string strReturn = ssReturn.str();
@@ -409,8 +410,12 @@ std::string HandleKits::getStats()
     std::stringstream strReturn;
     if (kits && kits->running()) {
         strReturn << "{";
-        for (size_t i = 0; i < countersJson.size(); i++) {
-            strReturn << countersJson[i] << ", ";
+        auto max = countersJson.size();
+        for (size_t i = 0; i < max; i++) {
+            strReturn << countersJson[i] << "]";
+            if (i < max - 1 ) {
+                strReturn << ", ";
+            }
         }
         strReturn << "}";
     }
