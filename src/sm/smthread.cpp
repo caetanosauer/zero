@@ -73,8 +73,6 @@ smthread_init_t::~smthread_init_t()
 void
 smthread_t::tcb_t::clear_TL_stats()
 {
-    // Global stats are protected by a mutex
-    smlevel_0::add_to_global_stats(TL_stats()); // before clearing them
     TL_stats().fill(0);
 }
 

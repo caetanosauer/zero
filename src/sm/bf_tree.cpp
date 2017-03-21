@@ -1058,6 +1058,7 @@ bool bf_tree_m::is_used (bf_idx idx) const {
 void bf_tree_m::set_page_lsn(generic_page* p, lsn_t lsn)
 {
     uint32_t idx = p - _buffer;
+    p->lsn = lsn;
 
     // CS: workaround for design limitation of restore. When redoing a log
     // record, the LSN should only be updated if the page image being used

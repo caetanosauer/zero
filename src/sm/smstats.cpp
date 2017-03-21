@@ -513,11 +513,17 @@ void print_sm_stats(sm_stats_t& stats, std::ostream& out)
 namespace local_ns {
     sm_stats_t _global_stats_;
     static queue_based_block_lock_t _global_stats_mutex;
+    static bool _global_stat_init = false;
 }
 void
 smlevel_0::add_to_global_stats(const sm_stats_t &from)
 {
     CRITICAL_SECTION(cs, local_ns::_global_stats_mutex);
+    if (!local_ns::_global_stat_init) {
+        local_ns::_global_stats_.fill(0);
+        local_ns::_global_stat_init = true;
+    }
+
     for (size_t i = 0; i < from.size(); i++) {
         local_ns::_global_stats_[i] += from[i];
     }
@@ -526,6 +532,10 @@ void
 smlevel_0::add_from_global_stats(sm_stats_t &to)
 {
     CRITICAL_SECTION(cs, local_ns::_global_stats_mutex);
+    if (!local_ns::_global_stat_init) {
+        local_ns::_global_stats_.fill(0);
+        local_ns::_global_stat_init = true;
+    }
     for (size_t i = 0; i < to.size(); i++) {
         to[i] += local_ns::_global_stats_[i];
     }

@@ -357,7 +357,10 @@ enum class sm_stat_id : size_t
 
 using sm_stats_t = std::array<long, enum_to_base(sm_stat_id::stat_max)>;
 
+// CS TODO: move this into some static class
 void print_sm_stats(sm_stats_t& stats, std::ostream& out);
+const char* get_stat_name(sm_stat_id s);
+const char* get_stat_expl(sm_stat_id s);
 
 /**\brief Configuration Information
  * \details

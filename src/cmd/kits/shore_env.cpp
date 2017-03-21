@@ -134,6 +134,8 @@ ShoreEnv::ShoreEnv(po::variables_map& vm)
     }
     setSLIEnabled(optionValues["db-worker-sli"].as<bool>());
     set_rec_to_access(optionValues["records-to-access"].as<uint>());
+
+    _last_sm_stats.fill(0);
 }
 
 
@@ -746,6 +748,7 @@ void ShoreEnv::gatherstats_sm(ostream &stream)
     // memset(&stats, 0, sizeof(stats));
 
     sm_stats_t stats;
+    stats.fill(0);
     ss_m::gather_stats(stats);
 
     sm_stats_t diff = stats;
