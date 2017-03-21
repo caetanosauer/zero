@@ -41,7 +41,7 @@ public:
      * in which restored segments are written to a backup file, also specified
      * in vol_t with the take_backup() method.
      */
-    RestoreMgr(const sm_options&, ArchiveIndex*, vol_t*,
+    RestoreMgr(const sm_options&, ArchiveIndex*, vol_t*, PageID lastDataPid,
             bool useBackup, bool takeBackup = false);
     virtual ~RestoreMgr();
 

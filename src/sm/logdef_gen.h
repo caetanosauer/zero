@@ -181,8 +181,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
     struct restore_begin_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_restore_begin;
-    void construct ();
-    template <class Ptr> void redo(Ptr);
+    void construct (PageID page_cnt);
     };
 
     struct restore_segment_log : public logrec_t {

@@ -275,6 +275,7 @@ void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop, bool no_db_mode)
         case logrec_t::t_restore_begin:
             if (!ignore_restore) {
                 ongoing_restore = true;
+                restore_page_cnt = *((PageID*) r.data_ssx());
             }
         case logrec_t::t_restore_end:
             {
@@ -301,6 +302,7 @@ void chkpt_t::init()
     last_scan_start = lsn_t::null;
     ignore_restore = false;
     ongoing_restore = false;
+    restore_page_cnt = 0;
     buf_tab.clear();
     xct_tab.clear();
     bkp_path.clear();
@@ -616,6 +618,17 @@ void chkpt_t::serialize_binary(ofstream& ofs)
     if (!bkp_path.empty()) {
         ofs.write((char*)&bkp_path, bkp_path.size());
     }
+
+    size_t restore_tab_size = restore_tab.size();
+    ofs.write((char*) &restore_tab_size, sizeof(size_t));
+
+    if (restore_tab_size > 0) {
+        ofs.write((char*)&restore_page_cnt, sizeof(PageID));
+    }
+
+    for (auto s : restore_tab) {
+        ofs.write((char*) &s, sizeof(uint32_t));
+    }
 }
 
 void chkpt_t::deserialize_binary(ifstream& ifs)
@@ -684,6 +697,20 @@ void chkpt_t::deserialize_binary(ifstream& ifs)
     ifs.read((char*)&bkp_path_size, sizeof(size_t));
     if (!bkp_path.empty()) {
         ifs.read((char*)&bkp_path, bkp_path_size);
+    }
+
+    size_t restore_tab_size;
+    ifs.read((char*)&restore_tab_size, sizeof(size_t));
+
+    if (restore_tab_size > 0) {
+        ongoing_restore = true;
+        ifs.read((char*)&restore_page_cnt, sizeof(PageID));
+    }
+
+    uint32_t segment;
+    for (size_t i = 0; i < restore_tab_size; i++) {
+       ifs.read((char*) &segment, sizeof(uint32_t));
+       restore_tab.push_back(segment);
     }
 }
 

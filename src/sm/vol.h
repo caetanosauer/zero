@@ -30,6 +30,7 @@ public:
     size_t      num_used_pages() const;
 
     size_t  get_num_restored_pages() const;
+    size_t  get_num_to_restore_pages() const;
 
     alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}
     stnode_cache_t*          get_stnode_cache() {return _stnode_cache;}
@@ -108,7 +109,8 @@ public:
     rc_t            create_store(PageID&, StoreID&);
 
     /** Mark device as failed and kick off Restore */
-    rc_t            mark_failed(bool evict = false, bool redo = false);
+    rc_t            mark_failed(bool evict = false, bool redo = false,
+            PageID lastUsedPID = 0);
 
     lsn_t get_backup_lsn();
 

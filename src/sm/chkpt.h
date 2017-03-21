@@ -126,6 +126,7 @@ public: // required for restart for now
     string bkp_path;
     std::vector<uint32_t> restore_tab;
     bool ongoing_restore;
+    PageID restore_page_cnt;
 
 public:
     void scan_log(lsn_t scan_start = lsn_t::null, bool no_db_mode = false);

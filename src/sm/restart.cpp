@@ -134,7 +134,8 @@ void restart_thread_t::log_analysis()
 
     if (chkpt.ongoing_restore) {
         ERROUT(<< "Log analysis found ongoing restore with "
-                << chkpt.restore_tab.size() << " restored segments");
+                << chkpt.restore_tab.size() << " restored segments of a total "
+                << chkpt.restore_page_cnt << " pages");
     }
 
     // chkpt.dump(cerr);

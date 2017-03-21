@@ -298,11 +298,11 @@ private:
 };
 
 RestoreMgr::RestoreMgr(const sm_options& options,
-        ArchiveIndex* index, vol_t* volume, bool useBackup,
+        ArchiveIndex* index, vol_t* volume, PageID lastUsedPid, bool useBackup,
         bool takeBackup)
     :
     archIndex(index), volume(volume), numRestoredPages(0),
-    useBackup(useBackup), takeBackup(takeBackup),
+    lastUsedPid(lastUsedPid), useBackup(useBackup), takeBackup(takeBackup),
     failureLSN(lsn_t::null), pinCount(0),
     shutdownFlag(false)
 {
@@ -331,16 +331,6 @@ RestoreMgr::RestoreMgr(const sm_options& options,
 
     DO_PTHREAD(pthread_mutex_init(&restoreCondMutex, NULL));
     DO_PTHREAD(pthread_cond_init(&restoreCond, NULL));
-
-    /**
-     * We assume that the given vol_t contains the valid metadata of the
-     * volume. If the device is lost in/with a system failure -- meaning that
-     * it cannot be properly mounted --, it should contain the metadata of the
-     * backup volume. By "metadata", we mean at least the number of pages in
-     * the volume, which is required to control restore progress. The maximum
-     * allocated page id, delivered by alloc_cache, is also needed
-     */
-    lastUsedPid = volume->get_last_allocated_pid();
 
     asyncWriter = NULL;
 
@@ -419,7 +409,7 @@ bool RestoreMgr::try_shutdown(bool wait)
     backup->finish();
 
     sys_xct_section_t ssx(true);
-    Logger::log<restore_end_log>();
+    Logger::log_sys<restore_end_log>();
     ssx.end_sys_xct(RCOK);
 
     return true;

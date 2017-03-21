@@ -128,7 +128,7 @@ void vol_t::build_caches(bool truncate, chkpt_t* chkpt_info)
 
     // kick out pre-failure restore
     if (chkpt_info && chkpt_info->ongoing_restore) {
-        mark_failed(false, true);
+        mark_failed(false, true, chkpt_info->restore_page_cnt);
         _restore_mgr->markRestoredFromList(chkpt_info->restore_tab);
     }
 }
@@ -174,7 +174,7 @@ lsn_t vol_t::get_backup_lsn()
     return _current_backup_lsn;
 }
 
-rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
+rc_t vol_t::mark_failed(bool /*evict*/, bool redo, PageID lastUsedPid)
 {
     spinlock_write_critical_section cs(&_mutex);
 
@@ -204,15 +204,19 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo)
                 without a running log archiver");
     }
 
+    if (lastUsedPid == 0) {
+        lastUsedPid = num_used_pages();
+    }
+
     _restore_mgr = new RestoreMgr(ss_m::get_options(),
-            ss_m::logArchiver->getIndex(), this, useBackup);
+            ss_m::logArchiver->getIndex(), this, lastUsedPid, useBackup);
 
     _failed = true;
 
     lsn_t failureLSN = lsn_t::null;
     if (!redo) {
         // Create and insert logrec manually to get its LSN
-        failureLSN = Logger::log_sys<restore_begin_log>();
+        failureLSN = Logger::log_sys<restore_begin_log>(lastUsedPid);
     }
 
     _restore_mgr->setFailureLSN(failureLSN);
@@ -356,10 +360,19 @@ size_t vol_t::num_used_pages() const
     return _alloc_cache->get_last_allocated_pid() + 1;
 }
 
+size_t vol_t::get_num_to_restore_pages() const
+{
+    if (!_restore_mgr) {
+        return _alloc_cache->get_last_allocated_pid();
+    }
+    return _restore_mgr->getLastUsedPid();
+}
+
 size_t vol_t::get_num_restored_pages() const
 {
-    if (_restore_mgr == NULL)
+    if (!_restore_mgr) {
         return _alloc_cache->get_last_allocated_pid();
+    }
     return _restore_mgr->getNumRestoredPages();
 }
 

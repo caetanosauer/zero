@@ -349,11 +349,10 @@ void logrec_t::redo(PagePtr page)
 		W_FATAL(eINTERNAL);
 		break;
 	case t_restore_begin :
-		((restore_begin_log *) this)->redo(page);
+		W_FATAL(eINTERNAL);
 		break;
 	case t_restore_segment :
 		W_FATAL(eINTERNAL);
-		// ((restore_segment_log *) this)->redo(page);
 		break;
 	case t_restore_end :
 		((restore_end_log *) this)->redo(page);
@@ -918,27 +917,10 @@ void loganalysis_begin_log::construct()
 {
 }
 
-void restore_begin_log::construct()
+void restore_begin_log::construct(PageID page_cnt)
 {
-#ifdef TIMED_LOG_RECORDS
-    unsigned long tstamp = sysevent_timer::timestamp();
-    memcpy(_data, &tstamp, sizeof(unsigned long));
-    set_size(sizeof(unsigned long));
-#endif
-}
-
-template <class PagePtr>
-void restore_begin_log::redo(PagePtr)
-{
-    return; // CS TODO: disabled for now
-
-    vol_t* volume = smlevel_0::vol;
-    // volume must be mounted
-    w_assert0(volume);
-
-    // Marking the device failed will kick-off the restore thread, initialize
-    // its state, and restore the metadata (even if already done - idempotence)
-    W_COERCE(volume->mark_failed(false /* evict */, true /* redo */));
+    memcpy(data_ssx(), &page_cnt, sizeof(PageID));
+    set_size(sizeof(PageID));
 }
 
 void restore_end_log::construct()
