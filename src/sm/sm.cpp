@@ -1253,7 +1253,7 @@ void dump_all_sm_stats()
 {
     static sm_stats_t s;
     W_COERCE(ss_m::gather_stats(s));
-    std::cerr << s << endl;
+    print_sm_stats(s, std::cerr);
 }
 #endif
 
