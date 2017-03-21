@@ -438,20 +438,7 @@ void KitsCommand::doWork()
     else if (mtype == MT_NO_STOP) {
         // keep running until variable is externally set to true
         while(!shoreEnv->should_stop_benchmark()){
-            hasFailed = false;
-            while (!hasFailed && !shoreEnv->should_stop_benchmark()) {
-                sleep(1);
-            }
-            if (hasFailed) {
-                vol_t* vol = smlevel_0::vol;
-                w_assert0(vol);
-
-                // Now wait for device to be restored -- check every 1 second
-                while (vol->is_failed()) {
-                    sleep(1);
-                    vol->check_restore_finished();
-                }
-            }
+            ::usleep(100000); // 100ms
         }
     }
 }

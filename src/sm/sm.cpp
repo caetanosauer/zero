@@ -362,11 +362,6 @@ ss_m::_destruct_once()
 
     ERROUT(<< "Terminating recovery manager");
 
-    // CS TODO: this should not be necessary with proper shutdown (shared_ptr-based)
-    // CS TODO: dirty shutdown should interrupt restore threads and finish them abruptly
-    while (!vol->check_restore_finished()) {
-        ::usleep(100 * 1000); // 100ms
-    }
     if (recovery) {
         recovery->stop();
         delete recovery;
