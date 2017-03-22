@@ -616,6 +616,7 @@ bool LogArchiver::requestFlushAsync(lsn_t reqLSN)
 
 void LogArchiver::requestFlushSync(lsn_t reqLSN)
 {
+    smlevel_0::log->flush(reqLSN);
     DBGTHRD(<< "Requesting flush until LSN " << reqLSN);
     if (!eager) {
         activate(reqLSN);
