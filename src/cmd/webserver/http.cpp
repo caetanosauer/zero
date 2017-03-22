@@ -388,9 +388,9 @@ void HandleKits::computeStats()
         auto& st_delta = stats_delta[stats_delta.size() - 1];
         st_delta.fill(0);
 
-        if (kits && kits->running()) {
+        // if (kits && kits->running()) {
             ss_m::gather_stats(st);
-        }
+        // }
 
         if (stats.size() > 1) {
             auto& st2 = stats[stats.size() - 2];
@@ -432,7 +432,7 @@ std::string HandleKits::getStats(bool cumulative)
 
     auto& s = cumulative ? stats : stats_delta;
 
-    if (s.size() == 0) { return ""; }
+    if (s.size() < 1) { return ""; }
 
     std::stringstream strReturn;
     strReturn << "{" << std::endl;
