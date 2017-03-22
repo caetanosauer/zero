@@ -384,7 +384,7 @@ public:
 
     void mark_restored(unsigned i)
     {
-        w_assert1(states[i] == State::REPLAYED);
+        // w_assert1(states[i] == State::REPLAYED);
         states[i] = State::RESTORED;
     }
 

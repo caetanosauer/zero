@@ -799,11 +799,6 @@ void RestoreMgr::markRestoredFromList(const std::vector<uint32_t>& segments)
 
 void RestoreMgr::start()
 {
-    if (failureLSN == lsn_t::null && !takeBackup) {
-        W_FATAL_MSG(fcINTERNAL,
-                << "failureLSN must be set before forking restore mgr");
-    }
-
     LogArchiver* la = smlevel_0::logArchiver;
     w_assert0(la);
     w_assert0(la->getIndex());

@@ -134,6 +134,7 @@ void vol_t::build_caches(bool truncate, chkpt_t* chkpt_info)
     if (chkpt_info && chkpt_info->ongoing_restore) {
         mark_failed(false, true, chkpt_info->restore_page_cnt);
         _restore_mgr->markRestoredFromList(chkpt_info->restore_tab);
+        _restore_mgr->start();
     }
 }
 
@@ -212,6 +213,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo, PageID lastUsedPid)
         _restore_mgr->shutdown();
         delete _restore_mgr;
         _restore_mgr = nullptr;
+        _failed = false;
     }
 
     bool useBackup = _backups.size() > 0;
@@ -254,7 +256,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo, PageID lastUsedPid)
     }
 
     _restore_mgr->setFailureLSN(failureLSN);
-    _restore_mgr->start();
+    if (!redo) { _restore_mgr->start(); }
 
     return RCOK;
 }
@@ -567,6 +569,7 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
 
         // volume is failed, but we want restore to take place
         int i = 0;
+        bool success = false;
         while(i < cnt) {
             if (!_restore_mgr->isRestored(first_page + i)) {
                 DBG(<< "Page read triggering restore of " << first_page + i);
@@ -577,7 +580,8 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
                 else {
                     reqSucceeded = _restore_mgr->requestRestore(first_page + i, NULL);
                 }
-                _restore_mgr->waitUntilRestored(first_page + i);
+                success = _restore_mgr->waitUntilRestored(first_page + i);
+                if (!success) { break; }
                 w_assert1(_restore_mgr->isRestored(first_page));
                 if (reqSucceeded) {
                     // page is loaded in buffer pool already
@@ -592,8 +596,8 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
             i++;
         }
         _restore_mgr->unpin();
-        check_restore_finished();
-        break;
+        if (success) { break; }
+        else { check_restore_finished(); }
     }
 
     w_assert1(cnt > 0);

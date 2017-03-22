@@ -275,7 +275,7 @@ ss_m::_construct_once()
     ERROUT(<< "[" << timer.time_ms() << "] Building volume manager caches");
 
     if (instantRestart) {
-        vol->build_caches(format);
+        vol->build_caches(format, chkpt_info);
     }
 
     // Initialize cleaner once vol caches are built
@@ -313,7 +313,7 @@ ss_m::_construct_once()
     if (!instantRestart) {
         recovery->join();
         // metadata caches can only be constructed now
-        vol->build_caches(format);
+        vol->build_caches(format, chkpt_info);
         // system now ready for UNDO
         // CS TODO: can this be done concurrently by restart thread?
         // recovery->undo_pass();
