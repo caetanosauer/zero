@@ -28,6 +28,7 @@ public:
     std::string getStats();
     std::string isRunning();
     std::string redoProgress();
+    std::string undoProgress();
     std::string logAnalysisProgress();
     std::string mediaRecoveryProgress();
 };

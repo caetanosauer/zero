@@ -725,6 +725,20 @@ xct_t::_teardown(bool is_chaining) {
     release_xlist_mutex();
 }
 
+size_t xct_t::get_loser_count()
+{
+    size_t res = 0;
+
+    xct_t* xd;
+    xct_i iter(true);
+
+    while ((xd = iter.next())) {
+        if (xd->_loser_xct != loser_false) { res++; }
+    }
+
+    return res;
+}
+
 /*********************************************************************
  *
  *  xct_t::change_state(new_state)

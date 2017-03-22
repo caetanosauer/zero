@@ -96,7 +96,7 @@ std::string http_headers::get_response(HandleKits* kits)
       std::stringstream content;
       content << "{\"redoProgress\":" << kits->redoProgress();
       content << ", \"logAnalysisProgress\":" << kits->logAnalysisProgress();
-      content << ", \"undoProgress\":" << " 100"; // TODO
+      content << ", \"undoProgress\":" << kits->undoProgress();
       content << ", \"restoreProgress\":" << kits->mediaRecoveryProgress();
       content << "}" << std::endl;
 
@@ -315,8 +315,22 @@ std::string HandleKits::redoProgress()
         if (total > 0 && dirty > 0) {
             progress = std::to_string(((total - dirty) * 100) / total);
         }
-        else if (total == 0) {
-            progress = "0";
+        else {
+            progress = "100";
+        }
+    }
+    return progress;
+}
+
+std::string HandleKits::undoProgress()
+{
+    std::string progress = "0";
+    if (kits && kits->getShoreEnv()->has_log_analysis_finished()) {
+        size_t total = xct_t::num_active_xcts();
+        size_t active = xct_t::get_loser_count();
+
+        if (total > 0 && active > 0) {
+            progress = std::to_string(((total - active) * 100) / total);
         }
         else {
             progress = "100";
@@ -329,11 +343,14 @@ std::string HandleKits::mediaRecoveryProgress()
 {
     std::string progress = "0";
     if (kits && kits->running()) {
-        size_t dirty = kits->getShoreEnv()->get_num_pages_vol();
-        size_t redone = kits->getShoreEnv()->get_num_restored_pages_vol();
+        size_t total = kits->getShoreEnv()->get_total_pages_to_restore();
+        size_t restored = kits->getShoreEnv()->get_num_restored_pages();
 
-        if (redone < dirty) {
-            progress = std::to_string((redone * 100) / dirty);
+        if (total > 0 && restored > 0) {
+            progress = std::to_string((restored * 100) / total);
+        }
+        else if (total == 0) {
+            progress = "0";
         }
         else {
             progress = "100";

@@ -335,6 +335,8 @@ public:
     // used by sm.cpp:
     static uint32_t    num_active_xcts();
 
+    static size_t get_loser_count();
+
 /**\cond skip */
     // used for compensating (top-level actions)
     const lsn_t&                anchor(bool grabit = true);
