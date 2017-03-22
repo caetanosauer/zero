@@ -1,6 +1,5 @@
 #include "http.h"
-#include <time.h>
-#include <string.h>
+#include <algorithm>
 
 
 http_headers::http_headers ()
@@ -40,7 +39,7 @@ std::string http_headers::get_response(HandleKits* kits)
   }
   else if(url == "/getstats")
   {
-     string json = kits->getStats();
+     string json = kits->getStats(false); // TODO pass from http arg
      ssOut << "HTTP/1.1 200 OK" << std::endl;
      ssOut << "Access-Control-Allow-Origin: *" << std::endl;
      ssOut << "content-type: application/json" << std::endl;
@@ -278,6 +277,10 @@ int HandleKits::runKits(std::stringstream &kits_options)
 
     kits->fork();
 
+    if (!statsThread) {
+        statsThread.reset(new std::thread(&HandleKits::computeStats, this));
+    }
+
     return 0;
 };
 
@@ -368,30 +371,77 @@ std::string HandleKits::logAnalysisProgress()
     return progress;
 }
 
-std::string HandleKits::getStats()
+void HandleKits::computeStats()
 {
-    stats.emplace_back();
-    auto& st = stats[stats.size() - 1];
-    st.fill(0);
+    using namespace std::chrono_literals;
 
-    if (kits && kits->running()) {
-        ss_m::gather_stats(st);
-    }
-    else if (stats.size() > 1) {
-        auto& st2 = stats[stats.size() - 2];
-        for (size_t i = 0; i < st.size(); i++) {
-            st[i] = st2[i];
+    while (true) {
+        std::this_thread::sleep_for(1s);
+
+        std::unique_lock<std::mutex> lck {stats_mutex};
+
+        stats.emplace_back();
+        auto& st = stats[stats.size() - 1];
+        st.fill(0);
+
+        stats_delta.emplace_back();
+        auto& st_delta = stats_delta[stats_delta.size() - 1];
+        st_delta.fill(0);
+
+        if (kits && kits->running()) {
+            ss_m::gather_stats(st);
+        }
+
+        if (stats.size() > 1) {
+            auto& st2 = stats[stats.size() - 2];
+            // if kits not running, just copy last values
+            if (kits && !kits->running()) {
+                for (size_t i = 0; i < st.size(); i++) {
+                    st[i] = st2[i];
+                }
+            }
+
+            for (size_t i = 0; i < st.size(); i++) {
+                if (st[i] > st2[i]) {
+                    st_delta[i] = st[i] - st2[i];
+                }
+                else { st_delta[i] = 0; }
+            }
+        }
+
+        // CS TODO: fix this
+        const size_t moving_avg = 0;
+        if (moving_avg > 0) {
+            size_t m = std::min(moving_avg, stats_delta.size());
+            for (size_t i = 1; i < m; i++) {
+                for (size_t j = 0; j < st.size(); j++) {
+                    auto& st_tmp = stats_delta[(stats_delta.size() - 1) - m];
+                    st_delta[j] += st_tmp[j];
+                }
+            }
+            for (size_t j = 0; j < st.size(); j++) {
+                st_delta[j] /= m;
+            }
         }
     }
+}
+
+std::string HandleKits::getStats(bool cumulative)
+{
+    std::unique_lock<std::mutex> lck {stats_mutex};
+
+    auto& s = cumulative ? stats : stats_delta;
+
+    if (s.size() == 0) { return ""; }
 
     std::stringstream strReturn;
     strReturn << "{" << std::endl;
-    auto cnt = st.size();
+    auto cnt = s[0].size();
     for (size_t i = 0; i < cnt; i++) {
         strReturn << "\"" << get_stat_name(static_cast<sm_stat_id>(i)) << "\" : [";
-        auto max = stats.size();
+        auto max = s.size();
         for (size_t j = 0; j < max; j++) {
-            strReturn << stats[j][i];
+            strReturn << s[j][i];
             if (j < max - 1 ) {
                 strReturn << ", ";
             }

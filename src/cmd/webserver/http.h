@@ -7,7 +7,9 @@
 #include <boost/asio.hpp>
 #include <string>
 #include <memory>
-#include <chrono>         // std::chrono::seconds
+#include <mutex>
+#include <thread>
+#include <chrono>
 
 using namespace boost;
 using namespace boost::system;
@@ -18,14 +20,18 @@ class HandleKits
 private:
     KitsCommand *kits;
     std::vector<sm_stats_t> stats;
+    std::vector<sm_stats_t> stats_delta;
+    std::unique_ptr<std::thread> statsThread;
+    std::mutex stats_mutex;
 
 public:
     HandleKits();
     int runKits(std::stringstream &options);
+    void computeStats();
     void crash();
     void mediaFailure();
     void singlePageFailure();
-    std::string getStats();
+    std::string getStats(bool);
     std::string isRunning();
     std::string redoProgress();
     std::string undoProgress();
