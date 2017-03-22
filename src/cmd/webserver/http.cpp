@@ -459,11 +459,12 @@ std::string HandleKits::getStats(bool cumulative)
 
 std::string HandleKits::isRunning()
 {
-    string jsonReply = "{\"isRunning\" : false}";
+    string jsonReply = "{\"isRunning\" : \"no\"}";
 
-    if (kits){
-        jsonReply =  "{\"isRunning\" : true}";
-    }
+    if (kits && kits->running())
+        jsonReply =  "{\"isRunning\" : \"yes\"}";
+    else if (kits && !kits->running())
+        jsonReply =  "{\"isRunning\" : \"initializing\"}";
 
     return jsonReply;
 };
