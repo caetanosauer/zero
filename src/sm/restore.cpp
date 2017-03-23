@@ -432,7 +432,7 @@ bool RestoreMgr::waitUntilRestored(const PageID& pid, size_t timeout_in_ms)
 {
     DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
     struct timespec timeout;
-    while (!isRestored(pid)) {
+    while (!isRestored(pid) && !shutdownFlag) {
         if (timeout_in_ms > 0) {
             smthread_t::timeout_to_timespec(timeout_in_ms, timeout);
             int code = pthread_cond_timedwait(&restoreCond, &restoreCondMutex,
@@ -448,6 +448,7 @@ bool RestoreMgr::waitUntilRestored(const PageID& pid, size_t timeout_in_ms)
     }
     DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
 
+    if (shutdownFlag) { return false; }
     return true;
 }
 
@@ -839,6 +840,10 @@ void RestoreMgr::shutdown()
     while (!try_shutdown(false)) {
         ::usleep(1000000); // 1 sec
     }
+    // send signal to waiting threads (acquire mutex to avoid lost signal)
+    DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
+    DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
+    DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
 }
 
 SegmentWriter::SegmentWriter(RestoreMgr* restore)
