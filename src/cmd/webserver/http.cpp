@@ -97,6 +97,8 @@ std::string http_headers::get_response(HandleKits* kits)
       content << ", \"logAnalysisProgress\":" << kits->logAnalysisProgress();
       content << ", \"undoProgress\":" << kits->undoProgress();
       content << ", \"restoreProgress\":" << kits->mediaRecoveryProgress();
+      content << ", \"redoPagesDirty\":" << kits->getRedoPagesDirty();
+      content << ", \"redoPagesTotal\":" << kits->getRedoPagesTotal();
       content << "}" << std::endl;
 
       ssOut << "HTTP/1.1 200 OK" << std::endl;
@@ -308,12 +310,22 @@ void HandleKits::singlePageFailure()
     }
 }
 
+size_t HandleKits::getRedoPagesTotal()
+{
+    return kits->getShoreEnv()->get_total_pages_to_recover();
+}
+
+size_t HandleKits::getRedoPagesDirty()
+{
+    return kits->getShoreEnv()->get_dirty_page_count();
+}
+
 std::string HandleKits::redoProgress()
 {
     std::string progress = "0";
     if (kits && kits->getShoreEnv()->has_log_analysis_finished()) {
-        size_t total = kits->getShoreEnv()->get_total_pages_to_recover();
-        size_t dirty = kits->getShoreEnv()->get_dirty_page_count();
+        size_t total = getRedoPagesTotal();
+        size_t dirty = getRedoPagesDirty();
 
         if (total > 0 && dirty > 0) {
             progress = std::to_string(((total - dirty) * 100) / total);

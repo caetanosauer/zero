@@ -37,6 +37,9 @@ public:
     std::string undoProgress();
     std::string logAnalysisProgress();
     std::string mediaRecoveryProgress();
+
+    size_t getRedoPagesDirty();
+    size_t getRedoPagesTotal();
 };
 
 class http_headers
