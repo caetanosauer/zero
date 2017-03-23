@@ -170,6 +170,11 @@ void chkpt_t::scan_log(lsn_t scan_start, bool no_db_mode)
             continue;
         }
 
+        // when taking chkpts, scan_start will be a just-generated begin_chkpt -- ignore it
+        if (r.lsn() == scan_start && r.type() == logrec_t::t_chkpt_begin) {
+            continue;
+        }
+
         if (!r.tid() == 0) {
             if (r.tid() > get_highest_tid()) {
                 set_highest_tid(r.tid());
@@ -543,10 +548,8 @@ void chkpt_m::take()
     INC_TSTAT(log_chkpt_cnt);
 
     // Insert chkpt_begin log record.
-    logrec_t* logrec = new logrec_t;
-    lsn_t begin_lsn;
-    begin_lsn = Logger::log_sys<chkpt_begin_log>(lsn_t::null);
-    W_COERCE(ss_m::log->flush_all());
+    lsn_t begin_lsn = Logger::log_sys<chkpt_begin_log>(lsn_t::null);
+    W_COERCE(ss_m::log->flush(begin_lsn));
 
     // No chkpts are taken in no-db mode -- log analysis always scans the whole
     // recovery log, which should be kept quite tiny at all times in no-db mode.
@@ -580,8 +583,6 @@ void chkpt_m::take()
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_mutex.release_write();
-
-    delete logrec;
 }
 
 void chkpt_t::serialize_binary(ofstream& ofs)
@@ -616,11 +617,11 @@ void chkpt_t::serialize_binary(ofstream& ofs)
         }
     }
 
-    size_t bkp_path_size = bkp_path.size();
-    ofs.write((char*)&bkp_path_size, sizeof(size_t));
-    if (!bkp_path.empty()) {
-        ofs.write((char*)&bkp_path, bkp_path.size());
-    }
+    // size_t bkp_path_size = bkp_path.size();
+    // ofs.write((char*)&bkp_path_size, sizeof(size_t));
+    // if (!bkp_path.empty()) {
+    //     ofs.write((char*)&bkp_path, bkp_path.size());
+    // }
 
     size_t restore_tab_size = restore_tab.size();
     ofs.write((char*) &restore_tab_size, sizeof(size_t));
@@ -696,11 +697,11 @@ void chkpt_t::deserialize_binary(ifstream& ifs)
         }
     }
 
-    size_t bkp_path_size;
-    ifs.read((char*)&bkp_path_size, sizeof(size_t));
-    if (!bkp_path.empty()) {
-        ifs.read((char*)&bkp_path, bkp_path_size);
-    }
+    // size_t bkp_path_size;
+    // ifs.read((char*)&bkp_path_size, sizeof(size_t));
+    // if (!bkp_path.empty()) {
+    //     ifs.read((char*)&bkp_path, bkp_path_size);
+    // }
 
     size_t restore_tab_size;
     ifs.read((char*)&restore_tab_size, sizeof(size_t));
