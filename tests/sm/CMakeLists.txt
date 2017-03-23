@@ -53,6 +53,10 @@ X_ADD_TESTCASE(test_mem_mgmt btree_test_env)
 X_ADD_TESTCASE(test_ringbuffer btree_test_env)
 X_ADD_TESTCASE(test_restore btree_test_env)
 
+# moved from common
+set (the_libraries gtest_main sm)
+X_ADD_TESTCASE(test_latch "${the_libraries}")
+
 SET(cmd_LIBS zapps_base loginspect kits restore sm)
 
 X_ADD_TESTCASE(stress_carray sm)

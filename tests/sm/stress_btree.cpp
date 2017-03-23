@@ -169,7 +169,7 @@ public:
             t[i]->join();
         }
 
-        sm_stats_info_t stats;
+        sm_stats_t stats;
         ss_m::gather_stats(stats);
         // cout << stats << endl;
 

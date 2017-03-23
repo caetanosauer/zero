@@ -5,7 +5,6 @@ set (the_libraries gtest_main common)
 ENABLE_TESTING()
 
 X_ADD_TESTCASE(test_errcodes gtest_main)
-X_ADD_TESTCASE(test_latch "${the_libraries}")
 X_ADD_TESTCASE(test_lsns "${the_libraries}")
 X_ADD_TESTCASE(test_vectors "${the_libraries}")
 

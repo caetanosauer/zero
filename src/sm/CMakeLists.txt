@@ -23,6 +23,8 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/eventlog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/fixable_page_h.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/latch.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/latches.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_dump.cpp

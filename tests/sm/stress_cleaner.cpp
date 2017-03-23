@@ -206,7 +206,7 @@ public:
         dirtier.join();
 
         bf->shutdown();
-        vol->shutdown(false);
+        vol->shutdown();
         if (archiving) {
             smlevel_0::logArchiver->shutdown();
             delete smlevel_0::logArchiver;
@@ -231,7 +231,7 @@ int main(int argc, char** argv)
     t.fork();
     t.join();
 
-    sm_stats_info_t stats;
+    sm_stats_t stats;
     ss_m::gather_stats(stats);
-    cout << stats << endl;
+    print_sm_stats(stats, std::cout);
 }
