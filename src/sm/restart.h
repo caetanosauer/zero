@@ -55,11 +55,11 @@ public:
 
     virtual void do_work();
 
+    void log_analysis();
     void redo_log_pass();
     void redo_page_pass();
     void undo_pass();
 
-    void log_analysis();
     chkpt_t* get_chkpt() { return &chkpt; }
     bool hasLogAnalysisFinished() {return logAnalysisFinished;}
 
@@ -67,6 +67,7 @@ private:
     bool log_based;
     bool instantRestart;
     bool no_db_mode;
+    bool finished;
 
     // System state object, updated by log analysis
     chkpt_t chkpt;

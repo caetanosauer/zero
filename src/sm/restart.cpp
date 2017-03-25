@@ -558,22 +558,22 @@ void restart_thread_t::do_work()
     // No redo recovery needed in no-db mode
     if (no_db_mode)
     {
-        smlevel_0::recovery->undo_pass();
+        undo_pass();
         smlevel_0::log->discard_fetch_buffers();
+        quit();
         return;
     }
 
-    if (log_based) {
-        smlevel_0::recovery->redo_log_pass();
-    }
-    else {
-        smlevel_0::recovery->redo_page_pass();
-    }
+    if (log_based) { redo_log_pass(); }
+    else { redo_page_pass(); }
 
     if (should_exit()) { return; }
 
     smlevel_0::recovery->undo_pass();
     smlevel_0::log->discard_fetch_buffers();
+
+    // restart only does one round, so we quit voluntarily here
+    quit();
 };
 
 /************************************************************************

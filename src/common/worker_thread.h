@@ -63,6 +63,8 @@ protected:
     void notify_one();
     void notify_all();
 
+    void quit();
+
 private:
     virtual void run();
 

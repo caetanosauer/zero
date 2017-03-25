@@ -57,6 +57,11 @@ void worker_thread_t::stop()
     join();
 }
 
+void worker_thread_t::quit()
+{
+    stop_requested = true;
+}
+
 void worker_thread_t::run()
 {
     auto predicate = [this] { return wakeup_requested; };
