@@ -312,12 +312,18 @@ void HandleKits::singlePageFailure()
 
 size_t HandleKits::getRedoPagesTotal()
 {
-    return kits->getShoreEnv()->get_total_pages_to_recover();
+    if (kits && kits->running()) {
+        return kits->getShoreEnv()->get_total_pages_to_recover();
+    }
+    return 0;
 }
 
 size_t HandleKits::getRedoPagesDirty()
 {
-    return kits->getShoreEnv()->get_dirty_page_count();
+    if (kits && kits->running()) {
+        return kits->getShoreEnv()->get_dirty_page_count();
+    }
+    return 0;
 }
 
 std::string HandleKits::redoProgress()
