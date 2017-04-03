@@ -156,8 +156,8 @@ public:
 	t_chkpt_bf_tab = 4,
 	t_chkpt_xct_tab = 5,
 	t_chkpt_xct_lock = 6,
-	t_chkpt_restore_tab = 7,
-	t_chkpt_backup_tab = 8,
+	// t_chkpt_restore_tab = 7,
+	// t_chkpt_backup_tab = 8,
 	t_chkpt_end = 9,
 	t_add_backup = 10,
 	t_xct_abort = 11,
@@ -676,8 +676,6 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_chkpt_bf_tab : return t_system;
 	case t_chkpt_xct_tab : return t_system;
 	case t_chkpt_xct_lock : return t_system;
-	case t_chkpt_restore_tab : return t_system;
-	case t_chkpt_backup_tab : return t_system;
 	case t_chkpt_end : return t_system;
 	case t_loganalysis_begin : return t_system;
 	case t_loganalysis_end : return t_system;

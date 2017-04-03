@@ -118,10 +118,6 @@ logrec_t::get_type_str(kind_t type)
 		return "chkpt_xct_tab";
 	case t_chkpt_xct_lock :
 		return "chkpt_xct_lock";
-	case t_chkpt_restore_tab :
-		return "chkpt_restore_tab";
-	case t_chkpt_backup_tab :
-		return "chkpt_backup_tab";
 	case t_chkpt_end :
 		return "chkpt_end";
 	case t_add_backup :
@@ -293,12 +289,6 @@ void logrec_t::redo(PagePtr page)
 		break;
 	case t_chkpt_xct_lock :
 		W_FATAL(eINTERNAL);
-		break;
-	case t_chkpt_restore_tab :
-		((chkpt_restore_tab_log *) this)->redo(page);
-		break;
-	case t_chkpt_backup_tab :
-		((chkpt_backup_tab_log *) this)->redo(page);
 		break;
 	case t_chkpt_end :
 		W_FATAL(eINTERNAL);
@@ -479,12 +469,6 @@ void logrec_t::undo(PagePtr page)
 		W_FATAL(eINTERNAL);
 		break;
 	case t_chkpt_xct_lock :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_chkpt_restore_tab :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_chkpt_backup_tab :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_chkpt_end :
@@ -853,52 +837,12 @@ void chkpt_xct_lock_log::construct(
                                          lock_hash))->size());
 }
 
-void chkpt_backup_tab_log::construct(int cnt,
-                                           const string* paths)
-{
-    // CS TODO
-    set_size((new (_data) chkpt_backup_tab_t(cnt, paths))->size());
-}
-
-template <class PagePtr>
-void chkpt_backup_tab_log::redo(PagePtr)
-{
-    // CS TODO should not be a redo logrec!
-    chkpt_backup_tab_t* tab = (chkpt_backup_tab_t*) _data;
-    std::vector<string> paths;
-    tab->read(paths);
-    w_assert0(tab->count == paths.size());
-
-    for (size_t i = 0; i < tab->count; i++) {
-        W_COERCE(smlevel_0::vol->sx_add_backup(paths[i], lsn_t::null, false /* log */));
-    }
-}
-
-void chkpt_restore_tab_log::construct()
-{
-    // CS TODO: cleanup!
-}
-
-template <class PagePtr>
-void chkpt_restore_tab_log::redo(PagePtr)
-{
-    // CS TODO: cleanup!
-}
-
 void add_backup_log::construct(const string& path, lsn_t backupLSN)
 {
     *((lsn_t*) data_ssx()) = backupLSN;
     w_assert0(path.length() < smlevel_0::max_devname);
-    memcpy(data_ssx() + sizeof(lsn_t), path.data(), path.length());
+    memcpy(data_ssx() + sizeof(lsn_t), path.c_str(), path.length() + 1);
     set_size(sizeof(lsn_t) + path.length());
-}
-
-template <class PagePtr>
-void add_backup_log::redo(PagePtr)
-{
-    lsn_t backupLSN = *((lsn_t*) data_ssx());
-    const char* dev_name = (const char*) (data_ssx() + sizeof(lsn_t));
-    W_COERCE(smlevel_0::vol->sx_add_backup(string(dev_name), backupLSN, false));
 }
 
 void undo_done_log::construct()

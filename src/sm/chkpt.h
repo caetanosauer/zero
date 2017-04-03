@@ -124,6 +124,7 @@ public: // required for restart for now
     buf_tab_t buf_tab;
     xct_tab_t xct_tab;
     string bkp_path;
+    lsn_t bkp_lsn;
     std::vector<uint32_t> restore_tab;
     bool ongoing_restore;
     PageID restore_page_cnt;
@@ -140,7 +141,7 @@ public:
     void delete_xct(tid_t tid);
     void add_lock(tid_t tid, okvl_mode mode, uint32_t hash);
 
-    void add_backup(const char* path);
+    void add_backup(const char* path, lsn_t backupLSN);
     void analyze_logrec(logrec_t&, lsn_t& scan_stop, bool no_db_mode);
 
     lsn_t get_min_rec_lsn() const;

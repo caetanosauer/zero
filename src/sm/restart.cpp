@@ -118,10 +118,6 @@ void restart_thread_t::log_analysis()
         }
     }
 
-    //Re-add backups
-    // CS TODO only works for one backup
-    // smlevel_0::vol->sx_add_backup(chkpt.bkp_path, true);
-
     ADD_TSTAT(restart_log_analysis_time, timer.time_us());
     Logger::log_sys<loganalysis_end_log>();
 
@@ -257,9 +253,8 @@ restart_thread_t::redo_log_pass()
                         // Regular transaction without a valid txn id
                         // It must be a mount or dismount log record
 
-                        w_assert3(
-                                r.type() == logrec_t::t_chkpt_backup_tab ||
-                                r.type() == logrec_t::t_add_backup);
+                        // CS TODO this case should not exist
+                        w_assert0(false);
 
                         r.redo();
                     }

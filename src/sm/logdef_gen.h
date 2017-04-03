@@ -72,18 +72,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     void construct (const tid_t& tid, int cnt, const okvl_mode* lock_mode, const uint32_t* lock_hash);
     };
 
-    struct chkpt_restore_tab_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_chkpt_restore_tab;
-    void construct ();
-    template <class Ptr> void redo(Ptr);
-    };
-
-    struct chkpt_backup_tab_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_chkpt_backup_tab;
-    void construct (int cnt, const string* paths);
-    template <class Ptr> void redo(Ptr);
-    };
-
     struct chkpt_end_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_chkpt_end;
     void construct (const lsn_t& master, const lsn_t& min_rec_lsn, const lsn_t& min_xct_lsn);
@@ -92,7 +80,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     struct add_backup_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_add_backup;
     void construct (const string& path, lsn_t backupLSN);
-    template <class Ptr> void redo(Ptr);
     };
 
     struct xct_abort_log : public logrec_t {

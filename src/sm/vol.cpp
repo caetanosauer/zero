@@ -90,6 +90,9 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
         if (instantRestart) {
             _dirty_pages = new buf_tab_t(chkpt_info->buf_tab);
         }
+        if (!chkpt_info->bkp_path.empty()) {
+            sx_add_backup(chkpt_info->bkp_path, true);
+        }
     }
 }
 
