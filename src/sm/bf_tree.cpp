@@ -162,6 +162,19 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     _control_blocks = reinterpret_cast<bf_tree_cb_t*>(reinterpret_cast<char
             *>(buf) + sizeof(bf_tree_cb_t));
     w_assert0(_control_blocks != NULL);
+
+    /*
+     * CS: comment copied from old code
+     * [...] the bufferpool should alternate location of latches and control blocks
+     * starting at an odd multiple of 64B as follows: |CB0|L0|L1|CB1|CB2|L2|L3|CB3|...
+     * This layout addresses a pathology that we attribute to the hardware spatial prefetcher.
+     * The default layout allocates a latch right after a control block so that
+     * the control block and latch live in adjacent cache lines (in the same 128B sector).
+     * The pathology happens because when we write-access the latch, the processor prefetches
+     * the control block in read-exclusive mode even if we late really only read-access the
+     * control block. This causes unnecessary coherence traffic. With the new layout, we avoid
+     * having a control block and latch in the same 128B sector.
+     */
     for (bf_idx i = 0; i < nbufpages; i++) {
         BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) < SCHAR_MAX);
         if (i & 0x1) { /* odd */
