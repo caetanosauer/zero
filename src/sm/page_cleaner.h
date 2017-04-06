@@ -20,6 +20,8 @@ public:
 
 protected:
     void flush_workspace(size_t from, size_t to);
+    void write_pages(size_t from, size_t to);
+    void mark_pages_clean(size_t from, size_t to);
 
     /** the buffer pool this cleaner deals with. */
     bf_tree_m*                  _bufferpool;

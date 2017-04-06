@@ -25,14 +25,24 @@ void page_cleaner_base::flush_workspace(size_t from, size_t to)
     if (from - to == 0) {
         return;
     }
+    write_pages(from, to - from);
 
     // Flush log to guarantee WAL property
     W_COERCE(smlevel_0::log->flush(_clean_lsn));
 
+    mark_pages_clean(from, to);
+}
+
+void page_cleaner_base::write_pages(size_t from, size_t to)
+{
     W_COERCE(smlevel_0::vol->write_many_pages(
                 _workspace[from].pid, &(_workspace[from]), to - from,
                 true /* ignore restore */));
+    ADD_TSTAT(cleaned_pages, to - from);
+}
 
+void page_cleaner_base::mark_pages_clean(size_t from, size_t to)
+{
     for (size_t i = from; i < to; ++i) {
         bf_idx idx = _workspace_cb_indexes[i];
         bf_tree_cb_t &cb = _bufferpool->get_cb(idx);

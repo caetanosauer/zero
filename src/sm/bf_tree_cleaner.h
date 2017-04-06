@@ -84,7 +84,7 @@ protected:
 private:
     void collect_candidates();
     void clean_candidates();
-    void log_and_flush(size_t wpos);
+    void flush_clusters(const vector<size_t>& clusters);
     bool latch_and_copy(PageID, bf_idx, size_t wpos);
 
     /**

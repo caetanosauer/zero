@@ -44,7 +44,7 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& option
     min_write_size = options.get_int_option("sm_cleaner_min_write_size", 1);
     min_write_ignore_freq = options.get_int_option("sm_cleaner_min_write_ignore_freq", 0);
     async_candidate_collection =
-        options.get_bool_option("sm_cleaner_async_candidate_collection", false);
+        options.get_bool_option("sm_cleaner_async_candidate_collection", true);
 
     string pstr = options.get_string_option("sm_cleaner_policy", "");
     policy = make_cleaner_policy(pstr);
@@ -104,65 +104,91 @@ void bf_tree_cleaner::clean_candidates()
 
     size_t i = 0;
     bool ignore_min_write = ignore_min_write_now();
+
+    // keeps track of cluster positions in the workspace, so that
+    // they can be flush asynchronously below
+    std::vector<size_t> clusters;
+
     while (i < curr_candidates->size()) {
-        if (should_exit()) { break; }
-
         // Get size of current cluster
-        size_t cluster_size = 1;
-        for (size_t j = i + 1; j < curr_candidates->size(); j++) {
-            if (curr_candidates->at(j).pid != curr_candidates->at(i).pid + (j - i)) {
-                break;
-            }
-            cluster_size++;
-        }
+        // size_t cluster_size = 1;
+        // for (size_t j = i + 1; j < curr_candidates->size(); j++) {
+        //     if (curr_candidates->at(j).pid != curr_candidates->at(i).pid + (j - i)) {
+        //         break;
+        //     }
+        //     cluster_size++;
+        // }
 
-        // Skip if current cluster is too small
-        if (!ignore_min_write && cluster_size < min_write_size) {
-            i++;
-            continue;
-        }
+        // // Skip if current cluster is too small
+        // if (!ignore_min_write && cluster_size < min_write_size) {
+        //     i++;
+        //     continue;
+        // }
 
-        ADD_TSTAT(cleaner_time_cpu, timer.time_us());
+        // ADD_TSTAT(cleaner_time_cpu, timer.time_us());
+
+        // index of the current frame in the workspace
+        size_t w_index = 0;
 
         // Copy pages in the cluster to the workspace
-        if (cluster_size > _workspace_size) { cluster_size = _workspace_size; }
-        for (size_t k = 0; k < cluster_size; k++) {
+        size_t k = 0;
+        PageID prev_pid = curr_candidates->at(i).pid;
+        while (w_index < _workspace_size && i+k < curr_candidates->size()) {
             PageID pid = curr_candidates->at(i+k).pid;
             bf_idx idx = curr_candidates->at(i+k).idx;
 
-            if (!latch_and_copy(pid, idx, k)) {
-                // If latch failed, cut down the current cluster
-                cluster_size = k;
-                break;
+            if (!latch_and_copy(pid, idx, w_index)) {
+                k++;
+                continue;
             }
+
+            if (pid > prev_pid + 1 && w_index > 0) {
+                // Current cluster ends at index k (k is part of the next cluster)
+                clusters.push_back(w_index);
+            }
+
+            k++;
+            w_index++;
+            prev_pid = pid;
+
+            if (should_exit()) { break; }
         }
 
-        if (cluster_size == 0) {
-            i++;
-            continue;
-        }
+        clusters.push_back(w_index);
 
         ADD_TSTAT(cleaner_time_copy, timer.time_us());
 
-        log_and_flush(cluster_size);
-        i += cluster_size;
+        if (should_exit()) { break; }
 
+        flush_clusters(clusters);
         ADD_TSTAT(cleaner_time_io, timer.time_us());
-        ADD_TSTAT(cleaned_pages, cluster_size);
+
+        clusters.clear();
+        i += k;
     }
 
     curr_candidates->clear();
 }
 
-void bf_tree_cleaner::log_and_flush(size_t wpos)
+void bf_tree_cleaner::flush_clusters(const vector<size_t>& clusters)
 {
-    if (wpos == 0) { return; }
+    size_t i = 0;
+    for (auto k : clusters) {
+        w_assert1(k > i);
+        write_pages(i, k);
+        i = k;
+    }
 
-    flush_workspace(0, wpos);
+    smlevel_0::vol->sync();
 
-    PageID pid = _workspace[0].pid;
-    Logger::log_sys<page_write_log>(pid, _clean_lsn, wpos);
-
+    i = 0;
+    for (auto k : clusters) {
+        w_assert1(k > i);
+        PageID pid = _workspace[i].pid;
+        Logger::log_sys<page_write_log>(pid, _clean_lsn, k-i);
+        mark_pages_clean(i, k);
+        i = k;
+    }
     _clean_lsn = smlevel_0::log->curr_lsn();
 }
 

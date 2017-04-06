@@ -61,7 +61,7 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
     string dbfile = options.get_string_option("sm_dbfile", "db");
     bool truncate = options.get_bool_option("sm_format", false);
     _log_page_reads = options.get_bool_option("sm_vol_log_reads", false);
-    _use_o_sync = options.get_bool_option("sm_vol_o_sync", true);
+    _use_o_sync = options.get_bool_option("sm_vol_o_sync", false);
     _use_o_direct = options.get_bool_option("sm_vol_o_direct", false);
     _readonly = options.get_bool_option("sm_vol_readonly", false);
     _prioritize_archive =
@@ -804,6 +804,12 @@ rc_t vol_t::write_many_pages(PageID first_page, const generic_page* const buf, i
 
     long start = 0;
     if(_apply_fake_disk_latency) start = gethrtime();
+
+#if W_DEBUG_LEVEL>0
+    for (int i = 0; i < cnt; i++) {
+        w_assert1(buf[i].pid == first_page + i);
+    }
+#endif
 
     // do the actual write now
     auto ret = pwrite(_fd, buf, sizeof(generic_page)*cnt, offset);
