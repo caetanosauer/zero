@@ -3,6 +3,9 @@
 
 #include <fstream>
 
+// CS TODO: LA metadata -- should be serialized on run files
+const size_t BLOCK_SIZE = 1048576;
+
 void GenArchive::setupOptions()
 {
     options.add_options()
@@ -10,6 +13,8 @@ void GenArchive::setupOptions()
             "Directory containing the log to be archived")
         ("archdir,a", po::value<string>(&archdir)->required(),
             "Directory where the archive runs will be stored (must exist)")
+        ("bucket", po::value<size_t>(&bucketSize)->default_value(16),
+            "Size of log archive index bucked in output runs")
         // ("maxLogSize,m", po::value<long>(&maxLogSize)->default_value(m),
         //     "max_logsize parameter of Shore-MT (default should be fine)")
     ;
@@ -17,32 +22,21 @@ void GenArchive::setupOptions()
 
 void GenArchive::run()
 {
-    // check if directory exists
-    ifstream f(archdir);
-    bool exists = f.good();
-    f.close();
+    sm_options opt;
+    opt.set_string_option("sm_logdir", logdir);
+    opt.set_string_option("sm_archdir", archdir);
+    opt.set_int_option("sm_archiver_block_size", BLOCK_SIZE);
+    opt.set_int_option("sm_archiver_bucket_size", bucketSize);
+    opt.set_int_option("sm_page_img_compression", 16384);
 
-    if (!exists) {
-        // TODO make command and handler exceptions
-        throw runtime_error("Directory does not exist: " + archdir);
-    }
+    LogArchiver* la = new LogArchiver(opt);;
+    log_core* log = new log_core(opt);
+    W_COERCE(log->init());
+    smlevel_0::log = log;
 
-    /*
-     * TODO if we add boost filesystem, we can create the directory
-     * and if it already exists, check if there are any files in it
-     */
-
-    const size_t blockSize = 1048576;
-    const size_t workspaceSize = 300 * blockSize;
-
-    start_base();
-    start_log(logdir);
-    start_archiver(archdir, workspaceSize, blockSize);
-
-    lsn_t durableLSN = smlevel_0::log->durable_lsn();
+    lsn_t durableLSN = log->durable_lsn();
     cerr << "Activating log archiver until LSN " << durableLSN << endl;
 
-    LogArchiver* la = smlevel_0::logArchiver;
     la->fork();
 
     // wait for log record to be consumed
@@ -62,4 +56,7 @@ void GenArchive::run()
 
     la->shutdown();
     la->join();
+
+    delete la;
+    delete log;
 }

@@ -455,7 +455,6 @@ rc_t log_core::init()
 {
     // Consider this the beginning of log analysis so that
     // we can factor in the time it takes to load the fetch buffers
-    Logger::log_sys<loganalysis_begin_log>();
     if (_ticker) {
         _ticker->fork();
     }

@@ -254,6 +254,7 @@ ss_m::_construct_once()
     }
 
     // Log analysis provides info required to initialize vol_t
+    Logger::log_sys<loganalysis_begin_log>();
     recovery = new restart_thread_t(_options);
     recovery->log_analysis();
     chkpt_t* chkpt_info = recovery->get_chkpt();

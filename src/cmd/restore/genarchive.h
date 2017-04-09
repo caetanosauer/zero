@@ -12,6 +12,7 @@ private:
     string logdir;
     string archdir;
     long maxLogSize;
+    size_t bucketSize;
 };
 
 #endif
