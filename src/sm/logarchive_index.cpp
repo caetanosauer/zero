@@ -346,9 +346,7 @@ rc_t ArchiveIndex::readBlock(int fd, char* buf,
     if (readSize == 0) { readSize = blockSize; }
     size_t actualOffset = IO_ALIGN * (offset / IO_ALIGN);
     size_t diff = offset - actualOffset;
-    // make sure we don't read more than a block worth of data
     w_assert1(actualOffset <= offset);
-    w_assert1(offset % blockSize != 0 || readSize == blockSize);
     w_assert1(diff < IO_ALIGN);
 
     size_t actualReadSize = readSize + diff;

@@ -551,7 +551,7 @@ void chkpt_m::take()
     INC_TSTAT(log_chkpt_cnt);
 
     // Insert chkpt_begin log record.
-    lsn_t begin_lsn = Logger::log_sys<chkpt_begin_log>(lsn_t::null);
+    lsn_t begin_lsn = Logger::log_sys<chkpt_begin_log>();
     W_COERCE(ss_m::log->flush(begin_lsn));
 
     // No chkpts are taken in no-db mode -- log analysis always scans the whole

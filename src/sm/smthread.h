@@ -234,6 +234,11 @@ class smthread_t {
         inline const sm_stats_t& TL_stats_const() const {
                                                  return _TL_stats; }
 
+        static long get_TL_stat(sm_stat_id stat)
+        {
+            return smthread_t::TL_stats()[enum_to_base(stat)];
+        }
+
         tcb_t(tcb_t* outer) :
             xct(0),
             pin_count(0),
@@ -348,6 +353,8 @@ public:
 
     /// Return thread-local statistics collected for this thread.
     static inline sm_stats_t& TL_stats() { return tcb().TL_stats(); }
+
+    static long get_TL_stat(sm_stat_id s) { return tcb().get_TL_stat(s); }
 
     /// Add thread-local stats into the given structure.
     static void add_from_TL_stats(sm_stats_t &w);

@@ -37,6 +37,9 @@
 // Template definitions
 #include "bf_hashtable.cpp"
 
+thread_local unsigned bf_tree_m::_fix_cnt = 0;
+thread_local unsigned bf_tree_m::_hit_cnt = 0;
+
 // lots of help from Wikipedia here!
 int64_t w_findprime(int64_t min)
 {
@@ -291,7 +294,7 @@ bf_idx bf_tree_m::lookup(PageID pid) const
     return idx;
 }
 
-w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
+w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret)
 {
     ret = 0;
     while (true) {
@@ -325,10 +328,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict)
         set_warmup_done();
 
         // if the freelist was empty, let's evict some page.
-        if (evict) {
-            _evictioner->wakeup(true);
-        }
-        else { return RC(eBFFULL); }
+        _evictioner->wakeup(true);
     }
     return RCOK;
 }
@@ -339,6 +339,17 @@ void bf_tree_m::set_warmup_done()
     if (!_warmup_done) {
         _warmup_done = true;
         _restore_coord = nullptr;
+        Logger::log_sys<warmup_done_log>();
+    }
+}
+
+void bf_tree_m::check_warmup_done()
+{
+    constexpr unsigned min_fixes = 100000;
+    if (!_warmup_done) {
+        if (_fix_cnt > min_fixes && (double) _hit_cnt/_fix_cnt > WARMUP_HIT_RATIO) {
+            set_warmup_done();
+        }
     }
 }
 
@@ -396,6 +407,11 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         }
 
         page = &(_buffer[idx]);
+
+        INC_TSTAT(bf_fix_cnt);
+        INC_TSTAT(bf_hit_cnt);
+        _fix_cnt++;
+        _hit_cnt++;
 
         return RCOK;
     }
@@ -513,6 +529,9 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         }
         else
         {
+            INC_TSTAT(bf_hit_cnt);
+            _hit_cnt++;
+
             // Page index is registered in hash table
             bf_tree_cb_t &cb = get_cb(idx);
 
@@ -543,6 +562,11 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             DBG(<< "Fixed page " << pid << " (hit) to frame " << idx);
             w_assert1(cb._pin_cnt > 0);
         }
+
+        INC_TSTAT(bf_fix_cnt);
+        _fix_cnt++;
+
+        check_warmup_done();
 
         if (!is_swizzled(page) && _enable_swizzling && parent) {
             // swizzle pointer for next invocations

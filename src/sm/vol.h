@@ -147,6 +147,8 @@ public:
 
     bool grab_a_dirty_page(PageID& pid) const;
 
+    lsn_t get_dirty_page_emlsn(PageID pid) const;
+
 private:
     // variables read from volume header -- remain constant after mount
     int              _fd;
@@ -212,7 +214,6 @@ private:
     /** Open backup file descriptor for retore or taking new backup */
     void open_backup();
 
-    lsn_t get_dirty_page_emlsn(PageID pid) const;
     void delete_dirty_page(PageID pid);
 };
 

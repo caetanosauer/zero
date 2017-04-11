@@ -850,9 +850,10 @@ xct_t::_pre_commit(uint32_t flags)
         state_t old_state = _core->_state;
         change_state(xct_freeing_space);
         rc_t rc = RCOK;
-        if (!is_sys_xct()) { // system transaction has nothing to free, so this log is not needed
-            Logger::log<xct_freeing_space_log>();
-        }
+        // CS TODO: removed xct_freeing_space (no 2pc support anyway)
+        // if (!is_sys_xct()) { // system transaction has nothing to free, so this log is not needed
+        //     Logger::log<xct_freeing_space_log>();
+        // }
 
         // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
         // chkpt_serial_m::read_release();
@@ -1199,7 +1200,8 @@ xct_t::_abort()
         // chkpt_serial_m::read_acquire();
 
         change_state(xct_freeing_space);
-        Logger::log<xct_freeing_space_log>();
+        // CS TODO: removed xct_freeing_space (no 2pc support anyway)
+        // Logger::log<xct_freeing_space_log>();
 
         // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
         // chkpt_serial_m::read_release();

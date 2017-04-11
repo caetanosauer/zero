@@ -335,7 +335,7 @@ private:
     void   _convert_to_disk_page (generic_page* page) const;
 
     /** finds a free block and returns its index. if free list is empty and 'evict' = true, it evicts some page. */
-    w_rc_t _grab_free_block(bf_idx& ret, bool evict = true);
+    w_rc_t _grab_free_block(bf_idx& ret);
 
     /**
      * try to evict a given block.
@@ -393,6 +393,17 @@ private:
     w_rc_t _sx_update_child_emlsn(btree_page_h &parent,
                                   general_recordid_t child_slotid, lsn_t child_emlsn);
 
+    /**
+     * Check if the buffer pool is warmed up by looking at the hit ratio
+     * observed for the current thread. This is for cases where the dataset
+     * fits in main memory and the buffer pool never (or just takes really
+     * long to) fill up.
+     */
+    void check_warmup_done();
+
+    /// Buffer is considered warm when hit ratio goes above this
+    static constexpr float WARMUP_HIT_RATIO = 0.98;
+
     void set_warmup_done();
 
 private:
@@ -444,6 +455,9 @@ private:
     bool _batch_warmup;
     size_t _batch_segment_size;
     bool _warmup_done;
+
+    static thread_local unsigned _fix_cnt;
+    static thread_local unsigned _hit_cnt;
 
     using RestoreCoord = RestoreCoordinator<
         std::function<decltype(SegmentRestorer::bf_restore)>>;

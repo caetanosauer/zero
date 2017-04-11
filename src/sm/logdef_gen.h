@@ -54,7 +54,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
     struct chkpt_begin_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_chkpt_begin;
-    void construct (const lsn_t &lastMountLSN);
+    void construct ();
     };
 
     struct chkpt_bf_tab_log : public logrec_t {
@@ -181,6 +181,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
         static constexpr kind_t TYPE = logrec_t::t_restore_end;
     void construct ();
     template <class Ptr> void redo(Ptr);
+    };
+
+    struct warmup_done_log : public logrec_t {
+        static constexpr kind_t TYPE = logrec_t::t_warmup_done;
+        void construct ()
+        {}
     };
 
     struct page_img_format_log : public logrec_t {

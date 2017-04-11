@@ -156,6 +156,8 @@ logrec_t::get_type_str(kind_t type)
 		return "restore_segment";
 	case t_restore_end :
 		return "restore_end";
+	case t_warmup_done :
+		return "warmup_done";
 	case t_page_img_format :
 		return "page_img_format";
 	case t_page_evict :
@@ -344,6 +346,9 @@ void logrec_t::redo(PagePtr page)
 	case t_restore_segment :
 		W_FATAL(eINTERNAL);
 		break;
+	case t_warmup_done :
+		W_FATAL(eINTERNAL);
+		break;
 	case t_restore_end :
 		((restore_end_log *) this)->redo(page);
 		break;
@@ -523,6 +528,9 @@ void logrec_t::undo(PagePtr page)
 		W_FATAL(eINTERNAL);
 		break;
 	case t_restore_segment :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_warmup_done :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_restore_end :
@@ -728,10 +736,8 @@ void skip_log::construct()
  *  Status Log to mark start of fussy checkpoint.
  *
  *********************************************************************/
-void chkpt_begin_log::construct(const lsn_t &lastMountLSN)
+void chkpt_begin_log::construct()
 {
-    new (_data) lsn_t(lastMountLSN);
-    set_size(sizeof(lsn_t));
 }
 
 template <class PagePtr>
@@ -1085,6 +1091,12 @@ operator<<(ostream& o, const logrec_t& l)
         case logrec_t::t_restore_segment:
             {
                 o << " segment: " << *((uint32_t*) l.data_ssx());
+                break;
+            }
+        case logrec_t::t_append_extent:
+            {
+                o << " extent: " << *((extent_id_t*) l.data_ssx());
+                o << " store: " << *((StoreID*) (l.data_ssx() + sizeof(extent_id_t)));
                 break;
             }
 
