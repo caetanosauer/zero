@@ -10,6 +10,7 @@ public:
     void run();
 private:
     string logdir;
+    size_t partition;
 };
 
 #endif
