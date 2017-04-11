@@ -214,6 +214,7 @@ private:
     /** Open backup file descriptor for retore or taking new backup */
     void open_backup();
 
+public:
     void delete_dirty_page(PageID pid);
 };
 

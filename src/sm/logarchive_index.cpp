@@ -146,7 +146,9 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
     // no runs found in archive log -- start from first available log file
     if (getRunCount(1 /*level*/) == 0) {
         std::vector<partition_number_t> partitions;
-        smlevel_0::log->get_storage()->list_partitions(partitions);
+        if (smlevel_0::log) {
+            smlevel_0::log->get_storage()->list_partitions(partitions);
+        }
 
         if (partitions.size() > 0) {
             auto nextPartition = partitions[0];

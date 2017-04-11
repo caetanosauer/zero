@@ -130,7 +130,7 @@ public: // required for restart for now
     PageID restore_page_cnt;
 
 public:
-    void scan_log(lsn_t scan_start = lsn_t::null, bool no_db_mode = false);
+    void scan_log(lsn_t scan_start = lsn_t::null);
 
     void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn);
     void mark_page_clean(PageID pid, lsn_t lsn);
@@ -142,7 +142,7 @@ public:
     void add_lock(tid_t tid, okvl_mode mode, uint32_t hash);
 
     void add_backup(const char* path, lsn_t backupLSN);
-    void analyze_logrec(logrec_t&, lsn_t& scan_stop, bool no_db_mode);
+    void analyze_logrec(logrec_t&, lsn_t& scan_stop);
 
     lsn_t get_min_rec_lsn() const;
     lsn_t get_min_xct_lsn() const;
@@ -200,7 +200,7 @@ public:
      */
     lsn_t get_min_active_lsn() {
         lsn_t min = _last_end_lsn;
-        if (!_no_db_mode && !_min_rec_lsn.is_null() && _min_rec_lsn < min) {
+        if (!_min_rec_lsn.is_null() && _min_rec_lsn < min) {
             min = _min_rec_lsn;
         }
         if (!_min_xct_lsn.is_null() && _min_xct_lsn < min) {

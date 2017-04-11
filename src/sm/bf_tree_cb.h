@@ -164,8 +164,13 @@ struct bf_tree_cb_t {
      */
     uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 38
 
+    /// This is used for frames that are prefetched during buffer pool warmup.
+    /// They might need recovery next time they are fixed.
+    bool _check_recovery;   // +1 -> 39
+    void set_check_recovery(bool chk) { _check_recovery = chk; }
+
     // Add padding to align control block at cacheline boundary (64 bytes)
-    uint8_t _fill63[25];    // +25 -> 63
+    uint8_t _fill63[24];    // +24 -> 63
 
     /* The bufferpool should alternate location of latches and control blocks
      * starting at an odd multiple of 64B as follows:

@@ -128,6 +128,12 @@ void fixable_page_h::set_img_page_lsn(const lsn_t & lsn)
     if (_pp) { _pp->lsn = lsn; }
 }
 
+void fixable_page_h::set_check_recovery(bool chk)
+{
+    w_assert1(_pp);
+    smlevel_0::bf->set_check_recovery(_pp, chk);
+}
+
 uint32_t fixable_page_h::get_log_volume()
 {
     if (!_pp) { return 0; }

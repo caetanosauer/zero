@@ -201,10 +201,12 @@ void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize)
     size_t readSize = 32768;
     auto logiter = logScan.open(first_pid, 0, lsn_t::null, readSize);
 
-    // CS TODO: how about log records still in the recovery log?
-    LogReplayer::replay(logiter, pbegin, pend);
+    if (logiter) {
+        LogReplayer::replay(logiter, pbegin, pend);
+    }
 
-    Logger::log_sys<restore_segment_log>(segment);
+    // CS TODO:  use boolean template parameter to tell whether to log or not
+    // Logger::log_sys<restore_segment_log>(segment);
 }
 
 template <class LogScan, class PageIter>

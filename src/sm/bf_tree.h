@@ -121,6 +121,8 @@ public:
     // Used for debugging
     bool _is_frame_latched(generic_page* frame, latch_mode_t mode);
 
+    void recover_if_needed(bf_tree_cb_t& cb, generic_page* page, bool only_if_dirty = true);
+
     /**
      * Fixes a non-root page in the bufferpool. This method receives the parent page and efficiently
      * fixes the page if the pid (pointer) is already swizzled by the parent page.
@@ -214,6 +216,12 @@ public:
      */
     void set_page_lsn(generic_page*, lsn_t);
     lsn_t get_page_lsn(generic_page*);
+
+    /***
+     * Marks the frame as in possible need of recovery
+     * (used for prefetched pages during warmup)
+     */
+    void set_check_recovery(generic_page*, bool);
 
     /**
      * Gets the value of the log volume counter in the control block.
@@ -323,7 +331,8 @@ private:
     /** fixes a non-swizzled page. */
     w_rc_t fix(generic_page* parent, generic_page*& page, PageID pid,
                                latch_mode_t mode, bool conditional, bool virgin_page,
-                               bool only_if_hit = false, lsn_t emlsn = lsn_t::null);
+                               bool only_if_hit = false, bool do_recovery = true,
+                               lsn_t emlsn = lsn_t::null);
 
     /**
      * Given an image of page which might have swizzled pointers,
@@ -447,6 +456,9 @@ private:
 
     /** whether to swizzle non-root pages. */
     bool                 _enable_swizzling;
+
+    /** whether to update emlsn on parent upon eviction */
+    bool                 _maintain_emlsn;
 
     bool _write_elision;
 
@@ -615,8 +627,11 @@ private:
     void fix_current()
     {
         w_assert1(fix_depth == 0);
+        constexpr bool conditional = false;
+        constexpr bool do_recovery = false;
+        constexpr bool only_if_hit = false;
         W_COERCE(smlevel_0::bf->fix(nullptr, _current, _current_pid, LATCH_EX,
-                false, _virgin));
+                conditional, _virgin, only_if_hit, do_recovery));
         fix_depth++;
     }
 

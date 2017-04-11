@@ -309,6 +309,8 @@ ss_m::_construct_once()
 
     ERROUT(<< "[" << timer.time_ms() << "] Starting recovery thread");
 
+    bf->post_init();
+
     recovery->fork();
     recovery->wakeup();
     if (!instantRestart) {
@@ -319,8 +321,6 @@ ss_m::_construct_once()
         // CS TODO: can this be done concurrently by restart thread?
         // recovery->undo_pass();
     }
-
-    bf->post_init();
 
     ERROUT(<< "[" << timer.time_ms() << "] Finished SM initialization");
 }

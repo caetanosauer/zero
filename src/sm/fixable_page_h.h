@@ -165,6 +165,8 @@ public:
     /// @pre We hold our associated page's latch in SH or EX mode
     void         unset_to_be_deleted();
 
+    void set_check_recovery(bool);
+
 
     latch_mode_t latch_mode() const { return _mode; }
     /// Do we hold our page's latch in SH or EX mode?

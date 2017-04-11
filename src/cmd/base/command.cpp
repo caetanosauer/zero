@@ -218,8 +218,6 @@ void Command::setupSMOptions(po::options_description& options)
          using single-page recovery from scratch")
     ("sm_batch_segment_size", po::value<int>(),
         "Size of segments to use during batch restore warmup")
-    ("sm_batch_warmup", po::value<bool>()->implicit_value(true)->default_value(false),
-        "Fetch whole segments at a time when warming up buffer in no-db mode")
     ("sm_restart_instant", po::value<bool>(),
         "Enable instant restart")
     ("sm_restart_log_based_redo", po::value<bool>(),
@@ -251,7 +249,7 @@ void Command::setupSMOptions(po::options_description& options)
         "Transaction Pool Initialization Segment")
     ("sm_cleaner_decoupled", po::value<bool>(),
         "Enable/Disable decoupled cleaner")
-    ("sm_cleaner_interval_millisec", po::value<int>(),
+    ("sm_cleaner_interval", po::value<int>(),
         "Cleaner sleep interval in ms")
     ("sm_cleaner_workspace_size", po::value<int>(),
         "Size of cleaner write buffer")

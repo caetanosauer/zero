@@ -134,7 +134,9 @@ void vol_t::build_caches(bool truncate, chkpt_t* chkpt_info)
     w_assert1(_alloc_cache);
 
     // kick out pre-failure restore
-    if (chkpt_info && chkpt_info->ongoing_restore) {
+    // (unless in nodb mode, where restore_segment log records are generated
+    // during buffer pool warmup)
+    if (!_no_db_mode && chkpt_info && chkpt_info->ongoing_restore) {
         mark_failed(false, true, chkpt_info->restore_page_cnt);
         _restore_mgr->markRestoredFromList(chkpt_info->restore_tab);
         _restore_mgr->start();

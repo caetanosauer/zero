@@ -98,6 +98,8 @@ bool alloc_cache_t::is_allocated(PageID pid)
 
 rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid)
 {
+    bool virgin = false;
+
     // get pid and update last_alloc_page in critical section
     {
         spinlock_write_critical_section cs(&_latch);
@@ -112,6 +114,7 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid)
             extent_id_t ext = _get_last_allocated_pid_internal() / extent_size + 1;
             pid = ext * extent_size + 1;
             W_DO(stcache.sx_append_extent(stid, ext));
+            virgin = true;
         }
 
         last_alloc_page[stid] = pid;
@@ -128,7 +131,8 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid)
     // Now set the corresponding bit in the alloc page
     fixable_page_h p;
     PageID alloc_pid = pid - (pid % extent_size);
-    W_DO(p.fix_direct(alloc_pid, LATCH_EX, false, false));
+    constexpr bool conditional = false;
+    W_DO(p.fix_direct(alloc_pid, LATCH_EX, conditional, virgin));
     alloc_page* page = (alloc_page*) p.get_generic_page();
     w_assert1(!page->get_bit(pid - alloc_pid));
     page->set_bit(pid - alloc_pid);

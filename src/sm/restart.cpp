@@ -86,7 +86,7 @@ void restart_thread_t::log_analysis()
 {
     stopwatch_t timer;
 
-    chkpt.scan_log(lsn_t::null, no_db_mode);
+    chkpt.scan_log(lsn_t::null);
 
     //Re-create transactions
     xct_t::update_youngest_tid(chkpt.get_highest_tid());

@@ -57,6 +57,7 @@ LogArchiver::LogArchiver(const sm_options& options)
     if (options.get_bool_option("sm_archiver_merging", false)) {
         merger = new MergerDaemon(options, index);
         merger->fork();
+        merger->wakeup();
     }
 }
 
