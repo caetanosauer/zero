@@ -17,7 +17,6 @@ public:
 
     virtual void setupOptions();
     virtual void run();
-    void crash(unsigned);
     void mediaFailure(unsigned);
     void randomRootPageFailure();
     void crashFilthy();
@@ -43,7 +42,7 @@ protected:
     bool opt_skew;
     bool opt_spread;
     bool opt_asyncCommit;
-    unsigned opt_warmup;
+    bool opt_warmup;
     int opt_crashDelay;
     int opt_failDelay;
 

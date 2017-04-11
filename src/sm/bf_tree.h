@@ -297,6 +297,8 @@ public:
 
     bool is_no_db_mode() const { return _no_db_mode; }
 
+    bool is_warmup_done() const { return _warmup_done; }
+
     /**
      * Tries to unswizzle the given child page from the parent page.  If, for
      * some reason, unswizzling was impossible or troublesome, gives up and

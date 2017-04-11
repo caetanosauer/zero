@@ -623,6 +623,8 @@ public:
 
     void activate_archiver();
 
+    void wait_for_warmup();
+
     string sysname() { return (_sysname); }
 
     env_stats_t* get_env_stats() { return (&_env_stats); }

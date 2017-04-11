@@ -473,7 +473,7 @@ int ShoreEnv::init()
 {
     CRITICAL_SECTION(cs,_init_mutex);
     if (_initialized) {
-        TRACE( TRACE_ALWAYS, "Already initialized\n");
+        std::cerr<< "Already initialized" << std::endl;
         return (0);
     }
 
@@ -791,6 +791,14 @@ size_t ShoreEnv::get_num_restored_pages()
   vol_t* vol = ss_m::vol;
   w_assert0(vol);
   return vol->get_num_restored_pages();
+}
+
+void ShoreEnv::wait_for_warmup()
+{
+    while (true) {
+        if (ss_m::bf->is_warmup_done()) { break; }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
 }
 
 /********************************************************************

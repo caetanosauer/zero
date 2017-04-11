@@ -2,6 +2,8 @@
 
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <chrono>
 
 #define BOOST_FILESYSTEM_NO_DEPRECATED
 #include <boost/filesystem.hpp>
@@ -19,10 +21,12 @@ namespace fs = boost::filesystem;
 
 int MAX_THREADS = 1000;
 
+template <class Env>
 class CrashThread : public thread_wrapper_t
 {
 public:
-    CrashThread(unsigned delay) : delay(delay)
+    CrashThread(Env* env, unsigned delay, bool wait_for_warmup)
+        : env(env), delay(delay), wait_for_warmup(wait_for_warmup)
     {
     }
 
@@ -30,13 +34,21 @@ public:
 
     virtual void run()
     {
-        ::sleep(delay);
-        cerr << "Crash thread will now abort program" << endl;
-        abort();
+        if (wait_for_warmup) {
+            env->wait_for_warmup();
+        }
+
+        std::this_thread::sleep_for(std::chrono::seconds(delay));
+
+        cerr << "Crash thread will now shutdown SM" << endl;
+        env->set_sm_shudown_filthy(true);
+        env->set_stop_benchmark(true);
     }
 
 private:
+    Env* env;
     unsigned delay;
+    bool wait_for_warmup;
 };
 
 class FailureThread : public thread_wrapper_t
@@ -123,8 +135,8 @@ void KitsCommand::setupOptions()
             ->implicit_value(true),
             "Activate skew on transaction inputs (currently only 80:20 skew \
             is supported, i.e., 80% of access to 20% of data")
-        ("warmup", po::value<unsigned>(&opt_warmup)->default_value(0),
-            "Warmup buffer before running for duration or number of trxs")
+        ("warmup", po::value<bool>(&opt_warmup)->default_value(false),
+            "Warmup buffer before crashing or counting duration")
         ("crashDelay", po::value<int>(&opt_crashDelay)->default_value(-1),
             "Time (sec) to wait before aborting execution to simulate system \
             failure (negative disables)")
@@ -182,23 +194,10 @@ void KitsCommand::run()
         cout << "Loading finished!" << endl;
     }
 
-    if (opt_warmup > 0) {
-        TRACE(TRACE_ALWAYS, "warming up buffer\n");
-        // WarmupThread t;
-        // t.fork();
-        // t.join();
-
-        W_COERCE(shoreEnv->db_fetch());
-        cout << "Warmup finished!" << endl;
-    }
-
-    // Spawn crash thread if requested
-    if (opt_crashDelay >= 0)
-        crash(opt_crashDelay);
-
     // Spawn failure thread if requested
-    if (opt_failDelay >= 0)
+    if (opt_failDelay >= 0) {
         mediaFailure(opt_failDelay);
+    }
 
     if (runBenchAfterLoad()) {
         runBenchmark();
@@ -211,13 +210,6 @@ void KitsCommand::run()
         delete failure_thread;
     }
     // crash_thread aborts the program, so we don't worry about joining it
-}
-
-void KitsCommand::crash(unsigned delay)
-{
-    CrashThread* crash_thread;
-    crash_thread = new CrashThread(delay);
-    crash_thread->fork();
 }
 
 void KitsCommand::mediaFailure(unsigned delay)
@@ -289,6 +281,24 @@ void KitsCommand::runBenchmarkSpec()
     if (runBenchAfterLoad()) {
         TRACE(TRACE_ALWAYS, "begin measurement\n");
         createClients<Client, Environment>();
+
+        // Spawn crash thread if requested
+        if (opt_crashDelay >= 0) {
+            forkClients();
+
+            auto crash_thread =
+                std::make_shared<CrashThread<ShoreEnv>>(shoreEnv, opt_warmup, opt_crashDelay);
+            crash_thread->fork();
+            crash_thread->join();
+
+            // Reinitialize shore env
+            joinClients();
+            shoreEnv->close();
+            auto res = shoreEnv->start();
+            w_assert0(res == 0);
+            TRACE(TRACE_ALWAYS, "begin measurement\n");
+            createClients<Client, Environment>();
+        }
     }
 
     doWork();
@@ -453,7 +463,8 @@ void KitsCommand::initShoreEnv()
     shoreEnv->set_loaders(opt_num_threads);
     shoreEnv->setAsynchCommit(opt_asyncCommit);
 
-    shoreEnv->init();
+    auto res = shoreEnv->init();
+    w_assert0(res == 0);
     shoreEnv->set_clobber(opt_load);
     loadOptions(shoreEnv->get_opts());
 
