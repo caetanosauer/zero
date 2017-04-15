@@ -4,6 +4,7 @@ set(loginspect_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/verifylog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/truncatelog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logpagestats.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logrecinfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/loganalysis.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/propstats.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/dbscan.cpp
