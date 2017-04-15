@@ -436,7 +436,8 @@ bool LogArchiver::processFlushRequest()
             }
 
             // Forcibly close current run to guarantee that LSN is persisted
-            W_COERCE(index->closeCurrentRun(flushReqLSN, 1 /* level */));
+            PageID maxPID = blkAssemb->getCurrentMaxPID();
+            W_COERCE(index->closeCurrentRun(flushReqLSN, 1 /* level */, maxPID));
             blkAssemb->resetWriter();
 
             /* Now we know that the requested LSN has been processed by the

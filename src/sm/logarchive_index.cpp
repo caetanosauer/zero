@@ -522,6 +522,13 @@ rc_t ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
     while (remaining > 0) {
         int j = 0;
         size_t bpos = sizeof(BlockHeader);
+
+        // CS TODO: max pid is replicated in every index block because that
+        // was quicker to implement. In the future, we should have "meta blocks"
+        // in addition to data and index blocks to store such run information.
+        memcpy(writeBuffer + bpos, &run.maxPID, sizeof(PageID));
+        bpos += sizeof(PageID);
+
         while (j < entriesPerBlock && remaining > 0)
         {
             memcpy(writeBuffer + bpos, &run.entries[currEntry],
@@ -534,6 +541,7 @@ rc_t ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
         BlockHeader* h = (BlockHeader*) writeBuffer;
         h->entries = j;
         h->blockNumber = i;
+
 
         auto ret = ::pwrite(fd, writeBuffer, blockSize, offset);
         CHECK_ERRNO(ret);
@@ -614,6 +622,10 @@ rc_t ArchiveIndex::loadRunInfo(int fd, const RunId& fstats)
 
             unsigned j = 0;
             size_t bpos = sizeof(BlockHeader);
+
+            run.maxPID = *((PageID*) (readBuffer + bpos));
+            bpos += sizeof(PageID);
+
             while(j < h->entries)
             {
                 BlockEntry* e = (BlockEntry*)(readBuffer + bpos);

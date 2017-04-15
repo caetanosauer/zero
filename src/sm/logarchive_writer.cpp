@@ -8,7 +8,8 @@ const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
 
 BlockAssembly::BlockAssembly(ArchiveIndex* index, unsigned level, bool compression)
     : dest(NULL), maxLSNInBlock(lsn_t::null), maxLSNLength(0),
-    lastRun(-1), currentPID(0), bucketSize(0), nextBucket(0), level(level)
+    lastRun(-1), currentPID(0), bucketSize(0), nextBucket(0), level(level),
+    maxPID(std::numeric_limits<PageID>::min())
 {
     archIndex = index;
     blockSize = archIndex->getBlockSize();
@@ -41,6 +42,12 @@ run_number_t BlockAssembly::getRunFromBlock(const char* b)
 {
     BlockHeader* h = (BlockHeader*) b;
     return h->run;
+}
+
+PageID BlockAssembly::getMaxPIDFromBlock(const char* b)
+{
+    BlockHeader* h = (BlockHeader*) b;
+    return h->maxPID;
 }
 
 lsn_t BlockAssembly::getLSNFromBlock(const char* b)
@@ -81,6 +88,7 @@ bool BlockAssembly::start(run_number_t run)
     currentPIDpos = pos;
     currentPIDfpos = fpos;
     currentPIDprevLSN = lsn_t::null;
+    maxPID = std::numeric_limits<PageID>::min();
 
     buckets.clear();
 
@@ -117,6 +125,8 @@ bool BlockAssembly::add(logrec_t* lr)
             buckets.emplace_back(shpid, fpos);
             nextBucket = shpid / bucketSize + 1;
         }
+
+        if (currentPID > maxPID) { maxPID = currentPID; }
     }
 
     if (maxLSNInBlock < lr->lsn_ck()) {
@@ -155,6 +165,7 @@ void BlockAssembly::finish()
     BlockHeader* h = (BlockHeader*) dest;
     h->run = lastRun;
     h->end = pos;
+    h->maxPID = maxPID;
     /*
      * CS: end LSN of a block/run has to be an exclusive boundary, whereas
      * lastLSN is an inclusive one (i.e., the LSN of the last logrec in this
@@ -207,7 +218,7 @@ void WriterThread::run()
              * that all pending blocks are written out before shutdown.
              */
             DBGTHRD(<< "Finished flag set on writer thread");
-            W_COERCE(index->closeCurrentRun(maxLSNInRun, level));
+            W_COERCE(index->closeCurrentRun(maxLSNInRun, level, maxPIDInRun));
             return; // finished is set on buf
         }
 
@@ -225,7 +236,7 @@ void WriterThread::run()
              *  bound on the next run, which allows us to verify whether
              *  holes exist in the archive.
              */
-            W_COERCE(index->closeCurrentRun(maxLSNInRun, level));
+            W_COERCE(index->closeCurrentRun(maxLSNInRun, level, maxPIDInRun));
             w_assert1(index->getLastLSN(level) == maxLSNInRun);
             currentRun = run;
             maxLSNInRun = lsn_t::null;
@@ -234,9 +245,10 @@ void WriterThread::run()
         }
 
         lsn_t blockLSN = BlockAssembly::getLSNFromBlock(src);
-        if (blockLSN > maxLSNInRun) {
-            maxLSNInRun = blockLSN;
-        }
+        if (blockLSN > maxLSNInRun) { maxLSNInRun = blockLSN; }
+
+        PageID maxPID = BlockAssembly::getMaxPIDFromBlock(src);
+        if (maxPID > maxPIDInRun) { maxPIDInRun = maxPID; }
 
         size_t blockEnd = BlockAssembly::getEndOfBlock(src);
         size_t actualBlockSize= blockEnd - sizeof(BlockAssembly::BlockHeader);

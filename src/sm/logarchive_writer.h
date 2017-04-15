@@ -28,6 +28,7 @@ private:
     lsn_t maxLSNInRun;
     run_number_t currentRun;
     unsigned level;
+    PageID maxPIDInRun;
 
 public:
     virtual void run();
@@ -41,12 +42,14 @@ public:
     {
         currentRun++;
         maxLSNInRun = lsn_t::null;
+        maxPIDInRun = std::numeric_limits<PageID>::min();
     }
 
     WriterThread(AsyncRingBuffer* writebuf, ArchiveIndex* index, unsigned level)
         :
             buf(writebuf), index(index),
-            maxLSNInRun(lsn_t::null), currentRun(0), level(level)
+            maxLSNInRun(lsn_t::null), currentRun(0), level(level),
+            maxPIDInRun(std::numeric_limits<PageID>::min())
     {
     }
 
@@ -98,10 +101,13 @@ public:
         writer->resetCurrentRun();
     }
 
+    PageID getCurrentMaxPID() { return maxPID; }
+
     // methods that abstract block metadata
     static run_number_t getRunFromBlock(const char* b);
     static lsn_t getLSNFromBlock(const char* b);
     static size_t getEndOfBlock(const char* b);
+    static PageID getMaxPIDFromBlock(const char* b);
 private:
     char* dest;
     AsyncRingBuffer* writebuf;
@@ -131,12 +137,15 @@ private:
 
     unsigned level;
 
+    PageID maxPID;
+
     // Amount of space to reserve in each block (e.g., for skip log record)
     size_t spaceToReserve;
 public:
     struct BlockHeader {
         lsn_t lsn;
         uint32_t end;
+        PageID maxPID;
         run_number_t run;
     };
 

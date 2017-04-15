@@ -102,6 +102,9 @@ public:
         // removed.
         lsn_t lastLSN;
 
+        // Used as a filter to avoid unneccessary probes on older runs
+        PageID maxPID;
+
         std::vector<BlockEntry> entries;
 
         bool operator<(const RunInfo& other) const
@@ -120,7 +123,7 @@ public:
     // run generation methods
     rc_t openNewRun(unsigned level);
     rc_t append(char* data, size_t length, unsigned level);
-    rc_t closeCurrentRun(lsn_t runEndLSN, unsigned level);
+    rc_t closeCurrentRun(lsn_t runEndLSN, unsigned level, PageID maxPID = 0);
 
     // run scanning methods
     rc_t openForScan(int& fd, const RunId& runid);
@@ -138,7 +141,8 @@ public:
 
     void newBlock(const vector<pair<PageID, size_t> >& buckets, unsigned level);
 
-    rc_t finishRun(lsn_t first, lsn_t last, int fd, off_t offset, unsigned level);
+    rc_t finishRun(lsn_t first, lsn_t last, PageID maxPID,
+            int fd, off_t offset, unsigned level);
     void probe(std::vector<ProbeResult>& probes,
             PageID startPID, PageID endPID, lsn_t startLSN);
 
