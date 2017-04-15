@@ -265,6 +265,7 @@ const char* get_stat_name(sm_stat_id s)
         case sm_stat_id::backup_not_prefetched: return "backup_not_prefetched";
         case sm_stat_id::backup_evict_segment: return "backup_evict_segment";
         case sm_stat_id::backup_eviction_stuck: return "backup_eviction_stuck";
+        case sm_stat_id::la_wasted_read: return "la_wasted_read";
     }
     return "UNKNOWN_STAT";
 }
@@ -493,13 +494,14 @@ const char* get_stat_expl(sm_stat_id s)
         case sm_stat_id::backup_not_prefetched: return "How often a segment was fixed without being prefetched first";
         case sm_stat_id::backup_evict_segment: return "A buffered segment had to be evicted in the brackup prefetcher";
         case sm_stat_id::backup_eviction_stuck: return "Backup prefetcher could not find a segment to evict";
+        case sm_stat_id::la_wasted_read: return "Wasted log archive reads, i.e., that didn't use any logrec";
     }
     return "UNKNOWN_STAT";
 }
 
 void print_sm_stats(sm_stats_t& stats, std::ostream& out)
 {
-    for (size_t i = 0; i < stats.size() - 1; i++) {
+    for (size_t i = 0; i < stats.size(); i++) {
         out << get_stat_name(static_cast<sm_stat_id>(i)) << " "
             << stats[i]
             << std::endl;

@@ -112,10 +112,16 @@ logrec_t* ArchiveScanner::RunScanner::open()
                 pid = lr->pid();
                 lsn = lr->lsn();
             }
-            else { return nullptr; }
+            else {
+                INC_TSTAT(la_wasted_read);
+                return nullptr;
+            }
         }
     }
-    else { return nullptr; }
+    else {
+        INC_TSTAT(la_wasted_read);
+        return nullptr;
+    }
 
     return lr;
 }
