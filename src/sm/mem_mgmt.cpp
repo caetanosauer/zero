@@ -13,7 +13,7 @@
 #define MM_VERIFY(v)
 #endif
 
-typedef mem_mgmt_t::slot_t slot_t;
+typedef fixed_lists_mem_t::slot_t slot_t;
 
 /**
  * Adds a new free block (located at 'address') to the list of blocks

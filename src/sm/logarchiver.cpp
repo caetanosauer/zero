@@ -13,7 +13,7 @@
 
 #include "stopwatch.h"
 
-typedef mem_mgmt_t::slot_t slot_t;
+typedef fixed_lists_mem_t::slot_t slot_t;
 
 const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
 

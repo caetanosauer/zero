@@ -63,18 +63,18 @@ class ArchiverHeap {
     private:
         run_number_t currentRun;
         bool filledFirst;
-        mem_mgmt_t* workspace;
+        fixed_lists_mem_t* workspace;
 
-        mem_mgmt_t::slot_t allocate(size_t length);
+        fixed_lists_mem_t::slot_t allocate(size_t length);
 
         struct HeapEntry {
-            mem_mgmt_t::slot_t slot;
+            fixed_lists_mem_t::slot_t slot;
             lsn_t lsn;
             run_number_t run;
             PageID pid;
 
             HeapEntry(run_number_t run, PageID pid, lsn_t lsn,
-                    mem_mgmt_t::slot_t slot)
+                    fixed_lists_mem_t::slot_t slot)
                 : slot(slot), lsn(lsn), run(run), pid(pid)
             {}
 

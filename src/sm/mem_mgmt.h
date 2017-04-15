@@ -6,23 +6,6 @@
 
 #undef MM_TEST
 
-class mem_mgmt_t {
-public:
-    struct slot_t {
-        char* address;
-        size_t length;
-        slot_t(char* a, size_t l)
-            : address(a), length(l)
-        {}
-    };
-
-    virtual rc_t allocate(size_t length, slot_t& slot) = 0;
-    virtual rc_t free(slot_t slot) = 0;
-    virtual rc_t defrag() = 0;
-
-    virtual ~mem_mgmt_t() {};
-};
-
 /**
  * Memory management algorithm as proposed in:
  *
@@ -44,7 +27,16 @@ public:
  *
  * @author: Caetano Sauer
  */
-class fixed_lists_mem_t : public mem_mgmt_t {
+class fixed_lists_mem_t
+{
+public:
+    struct slot_t {
+        char* address;
+        size_t length;
+        slot_t(char* a, size_t l)
+            : address(a), length(l)
+        {}
+    };
 private:
     class list_header_t {
     private:
@@ -152,7 +144,7 @@ public:
             size_t bufsize = 8192 * 10240,
             size_t incr = 32,
             size_t max = 16384);
-    virtual ~fixed_lists_mem_t();
+    ~fixed_lists_mem_t();
     rc_t allocate(size_t length, slot_t& slot);
     rc_t free(slot_t slot);
     rc_t defrag();
