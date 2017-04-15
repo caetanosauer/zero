@@ -119,6 +119,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     _block_cnt = nbufpages;
     _enable_swizzling = bufferpool_swizzle;
+    _maintain_emlsn = options.get_bool_option("sm_bf_maintain_emlsn", false);
     // if (strcmp(replacement_policy.c_str(), "clock") == 0) {
     //     _replacement_policy = POLICY_CLOCK;
     // } else if (strcmp(replacement_policy.c_str(), "clock+priority") == 0) {
@@ -508,13 +509,12 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                 INC_TSTAT(bf_fix_nonroot_miss_count);
 
                 // CS TODO: use option to deactivate emlsn maintenance and usage
-                if (parent && emlsn.is_null()) {
+                if (parent && emlsn.is_null() && _maintain_emlsn) {
                     // Get emlsn from parent
-                    // CS TODO: emlsn not used for now
-                    // general_recordid_t recordid = find_page_id_slot(parent, pid);
-                    // btree_page_h parent_h;
-                    // parent_h.fix_nonbufferpool_page(parent);
-                    // emlsn = parent_h.get_emlsn_general(recordid);
+                    general_recordid_t recordid = find_page_id_slot(parent, pid);
+                    btree_page_h parent_h;
+                    parent_h.fix_nonbufferpool_page(parent);
+                    emlsn = parent_h.get_emlsn_general(recordid);
                 }
 
                 // CS TODO: remove method read_page_verify and move chkpt info to recovery_m

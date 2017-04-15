@@ -15,6 +15,7 @@ page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_optio
     _bufferpool(bufferpool)
 {
     _swizziling_enabled = options.get_bool_option("sm_bufferpool_swizzle", false);
+    _maintain_emlsn = options.get_bool_option("sm_bf_maintain_emlsn", false);
     _current_frame = 0;
 }
 
@@ -223,7 +224,7 @@ bool page_evictioner_base::unswizzle_and_update_emlsn(bf_idx idx)
     //==========================================================================
     lsn_t old = parent_h.get_emlsn_general(child_slotid);
     _bufferpool->_buffer[idx].lsn = cb.get_page_lsn();
-    if (old < _bufferpool->_buffer[idx].lsn) {
+    if (_maintain_emlsn && old < _bufferpool->_buffer[idx].lsn) {
         DBG3(<< "Updated EMLSN on page " << parent_h.pid()
                 << " slot=" << child_slotid
                 << " (child pid=" << pid << ")"
@@ -236,8 +237,7 @@ bool page_evictioner_base::unswizzle_and_update_emlsn(bf_idx idx)
                                             _bufferpool->_buffer[idx].lsn);
 
         w_assert1(parent_h.get_emlsn_general(child_slotid)
-                    ==
-                    _bufferpool->_buffer[idx].lsn);
+                    == _bufferpool->_buffer[idx].lsn);
     }
 
     parent_cb.latch().latch_release();

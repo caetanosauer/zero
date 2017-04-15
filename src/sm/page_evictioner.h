@@ -31,6 +31,7 @@ protected:
     /** the buffer pool this cleaner deals with. */
     bf_tree_m*                  _bufferpool;
     bool                        _swizziling_enabled;
+    bool                        _maintain_emlsn;
 
     /**
      * Pick victim must return the bf_idx. The corresponding CB must be latched
