@@ -27,7 +27,7 @@ public:
     struct RunMerger;
 
     std::shared_ptr<RunMerger> open(PageID startPID, PageID endPID, lsn_t startLSN,
-            size_t readSize);
+            size_t readSize = 0);
 
     struct RunScanner {
         const lsn_t runBegin;

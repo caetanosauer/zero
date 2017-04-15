@@ -197,9 +197,7 @@ void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize)
     GenericPageIterator pend;
 
     ArchiveScanner logScan {smlevel_0::logArchiver->getIndex()};
-    // TODO get from sm options
-    size_t readSize = 32768;
-    auto logiter = logScan.open(first_pid, 0, lsn_t::null, readSize);
+    auto logiter = logScan.open(first_pid, 0, lsn_t::null);
 
     if (logiter) {
         LogReplayer::replay(logiter, pbegin, pend);

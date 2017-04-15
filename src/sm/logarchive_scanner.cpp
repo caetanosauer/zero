@@ -60,9 +60,9 @@ ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e, unsigned level,
         fd(-1), blockCount(0), readSize(rSize), archIndex(index)
 {
     w_assert0(archIndex);
-    if (readSize == 0) {
-        readSize = archIndex->getBlockSize();
-    }
+    // TODO get from sm options
+    constexpr size_t dftReadSize = 32768;
+    if (readSize == 0) { readSize = dftReadSize; }
 
     // Using direct I/O
     int res = posix_memalign((void**) &buffer, IO_ALIGN, readSize + IO_ALIGN);
