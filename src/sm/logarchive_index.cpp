@@ -227,16 +227,22 @@ void ArchiveIndex::listFileStats(list<RunId>& list,
  */
 rc_t ArchiveIndex::openNewRun(unsigned level)
 {
-    int flags = O_WRONLY | O_SYNC | O_CREAT;
+    int flags = O_WRONLY | O_CREAT;
     std::string fname = make_current_run_path(level).string();
     auto fd = ::open(fname.c_str(), flags, 0744 /*mode*/);
     CHECK_ERRNO(fd);
     DBGTHRD(<< "Opened new output run in level " << level);
 
-    appendFd.resize(level+1, -1);
-    appendFd[level] = fd;
-    appendPos.resize(level+1, 0);
-    appendPos[level] = 0;
+
+    {
+        spinlock_write_critical_section cs(&_mutex);
+
+        appendFd.resize(level+1, -1);
+        appendFd[level] = fd;
+        appendPos.resize(level+1, 0);
+        appendPos[level] = 0;
+    }
+
     return RCOK;
 }
 
@@ -252,40 +258,45 @@ fs::path ArchiveIndex::make_current_run_path(unsigned level) const
     return archpath / fs::path(CURR_RUN_PREFIX + std::to_string(level));
 }
 
-rc_t ArchiveIndex::closeCurrentRun(lsn_t runEndLSN, unsigned level)
+rc_t ArchiveIndex::closeCurrentRun(lsn_t runEndLSN, unsigned level, PageID maxPID)
 {
-    // Enter two critical sections, one in getLastLSN and one below.
-    // This is OK because lastLSN cannot change in between, as only one
-    // thread may call closeCurrentRun on the same level at the same time.
     lsn_t lastLSN = getLastLSN(level);
     w_assert1(!lastLSN.is_null() && (lastLSN < runEndLSN || runEndLSN.is_null()));
 
-    spinlock_write_critical_section cs(&_mutex);
-
     if (appendFd[level] >= 0) {
         if (lastLSN != runEndLSN && !runEndLSN.is_null()) {
-            // if level>1, runEndLSN must match the boundaries in the lower level
-            if (level > 1) {
-                runEndLSN = roundToEndLSN(runEndLSN, level-1);
-                w_assert1(!runEndLSN.is_null());
-            }
-            // register index information and write it on end of file
-            if (appendPos[level] > 0) {
-                // take into account space for skip log record
-                appendPos[level] += SKIP_LOGREC.length();
-                // and make sure data is written aligned to block boundary
-                appendPos[level] -= appendPos[level] % blockSize;
-                appendPos[level] += blockSize;
+            {
+                spinlock_read_critical_section cs(&_mutex);
+                // if level>1, runEndLSN must match the boundaries in the lower level
+                if (level > 1) {
+                    // CS TODO: when merging from one archive to another (e.g., if
+                    // different --indir and --outdir options are used in the zapps
+                    // MergeRuns command), roundToEndLSN will fail because there might
+                    // be no lower level.
+                    runEndLSN = roundToEndLSN(runEndLSN, level-1);
+                    w_assert1(!runEndLSN.is_null());
+                }
+                // register index information and write it on end of file
+                if (appendPos[level] > 0) {
+                    // take into account space for skip log record
+                    appendPos[level] += SKIP_LOGREC.length();
+                    // and make sure data is written aligned to block boundary
+                    appendPos[level] -= appendPos[level] % blockSize;
+                    appendPos[level] += blockSize;
+                }
             }
 
-            finishRun(lastLSN, runEndLSN, appendFd[level], appendPos[level], level);
+            finishRun(lastLSN, runEndLSN, maxPID, appendFd[level], appendPos[level], level);
             fs::path new_path = make_run_path(lastLSN, runEndLSN, level);
             fs::rename(make_current_run_path(level), new_path);
 
             DBGTHRD(<< "Closing current output run: " << new_path.string());
         }
 
-        auto ret = ::close(appendFd[level]);
+        auto ret = ::fsync(appendFd[level]);
+        CHECK_ERRNO(ret);
+
+        ret = ::close(appendFd[level]);
         CHECK_ERRNO(ret);
         appendFd[level] = -1;
     }
@@ -321,8 +332,6 @@ rc_t ArchiveIndex::openForScan(int& fd, const RunId& runid)
 
     if (p.second == 0) {
         fs::path fpath = make_run_path(runid.beginLSN, runid.endLSN, runid.level);
-
-        // Using direct I/O
         int flags = O_RDONLY;
         if (directIO) { flags |= O_DIRECT; }
         p.first = ::open(fpath.string().c_str(), flags, 0744 /*mode*/);
@@ -461,25 +470,34 @@ void ArchiveIndex::newBlock(const vector<pair<PageID, size_t> >&
     }
 }
 
-rc_t ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
+rc_t ArchiveIndex::finishRun(lsn_t first, lsn_t last, PageID maxPID, int fd,
         off_t offset, unsigned level)
 {
-    if (offset == 0) {
-        // at least one entry is required for empty runs
-        appendNewRun(level);
+    int new_lf;
+
+    {
+        spinlock_write_critical_section cs(&_mutex);
+
+        if (offset == 0) {
+            // at least one entry is required for empty runs
+            appendNewRun(level);
+        }
+        w_assert1(offset % blockSize == 0);
+
+        int& lf = lastFinished[level];
+        lf++;
+        w_assert1(lf == 0 || first == runs[level][lf-1].lastLSN);
+        w_assert1(lf < (int) runs[level].size());
+
+        runs[level][lf].firstLSN = first;
+        runs[level][lf].lastLSN = last;
+        runs[level][lf].maxPID = maxPID;
+
+        new_lf = lf;
     }
-    w_assert1(offset % blockSize == 0);
 
-    int& lf = lastFinished[level];
-    lf++;
-    w_assert1(lf == 0 || first == runs[level][lf-1].lastLSN);
-    w_assert1(lf < (int) runs[level].size());
-
-    runs[level][lf].firstLSN = first;
-    runs[level][lf].lastLSN = last;
-
-    if (offset > 0 && lf < (int) runs[level].size()) {
-        W_DO(serializeRunInfo(runs[level][lf], fd, offset));
+    if (offset > 0 && new_lf < (int) runs[level].size()) {
+        W_DO(serializeRunInfo(runs[level][new_lf], fd, offset));
     }
 
     if (level > 1 && runRecycler) { runRecycler->wakeup(); }
@@ -490,7 +508,7 @@ rc_t ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
 rc_t ArchiveIndex::serializeRunInfo(RunInfo& run, int fd,
         off_t offset)
 {
-    // Assumption: mutex is held by caller
+    spinlock_read_critical_section cs(&_mutex);
 
     int entriesPerBlock =
         (blockSize - sizeof(BlockHeader) - sizeof(PageID)) / sizeof(BlockEntry);
