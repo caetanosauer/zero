@@ -50,13 +50,27 @@ void TruncateLog::run()
     logrec->set_lsn_ck(lsn_t(partition, pos));
     pos += logrec->length();
 
-    string fname = logdir + "/log." + std::to_string(partition);
-    std::ofstream ofs (fname, std::ofstream::out | std::ofstream::binary
-            | std::ofstream::trunc);
+    {
+        string fname = logdir + "/log." + std::to_string(partition);
+        std::ofstream ofs (fname, std::ofstream::out | std::ofstream::binary
+                | std::ofstream::trunc);
 
-    ofs.write(buffer, bufsize);
+        ofs.write(buffer, bufsize);
+        ofs.close();
+    }
 
-    ofs.close();
+    {
+        // now generate empty checkpoint
+        string fname = logdir + "/chkpt_" + std::to_string(partition) + ".0";
+        std::ofstream ofs (fname, std::ofstream::out | std::ofstream::binary
+                | std::ofstream::trunc);
+
+        chkpt_t chkpt;
+        chkpt.init();
+        chkpt.serialize_binary(ofs);
+
+        ofs.close();
+    }
 
     delete buffer;
 }

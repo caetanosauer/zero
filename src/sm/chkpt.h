@@ -130,6 +130,8 @@ public: // required for restart for now
     PageID restore_page_cnt;
 
 public:
+    void init();
+
     void scan_log(lsn_t scan_start = lsn_t::null);
 
     void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn);
@@ -153,11 +155,10 @@ public:
 
     void dump(ostream& out);
 
-private:
-    void init();
-    void serialize();
     void serialize_binary(ofstream& ofs);
     void deserialize_binary(ifstream& ofs);
+
+private:
     void cleanup();
     void acquire_lock(logrec_t& r);
 };
