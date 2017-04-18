@@ -49,7 +49,7 @@ LogArchiver::LogArchiver(const sm_options& options)
     nextActLSN = index->getLastLSN();
     w_assert1(nextActLSN.hi() > 0);
 
-    consumer = new LogConsumer(index->getLastLSN(), blockSize);
+    consumer = new LogConsumer(nextActLSN, blockSize);
     heap = new ArchiverHeap(workspaceSize);
     blkAssemb = new BlockAssembly(index, 1 /*level*/, compression);
 

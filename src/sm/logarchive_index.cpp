@@ -112,6 +112,7 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
 
     // create/load index
     int fd;
+    unsigned runsFound = 0;
     for (; it != eod; it++) {
         fs::path fpath = it->path();
         string fname = fpath.filename().string();
@@ -128,6 +129,8 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
             W_COERCE(closeScan(fd, fstats));
 
             if (fstats.level > maxLevel) { maxLevel = fstats.level; }
+
+            runsFound++;
         }
         else if (boost::regex_match(fname, current_rx)) {
             DBGTHRD(<< "Found unfinished log archive run. Deleting");
@@ -144,7 +147,7 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
     }
 
     // no runs found in archive log -- start from first available log file
-    if (getRunCount(1 /*level*/) == 0) {
+    if (runsFound == 0) {
         std::vector<partition_number_t> partitions;
         if (smlevel_0::log) {
             smlevel_0::log->get_storage()->list_partitions(partitions);
@@ -262,7 +265,18 @@ fs::path ArchiveIndex::make_current_run_path(unsigned level) const
 rc_t ArchiveIndex::closeCurrentRun(lsn_t runEndLSN, unsigned level, PageID maxPID)
 {
     lsn_t lastLSN = getLastLSN(level);
-    w_assert1(!lastLSN.is_null() && (lastLSN < runEndLSN || runEndLSN.is_null()));
+    if (lastLSN.is_null()) {
+        if (level == 1) {
+            // run being created by archiver -- must be the last LSNof all levels
+            lastLSN = getLastLSN();
+        }
+        else {
+            // run being created by merge -- previous-level runs must exist
+            W_FATAL_MSG(fcINTERNAL, << "Invalid archiver state, closing run "
+                    << runEndLSN << " on level " << level);
+        }
+    }
+    w_assert1(lastLSN < runEndLSN || runEndLSN.is_null());
 
     if (appendFd[level] >= 0) {
         if (lastLSN != runEndLSN && !runEndLSN.is_null()) {
@@ -300,6 +314,13 @@ rc_t ArchiveIndex::closeCurrentRun(lsn_t runEndLSN, unsigned level, PageID maxPI
         ret = ::close(appendFd[level]);
         CHECK_ERRNO(ret);
         appendFd[level] = -1;
+
+        // This step atomically "commits" the creation of the new run
+        {
+            spinlock_write_critical_section cs(&_open_file_mutex);
+
+            lastFinished[level]++;
+        }
     }
 
     openNewRun(level);
@@ -503,8 +524,7 @@ void ArchiveIndex::newBlock(const vector<pair<PageID, size_t> >&
 rc_t ArchiveIndex::finishRun(lsn_t first, lsn_t last, PageID maxPID, int fd,
         off_t offset, unsigned level)
 {
-    int new_lf;
-
+    int lf;
     {
         spinlock_write_critical_section cs(&_mutex);
 
@@ -514,20 +534,17 @@ rc_t ArchiveIndex::finishRun(lsn_t first, lsn_t last, PageID maxPID, int fd,
         }
         w_assert1(offset % blockSize == 0);
 
-        int& lf = lastFinished[level];
-        lf++;
+        lf = lastFinished[level] + 1;
         w_assert1(lf == 0 || first == runs[level][lf-1].lastLSN);
         w_assert1(lf < (int) runs[level].size());
 
         runs[level][lf].firstLSN = first;
         runs[level][lf].lastLSN = last;
         runs[level][lf].maxPID = maxPID;
-
-        new_lf = lf;
     }
 
-    if (offset > 0 && new_lf < (int) runs[level].size()) {
-        W_DO(serializeRunInfo(runs[level][new_lf], fd, offset));
+    if (offset > 0 && lf < (int) runs[level].size()) {
+        W_DO(serializeRunInfo(runs[level][lf], fd, offset));
     }
 
     if (level > 1 && runRecycler) { runRecycler->wakeup(); }
@@ -601,6 +618,24 @@ void ArchiveIndex::startNewRun(unsigned level)
     appendNewRun(level);
 }
 
+lsn_t ArchiveIndex::getLastLSN()
+{
+    spinlock_read_critical_section cs(&_mutex);
+
+    lsn_t last = lsn_t(1,0);
+
+    for (int l = 1; l <= maxLevel; l++) {
+        if (lastFinished[l] >= 0) {
+            auto& run = runs[l][lastFinished[l]];
+            if (run.lastLSN > last) {
+                last = run.lastLSN;
+            }
+        }
+    }
+
+    return last;
+}
+
 lsn_t ArchiveIndex::getLastLSN(unsigned level)
 {
     spinlock_read_critical_section cs(&_mutex);
@@ -612,7 +647,7 @@ lsn_t ArchiveIndex::getLastLSN(unsigned level)
     if (lastFinished[level] < 0) {
         // No runs exist in the given level. If a previous level exists, it
         // must be the first LSN in that level; otherwise, it's simply 1.0
-        if (level == 0) { return lsn_t(1,0); }
+        if (level == 0) { return lsn_t::null; }
         return getFirstLSN(level - 1);
     }
 
@@ -621,7 +656,7 @@ lsn_t ArchiveIndex::getLastLSN(unsigned level)
 
 lsn_t ArchiveIndex::getFirstLSN(unsigned level)
 {
-    if (level <= 1) { return lsn_t(1,0); }
+    if (level == 0) { return lsn_t::null; }
     // If no runs exist at this level, recurse down to previous level;
     if (lastFinished[level] < 0) { return getFirstLSN(level-1); }
 
@@ -680,7 +715,7 @@ rc_t ArchiveIndex::loadRunInfo(int fd, const RunId& fstats)
         maxLevel = fstats.level;
         // level 0 reserved, so add 1
         runs.resize(maxLevel+1);
-        lastFinished.resize(maxLevel+1);
+        lastFinished.resize(maxLevel+1, -1);
     }
     runs[fstats.level].push_back(run);
     lastFinished[fstats.level] = runs[fstats.level].size() - 1;
@@ -737,7 +772,9 @@ size_t ArchiveIndex::findRun(lsn_t lsn, unsigned level)
      * we do a linear search instead of binary search.
      */
     auto& lf = lastFinished[level];
-    w_assert1(lf >= 0);
+
+    // No runs at this level
+    if (lf < 0) { return 0; }
 
     if(lsn >= runs[level][lf].lastLSN) {
         return lf + 1;

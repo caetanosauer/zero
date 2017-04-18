@@ -117,7 +117,8 @@ public:
     size_t getBlockSize() const { return blockSize; }
     std::string getArchDir() const { return archdir; }
 
-    lsn_t getLastLSN(unsigned level = 1);
+    lsn_t getLastLSN();
+    lsn_t getLastLSN(unsigned level);
     lsn_t getFirstLSN(unsigned level);
 
     // run generation methods

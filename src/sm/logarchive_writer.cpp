@@ -239,9 +239,9 @@ void WriterThread::run()
             W_COERCE(index->closeCurrentRun(maxLSNInRun, level, maxPIDInRun));
             w_assert1(index->getLastLSN(level) == maxLSNInRun);
             currentRun = run;
-            maxLSNInRun = lsn_t::null;
             DBGTHRD(<< "Opening file for new run " << run
-                    << " starting on LSN " << index->getLastLSN(level));
+                    << " starting on LSN " << maxLSNInRun);
+            maxLSNInRun = lsn_t::null;
         }
 
         lsn_t blockLSN = BlockAssembly::getLSNFromBlock(src);
