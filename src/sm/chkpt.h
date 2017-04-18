@@ -132,7 +132,7 @@ public: // required for restart for now
 public:
     void init();
 
-    void scan_log(lsn_t scan_start = lsn_t::null);
+    void scan_log(lsn_t scan_start = lsn_t::null, lsn_t archived_lsn = lsn_t::null);
 
     void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn);
     void mark_page_clean(PageID pid, lsn_t lsn);
@@ -144,7 +144,7 @@ public:
     void add_lock(tid_t tid, okvl_mode mode, uint32_t hash);
 
     void add_backup(const char* path, lsn_t backupLSN);
-    void analyze_logrec(logrec_t&, lsn_t& scan_stop);
+    void analyze_logrec(logrec_t&, lsn_t& scan_stop, lsn_t archived_lsn);
 
     lsn_t get_min_rec_lsn() const;
     lsn_t get_min_xct_lsn() const;
@@ -156,7 +156,7 @@ public:
     void dump(ostream& out);
 
     void serialize_binary(ofstream& ofs);
-    void deserialize_binary(ifstream& ofs);
+    void deserialize_binary(ifstream& ofs, lsn_t archived_lsn = lsn_t::null);
 
 private:
     void cleanup();

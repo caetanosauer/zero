@@ -144,7 +144,7 @@ void chkpt_m::wakeup_thread()
 *  corresponding to the latest completed checkpoint.
 *
 *********************************************************************/
-void chkpt_t::scan_log(lsn_t scan_start)
+void chkpt_t::scan_log(lsn_t scan_start, lsn_t archived_lsn)
 {
     init();
 
@@ -190,10 +190,10 @@ void chkpt_t::scan_log(lsn_t scan_start)
             }
         }
 
-        analyze_logrec(r, scan_stop);
+        analyze_logrec(r, scan_stop, archived_lsn);
 
         // CS: A CLR is not considered a page update for some reason...
-        if (r.is_redo()) {
+        if (r.is_redo() && lsn > archived_lsn) {
             mark_page_dirty(r.pid(), lsn, lsn);
 
             if (r.is_multi_page()) {
@@ -209,7 +209,7 @@ void chkpt_t::scan_log(lsn_t scan_start)
     cleanup();
 }
 
-void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop)
+void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop, lsn_t archived_lsn)
 {
     auto lsn = r.lsn();
 
@@ -220,7 +220,7 @@ void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop)
                 fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn);
                 if (fs::exists(fpath)) {
                     ifstream ifs(fpath.string(), ios::binary);
-                    deserialize_binary(ifs);
+                    deserialize_binary(ifs, archived_lsn);
                     ifs.close();
                     scan_stop = lsn;
                 }
@@ -254,6 +254,8 @@ void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop)
 
                 lsn_t clean_lsn = *((lsn_t*) pos);
                 pos += sizeof(lsn_t);
+
+                if (clean_lsn < archived_lsn) { break; }
 
                 uint32_t count = *((uint32_t*) pos);
                 PageID end = pid + count;
@@ -548,8 +550,14 @@ void chkpt_m::take()
     lsn_t begin_lsn = Logger::log_sys<chkpt_begin_log>();
     W_COERCE(ss_m::log->flush(begin_lsn));
 
+    lsn_t archived_lsn = lsn_t::null;
+    if (_no_db_mode) {
+        // In no-db mode, updates that have been archived are considered clean
+        archived_lsn = smlevel_0::logArchiver->getIndex()->getLastLSN();
+    }
+
     // Collect checkpoint information from log
-    curr_chkpt.scan_log(begin_lsn);
+    curr_chkpt.scan_log(begin_lsn, archived_lsn);
 
     // Serialize chkpt to file
     fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn_t::null);
@@ -565,7 +573,7 @@ void chkpt_m::take()
         // no page cleaner. The equivalent in this case, i.e., the point up
         // to which the recovery log can be truncated, is determined by the
         // log archiver.
-        _min_rec_lsn = smlevel_0::logArchiver->getIndex()->getLastLSN();
+        _min_rec_lsn = archived_lsn;
     }
     else {
         _min_rec_lsn = curr_chkpt.get_min_rec_lsn();
@@ -628,7 +636,7 @@ void chkpt_t::serialize_binary(ofstream& ofs)
     }
 }
 
-void chkpt_t::deserialize_binary(ifstream& ifs)
+void chkpt_t::deserialize_binary(ifstream& ifs, lsn_t archived_lsn)
 {
     if(!ifs.is_open()) {
         cerr << "Could not open input stream for chkpt file" << endl;;
@@ -650,8 +658,9 @@ void chkpt_t::deserialize_binary(ifstream& ifs)
                   "rec_lsn[]="<<entry.rec_lsn<< " , " <<
                   "page_lsn[]="<<entry.page_lsn);
 
-        // buf_tab[pid] = entry;
-        mark_page_dirty(pid, entry.page_lsn, entry.rec_lsn);
+        if (entry.page_lsn > archived_lsn) {
+            mark_page_dirty(pid, entry.page_lsn, entry.rec_lsn);
+        }
     }
 
     size_t xct_tab_size;
