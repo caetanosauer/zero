@@ -163,7 +163,7 @@ private:
 
     void appendNewRun(unsigned level);
     size_t findRun(lsn_t lsn, unsigned level);
-    void probeInRun(ProbeResult&);
+    bool probeInRun(ProbeResult&);
     // binary search
     size_t findEntry(RunInfo* run, PageID pid,
             int from = -1, int to = -1);

@@ -353,6 +353,7 @@ enum class sm_stat_id : size_t
     backup_evict_segment,
     backup_eviction_stuck,
     la_wasted_read,
+    la_avoided_probes,
     stat_max // Leave this one here to count the number of stats!
 };
 

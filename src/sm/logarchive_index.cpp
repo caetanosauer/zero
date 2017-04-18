@@ -812,16 +812,23 @@ size_t ArchiveIndex::findEntry(RunInfo* run,
     }
 }
 
-void ArchiveIndex::probeInRun(ProbeResult& res)
+bool ArchiveIndex::probeInRun(ProbeResult& res)
 {
+    INC_TSTAT(la_index_probes);
+
     // Assmuptions: mutex is held; run index and pid are set in given result
     size_t index = res.runIndex;
     auto level = res.level;
     w_assert1((int) index <= lastFinished[level]);
     RunInfo* run = &runs[level][index];
 
-    res.runBegin = runs[level][index].firstLSN;
-    res.runEnd = runs[level][index].lastLSN;
+    if (res.pidBegin > run->maxPID) {
+        INC_TSTAT(la_avoided_probes);
+        return false;
+    }
+
+    res.runBegin = run->firstLSN;
+    res.runEnd = run->lastLSN;
 
     size_t entryBegin = 0;
     if (res.pidBegin == 0) {
@@ -838,7 +845,8 @@ void ArchiveIndex::probeInRun(ProbeResult& res)
             res.offset = run->entries[entryBegin].offset;
         }
     }
-    INC_TSTAT(la_index_probes);
+
+    return true;
 }
 
 void ArchiveIndex::probe(std::vector<ProbeResult>& probes,
@@ -861,8 +869,9 @@ void ArchiveIndex::probe(std::vector<ProbeResult>& probes,
                 res.pidBegin = startPID;
                 res.pidEnd = endPID;
                 res.runIndex = index;
-                probeInRun(res);
-                probes.push_back(res);
+                if (probeInRun(res)) {
+                    probes.push_back(res);
+                }
             }
             index++;
         }
