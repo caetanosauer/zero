@@ -317,9 +317,6 @@ ss_m::_construct_once()
         recovery->join();
         // metadata caches can only be constructed now
         vol->build_caches(format, chkpt_info);
-        // system now ready for UNDO
-        // CS TODO: can this be done concurrently by restart thread?
-        // recovery->undo_pass();
     }
 
     ERROUT(<< "[" << timer.time_ms() << "] Finished SM initialization");

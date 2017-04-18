@@ -367,7 +367,7 @@ void bf_tree_m::_add_free_block(bf_idx idx)
 
 void bf_tree_m::post_init()
 {
-    if (_batch_warmup) {
+    if (_no_db_mode && _batch_warmup) {
         auto vol_pages = smlevel_0::vol->num_used_pages();
         auto segcount = vol_pages  / _batch_segment_size
             + (vol_pages % _batch_segment_size ? 1 : 0);
@@ -382,16 +382,20 @@ void bf_tree_m::recover_if_needed(bf_tree_cb_t& cb, generic_page* page, bool onl
 
     w_assert1(cb.latch().is_mine());
 
-    auto expected_lsn = smlevel_0::vol->get_dirty_page_emlsn(page->pid);
+    // CB should be correctly initialized with page ID
+    auto pid = cb._pid;
+    page->pid = pid;
+
+    auto expected_lsn = smlevel_0::vol->get_dirty_page_emlsn(pid);
     if (!only_if_dirty || (!expected_lsn.is_null() && page->lsn < expected_lsn)) {
         btree_page_h p;
         p.fix_nonbufferpool_page(page);
         constexpr bool use_archive = true;
-        SprIterator iter {page->pid, page->lsn, expected_lsn, use_archive};
+        SprIterator iter {pid, page->lsn, expected_lsn, use_archive};
         iter.apply(p);
         w_assert0(page->lsn >= expected_lsn);
 
-        smlevel_0::vol->delete_dirty_page(page->pid);
+        smlevel_0::vol->delete_dirty_page(pid);
     }
 
     cb.set_check_recovery(false);
@@ -593,9 +597,12 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         check_warmup_done();
 
         auto& cb = get_cb(idx);
-        if (do_recovery && !virgin_page) {
-            recover_if_needed(cb, page, used_batch_warmup);
+        if (do_recovery) {
+            const bool only_if_dirty = !_no_db_mode || used_batch_warmup;
+            if (virgin_page) { cb.set_check_recovery(false); }
+            else { recover_if_needed(cb, page, only_if_dirty); }
         }
+        w_assert1(cb._pin_cnt >= 0);
 
         // downgrade latch if necessary
         if (cb.latch().mode() != mode) {

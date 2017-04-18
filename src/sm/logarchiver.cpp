@@ -670,7 +670,6 @@ MergerDaemon::MergerDaemon(const sm_options& options,
 
 void MergerDaemon::do_work()
 {
-    // CS TODO: implement merge policies
     // For now, constantly merge runs of level 1 into level 2
     doMerge(1, _fanin);
 }
