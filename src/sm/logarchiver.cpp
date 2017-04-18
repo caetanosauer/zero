@@ -722,6 +722,10 @@ rc_t MergerDaemon::doMerge(unsigned level, unsigned fanin)
 
     {
         ArchiveScanner::RunMerger merger;
+        // CS TODO: outdir may not have the same runs in the merged level,
+        // which will screw up the assignment of endLSN boundaries. Here,
+        // we should check that and, if needed, create an empty run from the
+        // boundaries of level in indir.
         BlockAssembly blkAssemb(outdir, level+1, _compression);
         outdir->openNewRun(level+1);
 

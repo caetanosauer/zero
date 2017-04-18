@@ -379,7 +379,6 @@ ss_m::_destruct_once()
 
     // log truncation requires clean shutdown
     bool truncate = _options.get_bool_option("sm_truncate_log", false);
-    bool truncate_archive = _options.get_bool_option("sm_truncate_archive", false);
     if (shutdown_clean || truncate) {
         ERROUT(<< "SM performing clean shutdown");
 
@@ -387,10 +386,7 @@ ss_m::_destruct_once()
         bf->wakeup_cleaner(true, 1 /* wait for 1 full round */);
         smthread_t::check_actual_pin_count(0);
 
-        // Force alloc and stnode pages
-        lsn_t dur_lsn = smlevel_0::log->durable_lsn();
-
-        if (truncate) { W_COERCE(_truncate_log(truncate_archive)); }
+        if (truncate) { W_COERCE(_truncate_log()); }
         else { chkpt->take(); }
 
         ERROUT(<< "All pages cleaned successfully");
@@ -450,7 +446,7 @@ ss_m::_destruct_once()
      ERROUT(<< "SM shutdown complete!");
 }
 
-rc_t ss_m::_truncate_log(bool truncate_archive)
+rc_t ss_m::_truncate_log()
 {
     DBGTHRD(<< "Truncating log on LSN " << log->durable_lsn());
 
@@ -460,19 +456,26 @@ rc_t ss_m::_truncate_log(bool truncate_archive)
 
     if (logArchiver) {
         logArchiver->archiveUntilLSN(log->durable_lsn());
-        if (truncate_archive) { logArchiver->getIndex()->deleteRuns(); }
+        if (_options.get_bool_option("sm_truncate_archive", false)) {
+            unsigned replFactor =
+                _options.get_int_option("sm_archiver_replication_factor", 0);
+            logArchiver->getIndex()->deleteRuns(replFactor);
+        }
     }
 
+    // create new, empty partition on log
     W_DO(log->truncate());
+    // CS TODO: temporary hack -- empty log causes file not found in archiveUntilLSN
+    Logger::log_sys<comment_log>("abc");
     W_DO(log->flush_all());
 
-    // this should be an "empty" checkpoint
-    chkpt->take();
-
-    // generate an "empty" log archive run
+    // generate an empty log archive run to cover the new durable LSN
     if(logArchiver) {
         logArchiver->archiveUntilLSN(log->durable_lsn());
     }
+
+    // this should be an "empty" checkpoint
+    chkpt->take();
 
     log->get_storage()->delete_old_partitions();
 
@@ -1245,7 +1248,6 @@ ss_m::gather_stats(sm_stats_t& _stats)
     return RCOK;
 }
 
-#if W_DEBUG_LEVEL > 0
 extern void dump_all_sm_stats();
 void dump_all_sm_stats()
 {
@@ -1253,7 +1255,6 @@ void dump_all_sm_stats()
     W_COERCE(ss_m::gather_stats(s));
     print_sm_stats(s, std::cerr);
 }
-#endif
 
 
 extern "C" {

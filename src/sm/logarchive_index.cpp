@@ -168,10 +168,11 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
     SKIP_LOGREC.init_header(logrec_t::t_skip);
     SKIP_LOGREC.construct();
 
-    unsigned replFactor = options.get_int_option("sm_archive_replication_factor", 0);
+    unsigned replFactor = options.get_int_option("sm_archiver_replication_factor", 0);
     if (replFactor > 0) {
-        runRecycler.reset(new RunRecycler {replFactor, this});
-        runRecycler->fork();
+        // CS TODO -- not implemented, see comments on deleteRuns
+        // runRecycler.reset(new RunRecycler {replFactor, this});
+        // runRecycler->fork();
     }
 }
 
@@ -409,6 +410,33 @@ rc_t ArchiveIndex::closeScan(int& fd, const RunId& runid)
 
 void ArchiveIndex::deleteRuns(unsigned replicationFactor)
 {
+    /*
+     * CS TODO: deleting runs is not as trivial as I initially thought.
+     * Here are some issues to be aware of:
+     * - RunInfo entries in the index should be deleted first while in a
+     *   critical section. The actual deletion should happen after leaving
+     *   the critical section.
+     * - This deletion should not destroy objects eagerly, because previous
+     *   index probes might still be using the runs to be deleted. Thus, some
+     *   type of reference-counting mechanism is required (e.g., shared_ptr).
+     * - Deleting multiple runs cannot be done atomically, so it's an
+     *   operation that must be logged and repeated during recovery in
+     *   case of a crash.
+     * - Not only is logging required, but we must make sure that recovery
+     *   correctly covers all possible states -- any of the N runs being
+     *   deleted might independently be in one of 3 states: removed from index
+     *   but still in use (waiting for garbage collected), not in use and ready
+     *   for (or currently undergoing) deletion, and fully deleted but run file
+     *   still exists.
+     * - Besides all that, it is atually easier to implement *moving* a run to
+     *   a different (archival-kind-of) device than to delete it, which makes
+     *   more sense in practice, so it might be worth looking into that before
+     *   implementing deletion.
+     *
+     * Currently, runs are only deleted in ss_m::_truncate_los, which runs
+     * after shutdown and thus is free of the issues above. That's also why
+     * this method currently only removes files
+     */
     spinlock_write_critical_section cs(&_mutex);
 
     if (replicationFactor == 0) { // delete all runs
@@ -429,19 +457,21 @@ void ArchiveIndex::deleteRuns(unsigned replicationFactor)
             // there's no run with the given replication factor -- just return
             return;
         }
-        for (auto high : runs[level]) {
+        for (int h = lastFinished[level]; h >= 0; h--) {
+            auto& high = runs[level][h];
             unsigned levelToClean = level - replicationFactor;
             while (levelToClean > 0) {
                 // delete all runs within the LSN range of the higher-level run
-                for (auto low : runs[levelToClean]) {
-                    if (low.firstLSN >= high.firstLSN &&
-                            low.lastLSN <= high.lastLSN)
+                for (int l = lastFinished[levelToClean]; l >= 0; l--) {
+                    auto& low = runs[levelToClean][l];
+                    if (low.firstLSN >= high.firstLSN && low.lastLSN <= high.lastLSN)
                     {
                         auto path = make_run_path(low.firstLSN,
                                 low.lastLSN, levelToClean);
                         fs::remove(path);
                     }
                 }
+                levelToClean--;
             }
         }
     }

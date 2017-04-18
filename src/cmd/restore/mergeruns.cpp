@@ -22,6 +22,8 @@ void MergeRuns::setupOptions()
             "Merge fan-in (required, larger than 1)")
         ("bucket", po::value<size_t>(&bucketSize)->default_value(16),
             "Size of log archive index bucked in output runs")
+        ("repl", po::value<size_t>(&replFactor)->default_value(0),
+            "Delete runs after merge to maintain given replication factor")
     ;
     Command::setupSMOptions(options);
 }
@@ -58,4 +60,8 @@ void MergeRuns::run()
 
     MergerDaemon merge(opt, in, out);
     W_COERCE(merge.doMerge(level, fanin));
+
+    if (replFactor > 0) {
+        out->deleteRuns(replFactor);
+    }
 }
