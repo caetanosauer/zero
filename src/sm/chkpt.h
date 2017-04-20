@@ -68,7 +68,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <vector>
 #include <list>
-#include <map>
+#include <unordered_map>
 #include <algorithm>
 #include <limits>
 
@@ -82,11 +82,24 @@ struct buf_tab_entry_t {
     {}
 
     bool is_dirty() const { return page_lsn >= clean_lsn; }
+
+    void mark_dirty(lsn_t page, lsn_t rec) {
+        if (page > page_lsn) { page_lsn = page; }
+        if (rec >= clean_lsn && rec < rec_lsn) { rec_lsn = rec; }
+    }
+
+    void mark_clean(lsn_t clean) {
+        if (clean > clean_lsn) { clean_lsn = clean; }
+    }
 };
 
 struct lock_info_t {
     okvl_mode lock_mode;
     uint32_t lock_hash;
+
+//     lock_info_t(okvl_mode mode, uint32_t hash) :
+//         lock_mode(mode), lock_hash(hash)
+//     {}
 };
 
 struct xct_tab_entry_t {
@@ -97,10 +110,26 @@ struct xct_tab_entry_t {
 
     xct_tab_entry_t() :
         state(xct_t::xct_active), last_lsn(lsn_t::null), first_lsn(lsn_t::max) {}
+
+    bool is_active() const { return state != xct_t::xct_ended; }
+
+    void add_lock(okvl_mode mode, uint32_t hash)
+    {
+        if (is_active()) {
+            locks.push_back({mode, hash});
+        }
+    }
+
+    void mark_ended() { state = xct_t::xct_ended; }
+
+    void update_lsns(lsn_t first, lsn_t last) {
+        if (last > last_lsn) { last_lsn = last; }
+        if (first < first_lsn) { first_lsn = first; }
+    }
 };
 
-typedef map<PageID, buf_tab_entry_t>       buf_tab_t;
-typedef map<tid_t, xct_tab_entry_t>        xct_tab_t;
+typedef unordered_map<PageID, buf_tab_entry_t>       buf_tab_t;
+typedef unordered_map<tid_t, xct_tab_entry_t>        xct_tab_t;
 
 class chkpt_t {
     friend class chkpt_m;
@@ -137,14 +166,9 @@ public:
     void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn);
     void mark_page_clean(PageID pid, lsn_t lsn);
 
-    void mark_xct_active(tid_t tid, lsn_t first_lsn, lsn_t last_lsn);
-    void mark_xct_ended(tid_t tid);
-    bool is_xct_active(tid_t tid) const;
-    void delete_xct(tid_t tid);
-    void add_lock(tid_t tid, okvl_mode mode, uint32_t hash);
-
     void add_backup(const char* path, lsn_t backupLSN);
-    void analyze_logrec(logrec_t&, lsn_t& scan_stop, lsn_t archived_lsn);
+    void analyze_logrec(logrec_t&, xct_tab_entry_t* xct,
+            lsn_t& scan_stop, lsn_t archived_lsn);
 
     lsn_t get_min_rec_lsn() const;
     lsn_t get_min_xct_lsn() const;
@@ -160,9 +184,8 @@ public:
 
 private:
     void cleanup();
-    void acquire_lock(logrec_t& r);
+    void acquire_lock(xct_tab_entry_t& xct, logrec_t& r);
 };
-
 
 class chkpt_thread_t;
 

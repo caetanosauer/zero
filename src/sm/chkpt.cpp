@@ -136,6 +136,8 @@ void chkpt_m::wakeup_thread()
     _chkpt_thread->wakeup();
 }
 
+class chkpt_thread_t;
+
 /*********************************************************************
 *
 *  chkpt_m::backward_scan_log(lock_heap)
@@ -172,25 +174,25 @@ void chkpt_t::scan_log(lsn_t scan_start, lsn_t archived_lsn)
             continue;
         }
 
+        xct_tab_entry_t* xct = nullptr;
         if (!r.tid() == 0) {
             if (r.tid() > get_highest_tid()) {
                 set_highest_tid(r.tid());
             }
 
+            auto& s = xct_tab[r.tid()];
             if (r.is_page_update() || r.is_cpsn()) {
-                mark_xct_active(r.tid(), lsn, lsn);
+                s.update_lsns(lsn, lsn);
 
-                if (is_xct_active(r.tid())) {
-                    if (!r.is_cpsn()) { acquire_lock(r); }
-                }
-                else if (r.xid_prev().is_null()) {
-                    // We won't see this xct again -- delete it
-                    delete_xct(r.tid());
+                if (s.is_active()) {
+                    if (!r.is_cpsn()) { acquire_lock(s, r); }
                 }
             }
+
+            xct = &s;
         }
 
-        analyze_logrec(r, scan_stop, archived_lsn);
+        analyze_logrec(r, xct, scan_stop, archived_lsn);
 
         // CS: A CLR is not considered a page update for some reason...
         if (r.is_redo() && lsn > archived_lsn) {
@@ -209,7 +211,8 @@ void chkpt_t::scan_log(lsn_t scan_start, lsn_t archived_lsn)
     cleanup();
 }
 
-void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop, lsn_t archived_lsn)
+void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop,
+        lsn_t archived_lsn)
 {
     auto lsn = r.lsn();
 
@@ -229,20 +232,12 @@ void chkpt_t::analyze_logrec(logrec_t& r, lsn_t& scan_stop, lsn_t archived_lsn)
             break;
         case logrec_t::t_xct_end:
         case logrec_t::t_xct_abort:
-            mark_xct_ended(r.tid());
+            xct->mark_ended();
             break;
 
         case logrec_t::t_xct_end_group:
-            {
-                // CS TODO: is this type of group commit still used?
-                w_assert0(false);
-                const xct_list_t* list = (xct_list_t*) r.data();
-                uint listlen = list->count;
-                for(uint i=0; i<listlen; i++) {
-                    tid_t tid = list->xrec[i].tid;
-                    mark_xct_ended(tid);
-                }
-            }
+            // CS TODO: is this type of group commit still used?
+            w_assert0(false);
             break;
 
         case logrec_t::t_page_write:
@@ -317,44 +312,12 @@ void chkpt_t::init()
 
 void chkpt_t::mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn)
 {
-    buf_tab_entry_t& e = buf_tab[pid];
-    if (page_lsn > e.page_lsn) { e.page_lsn = page_lsn; }
-    if (rec_lsn >= e.clean_lsn && rec_lsn < e.rec_lsn) { e.rec_lsn = rec_lsn; }
+    buf_tab[pid].mark_dirty(page_lsn, rec_lsn);
 }
 
 void chkpt_t::mark_page_clean(PageID pid, lsn_t lsn)
 {
-    buf_tab_entry_t& e = buf_tab[pid];
-    if (lsn > e.clean_lsn) {
-        e.clean_lsn = lsn;
-    }
-}
-
-bool chkpt_t::is_xct_active(tid_t tid) const
-{
-    xct_tab_t::const_iterator iter = xct_tab.find(tid);
-    if (iter == xct_tab.end()) {
-        return false;
-    }
-    return iter->second.state;
-}
-
-void chkpt_t::mark_xct_active(tid_t tid, lsn_t first_lsn, lsn_t last_lsn)
-{
-    // operator[] adds an empty active entry if key is not found
-    xct_tab_entry_t& e = xct_tab[tid];
-    if (last_lsn > e.last_lsn) { e.last_lsn = last_lsn; }
-    if (first_lsn < e.first_lsn) { e.first_lsn = first_lsn; }
-}
-
-void chkpt_t::mark_xct_ended(tid_t tid)
-{
-    xct_tab[tid].state = xct_t::xct_ended;
-}
-
-void chkpt_t::delete_xct(tid_t tid)
-{
-    xct_tab.erase(tid);
+    buf_tab[pid].mark_clean(lsn);
 }
 
 void chkpt_t::add_backup(const char* path, lsn_t lsn)
@@ -363,20 +326,10 @@ void chkpt_t::add_backup(const char* path, lsn_t lsn)
     bkp_lsn = lsn;
 }
 
-void chkpt_t::add_lock(tid_t tid, okvl_mode mode, uint32_t hash)
-{
-    if (!is_xct_active(tid)) { return; }
-    lock_info_t entry;
-    entry.lock_mode = mode;
-    entry.lock_hash = hash;
-    xct_tab[tid].locks.push_back(entry);
-}
-
 void chkpt_t::cleanup()
 {
     // Remove non-dirty pages
-    for(buf_tab_t::iterator it  = buf_tab.begin();
-                            it != buf_tab.end(); ) {
+    for (auto it  = buf_tab.begin(); it != buf_tab.end(); ) {
         if(!it->second.is_dirty()) {
             it = buf_tab.erase(it);
         }
@@ -386,9 +339,8 @@ void chkpt_t::cleanup()
     }
 
     // Remove finished transactions.
-    for(xct_tab_t::iterator it  = xct_tab.begin();
-                            it != xct_tab.end(); ) {
-        if(it->second.state == xct_t::xct_ended) {
+    for (auto it  = xct_tab.begin(); it != xct_tab.end(); ) {
+        if (!it->second.is_active()) {
             it = xct_tab.erase(it);
         }
         else {
@@ -400,8 +352,7 @@ void chkpt_t::cleanup()
 lsn_t chkpt_t::get_min_xct_lsn() const
 {
     lsn_t min_xct_lsn = lsn_t::max;
-    for(xct_tab_t::const_iterator it = xct_tab.begin();
-            it != xct_tab.end(); ++it)
+    for(auto it = xct_tab.cbegin(); it != xct_tab.cend(); ++it)
     {
         if(it->second.state != xct_t::xct_ended
                 && min_xct_lsn > it->second.first_lsn)
@@ -416,8 +367,7 @@ lsn_t chkpt_t::get_min_xct_lsn() const
 lsn_t chkpt_t::get_min_rec_lsn() const
 {
     lsn_t min_rec_lsn = lsn_t::max;
-    for(buf_tab_t::const_iterator it = buf_tab.begin();
-            it != buf_tab.end(); ++it)
+    for(auto it = buf_tab.cbegin(); it != buf_tab.cend(); ++it)
     {
         if(it->second.is_dirty() && min_rec_lsn > it->second.rec_lsn) {
             min_rec_lsn = it->second.rec_lsn;
@@ -427,9 +377,9 @@ lsn_t chkpt_t::get_min_rec_lsn() const
     return min_rec_lsn;
 }
 
-void chkpt_t::acquire_lock(logrec_t& r)
+void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
 {
-    w_assert1(is_xct_active(r.tid()));
+    w_assert1(xct.is_active());
     w_assert1(!r.is_single_sys_xct());
     w_assert1(!r.is_multi_page());
     w_assert1(!r.is_cpsn());
@@ -449,7 +399,7 @@ void chkpt_t::acquire_lock(logrec_t& r)
                 lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
                         key.get_length_as_keystr());
 
-                add_lock(r.tid(), mode, lid.hash());
+                xct.add_lock(mode, lid.hash());
             }
             break;
         case logrec_t::t_btree_update:
@@ -463,7 +413,7 @@ void chkpt_t::acquire_lock(logrec_t& r)
                 lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
                         key.get_length_as_keystr());
 
-                add_lock(r.tid(), mode, lid.hash());
+                xct.add_lock(mode, lid.hash());
             }
             break;
         case logrec_t::t_btree_overwrite:
@@ -477,7 +427,7 @@ void chkpt_t::acquire_lock(logrec_t& r)
                 lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
                         key.get_length_as_keystr());
 
-                add_lock(r.tid(), mode, lid.hash());
+                xct.add_lock(mode, lid.hash());
             }
             break;
         case logrec_t::t_btree_ghost_mark:
@@ -490,7 +440,7 @@ void chkpt_t::acquire_lock(logrec_t& r)
                     lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
                             key.get_length_as_keystr());
 
-                    add_lock(r.tid(), mode, lid.hash());
+                    xct.add_lock(mode, lid.hash());
                 }
             }
             break;
@@ -505,7 +455,7 @@ void chkpt_t::acquire_lock(logrec_t& r)
                 lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(),
                         key.get_length_as_keystr());
 
-                add_lock(r.tid(), mode, lid.hash());
+                xct.add_lock(mode, lid.hash());
             }
             break;
         default:
@@ -659,7 +609,7 @@ void chkpt_t::deserialize_binary(ifstream& ifs, lsn_t archived_lsn)
                   "page_lsn[]="<<entry.page_lsn);
 
         if (entry.page_lsn > archived_lsn) {
-            mark_page_dirty(pid, entry.page_lsn, entry.rec_lsn);
+            buf_tab[pid].mark_dirty(entry.page_lsn, entry.rec_lsn);
         }
     }
 
@@ -680,22 +630,22 @@ void chkpt_t::deserialize_binary(ifstream& ifs, lsn_t archived_lsn)
                   "first_lsn[]="<<entry.first_lsn);
 
         if (entry.state != smlevel_0::xct_ended) {
-            mark_xct_active(tid, entry.first_lsn, entry.last_lsn);
+            entry.update_lsns(entry.first_lsn, entry.last_lsn);
 
-            if (is_xct_active(tid)) {
+            if (entry.is_active()) {
                 size_t lock_tab_size;
                 ifs.read((char*)&lock_tab_size, sizeof(size_t));
                 for(uint j=0; j<lock_tab_size; j++) {
                     lock_info_t lock_entry;
                     ifs.read((char*)&lock_entry, sizeof(lock_info_t));
                     // entry.locks.push_back(lock_entry);
-                    add_lock(tid, lock_entry.lock_mode, lock_entry.lock_hash);
+                    entry.add_lock(lock_entry.lock_mode, lock_entry.lock_hash);
 
                     DBGOUT1(<< "    lock_mode[]="<<lock_entry.lock_mode
                             << " , lock_hash[]="<<lock_entry.lock_hash);
                 }
             }
-            // xct_tab[tid] = entry;
+            xct_tab[tid] = entry;
         }
     }
 
