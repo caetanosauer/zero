@@ -1139,6 +1139,21 @@ bool bf_tree_m::is_used (bf_idx idx) const {
     return _is_active_idx(idx);
 }
 
+bool bf_tree_m::has_dirty_frames() const
+{
+    for (bf_idx i = 1; i < _block_cnt; i++) {
+        auto& cb = get_cb(i);
+        if (!cb.pin()) { continue; }
+        if (cb.is_dirty() && cb._used) {
+            cb.unpin();
+            return true;
+        }
+        cb.unpin();
+    }
+
+    return false;
+}
+
 void bf_tree_m::set_page_lsn(generic_page* p, lsn_t lsn)
 {
     uint32_t idx = p - _buffer;

@@ -380,7 +380,9 @@ ss_m::_destruct_once()
         ERROUT(<< "SM performing clean shutdown");
 
         W_COERCE(log->flush_all());
-        bf->wakeup_cleaner(true, 1 /* wait for 1 full round */);
+        do {
+            bf->wakeup_cleaner(true, 1 /* wait for 1 full round */);
+        } while (bf->has_dirty_frames());
         smthread_t::check_actual_pin_count(0);
 
         if (truncate) { W_COERCE(_truncate_log()); }
