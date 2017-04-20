@@ -60,7 +60,10 @@ public:
 
     w_rc_t join()
     {
-        thread_ptr->join();
+        if (thread_ptr) {
+            thread_ptr->join();
+            thread_ptr = nullptr;
+        }
         return RCOK;
     }
 
