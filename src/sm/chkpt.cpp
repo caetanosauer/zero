@@ -80,7 +80,6 @@ struct RawLock;            // Lock information gathering
 #include "logrec_support.h"
 #include "xct_logger.h"
 
-
 class chkpt_thread_t : public worker_thread_t
 {
 public:
@@ -95,6 +94,89 @@ public:
             ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
         }
     }
+};
+
+class BackwardLogScanner
+{
+public:
+    BackwardLogScanner(size_t bufferSize, lsn_t start_lsn, lsn_t stop_lsn)
+        : bufferSize(bufferSize), bpos(0), stop_lsn(stop_lsn), prev_lsn(lsn_t::null)
+    {
+        fpos = start_lsn.lo();
+        fnumber = start_lsn.hi();
+
+        buffer = new char[bufferSize];
+    }
+
+    ~BackwardLogScanner()
+    {
+        delete[] buffer;
+    }
+
+    bool next(logrec_t*& lr)
+    {
+        if (bpos < sizeof(lsn_t)) {
+            fpos += bpos;
+            if (!nextBlock()) { return false; }
+        }
+
+        lsn_t lsn = *(reinterpret_cast<lsn_t*>(buffer + bpos - sizeof(lsn_t)));
+        long offset = lsn.lo() - fpos;
+        w_assert1(offset < (long) bufferSize);
+
+        if (offset < 0) {
+            fpos += bpos;
+            if (!nextBlock()) { return false; }
+            return next(lr);
+        }
+
+        lr = reinterpret_cast<logrec_t*>(buffer + offset);
+        bpos = offset;
+
+        w_assert1(lr->valid_header());
+        w_assert1(lsn == lr->lsn());
+        w_assert0(prev_lsn.is_null() || lsn.hi() < prev_lsn.hi()
+                || lsn + lr->length() == prev_lsn);
+
+        prev_lsn = lsn;
+        return lr->lsn() > stop_lsn;
+    }
+
+    bool nextBlock()
+    {
+        if (!logfile) {
+            if (fpos == 0) { fnumber--; }
+            if (fnumber < stop_lsn.hi()) { return false; }
+            logfile = smlevel_0::log->get_storage()->get_partition(fnumber);
+            if (!logfile) { return false; }
+
+            logfile->open_for_read();
+            fpos = logfile->get_size();
+        }
+        w_assert0(logfile);
+
+        bpos = fpos > bufferSize ? bufferSize : fpos;
+        auto bytesRead = logfile->read_block(buffer, bpos, fpos - bpos);
+        w_assert0(bytesRead == bpos);
+
+        fpos -= bpos;
+        if (fpos == 0) {
+            logfile = nullptr;
+        }
+
+        w_assert1(bpos > 0);
+        return true;
+    }
+
+private:
+    const size_t bufferSize;
+    char* buffer;
+    shared_ptr<partition_t> logfile;
+    size_t bpos;
+    size_t fnumber;
+    size_t fpos;
+    const lsn_t stop_lsn;
+    lsn_t prev_lsn;
 };
 
 chkpt_m::chkpt_m(const sm_options& options, chkpt_t* chkpt_info)
@@ -156,51 +238,54 @@ void chkpt_t::scan_log(lsn_t scan_start, lsn_t archived_lsn)
     w_assert1(scan_start <= smlevel_0::log->durable_lsn());
     if (scan_start == lsn_t(1,0)) { return; }
 
-    log_i scan(*smlevel_0::log, scan_start, false); // false == backward scan
-    logrec_t r;
-    lsn_t lsn = lsn_t::max;   // LSN of the retrieved log record
-
     // Set when scan finds begin of previous checkpoint
     lsn_t scan_stop = lsn_t(1,0);
 
-    while (lsn > scan_stop && scan.xct_next(lsn, r))
+    constexpr size_t bufferSize = 8 * 1024 * 1024;
+    BackwardLogScanner scan {bufferSize, scan_start, scan_stop};
+
+    logrec_t* lr;
+    lsn_t lsn = lsn_t::max;
+
+    while (scan.next(lr) && lsn > scan_stop)
     {
-        if (r.is_skip() || r.type() == logrec_t::t_comment) {
+        lsn = lr->lsn();
+        if (lr->is_skip() || lr->type() == logrec_t::t_comment) {
             continue;
         }
 
         // when taking chkpts, scan_start will be a just-generated begin_chkpt -- ignore it
-        if (r.lsn() == scan_start && r.type() == logrec_t::t_chkpt_begin) {
+        if (lr->lsn() == scan_start && lr->type() == logrec_t::t_chkpt_begin) {
             continue;
         }
 
         xct_tab_entry_t* xct = nullptr;
-        if (!r.tid() == 0) {
-            if (r.tid() > get_highest_tid()) {
-                set_highest_tid(r.tid());
+
+        if (lr->tid() != 0) {
+            if (lr->tid() > get_highest_tid()) {
+                set_highest_tid(lr->tid());
             }
 
-            auto& s = xct_tab[r.tid()];
-            if (r.is_page_update() || r.is_cpsn()) {
+            auto& s = xct_tab[lr->tid()];
+            if (lr->is_page_update() || lr->is_cpsn()) {
                 s.update_lsns(lsn, lsn);
 
                 if (s.is_active()) {
-                    if (!r.is_cpsn()) { acquire_lock(s, r); }
+                    if (!lr->is_cpsn()) { acquire_lock(s, *lr); }
                 }
             }
 
             xct = &s;
         }
 
-        analyze_logrec(r, xct, scan_stop, archived_lsn);
+        analyze_logrec(*lr, xct, scan_stop, archived_lsn);
 
-        // CS: A CLR is not considered a page update for some reason...
-        if (r.is_redo() && lsn > archived_lsn) {
-            mark_page_dirty(r.pid(), lsn, lsn);
+        if (lr->is_redo() && lsn > archived_lsn) {
+            mark_page_dirty(lr->pid(), lsn, lsn);
 
-            if (r.is_multi_page()) {
-                w_assert0(r.pid2() != 0);
-                mark_page_dirty(r.pid2(), lsn, lsn);
+            if (lr->is_multi_page()) {
+                w_assert0(lr->pid2() != 0);
+                mark_page_dirty(lr->pid2(), lsn, lsn);
             }
         }
     }

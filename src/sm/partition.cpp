@@ -315,6 +315,15 @@ rc_t partition_t::read(logrec_t *&rp, lsn_t &ll, lsn_t* prev_lsn)
     return RCOK;
 }
 
+size_t partition_t::read_block(void* buf, size_t count, off_t offset)
+{
+    w_assert0(is_open_for_read());
+    auto bytesRead = ::pread(_fhdl_rd, buf, count, offset);
+    CHECK_ERRNO(bytesRead);
+
+    return bytesRead;
+}
+
 void partition_t::release_read()
 {
     _read_mutex.unlock();
