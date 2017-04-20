@@ -89,7 +89,7 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
 
     bool reformat = options.get_bool_option("sm_format", false);
 
-    directIO = options.get_bool_option("sm_arch_o_direct", true);
+    directIO = options.get_bool_option("sm_arch_o_direct", false);
 
     if (archdir.empty()) {
         W_FATAL_MSG(fcINTERNAL,

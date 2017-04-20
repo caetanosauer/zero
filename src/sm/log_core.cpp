@@ -435,7 +435,7 @@ log_core::log_core(const sm_options& options)
     }
     _fetch_buf_loader = NULL;
 
-    directIO = options.get_bool_option("sm_log_o_direct", true);
+    directIO = options.get_bool_option("sm_log_o_direct", false);
 
     if (1) {
         cerr << "Log _start " << start_byte() << " end_byte() " << end_byte() << endl
