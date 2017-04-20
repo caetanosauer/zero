@@ -332,6 +332,7 @@ void restart_thread_t::redo_page_pass()
         // simply fixing the page will take care of single-page recovery
         fixable_page_h p;
         p.fix_direct(pid, LATCH_SH, false, false);
+        smlevel_0::vol->delete_dirty_page(pid);
 
         if (should_exit()) { return; }
     }
