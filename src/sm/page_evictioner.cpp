@@ -14,7 +14,7 @@ page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_optio
     worker_thread_t(options.get_int_option("sm_evictioner_interval_millisec", 1000)),
     _bufferpool(bufferpool)
 {
-    _swizziling_enabled = options.get_bool_option("sm_bufferpool_swizzle", false);
+    _swizzling_enabled = options.get_bool_option("sm_bufferpool_swizzle", false);
     _maintain_emlsn = options.get_bool_option("sm_bf_maintain_emlsn", false);
     _current_frame = 0;
 }
@@ -48,7 +48,7 @@ void page_evictioner_base::do_work()
         bf_tree_cb_t& cb = _bufferpool->get_cb(victim);
         w_assert1(cb.latch().is_mine());
 
-        if(unswizzle_and_update_emlsn(victim) == false) {
+        if (!unswizzle_and_update_emlsn(victim)) {
             /* We were not able to unswizzle/update parent, therefore we cannot
              * proceed with this victim. We just jump to the next iteration and
              * hope for better luck next time. */
@@ -164,6 +164,8 @@ bf_idx page_evictioner_base::pick_victim()
 
 bool page_evictioner_base::unswizzle_and_update_emlsn(bf_idx idx)
 {
+    if (!_maintain_emlsn && !_swizzling_enabled) { return true; }
+
     bf_tree_cb_t& cb = _bufferpool->get_cb(idx);
     w_assert1(cb.latch().is_mine());
 
@@ -201,7 +203,7 @@ bool page_evictioner_base::unswizzle_and_update_emlsn(bf_idx idx)
     parent_h.fix_nonbufferpool_page(parent);
 
     general_recordid_t child_slotid;
-    if (_swizziling_enabled && cb._swizzled) {
+    if (_swizzling_enabled && cb._swizzled) {
         // Search for swizzled address
         PageID swizzled_pid = idx | SWIZZLED_PID_BIT;
         child_slotid = _bufferpool->find_page_id_slot(parent, swizzled_pid);
@@ -214,7 +216,7 @@ bool page_evictioner_base::unswizzle_and_update_emlsn(bf_idx idx)
     //==========================================================================
     // STEP 2: Unswizzle pointer on parent before evicting.
     //==========================================================================
-    if (_swizziling_enabled && cb._swizzled) {
+    if (_swizzling_enabled && cb._swizzled) {
         bool ret = _bufferpool->unswizzle(parent, child_slotid);
         w_assert0(ret);
         w_assert1(!cb._swizzled);
@@ -311,7 +313,7 @@ bf_idx page_evictioner_gclock::pick_victim()
         }
 
         // Ignore pages that still have swizzled children
-        if(_swizziling_enabled && _bufferpool->has_swizzled_child(idx))
+        if(_swizzling_enabled && _bufferpool->has_swizzled_child(idx))
         {
             // LL: Should we also decrement the clock count in this case?
             cb.latch().latch_release();

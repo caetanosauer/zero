@@ -30,7 +30,7 @@ public:
 protected:
     /** the buffer pool this cleaner deals with. */
     bf_tree_m*                  _bufferpool;
-    bool                        _swizziling_enabled;
+    bool                        _swizzling_enabled;
     bool                        _maintain_emlsn;
 
     /**
