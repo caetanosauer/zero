@@ -201,16 +201,16 @@ class chkpt_thread_t;
  *  thread to checkpoint soon.
  *
  *********************************************************************/
-class chkpt_m : public smlevel_0 {
+class chkpt_m : public worker_thread_t {
 public:
     /// chkpt_info is obtained via log analysis
     chkpt_m(const sm_options&, chkpt_t* chkpt_info = nullptr);
     virtual ~chkpt_m();
 
 public:
+    virtual void do_work();
+
     void take();
-    void wakeup_thread();
-    void retire_thread();
 
     lsn_t get_min_rec_lsn() { return _min_rec_lsn; }
     lsn_t get_min_xct_lsn() { return _min_xct_lsn; }
@@ -234,7 +234,6 @@ public:
     }
 
 private:
-    chkpt_thread_t*  _chkpt_thread;
     long             _chkpt_count;
     chkpt_t          curr_chkpt;
     occ_rwlock       chkpt_mutex;

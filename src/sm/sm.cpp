@@ -372,7 +372,7 @@ ss_m::_destruct_once()
     vol->finish_restore();
 
     // retire chkpt thread (calling take() directly still possible)
-    chkpt->retire_thread();
+    chkpt->stop();
 
     // remove all transactions, aborting them in case of clean shutdown
     xct_t::cleanup(shutdown_clean);

@@ -80,22 +80,6 @@ struct RawLock;            // Lock information gathering
 #include "logrec_support.h"
 #include "xct_logger.h"
 
-class chkpt_thread_t : public worker_thread_t
-{
-public:
-    chkpt_thread_t(int interval)
-        : worker_thread_t(interval)
-    {}
-
-    virtual void do_work()
-    {
-        if (ss_m::chkpt) {
-            ss_m::chkpt->take();
-            ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
-        }
-    }
-};
-
 class BackwardLogScanner
 {
 public:
@@ -180,45 +164,27 @@ private:
 };
 
 chkpt_m::chkpt_m(const sm_options& options, chkpt_t* chkpt_info)
-    : _chkpt_thread(NULL), _chkpt_count(0)
+    : worker_thread_t(options.get_int_option("sm_chkpt_interval", -1))
 {
     _min_rec_lsn = chkpt_info->get_min_rec_lsn();
     _min_xct_lsn = chkpt_info->get_min_xct_lsn();
     _last_end_lsn = chkpt_info->get_last_scan_start();
     if (_last_end_lsn.is_null()) { _last_end_lsn = lsn_t(1, 0); }
-    int interval = options.get_int_option("sm_chkpt_interval", -1);
-    if (interval >= 0) {
-        _chkpt_thread = new chkpt_thread_t(interval);
-        W_COERCE(_chkpt_thread->fork());
-    }
-
     _no_db_mode = options.get_bool_option("sm_no_db", false);
+
+    fork();
+}
+
+void chkpt_m::do_work()
+{
+    take();
+    ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
 }
 
 chkpt_m::~chkpt_m()
 {
-    retire_thread();
+    stop();
 }
-
-void chkpt_m::retire_thread()
-{
-    if (_chkpt_thread) {
-        _chkpt_thread->stop();
-        delete _chkpt_thread;
-        _chkpt_thread = nullptr;
-    }
-}
-
-void chkpt_m::wakeup_thread()
-{
-    if (!_chkpt_thread) {
-        _chkpt_thread = new chkpt_thread_t(-1);
-        W_COERCE(_chkpt_thread->fork());
-    }
-    _chkpt_thread->wakeup();
-}
-
-class chkpt_thread_t;
 
 /*********************************************************************
 *
@@ -593,6 +559,9 @@ void chkpt_m::take()
 
     // Collect checkpoint information from log
     curr_chkpt.scan_log(begin_lsn, archived_lsn);
+
+    // CS TODO: interrupt scan_log if stop is requested
+    if (should_exit()) { return; }
 
     // Serialize chkpt to file
     fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn_t::null);
