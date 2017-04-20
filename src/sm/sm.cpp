@@ -352,6 +352,10 @@ ss_m::_destruct_once()
     // log flush daemon is running, it won't just try to re-activate it.
     shutting_down = true;
 
+    lsn_t shutdown_lsn = log->durable_lsn();
+    fs::path current_log_path = log->get_storage()->make_log_path(shutdown_lsn.hi());
+
+
     // get rid of all non-prepared transactions
     // First... disassociate me from any tx
     if(xct()) {
@@ -404,9 +408,6 @@ ss_m::_destruct_once()
     bf->shutdown();
     delete bf; bf = 0;
 
-    lsn_t lsn_to_shutdown_filthy = log->durable_lsn();
-    fs::path current_log_path = log->get_storage()->make_log_path(lsn_to_shutdown_filthy.hi());
-
     ERROUT(<< "Terminating other services");
     lm->assert_empty(); // no locks should be left
     bt->destruct_once();
@@ -432,7 +433,7 @@ ss_m::_destruct_once()
 
      if (shutdown_filthy) {
          ERROUT(<< "Executing Shutdown Filthy");
-         auto offset = lsn_to_shutdown_filthy.lo();
+         auto offset = shutdown_lsn.lo();
          resize_file(current_log_path, offset);
          if ((offset % partition_t::XFERSIZE)> 0 )
     	     offset = (offset/ partition_t::XFERSIZE + 1) * partition_t::XFERSIZE;
