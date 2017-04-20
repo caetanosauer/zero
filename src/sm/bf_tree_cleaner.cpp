@@ -100,8 +100,6 @@ void bf_tree_cleaner::clean_candidates()
     }
     stopwatch_t timer;
 
-    _clean_lsn = smlevel_0::log->curr_lsn();
-
     size_t i = 0;
     bool ignore_min_write = ignore_min_write_now();
 
@@ -126,6 +124,8 @@ void bf_tree_cleaner::clean_candidates()
         // }
 
         // ADD_TSTAT(cleaner_time_cpu, timer.time_us());
+
+        _clean_lsn = smlevel_0::log->durable_lsn();
 
         // index of the current frame in the workspace
         size_t w_index = 0;
@@ -189,7 +189,6 @@ void bf_tree_cleaner::flush_clusters(const vector<size_t>& clusters)
         mark_pages_clean(i, k);
         i = k;
     }
-    _clean_lsn = smlevel_0::log->curr_lsn();
 }
 
 bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
@@ -198,9 +197,12 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
 
     // CS TODO: policy option: wait for latch or just attempt conditionally
-    rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, timeout_t::WAIT_IMMEDIATE);
+    rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, timeout_t::WAIT_FOREVER);
     if (latch_rc.is_error()) {
         // Could not latch page in SH mode -- just skip it
+        if (cb._clean_lsn.is_null()) {
+            cerr << "Failed to latch page " << pid << " for cleaning"<< endl;
+        }
         return false;
     }
 
@@ -247,6 +249,8 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
 
 policy_predicate_t bf_tree_cleaner::get_policy_predicate()
 {
+    // A less-than function makes pop_heap return the highest value, and a
+    // greater-than function the lowest
     switch (policy) {
         case cleaner_policy::highest_refcount:
             return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)

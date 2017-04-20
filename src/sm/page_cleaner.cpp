@@ -25,10 +25,11 @@ void page_cleaner_base::flush_workspace(size_t from, size_t to)
     if (from - to == 0) {
         return;
     }
-    write_pages(from, to - from);
 
     // Flush log to guarantee WAL property
-    W_COERCE(smlevel_0::log->flush(_clean_lsn));
+    W_COERCE(smlevel_0::log->flush_all());
+
+    write_pages(from, to - from);
 
     mark_pages_clean(from, to);
 }
