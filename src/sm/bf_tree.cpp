@@ -426,8 +426,8 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         w_assert1(_is_active_idx(idx));
         w_assert1(cb._swizzled);
         w_assert1(cb._pid == _buffer[idx].pid);
+        w_assert1(cb._pin_cnt >= 0);
 
-        cb.pin(); //LL: if calling pin, latch should be in EX mode always, no?
         cb.inc_ref_count();
         if(_evictioner) _evictioner->ref(idx);
         if (mode == LATCH_EX) {
@@ -549,9 +549,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             w_assert1(_is_active_idx(idx));
 
             // STEP 6) Fix successful -- pin page and downgrade latch
-            cb.pin();
             w_assert1(cb.latch().is_mine());
-            w_assert1(cb._pin_cnt > 0);
             DBG(<< "Fixed page " << pid << " (miss) to frame " << idx);
         }
         else
@@ -577,7 +575,6 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             }
 
             w_assert1(_is_active_idx(idx));
-            cb.pin();
             cb.inc_ref_count();
             if(_evictioner) _evictioner->ref(idx);
             if (mode == LATCH_EX) {
@@ -588,7 +585,6 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
             w_assert1(cb.latch().held_by_me());
             DBG(<< "Fixed page " << pid << " (hit) to frame " << idx);
-            w_assert1(cb._pin_cnt > 0);
         }
 
         INC_TSTAT(bf_fix_cnt);
@@ -1026,7 +1022,7 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
     W_DO(cb.latch().latch_acquire(mode, conditional ?
                 timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
     w_assert1(cb._pin_cnt > 0);
-    cb.pin();
+    // cb.pin();
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
     cb.inc_ref_count();
     if(_evictioner) _evictioner->ref(idx);
@@ -1082,14 +1078,13 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
         W_DO(get_cb(idx).latch().latch_acquire(
                     mode, conditional ? timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
         page = &(_buffer[idx]);
-        get_cb(idx).pin();
     }
 
     w_assert1(_is_valid_idx(idx));
     w_assert1(_is_active_idx(idx));
     w_assert1(get_cb(idx)._used);
     w_assert1(!get_cb(idx)._check_recovery);
-    w_assert1(get_cb(idx)._pin_cnt > 0);
+    w_assert1(get_cb(idx)._pin_cnt >= 0);
     w_assert1(get_cb(idx).latch().held_by_me());
 
     DBG(<< "Fixed root " << idx << " pin cnt " << get_cb(idx)._pin_cnt);
@@ -1104,18 +1099,16 @@ void bf_tree_m::unfix(const generic_page* p, bool evict)
     bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb.latch().held_by_me());
     if (evict) {
+        if (!cb.prepare_for_eviction()) {
+            return;
+        }
         w_assert0(cb.latch().is_mine());
         bool removed = _hashtable->remove(p->pid);
         w_assert1(removed);
 
-        cb.clear_except_latch();
-        // -1 indicates page was evicted (i.e., it's invalid and can be read into)
-        cb._pin_cnt = -1;
-
         _add_free_block(idx);
     }
     else {
-        cb.unpin();
         w_assert1(cb._pin_cnt >= 0);
     }
     DBG(<< "Unfixed " << idx << " pin count " << cb._pin_cnt);

@@ -56,18 +56,20 @@ void page_evictioner_base::do_work()
             continue;
         }
 
-        // remove it from hashtable.
-        PageID pid = _bufferpool->_buffer[victim].pid;
-        w_assert1(cb._pin_cnt < 0 || pid == cb._pid);
+        // Try to atomically set pin from 0 to -1; give up if it fails
+        if (!cb.prepare_for_eviction()) {
+            cb.latch().latch_release();
+            continue;
+        }
 
-        bool removed = _bufferpool->_hashtable->remove(pid);
+        // remove it from hashtable.
+        w_assert1(cb._pid ==  _bufferpool->_buffer[victim].pid);
+        w_assert1(cb._pin_cnt < 0);
+        bool removed = _bufferpool->_hashtable->remove(cb._pid);
         w_assert1(removed);
 
-        DBG2(<< "EVICTED " << victim << " pid " << pid
-                                 << " log-tail " << smlevel_0::log->curr_lsn());
-        cb.clear_except_latch();
-        //-1 indicates page was evicted(i.e., it's invalid and can be read into)
-        cb._pin_cnt = -1;
+        // DBG2(<< "EVICTED " << victim << " pid " << pid
+        //                          << " log-tail " << smlevel_0::log->curr_lsn());
 
         _bufferpool->_add_free_block(victim);
 
@@ -81,6 +83,8 @@ void page_evictioner_base::do_work()
          */
         notify_one();
     }
+
+    // cerr << "Eviction done; free frames: " << _bufferpool->_freelist_len << endl;
 }
 
 void page_evictioner_base::ref(bf_idx) {}
@@ -115,10 +119,7 @@ bf_idx page_evictioner_base::pick_victim()
             INC_TSTAT(bf_eviction_stuck);
         }
 
-        // CS TODO -- why do we latch CB manually instead of simply fixing
-        // the page??
-
-        bf_tree_cb_t& cb = _bufferpool->get_cb(idx);
+        auto& cb = _bufferpool->get_cb(idx);
 
         // Step 1: latch page in EX mode and check if eligible for eviction
         rc_t latch_rc;

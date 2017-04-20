@@ -117,7 +117,7 @@ struct bf_tree_cb_t {
     PageID _pid;     // +4  -> 4
 
     /// Count of pins on this block.  See class comments; protected by ??
-    int32_t _pin_cnt;       // +4 -> 8
+    std::atomic<int32_t> _pin_cnt;       // +4 -> 8
 
     /**
      * Reference count (for clock algorithm).  Approximate, so not protected by latches.
@@ -202,15 +202,32 @@ struct bf_tree_cb_t {
     int8_t                      _latch_offset;  // +1 -> 64
 
     // increment pin count atomically
-    void pin()
+    bool pin()
     {
-        lintel::unsafe::atomic_fetch_add(&_pin_cnt, 1);
+        while (true) {
+            int32_t old = _pin_cnt;
+            if (old < 0) { return false; }
+            if (std::atomic_compare_exchange_strong(&_pin_cnt, &old, old + 1)) {
+                return true;
+            }
+        }
     }
 
     // decrement pin count atomically
     void unpin()
     {
-        lintel::unsafe::atomic_fetch_sub(&_pin_cnt, 1);
+        _pin_cnt--;
+    }
+
+    bool prepare_for_eviction()
+    {
+        w_assert1(_pin_cnt >= 0);
+        int32_t old = 0;
+        if (!std::atomic_compare_exchange_strong(&_pin_cnt, &old, -1)) {
+            return false;
+        }
+        _used = false;
+        return true;
     }
 
     void inc_ref_count()

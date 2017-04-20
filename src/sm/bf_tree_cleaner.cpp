@@ -284,7 +284,7 @@ void bf_tree_cleaner::collect_candidates()
 
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
         bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
-        cb.pin();
+        if (!cb.pin()) { continue; }
 
         // If page is not dirty or not in use, no need to flush
         if (!cb.is_dirty() || !cb._used) {
@@ -299,6 +299,8 @@ void bf_tree_cleaner::collect_candidates()
 
         // add new element to the back of vector
         next_candidates->emplace_back(idx, cb);
+
+        cb.unpin();
 
         // manage heap if we are limiting the number of candidates
         if (num_candidates > 0) {
@@ -315,8 +317,6 @@ void bf_tree_cleaner::collect_candidates()
             // otherwise just remove it
             else { next_candidates->pop_back(); }
         }
-
-        cb.unpin();
     }
 
     // CS TODO: one policy could sort each sequence of adjacent pids by cluster size
