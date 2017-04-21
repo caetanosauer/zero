@@ -651,6 +651,24 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
     }
 }
 
+void bf_tree_m::fuzzy_checkpoint(chkpt_t& chkpt) const
+{
+    for (size_t i = 1; i < _block_cnt; i++) {
+        auto& cb = get_cb(i);
+        /*
+         * We don't latch or pin because a fuzzy checkpoint doesn't care about
+         * false positives (i.e., pages marked dirty that are actually clean).
+         * Thus, if any of the cb variables changes inbetween, or even if we
+         * read some garbage values, the fuzzy checkpoint is still correct.
+         */
+        // if (cb._used && cb.is_dirty()) {
+        if (cb.is_dirty()) {
+            chkpt.mark_page_dirty(cb._pid, cb.get_page_lsn(),
+                    cb.get_rec_lsn());
+        }
+    }
+}
+
 bool bf_tree_m::_is_frame_latched(generic_page* frame, latch_mode_t mode)
 {
     bf_idx idx = frame - _buffer;

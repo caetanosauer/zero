@@ -309,6 +309,8 @@ public:
 
     bool has_dirty_frames() const;
 
+    void fuzzy_checkpoint(chkpt_t& chkpt) const;
+
     /**
      * Tries to unswizzle the given child page from the parent page.  If, for
      * some reason, unswizzling was impossible or troublesome, gives up and

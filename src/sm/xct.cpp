@@ -739,6 +739,40 @@ size_t xct_t::get_loser_count()
     return res;
 }
 
+void xct_t::fuzzy_checkpoint(chkpt_t& chkpt)
+{
+    /* CS: this code was copied from the old fuzzy checkpoints implemented
+     * by Wey Guy -- see old versions of the file chkpt.cpp (Oct-Nov 2014)
+     */
+    xct_t* xd;
+    xct_i iter(false);
+
+    while ((xd = iter.next())) {
+        W_COERCE(xd->latch().latch_acquire(LATCH_SH));
+
+        if (xd->state() != xct_ended) {
+            auto& entry = chkpt.mark_xct_active(xd->tid(), xd->first_lsn(), xd->last_lsn());
+
+            if (!xd->is_sys_xct()) {
+                RawXct* rx = xd->raw_lock_xct();
+                RawLock* lock = rx->private_first;
+                while (lock) {
+                    if (lock->mode.contains_dirty_key_lock()) {
+                        if (lock->state == RawLock::ACTIVE) {
+                            auto mode = rx->private_hash_map.get_granted_mode(lock->hash);
+                            entry.add_lock(mode, lock->hash);
+                        }
+                    }
+                    lock = lock->xct_next;
+                }
+            }
+
+        }
+
+        xd->latch().latch_release();
+    }
+}
+
 /*********************************************************************
  *
  *  xct_t::change_state(new_state)

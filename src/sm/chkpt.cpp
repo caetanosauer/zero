@@ -171,6 +171,7 @@ chkpt_m::chkpt_m(const sm_options& options, chkpt_t* chkpt_info)
     _last_end_lsn = chkpt_info->get_last_scan_start();
     if (_last_end_lsn.is_null()) { _last_end_lsn = lsn_t(1, 0); }
     _no_db_mode = options.get_bool_option("sm_no_db", false);
+    _log_based = options.get_bool_option("sm_chkpt_log_based", false);
 
     fork();
 }
@@ -371,6 +372,13 @@ void chkpt_t::mark_page_clean(PageID pid, lsn_t lsn)
     buf_tab[pid].mark_clean(lsn);
 }
 
+xct_tab_entry_t& chkpt_t::mark_xct_active(tid_t tid, lsn_t first, lsn_t last)
+{
+    auto& entry = xct_tab[tid];
+    entry.update_lsns(first, last);
+    return entry;
+}
+
 void chkpt_t::add_backup(const char* path, lsn_t lsn)
 {
     bkp_path = path;
@@ -557,8 +565,15 @@ void chkpt_m::take()
         archived_lsn = smlevel_0::logArchiver->getIndex()->getLastLSN();
     }
 
-    // Collect checkpoint information from log
-    curr_chkpt.scan_log(begin_lsn, archived_lsn);
+    if (_log_based) {
+        // Collect checkpoint information from log
+        curr_chkpt.scan_log(begin_lsn, archived_lsn);
+    }
+    else {
+        curr_chkpt.init();
+        smlevel_0::bf->fuzzy_checkpoint(curr_chkpt);
+        xct_t::fuzzy_checkpoint(curr_chkpt);
+    }
 
     // CS TODO: interrupt scan_log if stop is requested
     if (should_exit()) { return; }

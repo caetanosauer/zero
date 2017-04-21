@@ -165,6 +165,7 @@ public:
 
     void mark_page_dirty(PageID pid, lsn_t page_lsn, lsn_t rec_lsn);
     void mark_page_clean(PageID pid, lsn_t lsn);
+    xct_tab_entry_t& mark_xct_active(tid_t tid, lsn_t first, lsn_t last);
 
     void add_backup(const char* path, lsn_t backupLSN);
     void analyze_logrec(logrec_t&, xct_tab_entry_t* xct,
@@ -246,6 +247,7 @@ private:
     lsn_t _last_end_lsn;
 
     bool _no_db_mode;
+    bool _log_based;
 };
 
 /*<std-footer incl-file-exclusion='CHKPT_H'>  -- do not edit anything below this line -- */
