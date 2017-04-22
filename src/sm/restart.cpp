@@ -79,6 +79,8 @@ restart_thread_t::restart_thread_t(const sm_options& options)
     instantRestart = options.get_bool_option("sm_restart_instant", true);
     log_based = options.get_bool_option("sm_restart_log_based_redo", true);
     no_db_mode = options.get_bool_option("sm_no_db", false);
+    take_chkpt = options.get_bool_option("sm_chkpt_after_log_analysis", false);
+    // CS TODO: instant restart should also allow log-based redo
     if (instantRestart) { log_based = false; }
 };
 
@@ -501,6 +503,12 @@ void restart_thread_t::undo_pass()
 
 void restart_thread_t::do_work()
 {
+    if (take_chkpt) {
+        smlevel_0::chkpt->take(&chkpt);
+    }
+
+    if (should_exit()) { return; }
+
     // No redo recovery needed in no-db mode
     if (no_db_mode)
     {

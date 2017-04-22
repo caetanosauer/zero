@@ -13,6 +13,7 @@ public:
     void run();
 private:
     bool fullScan;
+    bool takeChkpt;
 };
 
 class LogAnalysisHandler : public Handler {

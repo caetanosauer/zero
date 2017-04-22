@@ -548,12 +548,17 @@ void chkpt_t::dump(ostream& os)
     os << endl;
 }
 
-void chkpt_m::take()
+void chkpt_m::take(chkpt_t* chkpt)
 {
     chkpt_mutex.acquire_write();
     DBGOUT1(<<"BEGIN chkpt_m::take");
-
     INC_TSTAT(log_chkpt_cnt);
+
+    // During log analysis, the chkpt_t object is computed outside this method,
+    // but take() is still called to save the checkpoint. In that case, passing
+    // a chkpt_t object skips the log scan or fuzzy checkpoint below.
+    bool chkpt_given = chkpt;
+    if (!chkpt) { chkpt = &curr_chkpt; }
 
     // Insert chkpt_begin log record.
     lsn_t begin_lsn = Logger::log_sys<chkpt_begin_log>();
@@ -565,14 +570,16 @@ void chkpt_m::take()
         archived_lsn = smlevel_0::logArchiver->getIndex()->getLastLSN();
     }
 
-    if (_log_based) {
-        // Collect checkpoint information from log
-        curr_chkpt.scan_log(begin_lsn, archived_lsn);
-    }
-    else {
-        curr_chkpt.init();
-        smlevel_0::bf->fuzzy_checkpoint(curr_chkpt);
-        xct_t::fuzzy_checkpoint(curr_chkpt);
+    if (!chkpt_given) {
+        if (_log_based) {
+            // Collect checkpoint information from log
+            chkpt->scan_log(begin_lsn, archived_lsn);
+        }
+        else {
+            chkpt->init();
+            smlevel_0::bf->fuzzy_checkpoint(*chkpt);
+            xct_t::fuzzy_checkpoint(*chkpt);
+        }
     }
 
     // CS TODO: interrupt scan_log if stop is requested
@@ -582,7 +589,7 @@ void chkpt_m::take()
     fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn_t::null);
     fs::path newpath = smlevel_0::log->get_storage()->make_chkpt_path(begin_lsn);
     ofstream ofs(fpath.string(), ios::binary | ios::trunc);
-    curr_chkpt.serialize_binary(ofs);
+    chkpt->serialize_binary(ofs);
     ofs.close();
     fs::rename(fpath, newpath);
     smlevel_0::log->get_storage()->add_checkpoint(begin_lsn);
@@ -595,10 +602,10 @@ void chkpt_m::take()
         _min_rec_lsn = archived_lsn;
     }
     else {
-        _min_rec_lsn = curr_chkpt.get_min_rec_lsn();
+        _min_rec_lsn = chkpt->get_min_rec_lsn();
     }
-    _min_xct_lsn = curr_chkpt.get_min_xct_lsn();
-    _last_end_lsn = curr_chkpt.get_last_scan_start();
+    _min_xct_lsn = chkpt->get_min_xct_lsn();
+    _last_end_lsn = chkpt->get_last_scan_start();
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_mutex.release_write();

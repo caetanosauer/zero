@@ -211,7 +211,7 @@ public:
 public:
     virtual void do_work();
 
-    void take();
+    void take(chkpt_t* chkpt = nullptr);
 
     lsn_t get_min_rec_lsn() { return _min_rec_lsn; }
     lsn_t get_min_xct_lsn() { return _min_xct_lsn; }

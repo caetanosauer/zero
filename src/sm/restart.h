@@ -67,7 +67,7 @@ private:
     bool log_based;
     bool instantRestart;
     bool no_db_mode;
-    bool finished;
+    bool take_chkpt;
 
     // System state object, updated by log analysis
     chkpt_t chkpt;

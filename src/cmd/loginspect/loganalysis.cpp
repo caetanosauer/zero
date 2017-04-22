@@ -7,6 +7,9 @@ void LogAnalysis::setupOptions()
 {
     LogScannerCommand::setupOptions();
     options.add_options()
+        ("takeChkpt", po::value<bool>(&takeChkpt)
+            ->default_value(false)->implicit_value(true),
+            "Take checkpoint after log analysis")
         ("full", po::value<bool>(&fullScan)
             ->default_value(false),
             "Perform full log scan to collect dirty page and active \
@@ -42,52 +45,59 @@ void LogAnalysis::run()
     for(buf_tab_t::const_iterator it = chkpt.buf_tab.begin();
                             it != chkpt.buf_tab.end(); ++it)
     {
-        cout << it->first << "(REC: " << it->second.rec_lsn
-            << ", PAGE: " << it->second.page_lsn
-            << ", CLEAN " << it->second.clean_lsn << ") " << endl;
+        // cout << it->first << "(REC: " << it->second.rec_lsn
+        //     << ", PAGE: " << it->second.page_lsn
+        //     << ", CLEAN " << it->second.clean_lsn << ") " << endl;
     }
     cout << endl;
     cout << endl;
 
-    if (fullScan) {
-        // Scan whole log to collect list of active TAs
-        cout << "Performing log full scan ... ";
-        BaseScanner* s = getScanner();
-        LogAnalysisHandler h;
-        s->add_handler(&h);
-        s->fork();
-        s->join();
-        cout << "done!" << endl;
-
-        cout << "Log-scan active transactions: "
-            << h.activeTAs.size()
-            << " committed " << h.xctCount
-            << endl;
-
-        {
-            cout << '\t';
-            unordered_set<tid_t>::const_iterator it;
-            for (it = h.activeTAs.begin(); it != h.activeTAs.end(); it++) {
-                cout << *it << " ";
-            }
-            cout << endl << endl;
-        }
-
-        cout << "Log-scan dirty pages: "
-            << h.dirtyPages.size()
-            << endl;
-
-        {
-            cout << '\t';
-            unordered_set<PageID>::const_iterator it;
-            for (it = h.dirtyPages.begin(); it != h.dirtyPages.end(); it++) {
-                cout << *it << " " << endl;
-            }
-            cout << endl << endl;
-        }
-
-        delete s;
+    if (takeChkpt) {
+        smlevel_0::chkpt = new chkpt_m(_options, &chkpt);
+        smlevel_0::chkpt->take(&chkpt);
     }
+
+    // CS TODO: this old full scan was incorrect because it did not consider the
+    // cleanLSN value when processing page_write log records
+//     if (fullScan) {
+//         // Scan whole log to collect list of active TAs
+//         cout << "Performing log full scan ... ";
+//         BaseScanner* s = getScanner();
+//         LogAnalysisHandler h;
+//         s->add_handler(&h);
+//         s->fork();
+//         s->join();
+//         cout << "done!" << endl;
+
+//         cout << "Log-scan active transactions: "
+//             << h.activeTAs.size()
+//             << " committed " << h.xctCount
+//             << endl;
+
+//         {
+//             cout << '\t';
+//             unordered_set<tid_t>::const_iterator it;
+//             for (it = h.activeTAs.begin(); it != h.activeTAs.end(); it++) {
+//                 cout << *it << " ";
+//             }
+//             cout << endl << endl;
+//         }
+
+//         cout << "Log-scan dirty pages: "
+//             << h.dirtyPages.size()
+//             << endl;
+
+//         {
+//             cout << '\t';
+//             unordered_set<PageID>::const_iterator it;
+//             for (it = h.dirtyPages.begin(); it != h.dirtyPages.end(); it++) {
+//                 cout << *it << " " << endl;
+//             }
+//             cout << endl << endl;
+//         }
+
+//         delete s;
+//     }
 
 }
 
