@@ -291,15 +291,11 @@ ss_m::_construct_once()
     ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer cleaner and other services");
 
     bt = new btree_m;
-    if (! bt) {
-        W_FATAL(eOUTOFMEMORY);
-    }
+    if (! bt) { W_FATAL(eOUTOFMEMORY); }
     bt->construct_once();
 
     chkpt = new chkpt_m(_options, chkpt_info);
-    if (! chkpt)  {
-        W_FATAL(eOUTOFMEMORY);
-    }
+    if (! chkpt)  { W_FATAL(eOUTOFMEMORY); }
 
     SSM = this;
 

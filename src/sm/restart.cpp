@@ -510,12 +510,14 @@ void restart_thread_t::do_work()
         return;
     }
 
-    if (log_based) { redo_log_pass(); }
-    else { redo_page_pass(); }
+    // Do undo pass first, since it's usually much shorter than redo.
+    undo_pass();
 
     if (should_exit()) { return; }
 
-    smlevel_0::recovery->undo_pass();
+    if (log_based) { redo_log_pass(); }
+    else { redo_page_pass(); }
+
     smlevel_0::log->discard_fetch_buffers();
 
     // restart only does one round, so we quit voluntarily here
