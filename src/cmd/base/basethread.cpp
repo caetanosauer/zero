@@ -59,6 +59,7 @@ void basethread_t::start_log(string logdir)
         log = new log_core(_options);
         smlevel_0::log = log;
         cerr << "OK" << endl;
+        W_COERCE(log->init());
     }
 }
 
