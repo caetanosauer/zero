@@ -705,23 +705,21 @@ void chkpt_t::deserialize_binary(ifstream& ifs, lsn_t archived_lsn)
                   "last_lsn[]="<<entry.last_lsn<<" , " <<
                   "first_lsn[]="<<entry.first_lsn);
 
-        if (entry.state != smlevel_0::xct_ended) {
-            entry.update_lsns(entry.first_lsn, entry.last_lsn);
+        if (entry.is_active()) {
+            auto& new_entry = xct_tab[tid];
+            new_entry.update_lsns(entry.first_lsn, entry.last_lsn);
 
-            if (entry.is_active()) {
-                size_t lock_tab_size;
-                ifs.read((char*)&lock_tab_size, sizeof(size_t));
-                for(uint j=0; j<lock_tab_size; j++) {
-                    lock_info_t lock_entry;
-                    ifs.read((char*)&lock_entry, sizeof(lock_info_t));
-                    // entry.locks.push_back(lock_entry);
-                    entry.add_lock(lock_entry.lock_mode, lock_entry.lock_hash);
+            size_t lock_tab_size;
+            ifs.read((char*)&lock_tab_size, sizeof(size_t));
+            for(uint j=0; j<lock_tab_size; j++) {
+                lock_info_t lock_entry;
+                ifs.read((char*)&lock_entry, sizeof(lock_info_t));
+                // entry.locks.push_back(lock_entry);
+                new_entry.add_lock(lock_entry.lock_mode, lock_entry.lock_hash);
 
-                    DBGOUT1(<< "    lock_mode[]="<<lock_entry.lock_mode
-                            << " , lock_hash[]="<<lock_entry.lock_hash);
-                }
+                DBGOUT1(<< "    lock_mode[]="<<lock_entry.lock_mode
+                        << " , lock_hash[]="<<lock_entry.lock_hash);
             }
-            xct_tab[tid] = entry;
         }
     }
 

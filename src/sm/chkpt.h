@@ -124,7 +124,7 @@ struct xct_tab_entry_t {
 
     void update_lsns(lsn_t first, lsn_t last) {
         if (last > last_lsn) { last_lsn = last; }
-        if (first < first_lsn) { first_lsn = first; }
+        if (first < first_lsn && !first.is_null()) { first_lsn = first; }
     }
 };
 

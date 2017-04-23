@@ -1059,7 +1059,7 @@ operator<<(ostream& o, const logrec_t& l)
             }
         case logrec_t::t_comment :
             {
-                o << (const char *)l._data;
+                o << " " << (const char *)l._data;
                 break;
             }
         case logrec_t::t_page_evict:

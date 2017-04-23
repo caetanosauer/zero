@@ -461,8 +461,8 @@ rc_t ss_m::_truncate_log()
 
     // create new, empty partition on log
     W_DO(log->truncate());
-    // CS TODO: temporary hack -- empty log causes file not found in archiveUntilLSN
-    Logger::log_sys<comment_log>("abc");
+    // CS TODO: little hack -- empty log causes file not found in archiveUntilLSN
+    Logger::log_sys<comment_log>("o hi there");
     W_DO(log->flush_all());
 
     // generate an empty log archive run to cover the new durable LSN

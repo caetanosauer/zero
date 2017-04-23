@@ -750,7 +750,7 @@ void xct_t::fuzzy_checkpoint(chkpt_t& chkpt)
     while ((xd = iter.next())) {
         W_COERCE(xd->latch().latch_acquire(LATCH_SH));
 
-        if (xd->state() != xct_ended) {
+        if (xd->state() != xct_ended && xd->first_lsn().valid()) {
             auto& entry = chkpt.mark_xct_active(xd->tid(), xd->first_lsn(), xd->last_lsn());
 
             if (!xd->is_sys_xct()) {
