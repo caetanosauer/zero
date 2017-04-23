@@ -149,6 +149,8 @@ public:
 
     lsn_t get_dirty_page_emlsn(PageID pid) const;
 
+    void checkpoint_dirty_pages(chkpt_t& chkpt) const;
+
 private:
     // variables read from volume header -- remain constant after mount
     int              _fd;

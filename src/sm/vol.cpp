@@ -189,6 +189,16 @@ PageID vol_t::get_dirty_page_count() const
     return _dirty_pages->size();
 }
 
+void vol_t::checkpoint_dirty_pages(chkpt_t& chkpt) const
+{
+    if (!_dirty_pages) { return; }
+
+    spinlock_read_critical_section cs(&_mutex);
+    for (auto e : *_dirty_pages) {
+        chkpt.mark_page_dirty(e.first, e.second.page_lsn, e.second.rec_lsn);
+    }
+}
+
 void vol_t::open_backup()
 {
     // mutex held by caller -- no concurrent backup being added
