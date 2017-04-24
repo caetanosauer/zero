@@ -7,6 +7,9 @@ void LogAnalysis::setupOptions()
 {
     LogScannerCommand::setupOptions();
     options.add_options()
+        ("printPages", po::value<bool>(&printPages)
+            ->default_value(false)->implicit_value(true),
+            "Print dirty page table")
         ("takeChkpt", po::value<bool>(&takeChkpt)
             ->default_value(false)->implicit_value(true),
             "Take checkpoint after log analysis")
@@ -29,9 +32,12 @@ void LogAnalysis::run()
     chkpt.scan_log();
     cout << "done!" << endl;
 
+    cout << "chkpt_t min_rec_lsn: " << chkpt.get_min_rec_lsn() << endl;
+    cout << "chkpt_t min_xct_lsn: " << chkpt.get_min_xct_lsn() << endl;
+    cout << endl;
+
     cout << "chkpt_t active transactions: " << chkpt.xct_tab.size() << endl;
 
-    cout << '\t';
     for(xct_tab_t::const_iterator it = chkpt.xct_tab.begin();
                             it != chkpt.xct_tab.end(); ++it)
     {
@@ -41,16 +47,18 @@ void LogAnalysis::run()
     cout << endl;
 
     cout << "chkpt_t dirty pages: " << chkpt.buf_tab.size() << endl;
-    cout << '\t';
-    for(buf_tab_t::const_iterator it = chkpt.buf_tab.begin();
-                            it != chkpt.buf_tab.end(); ++it)
-    {
-        // cout << it->first << "(REC: " << it->second.rec_lsn
-        //     << ", PAGE: " << it->second.page_lsn
-        //     << ", CLEAN " << it->second.clean_lsn << ") " << endl;
+
+    if (printPages) {
+        for(buf_tab_t::const_iterator it = chkpt.buf_tab.begin();
+                it != chkpt.buf_tab.end(); ++it)
+        {
+            cout << it->first << "(REC: " << it->second.rec_lsn
+                << ", PAGE: " << it->second.page_lsn
+                << ", CLEAN " << it->second.clean_lsn << ") " << endl;
+        }
+        cout << endl;
+        cout << endl;
     }
-    cout << endl;
-    cout << endl;
 
     if (takeChkpt) {
         smlevel_0::chkpt = new chkpt_m(_options, &chkpt);

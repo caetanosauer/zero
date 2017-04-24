@@ -14,6 +14,7 @@ public:
 private:
     bool fullScan;
     bool takeChkpt;
+    bool printPages;
 };
 
 class LogAnalysisHandler : public Handler {
