@@ -710,7 +710,8 @@ bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
     w_assert1(get_cb(idx)._pin_cnt >= 0);
     w_assert1(get_cb(idx).latch().held_by_me());
 
-    get_cb(idx).pin();
+    bool pinned = get_cb(idx).pin();
+    w_assert1(pinned);
     DBG(<< "Refix set pin cnt to " << get_cb(idx)._pin_cnt);
     return idx;
 }

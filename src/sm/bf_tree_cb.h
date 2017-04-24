@@ -144,7 +144,7 @@ struct bf_tree_cb_t {
     void set_page_lsn(lsn_t lsn)
     {
         _page_lsn = lsn;
-        if (_clean_lsn > _rec_lsn) { _rec_lsn = lsn; }
+        if (_clean_lsn > _rec_lsn || _clean_lsn.is_null()) { _rec_lsn = lsn; }
     }
 
     // CS: page_lsn value when it was last picked for cleaning
@@ -216,7 +216,9 @@ struct bf_tree_cb_t {
     // decrement pin count atomically
     void unpin()
     {
-        _pin_cnt--;
+        auto v = _pin_cnt--;
+        // only prepare_for_eviction may set negative pin count
+        w_assert1(v >= 0);
     }
 
     bool prepare_for_eviction()
