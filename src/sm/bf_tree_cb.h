@@ -95,12 +95,17 @@ struct bf_tree_cb_t {
         clear_except_latch();
         _pin_cnt = 0;
         _pid = pid;
-        _used = true;
         _swizzled = false;
         _ref_count = BP_INITIAL_REFCOUNT;
         _ref_count_ex = BP_INITIAL_REFCOUNT;
         _clean_lsn = page_lsn;
         _page_lsn = page_lsn;
+        _rec_lsn = page_lsn;
+
+        // Update _used last. Since it's an std::atomic, a thread seeing it set
+        // to true (e.g., cleaner or fuzzy checkpoints) can rely on the fact that
+        // the other fields have been properly initialized.
+        _used = true;
     }
 
     /** clears latch */
@@ -144,7 +149,7 @@ struct bf_tree_cb_t {
     void set_page_lsn(lsn_t lsn)
     {
         _page_lsn = lsn;
-        if (_clean_lsn > _rec_lsn || _clean_lsn.is_null()) { _rec_lsn = lsn; }
+        if (_clean_lsn > _rec_lsn || _rec_lsn.is_null()) { _rec_lsn = lsn; }
     }
 
     // CS: page_lsn value when it was last picked for cleaning
@@ -230,6 +235,11 @@ struct bf_tree_cb_t {
         }
         _used = false;
         return true;
+    }
+
+    bool is_in_use() const
+    {
+        return _pin_cnt >= 0 && _used;
     }
 
     void inc_ref_count()

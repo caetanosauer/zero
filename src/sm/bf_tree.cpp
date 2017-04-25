@@ -415,6 +415,9 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
     if (is_swizzled_pointer(pid)) {
         w_assert1(!virgin_page);
+        // Swizzled pointer traversal only valid with latch coupling (i.e.,
+        // parent must also have been fixed)
+        w_assert1(parent);
 
         bf_idx idx = pid ^ SWIZZLED_PID_BIT;
         w_assert1(_is_valid_idx(idx));
@@ -423,16 +426,23 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         W_DO(cb.latch().latch_acquire(mode,
                     conditional ? timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
 
-        w_assert1(_is_active_idx(idx));
+        // CS: Normally, we must always check if cb is still valid after
+        // latching, because page might have been evicted while we were waiting
+        // for the latch. In the case of following a swizzled pointer, however,
+        // that is not necessary because of latch coupling: the thread calling
+        // fix here *must* have the parent latched in shared mode. Eviction, on
+        // the other hand, will only select a victim if it can acquire an
+        // exclusive latch on its parent. Thus, the mere fact that we are
+        // following a swizzled pointer already gives us the guarantee that the
+        // control block cannot be invalidated.
+
+        w_assert1(cb.is_in_use());
         w_assert1(cb._swizzled);
         w_assert1(cb._pid == _buffer[idx].pid);
-        w_assert1(cb._pin_cnt >= 0);
 
         cb.inc_ref_count();
         if(_evictioner) _evictioner->ref(idx);
-        if (mode == LATCH_EX) {
-            cb.inc_ref_count_ex();
-        }
+        if (mode == LATCH_EX) { cb.inc_ref_count_ex(); }
 
         page = &(_buffer[idx]);
 
@@ -444,7 +454,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         return RCOK;
     }
 
-    // Wait for restore before attempting to fix anything
+    // Wait for log replay before attempting to fix anything
     //->  nodb mode only!
     bool used_batch_warmup = false;
     if (!virgin_page && _batch_warmup && !_warmup_done) {
@@ -567,7 +577,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             W_DO(cb.latch().latch_acquire(temp_mode, conditional ?
                         timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
 
-            if (cb._pin_cnt < 0 || cb._pid != pid) {
+            if (!cb.is_in_use() < 0 || cb._pid != pid) {
                 // Page was evicted between hash table probe and latching
                 DBG(<< "Page evicted right before latching. Retrying.");
                 cb.latch().latch_release();
@@ -656,15 +666,20 @@ void bf_tree_m::fuzzy_checkpoint(chkpt_t& chkpt) const
     for (size_t i = 1; i < _block_cnt; i++) {
         auto& cb = get_cb(i);
         /*
-         * We don't latch or pin because a fuzzy checkpoint doesn't care about
-         * false positives (i.e., pages marked dirty that are actually clean).
-         * Thus, if any of the cb variables changes inbetween, or even if we
-         * read some garbage values, the fuzzy checkpoint is still correct.
+         * CS: We don't latch or pin because a fuzzy checkpoint doesn't care
+         * about false positives (i.e., pages marked dirty that are actually
+         * clean).  Thus, if any of the cb variables changes inbetween, the
+         * fuzzy checkpoint is still correct, because LSN updates are atomic
+         * and monotonically increasing.
          */
-        // if (cb._used && cb.is_dirty()) {
-        if (cb.is_dirty()) {
-            chkpt.mark_page_dirty(cb._pid, cb.get_page_lsn(),
-                    cb.get_rec_lsn());
+        if (cb.is_in_use() && cb.is_dirty()) {
+            // There's a small time window after page_lsn is updated for the first
+            // time and before rec_lsn is set, where is_dirty() returns true but
+            // rec_lsn is still null. In that case, we can use the page_lsn instead,
+            // since it is what rec_lsn will be eventually set to.
+            auto rec = cb.get_rec_lsn();
+            if (rec.is_null()) { rec = cb.get_page_lsn(); }
+            chkpt.mark_page_dirty(cb._pid, cb.get_page_lsn(), rec);
         }
     }
 }
