@@ -29,6 +29,7 @@ enum class cleaner_policy {
 struct cleaner_cb_info {
     lsn_t clean_lsn;
     lsn_t page_lsn;
+    lsn_t rec_lsn;
     bf_idx idx;
     PageID pid;
     uint16_t ref_count;
@@ -36,10 +37,13 @@ struct cleaner_cb_info {
     cleaner_cb_info(bf_idx idx, const bf_tree_cb_t& cb) :
         clean_lsn(cb.get_clean_lsn()),
         page_lsn(cb.get_page_lsn()),
+        rec_lsn(cb.get_rec_lsn()),
         idx(idx),
         pid(cb._pid),
         ref_count(cb._ref_count_ex)
     {}
+
+    friend std::ostream& operator<<(std::ostream& out, const cleaner_cb_info& cb);
 };
 
 /** Type of predicate functions used by cleaner policies */

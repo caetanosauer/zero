@@ -164,11 +164,11 @@ struct bf_tree_cb_t {
     // of all recovery LSNs determines the starting point for the log-based redo
     // recovery of traditional ARIES. This is not used in instant restart.
     lsn_t _rec_lsn; // +8 -> 40
-    lsn_t get_rec_lsn() { return _rec_lsn; }
+    lsn_t get_rec_lsn() const  { return _rec_lsn; }
 
     /// Log volume generated on this page (for page_img logrec compression, see xct_logger.h)
     uint32_t _log_volume;        // +4 -> 44
-    uint16_t get_log_volume() { return _log_volume; }
+    uint16_t get_log_volume() const { return _log_volume; }
     void increment_log_volume(uint16_t c) { _log_volume += c; }
     void set_log_volume(uint16_t c) { _log_volume = c; }
 

@@ -44,7 +44,7 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& option
     min_write_size = options.get_int_option("sm_cleaner_min_write_size", 1);
     min_write_ignore_freq = options.get_int_option("sm_cleaner_min_write_ignore_freq", 0);
     async_candidate_collection =
-        options.get_bool_option("sm_cleaner_async_candidate_collection", true);
+        options.get_bool_option("sm_cleaner_async_candidate_collection", false);
 
     string pstr = options.get_string_option("sm_cleaner_policy", "");
     policy = make_cleaner_policy(pstr);
@@ -141,6 +141,8 @@ void bf_tree_cleaner::clean_candidates()
                 k++;
                 continue;
             }
+
+            // std::cerr << "cleaning " << curr_candidates->at(i+k) << endl;
 
             if (pid > prev_pid + 1 && w_index > 0) {
                 // Current cluster ends at index k (k is part of the next cluster)
@@ -250,7 +252,13 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
 policy_predicate_t bf_tree_cleaner::get_policy_predicate()
 {
     // A less-than function makes pop_heap return the highest value, and a
-    // greater-than function the lowest
+    // greater-than function the lowest. Because the heap's top element should
+    // be the lowest in a "highest" policy and vice-versa, less-than should be
+    // used for "highest" policies and vice-versa. When testing if an element
+    // should replace the current top of the heap, the inverse of the
+    // comparison function should be used, e.g., in a "highest" policy, an
+    // incoming element enters the heap if it is greater than the heap's
+    // lowest.
     switch (policy) {
         case cleaner_policy::highest_refcount:
             return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
@@ -265,7 +273,8 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate()
         case cleaner_policy::oldest_lsn: default: // mixed also falls here
             return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
             {
-                return a.clean_lsn > b.clean_lsn;
+                // return a.clean_lsn > b.clean_lsn;
+                return a.rec_lsn < b.rec_lsn;
             };
     }
 }
@@ -291,7 +300,7 @@ void bf_tree_cleaner::collect_candidates()
         if (!cb.pin()) { continue; }
 
         // If page is not dirty or not in use, no need to flush
-        if (!cb.is_dirty() || !cb._used) {
+        if (!cb.is_dirty() || !cb._used || cb.get_rec_lsn().is_null()) {
             cb.unpin();
             continue;
         }
@@ -309,12 +318,13 @@ void bf_tree_cleaner::collect_candidates()
         // manage heap if we are limiting the number of candidates
         if (num_candidates > 0) {
             if (next_candidates->size() < num_candidates ||
-                heap_cmp(next_candidates->front(), next_candidates->back()))
+                !heap_cmp(next_candidates->front(), next_candidates->back()))
             {
                 // if it's among the top-k candidates, push it into the heap
                 std::push_heap(next_candidates->begin(), next_candidates->end(), heap_cmp);
                 while (next_candidates->size() > num_candidates) {
                     std::pop_heap(next_candidates->begin(), next_candidates->end(), heap_cmp);
+                    // cerr << "popped "<< next_candidates->back() << endl;
                     next_candidates->pop_back();
                 }
             }
@@ -333,4 +343,15 @@ void bf_tree_cleaner::collect_candidates()
     std::sort(next_candidates->begin(), next_candidates->end(), lt);
 
     ADD_TSTAT(cleaner_time_cpu, timer.time_us());
+}
+
+std::ostream& operator<<(std::ostream& out, const cleaner_cb_info& cb)
+{
+    out << "pid=" << cb.pid
+        << " page=" << cb.page_lsn
+        << " rec=" << cb.rec_lsn
+        << " clean=" << cb.clean_lsn
+        << std::endl;
+
+    return out;
 }
