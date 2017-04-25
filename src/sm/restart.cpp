@@ -519,12 +519,15 @@ void restart_thread_t::do_work()
     }
 
     // Do undo pass first, since it's usually much shorter than redo.
-    undo_pass();
+    if (instantRestart) { undo_pass(); }
 
     if (should_exit()) { return; }
 
     if (log_based) { redo_log_pass(); }
     else { redo_page_pass(); }
+
+    // In traditional ARIES, undo must come after redo
+    if (!instantRestart) { undo_pass(); }
 
     smlevel_0::log->discard_fetch_buffers();
 

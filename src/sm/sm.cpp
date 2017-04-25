@@ -260,6 +260,7 @@ ss_m::_construct_once()
     chkpt_t* chkpt_info = recovery->get_chkpt();
 
     bool instantRestart = _options.get_bool_option("sm_restart_instant", true);
+    bool logBasedRedo = _options.get_bool_option("sm_restart_log_based_redo", true);
     bool format = _options.get_bool_option("sm_format", false);
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing volume manager");
@@ -275,7 +276,7 @@ ss_m::_construct_once()
 
     ERROUT(<< "[" << timer.time_ms() << "] Building volume manager caches");
 
-    if (instantRestart) {
+    if (instantRestart || !logBasedRedo) {
         vol->build_caches(format, chkpt_info);
     }
 
@@ -312,7 +313,7 @@ ss_m::_construct_once()
     if (!instantRestart) {
         recovery->join();
         // metadata caches can only be constructed now
-        vol->build_caches(format, chkpt_info);
+        if (logBasedRedo) { vol->build_caches(format, chkpt_info); }
     }
 
     ERROUT(<< "[" << timer.time_ms() << "] Finished SM initialization");

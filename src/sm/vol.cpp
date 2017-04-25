@@ -85,11 +85,7 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
 
     bool instantRestart = options.get_bool_option("sm_restart_instant", true);
     if (chkpt_info) {
-        // If not instant restart, do not use dirty page table, which disables REDO
-        // recovery based on SPR so that it is done explicitly by restart_thread_t.
-        if (instantRestart) {
-            _dirty_pages = new buf_tab_t(chkpt_info->buf_tab);
-        }
+        _dirty_pages = new buf_tab_t(chkpt_info->buf_tab);
         if (!chkpt_info->bkp_path.empty()) {
             sx_add_backup(chkpt_info->bkp_path, true);
         }
