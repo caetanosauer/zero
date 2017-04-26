@@ -175,6 +175,7 @@ public:
     lsn_t get_min_rec_lsn() const;
     lsn_t get_min_xct_lsn() const;
     lsn_t get_last_scan_start() const { return last_scan_start; }
+    void set_last_scan_start(lsn_t l) { last_scan_start = l; }
 
     tid_t get_highest_tid() { return highest_tid; }
     void set_highest_tid(tid_t tid) { highest_tid = tid; }

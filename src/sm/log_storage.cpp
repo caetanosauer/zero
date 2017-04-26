@@ -32,9 +32,8 @@ const string log_storage::chkpt_regex = "chkpt_[1-9][0-9]*\\.[0-9][0-9]*";
 class partition_recycler_t : public thread_wrapper_t
 {
 public:
-    partition_recycler_t(log_storage* storage, bool chkpt_only = false)
-        : storage(storage),
-        chkpt_only(chkpt_only), retire(false)
+    partition_recycler_t(log_storage* storage)
+        : storage(storage), chkpt_only(false), retire(false)
     {}
 
     virtual ~partition_recycler_t() {}
@@ -49,10 +48,11 @@ public:
         }
     }
 
-    void wakeup()
+    void wakeup(bool chkpt_only = false)
     {
         unique_lock<mutex> lck(_recycler_mutex);
         _recycler_condvar.notify_one();
+        this->chkpt_only = chkpt_only;
     }
 
     log_storage* storage;
@@ -386,10 +386,10 @@ void log_storage::wakeup_recycler(bool chkpt_only)
     if (!_delete_old_partitions && !chkpt_only) { return; }
 
     if (!_recycler_thread) {
-        _recycler_thread.reset(new partition_recycler_t(this, chkpt_only));
+        _recycler_thread.reset(new partition_recycler_t(this));
         _recycler_thread->fork();
     }
-    _recycler_thread->wakeup();
+    _recycler_thread->wakeup(chkpt_only);
 }
 
 void log_storage::add_checkpoint(lsn_t lsn)

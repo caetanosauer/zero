@@ -1083,9 +1083,18 @@ operator<<(ostream& o, const logrec_t& l)
             }
         case logrec_t::t_page_write:
             {
-                PageID first = *((PageID*) (l.data()));
-                PageID last = first + *((uint32_t*) (l.data() + sizeof(PageID) + sizeof(lsn_t))) - 1;
-                o << " pids: " << first << "-" << last;
+                char* pos = (char*) l._data;
+
+                PageID pid = *((PageID*) pos);
+                pos += sizeof(PageID);
+
+                lsn_t clean_lsn = *((lsn_t*) pos);
+                pos += sizeof(lsn_t);
+
+                uint32_t count = *((uint32_t*) pos);
+                PageID end = pid + count;
+
+                o << " pids: " << pid << "-" << end << " clean_lsn: " << clean_lsn;
                 break;
             }
         case logrec_t::t_restore_segment:
