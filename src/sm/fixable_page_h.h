@@ -93,7 +93,8 @@ public:
                        bool virgin_page=false, bool only_if_hit = false);
 
     w_rc_t fix_direct(PageID pid, latch_mode_t mode, bool conditional=false,
-                       bool virgin_page=false);
+                       bool virgin_page=false, bool only_if_hit = false,
+                       bool do_recovery = true);
 
     /**
      * Adds an additional pin count for the given page.  This is used to re-fix the page

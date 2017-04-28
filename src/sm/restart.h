@@ -92,8 +92,7 @@ private:
     void                 _redo_log_with_pid(
                                 logrec_t& r,
                                 PageID page_updated,
-                                bool &redone,
-                                uint32_t &dirty_count);
+                                bool &redone);
 
 };
 

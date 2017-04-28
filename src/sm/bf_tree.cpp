@@ -1067,10 +1067,10 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
 
 w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
                                      PageID pid, latch_mode_t mode, bool conditional,
-                                     bool virgin_page, bool only_if_hit, lsn_t emlsn)
+                                     bool virgin_page, bool only_if_hit, bool do_recovery,
+                                     lsn_t emlsn)
 {
     INC_TSTAT(bf_fix_nonroot_count);
-    constexpr bool do_recovery = true;
     return fix(parent, page, pid, mode, conditional, virgin_page, only_if_hit,
             do_recovery, emlsn);
 }

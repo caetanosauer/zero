@@ -46,13 +46,15 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent,
 }
 
 w_rc_t fixable_page_h::fix_direct(PageID shpid, latch_mode_t mode,
-                                   bool conditional, bool virgin_page)
+                                   bool conditional, bool virgin_page,
+                                   bool only_if_hit, bool do_recovery)
 {
     w_assert1(mode != LATCH_NL);
 
     unfix();
 
-    W_DO(smlevel_0::bf->fix_nonroot(_pp, NULL, shpid, mode, conditional, virgin_page));
+    W_DO(smlevel_0::bf->fix_nonroot(_pp, NULL, shpid, mode, conditional, virgin_page,
+                only_if_hit, do_recovery));
 
     w_assert1(bf_tree_m::is_swizzled_pointer(shpid)
             || smlevel_0::bf->get_cb(_pp)->_pid == shpid);

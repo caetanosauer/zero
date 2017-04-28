@@ -143,7 +143,7 @@ public:
      */
     w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, PageID pid,
                           latch_mode_t mode, bool conditional, bool virgin_page,
-                          bool only_if_hit = false,
+                          bool only_if_hit = false, bool do_recovery = true,
                           lsn_t emlsn = lsn_t::null);
 
     /**

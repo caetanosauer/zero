@@ -151,125 +151,37 @@ void
 restart_thread_t::redo_log_pass()
 {
     stopwatch_t timer;
-    // Perform log-based REDO without opening system (ARIES mode)
+
     lsn_t cur_lsn = smlevel_0::log->curr_lsn();
     lsn_t redo_lsn = chkpt.get_min_rec_lsn();
 
-    // How many pages have been changed from in_doubt to dirty?
-    uint32_t dirty_count = 0;
-
     // Open a forward scan of the recovery log, starting from the redo_lsn which
     // is the earliest lsn determined in the Log Analysis phase
-    DBGOUT3(<<"Start redo scanning at redo_lsn = " << redo_lsn);
     const size_t blockSize = 1048576;
     LogConsumer iter {redo_lsn, blockSize};
     iter.open(cur_lsn);
 
     if(redo_lsn < cur_lsn) {
-        DBGOUT3(<< "Redoing log from " << redo_lsn << " to " << cur_lsn);
-        cerr << "Redoing log from " << redo_lsn << " to " << cur_lsn << endl;
+        ERROUT(<< "Redoing log from " << redo_lsn << " to " << cur_lsn);
     }
-    DBGOUT3( << "LSN " << " A/R/I(pass): "
-            << "LOGREC(TID, TYPE, FLAGS:F/U(fwd/rolling-back) PAGE <INFO>");
 
     logrec_t* lr;
-    lsn_t lsn;
     bool redone = false;
     while (iter.next(lr))
     {
         if (should_exit()) { return; }
 
-        lsn = lr->lsn();
-        redone = false;
-        (void) redone; // Used only for debugging output
-        DBGOUT3( << setiosflags(ios::right) << lsn
-                << resetiosflags(ios::right) << " R: " << *lr);
-
-        if ( lr->is_redo() )
+        if (lr->is_redo())
         {
-            // If the log record is marked as REDOable (correct marking is important)
-            // Most of the log records are REDOable.
-            // These are not REDOable:
-            //    txn related log records, e.g., txn begin/commit
-            //    checkpoint related log records
-            //    skip log records
-            // Note compensation log records are 'redo only', the record type are regular
-            // log record but marked as 'cpsn'
+            _redo_log_with_pid(*lr, lr->pid(), redone);
 
-            // pid in log record is populated when a log record is filled
-            // null_pid is checking the page numer (PageID) recorded in the log record
-            /*
-             * CS TODO: in the new extent-based allocation mechanism, 0 is a
-             * valid page ID, whereas before it was considered an indication
-             * of a log record that does not affect any page. Workaround in
-             * the if clause below, which tests if log record is "page-less",
-             * by checking if page id is 0 AND if it's not an operation that
-             * would apply to the alloc_page, which can have pid 0.
-             */
-            if (lr->pid() == 0 && lr->type() != logrec_t::t_alloc_page &&
-                    lr->type() != logrec_t::t_dealloc_page)
-            {
-                if (!lr->is_single_sys_xct() && lr->tid() != 0) {
-                    // Regular transaction with a valid txn id
-                    xct_t *xd = xct_t::look_up(lr->tid());
-                    if (xd) {
-                        w_assert0(xd->state() == xct_t::xct_active);
-                        DBGOUT3(<<"redo - no page, xct is " << lr->tid());
-                        lr->redo();
-
-                        // No page involved, no need to update dirty_count
-                        redone = true;
-                    }
-                }
-                else {
-                    if (!lr->is_single_sys_xct()) {
-                        // Regular transaction without a valid txn id
-                        // It must be a mount or dismount log record
-
-                        // CS TODO this case should not exist
-                        w_assert0(false);
-
-                        lr->redo();
-                    }
-                    else {
-                        if ( // CS TODO -- restore not supported yet
-                                lr->type() != logrec_t::t_restore_begin
-                                && lr->type() != logrec_t::t_restore_segment
-                                && lr->type() != logrec_t::t_restore_end
-                           )
-                        {
-                            DBGOUT3(<<"redo - no page, ssx");
-                            sys_xct_section_t sxs (true); // single log!
-                            w_assert1(!sxs.check_error_on_start().is_error());
-                            lr->redo();
-                            redone = true;
-                            rc_t sxs_rc = sxs.end_sys_xct (RCOK);
-                            w_assert1(!sxs_rc.is_error());
-                        }
-                    }
-                }
-            }
-            else {
-                // The log record contains a page number, ready to load and update the page
-                // It might be a compensate log record for aborted transaction before system crash,
-                // in such case, execute the compensate log reocrd as a normal log record to
-                // achieve the 'transaction abort' effect during REDO phase, no UNDO for
-                // aborted transaction (aborted txn are not kept in transaction table).
-                _redo_log_with_pid(*lr, lr->pid(), redone, dirty_count);
-
-                if (lr->is_multi_page()) {
-                    w_assert1(lr->is_single_sys_xct());
-                    _redo_log_with_pid(*lr, lr->pid2(), redone, dirty_count);
-                }
+            if (lr->is_multi_page()) {
+                w_assert1(lr->is_single_sys_xct());
+                _redo_log_with_pid(*lr, lr->pid2(), redone);
             }
         }
 
-        DBGOUT3( << setiosflags(ios::right) << lsn
-                << resetiosflags(ios::right) << " R: "
-                << (redone ? " redone" : " skipped") );
-
-        // ERROUT(<< "redo_log_pass: " << lsn << " " << r.type_str() << " pid " << r.pid()
-        //         << (redone ? " redone" : " skipped") );
+        DBGOUT5(<< "redo_log_pass: (" << (redone ? " redone" : " skipped") << ") " << *lr);
 
     }
 
@@ -277,55 +189,36 @@ restart_thread_t::redo_log_pass()
     Logger::log_sys<redo_done_log>();
 }
 
-/*********************************************************************
-*
-*  restart_thread_t::_redo_log_with_pid(r, lsn,end_logscan_lsn, page_updated, redone, dirty_count)
-*
-*  For each log record, load the physical page if it is not in buffer pool yet, set the flags
-*  and apply the REDO based on log record if the page is old
-*
-*  Function returns void, if encounter error condition (any error), raise error and abort
-*  the operation, it cannot continue
-*
-*********************************************************************/
-void restart_thread_t::_redo_log_with_pid(logrec_t& r, PageID pid,
-        bool &redone, uint32_t &dirty_count)
+void restart_thread_t::_redo_log_with_pid(logrec_t& r, PageID pid, bool &redone)
 {
-    redone = false;             // True if REDO happened
+    redone = false;
     w_assert1(r.is_redo());
 
-    bool virgin_page = r.type() == logrec_t::t_page_img_format
-            || (r.type() == logrec_t::t_btree_split && pid == r.pid());
-
     fixable_page_h page;
-    W_COERCE(page.fix_direct(pid, LATCH_EX, false, virgin_page));
+    bool virgin_page = r.has_page_img(pid);
+    constexpr bool conditional = false, only_if_hit = false, do_recovery = false;
+    W_COERCE(page.fix_direct(pid, LATCH_EX, conditional, virgin_page,
+                only_if_hit, do_recovery));
 
-    if (virgin_page) {
-        page.get_generic_page()->pid = pid;
-    }
-
-    /// page.lsn() is the last write to this page
     lsn_t page_lsn = page.lsn();
-
     if (page_lsn < r.lsn())
     {
-        w_assert1(pid == r.pid() || pid == r.pid2());
-        w_assert1(pid != r.pid() || (r.page_prev_lsn() == lsn_t::null ||
-            r.page_prev_lsn() == page_lsn));
+        w_assert0(pid == r.pid() || pid == r.pid2());
+        w_assert0(r.has_page_img(pid) || pid != r.pid()
+                    || (r.page_prev_lsn() == lsn_t::null
+                    ||  r.page_prev_lsn() == page_lsn));
 
-        w_assert1(pid != r.pid2() || (r.page2_prev_lsn() == lsn_t::null ||
+        w_assert0(pid != r.pid2() || (r.page2_prev_lsn() == lsn_t::null ||
             r.page2_prev_lsn() == page_lsn));
 
-        w_assert1(page.is_fixed());
+        w_assert0(page.is_fixed());
         r.redo(&page);
         redone = true;
-        ++dirty_count;
     }
 }
 
 void restart_thread_t::redo_page_pass()
 {
-    generic_page* page;
     stopwatch_t timer;
 
     auto page_cnt = smlevel_0::vol->get_dirty_page_count();
@@ -333,6 +226,7 @@ void restart_thread_t::redo_page_pass()
     while (smlevel_0::vol->grab_a_dirty_page(pid)) {
         // simply fixing the page will take care of single-page recovery
         fixable_page_h p;
+        // CS TODO: do I need to knwo here if this is a virgin page or not???? probably YES!
         p.fix_direct(pid, LATCH_SH, false, false);
         smlevel_0::vol->delete_dirty_page(pid);
 
@@ -359,7 +253,7 @@ void restart_thread_t::undo_pass()
     // Do not lock the transaction table when looping through entries
     // in transaction table
 
-    // TODO(Restart)... This logic works while new transactions are
+    // (comment by WG) TODO This logic works while new transactions are
     // coming in, because the current implementation of transaction
     // table is inserting new transactions into the beginning of the
     // transaction table, so they won't affect the on-going loop operation
@@ -731,12 +625,12 @@ void SprIterator::apply(fixable_page_h &p)
             DBGOUT1(<< "SPR page(" << p.pid()
                     << ") LSN=" << p.lsn() << ", log=" << *lr);
 
-            w_assert1(pid == lr->pid() || pid == lr->pid2());
-            w_assert1(lr->has_page_img(pid) || pid != lr->pid()
+            w_assert0(pid == lr->pid() || pid == lr->pid2());
+            w_assert0(lr->has_page_img(pid) || pid != lr->pid()
                     || (lr->page_prev_lsn() == lsn_t::null
                     || lr->page_prev_lsn() == p.lsn()));
 
-            w_assert1(pid != lr->pid2() || (lr->page2_prev_lsn() == lsn_t::null ||
+            w_assert0(pid != lr->pid2() || (lr->page2_prev_lsn() == lsn_t::null ||
                         lr->page2_prev_lsn() == p.lsn()));
 
             lr->redo(&p);

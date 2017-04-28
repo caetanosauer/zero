@@ -280,13 +280,6 @@ ss_m::_construct_once()
         vol->build_caches(format, chkpt_info);
     }
 
-    // Initialize cleaner once vol caches are built
-    int cleaner_int = _options.get_int_option("sm_cleaner_interval", 0);
-    if (cleaner_int >= 0) {
-        // Getter will initialize cleaner on demand
-        bf->get_cleaner();
-    }
-
     smlevel_0::statistics_enabled = _options.get_bool_option("sm_statistics", true);
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer cleaner and other services");
@@ -313,7 +306,14 @@ ss_m::_construct_once()
     if (!instantRestart) {
         recovery->join();
         // metadata caches can only be constructed now
-        if (logBasedRedo) { vol->build_caches(format, chkpt_info); }
+        if (logBasedRedo) { vol->build_caches(format, nullptr); }
+    }
+
+    // Initialize cleaner once vol caches are built
+    int cleaner_int = _options.get_int_option("sm_cleaner_interval", 0);
+    if (cleaner_int >= 0) {
+        // Getter will initialize cleaner on demand
+        bf->get_cleaner();
     }
 
     ERROUT(<< "[" << timer.time_ms() << "] Finished SM initialization");
