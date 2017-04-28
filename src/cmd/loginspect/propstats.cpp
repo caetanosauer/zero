@@ -84,6 +84,8 @@ public:
 
     void dumpStats(lsn_t lsn)
     {
+        // CS TODO: we now support correct rec_lsn tracking in buffer pool!
+        // TODO implement forward checkpoints and precise, rec_lsn-based  propstats
         // A checkpoint taken with a forward scan does not update rec_lsn
         // correctly, so it will always be the first update on each page. We
         // take min_clean_lsn here since it should be a good approximation

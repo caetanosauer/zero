@@ -199,14 +199,9 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
 
     // CS TODO: policy option: wait for latch or just attempt conditionally
-    rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, timeout_t::WAIT_FOREVER);
-    if (latch_rc.is_error()) {
-        // Could not latch page in SH mode -- just skip it
-        if (cb._clean_lsn.is_null()) {
-            cerr << "Failed to latch page " << pid << " for cleaning"<< endl;
-        }
-        return false;
-    }
+    W_COERCE(cb.latch().latch_acquire(LATCH_SH, timeout_t::WAIT_FOREVER));
+
+    // No need to pin CB here because we hold EX latch (eviction cannot clear CB)
 
     fixable_page_h page;
     page.fix_nonbufferpool_page(const_cast<generic_page*>(&page_buffer[idx]));
@@ -240,6 +235,9 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     // before releasing SH latch because the pointer might be
     // unswizzled by other threads.
     _bufferpool->_convert_to_disk_page(&pdest);
+
+    // Record the fact that we are taking a copy for flushing in the CB
+    cb.mark_persisted_lsn();
 
     cb.latch().latch_release();
 
@@ -296,7 +294,7 @@ void bf_tree_cleaner::collect_candidates()
     }
 
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
-        bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
+        auto& cb = _bufferpool->get_cb(idx);
         if (!cb.pin()) { continue; }
 
         // If page is not dirty or not in use, no need to flush
@@ -305,10 +303,11 @@ void bf_tree_cleaner::collect_candidates()
             continue;
         }
 
-        if (cb.get_clean_lsn() == lsn_t::null && ignore_empty_clean_lsn) {
-            cb.unpin();
-            continue;
-        }
+        // CS TODO: update or remove mixed policy
+        // if (cb.get_clean_lsn() == lsn_t::null && ignore_empty_clean_lsn) {
+        //     cb.unpin();
+        //     continue;
+        // }
 
         // add new element to the back of vector
         next_candidates->emplace_back(idx, cb);
@@ -350,7 +349,6 @@ std::ostream& operator<<(std::ostream& out, const cleaner_cb_info& cb)
     out << "pid=" << cb.pid
         << " page=" << cb.page_lsn
         << " rec=" << cb.rec_lsn
-        << " clean=" << cb.clean_lsn
         << std::endl;
 
     return out;

@@ -10,7 +10,8 @@ page_cleaner_base::page_cleaner_base(bf_tree_m* bufferpool, const sm_options& _o
     _bufferpool(bufferpool),
     _clean_lsn(lsn_t(1,0))
 {
-    _workspace_size = (uint32_t) _options.get_int_option("sm_cleaner_workspace_size", 128);
+    _workspace_size = _options.get_int_option("sm_cleaner_workspace_size", 128);
+    _write_elision = _options.get_bool_option("sm_write_elision", false);
 
     _workspace.resize(_workspace_size);
     _workspace_cb_indexes.resize(_workspace_size, 0);
@@ -22,9 +23,7 @@ page_cleaner_base::~page_cleaner_base()
 
 void page_cleaner_base::flush_workspace(size_t from, size_t to)
 {
-    if (from - to == 0) {
-        return;
-    }
+    if (from - to == 0) { return; }
 
     // Flush log to guarantee WAL property
     W_COERCE(smlevel_0::log->flush_all());
@@ -48,13 +47,14 @@ void page_cleaner_base::mark_pages_clean(size_t from, size_t to)
         bf_idx idx = _workspace_cb_indexes[i];
         bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
 
-        // Assertion below may fail for decoupled cleaner, and it's OK
-        // w_assert1(i == from || _workspace[i].pid == _workspace[i - 1].pid + 1);
-
         if (!cb.pin()) { continue; }
 
-        if (cb._pid == _workspace[i].pid && cb.get_clean_lsn() < _clean_lsn) {
-            cb.set_clean_lsn(_clean_lsn);
+        // PID can change with write elision
+        w_assert1(_write_elision || cb._pid == _workspace[i].pid);
+
+        if (cb._pid == _workspace[i].pid) {
+            w_assert1(cb.is_in_use());
+            cb.notify_write();
         }
 
         cb.unpin();

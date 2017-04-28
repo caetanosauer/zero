@@ -33,6 +33,8 @@ protected:
     vector<bf_idx> _workspace_cb_indexes;
 
     lsn_t _clean_lsn;
+
+    bool _write_elision;
 };
 
 #endif

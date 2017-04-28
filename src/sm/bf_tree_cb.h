@@ -98,9 +98,11 @@ struct bf_tree_cb_t {
         _swizzled = false;
         _ref_count = BP_INITIAL_REFCOUNT;
         _ref_count_ex = BP_INITIAL_REFCOUNT;
-        _clean_lsn = page_lsn;
         _page_lsn = page_lsn;
-        _rec_lsn = page_lsn;
+        _rec_lsn = lsn_t::null;
+        _persisted_lsn = page_lsn;
+        _next_rec_lsn = lsn_t::null;
+        _next_persisted_lsn = lsn_t::null;
 
         // Update _used last. Since it's an std::atomic, a thread seeing it set
         // to true (e.g., cleaner or fuzzy checkpoints) can rely on the fact that
@@ -148,18 +150,26 @@ struct bf_tree_cb_t {
     lsn_t get_page_lsn() const { return _page_lsn; }
     void set_page_lsn(lsn_t lsn)
     {
+        // caller must hold EX latch, since it has just performed an update on
+        // the page
         _page_lsn = lsn;
-        if (_clean_lsn > _rec_lsn || _rec_lsn.is_null()) { _rec_lsn = lsn; }
+        if (_rec_lsn <= _persisted_lsn) { _rec_lsn = lsn; }
+        if (_next_rec_lsn <= _next_persisted_lsn) { _next_rec_lsn = lsn; }
     }
 
     // CS: page_lsn value when it was last picked for cleaning
     // Replaces the old dirty flag, because dirty is defined as
     // page_lsn > clean_lsn
-    lsn_t _clean_lsn; // +8 -> 32
-    void set_clean_lsn(lsn_t lsn) { _clean_lsn = lsn; }
-    lsn_t get_clean_lsn() const { return _clean_lsn; }
+    lsn_t _persisted_lsn; // +8 -> 32
+    lsn_t get_persisted_lsn() const { return _persisted_lsn; }
 
-    bool is_dirty() const { return _page_lsn > _clean_lsn; }
+    bool is_dirty()
+    {
+        W_COERCE(latch().latch_acquire(LATCH_SH));
+        bool res = _page_lsn > _persisted_lsn;
+        latch().latch_release();
+        return res;
+    }
 
     // Recovery LSN, a.k.a. DirtyPageLSN, is used by traditional checkpoints
     // that determine the dirty page table by scanning the buffer pool -- unlike
@@ -171,8 +181,37 @@ struct bf_tree_cb_t {
     lsn_t _rec_lsn; // +8 -> 40
     lsn_t get_rec_lsn() const  { return _rec_lsn; }
 
+    lsn_t _next_persisted_lsn; // +8 -> 48
+    lsn_t get_next_persisted_lsn() const { return _next_persisted_lsn; }
+
+    void mark_persisted_lsn()
+    {
+        // called by cleaner while it holds SH latch
+        _next_rec_lsn = lsn_t::null;
+        _next_persisted_lsn = _page_lsn;
+    }
+
+    lsn_t _next_rec_lsn; // +8 -> 56
+    lsn_t get_next_rec_lsn() const  { return _next_rec_lsn; }
+
+    // Called when cleaner writes and fsync's the page to disk. This updates
+    // rec_lsn and persisted_lsn to their "next" counterparts that were recorded
+    // when the cleaner first copied the page into its own write buffer. Note
+    // that this does not necessarily mark the frame as "clean", since updates
+    // might have happened since the copy was taken. That's why we don't have
+    // a dirty flag and rely on LSN comparisons instead.
+    void notify_write()
+    {
+        // SH latch is enough because we are only worried about races with
+        // set_page_lsn, which always holds an EX latch
+        W_COERCE(latch().latch_acquire(LATCH_SH));
+        _persisted_lsn = _next_persisted_lsn;
+        _rec_lsn = _next_rec_lsn;
+        latch().latch_release();
+    }
+
     /// Log volume generated on this page (for page_img logrec compression, see xct_logger.h)
-    uint32_t _log_volume;        // +4 -> 44
+    uint32_t _log_volume;        // +4 -> 60
     uint16_t get_log_volume() const { return _log_volume; }
     void increment_log_volume(uint16_t c) { _log_volume += c; }
     void set_log_volume(uint16_t c) { _log_volume = c; }
@@ -180,15 +219,16 @@ struct bf_tree_cb_t {
     /**
      * number of swizzled pointers to children; protected by ??
      */
-    uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 46
+    uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 62
 
     /// This is used for frames that are prefetched during buffer pool warmup.
     /// They might need recovery next time they are fixed.
-    bool _check_recovery;   // +1 -> 47
+    bool _check_recovery;   // +1 -> 63
     void set_check_recovery(bool chk) { _check_recovery = chk; }
 
     // Add padding to align control block at cacheline boundary (64 bytes)
-    uint8_t _fill63[16];    // +16 -> 63
+    // CS: padding not needed anymore because we are exactly on offset 63 above
+    // uint8_t _fill63[16];    // +16 -> 63
 
     /* The bufferpool should alternate location of latches and control blocks
      * starting at an odd multiple of 64B as follows:
