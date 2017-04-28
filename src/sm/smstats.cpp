@@ -131,6 +131,7 @@ const char* get_stat_name(sm_stat_id s)
         case sm_stat_id::log_chkpt_cnt: return "log_chkpt_cnt";
         case sm_stat_id::log_chkpt_wake: return "log_chkpt_wake";
         case sm_stat_id::log_fetches: return "log_fetches";
+        case sm_stat_id::log_buffer_hit: return "log_buffer_hit";
         case sm_stat_id::log_inserts: return "log_inserts";
         case sm_stat_id::log_full: return "log_full";
         case sm_stat_id::log_full_old_xct: return "log_full_old_xct";
@@ -361,6 +362,7 @@ const char* get_stat_expl(sm_stat_id s)
         case sm_stat_id::log_chkpt_cnt: return "Checkpoints taken";
         case sm_stat_id::log_chkpt_wake: return "Checkpoints requested by kicking the chkpt thread";
         case sm_stat_id::log_fetches: return "Log records fetched from log (read)";
+        case sm_stat_id::log_buffer_hit: return "Log fetches that were served from in-memory fetch buffers";
         case sm_stat_id::log_inserts: return "Log records inserted into log (written)";
         case sm_stat_id::log_full: return "A transaction encountered log full";
         case sm_stat_id::log_full_old_xct: return "An old transaction had to abort";

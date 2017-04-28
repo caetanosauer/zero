@@ -219,6 +219,7 @@ enum class sm_stat_id : size_t
     log_chkpt_wake,
     log_fetches,
     log_inserts,
+    log_buffer_hit,
     log_full,
     log_full_old_xct,
     log_full_old_page,

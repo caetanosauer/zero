@@ -235,6 +235,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
             }
 
             memcpy(buf, rp, rp->length());
+            INC_TSTAT(log_buffer_hit);
 
             return RCOK;
         }
@@ -433,7 +434,6 @@ log_core::log_core(const sm_options& options)
         _fetch_buf_end = lsn_t::null;
         _fetch_buf_begin = lsn_t::null;
     }
-    _fetch_buf_loader = NULL;
 
     directIO = options.get_bool_option("sm_log_o_direct", false);
 
@@ -459,7 +459,7 @@ rc_t log_core::init()
         _ticker->fork();
     }
     if (_fetch_buf_first > 0) {
-        _fetch_buf_loader = new fetch_buffer_loader_t(this);
+        _fetch_buf_loader = make_shared<fetch_buffer_loader_t>(this);
         _fetch_buf_loader->fork();
     }
     start_flush_daemon();
@@ -1315,11 +1315,15 @@ rc_t log_core::load_fetch_buffers()
     return RCOK;
 }
 
-void log_core::discard_fetch_buffers()
+void log_core::discard_fetch_buffers(partition_number_t recycled_until)
 {
+    // If all buffered logs haven't been recycled yet, they might still
+    // be needed by running transactions
+    if (_fetch_buf_last > recycled_until) { return; }
+
     if (_fetch_buf_loader) {
         _fetch_buf_loader->join();
-        delete _fetch_buf_loader;
+        _fetch_buf_loader = nullptr;
     }
 
     for (size_t p = _fetch_buf_first; p > 0 && p <= _fetch_buf_last; p++) {

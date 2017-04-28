@@ -513,7 +513,7 @@ void restart_thread_t::do_work()
     if (no_db_mode)
     {
         undo_pass();
-        smlevel_0::log->discard_fetch_buffers();
+        // smlevel_0::log->discard_fetch_buffers();
         quit();
         return;
     }
@@ -529,7 +529,10 @@ void restart_thread_t::do_work()
     // In traditional ARIES, undo must come after redo
     if (!instantRestart) { undo_pass(); }
 
-    smlevel_0::log->discard_fetch_buffers();
+    // Cannot free fetch buffers here because there is no safe refcount
+    // mechanism to avoid accessing buffers after they've been freed.
+    // Fetch buffers are currently discarded on partition recycler.
+    // smlevel_0::log->discard_fetch_buffers();
 
     // restart only does one round, so we quit voluntarily here
     quit();

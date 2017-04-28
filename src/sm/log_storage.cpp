@@ -415,6 +415,7 @@ unsigned log_storage::delete_old_partitions(bool chkpt_only, partition_number_t 
 
     list<shared_ptr<partition_t>> to_be_deleted;
     vector<lsn_t> old_chkpts;
+    partition_number_t highest_deleted = 0;
 
     {
         spinlock_write_critical_section cs(&_partition_map_latch);
@@ -422,6 +423,9 @@ unsigned log_storage::delete_old_partitions(bool chkpt_only, partition_number_t 
         partition_map_t::iterator it = _partitions.begin();
         while (it != _partitions.end() && !chkpt_only) {
             if (it->first < older_than) {
+                if (it->first > highest_deleted) {
+                    highest_deleted = it->first;
+                }
                 to_be_deleted.push_front(it->second);
                 it = _partitions.erase(it);
             }
@@ -453,6 +457,9 @@ unsigned log_storage::delete_old_partitions(bool chkpt_only, partition_number_t 
     for (auto c : old_chkpts) {
         fs::remove(make_chkpt_path(c));
     }
+
+    // Recycle log fetch buffer
+    smlevel_0::log->discard_fetch_buffers(highest_deleted);
 
     return to_be_deleted.size();
 }

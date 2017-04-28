@@ -63,6 +63,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <AtomicCounter.hpp>
 #include <vector> // only for _collect_single_page_recovery_logs()
+#include <limits>
 
 // in sm_base for the purpose of log callback function argument type
 class      partition_t ; // forward
@@ -117,7 +118,8 @@ public:
     lsn_t           flush_daemon_work(lsn_t old_mark);
 
     rc_t load_fetch_buffers();
-    void discard_fetch_buffers();
+    void discard_fetch_buffers(partition_number_t recycled =
+            std::numeric_limits<partition_number_t>::max());
 
     // log buffer segment size = 128 MB
     enum { SEGMENT_SIZE = 16384 * log_storage::BLOCK_SIZE };
@@ -154,7 +156,7 @@ protected:
     uint32_t _fetch_buf_last;
     lsn_t _fetch_buf_begin;
     lsn_t _fetch_buf_end;
-    fetch_buffer_loader_t* _fetch_buf_loader;
+    shared_ptr<fetch_buffer_loader_t> _fetch_buf_loader;
 
     ticker_thread_t* _ticker;
 
