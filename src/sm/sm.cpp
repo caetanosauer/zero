@@ -451,14 +451,16 @@ rc_t ss_m::_truncate_log()
     bf->shutdown();
     W_DO(log->flush_all());
 
-    if (logArchiver) {
-        logArchiver->archiveUntilLSN(log->durable_lsn());
-        if (_options.get_bool_option("sm_truncate_archive", false)) {
-            unsigned replFactor =
-                _options.get_int_option("sm_archiver_replication_factor", 0);
-            logArchiver->getIndex()->deleteRuns(replFactor);
-        }
-    }
+    // CS this first archiveUntilLSN() is only needed if we want to truncate
+    // the log archive. Since I never actually used this, it's commented out.
+    // if (logArchiver) {
+    //     logArchiver->archiveUntilLSN(log->durable_lsn());
+    //     if (_options.get_bool_option("sm_truncate_archive", false)) {
+    //         unsigned replFactor =
+    //             _options.get_int_option("sm_archiver_replication_factor", 0);
+    //         logArchiver->getIndex()->deleteRuns(replFactor);
+    //     }
+    // }
 
     // create new, empty partition on log
     W_DO(log->truncate());
@@ -468,7 +470,10 @@ rc_t ss_m::_truncate_log()
 
     // generate an empty log archive run to cover the new durable LSN
     if(logArchiver) {
+        unsigned replFactor =
+            _options.get_int_option("sm_archiver_replication_factor", 1);
         logArchiver->archiveUntilLSN(log->durable_lsn());
+        logArchiver->getIndex()->deleteRuns(replFactor);
     }
 
     // this should be an "empty" checkpoint
