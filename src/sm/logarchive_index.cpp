@@ -84,7 +84,7 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
     // CS TODO: archiver currently only works with 1MB blocks
     blockSize = DFT_BLOCK_SIZE;
         // options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
-    bucketSize = options.get_int_option("sm_archiver_bucket_size", 128);
+    bucketSize = options.get_int_option("sm_archiver_bucket_size", 8);
     w_assert0(bucketSize > 0);
 
     bool reformat = options.get_bool_option("sm_format", false);
