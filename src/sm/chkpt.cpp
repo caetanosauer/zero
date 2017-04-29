@@ -550,7 +550,8 @@ void chkpt_t::dump(ostream& os)
 
 void chkpt_m::take(chkpt_t* chkpt)
 {
-    chkpt_mutex.acquire_write();
+    std::unique_lock<std::mutex> lck {chkpt_mutex};
+
     DBGOUT1(<<"BEGIN chkpt_m::take");
     INC_TSTAT(log_chkpt_cnt);
 
@@ -573,6 +574,8 @@ void chkpt_m::take(chkpt_t* chkpt)
     if (!chkpt_given) {
         if (_log_based) {
             // Collect checkpoint information from log
+            // CS TODO: interrupt scan_log if stop is requested
+            // if (should_exit()) { return; }
             chkpt->scan_log(begin_lsn, archived_lsn);
         }
         else {
@@ -583,9 +586,6 @@ void chkpt_m::take(chkpt_t* chkpt)
             chkpt->set_last_scan_start(begin_lsn);
         }
     }
-
-    // CS TODO: interrupt scan_log if stop is requested
-    if (should_exit()) { return; }
 
     // Serialize chkpt to file
     fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn_t::null);
@@ -608,9 +608,6 @@ void chkpt_m::take(chkpt_t* chkpt)
     }
     _min_xct_lsn = chkpt->get_min_xct_lsn();
     _last_end_lsn = chkpt->get_last_scan_start();
-
-    // Release the 'write' mutex so the next checkpoint request can come in
-    chkpt_mutex.release_write();
 }
 
 void chkpt_t::serialize_binary(ofstream& ofs)

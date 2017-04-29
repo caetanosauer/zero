@@ -239,7 +239,7 @@ public:
 private:
     long             _chkpt_count;
     chkpt_t          curr_chkpt;
-    occ_rwlock       chkpt_mutex;
+    std::mutex       chkpt_mutex;
 
     void             _acquire_lock(logrec_t& r, chkpt_t& new_chkpt);
 

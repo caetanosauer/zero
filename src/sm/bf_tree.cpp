@@ -1168,6 +1168,8 @@ bool bf_tree_m::is_used (bf_idx idx) const {
 
 bool bf_tree_m::has_dirty_frames() const
 {
+    if (_no_db_mode) { return false; }
+
     for (bf_idx i = 1; i < _block_cnt; i++) {
         auto& cb = get_cb(i);
         if (!cb.pin()) { continue; }
