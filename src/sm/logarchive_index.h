@@ -158,6 +158,29 @@ public:
     }
 
     void dumpIndex(ostream& out);
+    void dumpIndex(ostream& out, const RunId& runid);
+
+    template <class OutputIter>
+    void listRunsNonOverlapping(OutputIter out)
+    {
+        auto level = maxLevel;
+        auto startLSN = lsn_t::null;
+
+        // Start collecting runs on the max level, which has the largest runs
+        // and therefore requires the least random reads
+        while (level > 0) {
+            auto index = findRun(startLSN, level);
+
+            while ((int) index <= lastFinished[level]) {
+                auto& run = runs[level][index];
+                out = RunId{run.firstLSN, run.lastLSN, level};
+                startLSN = run.lastLSN;
+                index++;
+            }
+
+            level--;
+        }
+    }
 
 private:
 

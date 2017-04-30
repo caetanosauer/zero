@@ -184,8 +184,7 @@ ArchiveIndex::~ArchiveIndex()
     if (runRecycler) { runRecycler->stop(); }
 }
 
-void ArchiveIndex::listFiles(std::vector<std::string>& list,
-        int level)
+void ArchiveIndex::listFiles(std::vector<std::string>& list, int level)
 {
     list.clear();
 
@@ -202,8 +201,7 @@ void ArchiveIndex::listFiles(std::vector<std::string>& list,
     }
 }
 
-void ArchiveIndex::listFileStats(list<RunId>& list,
-        int level)
+void ArchiveIndex::listFileStats(list<RunId>& list, int level)
 {
     list.clear();
     if (level > static_cast<int>(getMaxLevel())) { return; }
@@ -964,18 +962,37 @@ lsn_t ArchiveIndex::roundToEndLSN(lsn_t lsn, unsigned level)
 
 void ArchiveIndex::dumpIndex(ostream& out)
 {
-    for (auto r : runs) {
-        for (size_t i = 0; i < r.size(); i++) {
+    for (size_t l = 0; l <= maxLevel; l++) {
+        for (int i = 0; i <= lastFinished[l]; i++) {
             size_t offset = 0, prevOffset = 0;
-            for (size_t j = 0; j < r[i].entries.size(); j++) {
-                offset = r[i].entries[j].offset;
-                out << "run " << i << " entry " << j <<
-                    " pid " << r[i].entries[j].pid <<
+            for (size_t j = 0; j < runs[l][i].entries.size(); j++) {
+                offset = runs[l][i].entries[j].offset;
+                out << "level " << l << " run " << i
+                    << " entry " << j <<
+                    " pid " << runs[l][i].entries[j].pid <<
                     " offset " << offset <<
                     " delta " << offset - prevOffset <<
                     endl;
                 prevOffset = offset;
             }
         }
+    }
+}
+
+void ArchiveIndex::dumpIndex(ostream& out, const RunId& runid)
+{
+    size_t offset = 0, prevOffset = 0;
+    auto index = findRun(runid.beginLSN, runid.level);
+    auto& run = runs[runid.level][index];
+    for (size_t j = 0; j < run.entries.size(); j++) {
+        offset = run.entries[j].offset;
+        out << "level " << runid.level
+            << " run " << index
+            << " entry " << j <<
+            " pid " << run.entries[j].pid <<
+            " offset " << offset <<
+            " delta " << offset - prevOffset <<
+            endl;
+        prevOffset = offset;
     }
 }
