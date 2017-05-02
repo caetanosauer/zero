@@ -10,6 +10,7 @@
 
 class ArchiveIndex;
 class LogScanner;
+class RunFile;
 class logrec_t;
 
 /** \brief Provides scans over the log archive for restore operations.
@@ -38,7 +39,7 @@ public:
         size_t offset;
         char* buffer;
         size_t bpos;
-        int fd;
+        RunFile* runFile;
         size_t blockCount;
         size_t bucketSize;
         size_t readSize;

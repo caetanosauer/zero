@@ -55,7 +55,7 @@ ArchiveScanner::open(PageID startPID, PageID endPID, lsn_t startLSN)
 ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e, unsigned level,
         PageID f, PageID l, off_t o, ArchiveIndex* index, size_t rSize)
     : runBegin(b), runEnd(e), level(level), firstPID(f), lastPID(l), offset(o),
-        fd(-1), blockCount(0), readSize(rSize), archIndex(index)
+        runFile(nullptr), blockCount(0), readSize(rSize), archIndex(index)
 {
     w_assert0(archIndex);
     // TODO get from sm options
@@ -79,8 +79,8 @@ ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e, unsigned level,
 
 ArchiveScanner::RunScanner::~RunScanner()
 {
-    if (fd > 0) {
-        W_COERCE(archIndex->closeScan(fd, RunId{runBegin, runEnd, level}));
+    if (runFile) {
+        archIndex->closeScan(RunId{runBegin, runEnd, level});
     }
 
     delete scanner;
@@ -128,24 +128,24 @@ bool ArchiveScanner::RunScanner::nextBlock()
 {
     size_t blockSize = archIndex->getBlockSize();
 
-    if (fd < 0) {
-        W_COERCE(archIndex->openForScan(fd, RunId{runBegin, runEnd, level}));
-        archIndex->getBlockCounts(fd, NULL, &blockCount);
+    if (!runFile) {
+        runFile = archIndex->openForScan(RunId{runBegin, runEnd, level});
+        archIndex->getBlockCounts(runFile, NULL, &blockCount);
     }
 
     // do not read past data blocks into index blocks
     if (blockCount == 0 || offset >= blockCount * blockSize)
     {
-        W_COERCE(archIndex->closeScan(fd, RunId{runBegin, runEnd, level}));
+        archIndex->closeScan(RunId{runBegin, runEnd, level});
         return false;
     }
 
     // offset is updated by readBlock
-    W_COERCE(archIndex->readBlock(fd, buffer, offset, readSize));
+    W_COERCE(archIndex->readBlock(runFile->fd, buffer, offset, readSize));
 
     // offset set to zero indicates EOF
     if (offset == 0) {
-        W_COERCE(archIndex->closeScan(fd, RunId{runBegin, runEnd, level}));
+        archIndex->closeScan(RunId{runBegin, runEnd, level});
         return false;
     }
 

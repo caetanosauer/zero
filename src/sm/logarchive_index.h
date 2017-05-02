@@ -28,6 +28,22 @@ struct RunId {
     }
 };
 
+// Controls access to a single run file through mmap
+struct RunFile
+{
+    RunId runid;
+    int fd;
+    int refcount;
+    char* data;
+    size_t length;
+
+    RunFile() : fd(-1), refcount(0), data(nullptr), length(0)
+    {
+    }
+
+    char* getOffset(off_t offset) const { return data + offset; }
+};
+
 namespace std
 {
     /// Hash function for RunId objects
@@ -126,9 +142,9 @@ public:
     rc_t closeCurrentRun(lsn_t runEndLSN, unsigned level, PageID maxPID = 0);
 
     // run scanning methods
-    rc_t openForScan(int& fd, const RunId& runid);
+    RunFile* openForScan(const RunId& runid);
+    void closeScan(const RunId& runid);
     rc_t readBlock(int fd, char* buf, size_t& offset, size_t readSize = 0);
-    rc_t closeScan(int& fd, const RunId& runid);
 
     void listFiles(std::vector<std::string>& list, int level = -1);
     void listFileStats(std::list<RunId>& list, int level = -1);
@@ -146,8 +162,8 @@ public:
     void probe(std::vector<ProbeResult>& probes,
             PageID startPID, PageID endPID, lsn_t startLSN);
 
-    rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
-    rc_t loadRunInfo(int fd, const RunId&);
+    void getBlockCounts(RunFile*, size_t* indexBlocks, size_t* dataBlocks);
+    void loadRunInfo(RunFile*, const RunId&);
     void startNewRun(unsigned level);
 
     unsigned getMaxLevel() const { return maxLevel; }
@@ -228,7 +244,7 @@ private:
     mutable srwlock_t _mutex;
 
     /// Cache for open files (for scans only)
-    std::unordered_map<RunId, std::pair<int, int>> _open_files;
+    std::unordered_map<RunId, RunFile> _open_files;
     mutable srwlock_t _open_file_mutex;
 
     bool directIO;

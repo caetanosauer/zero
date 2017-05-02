@@ -111,7 +111,6 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
     boost::regex current_rx(current_regex, boost::regex::perl);
 
     // create/load index
-    int fd;
     unsigned runsFound = 0;
     for (; it != eod; it++) {
         fs::path fpath = it->path();
@@ -124,9 +123,9 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
                 continue;
             }
 
-            W_COERCE(openForScan(fd, fstats));
-            W_COERCE(loadRunInfo(fd, fstats));
-            W_COERCE(closeScan(fd, fstats));
+            auto runFile = openForScan(fstats);
+            loadRunInfo(runFile, fstats);
+            closeScan(fstats);
 
             if (fstats.level > maxLevel) { maxLevel = fstats.level; }
 
@@ -161,9 +160,9 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
                 openNewRun(1);
                 closeCurrentRun(startLSN, 1);
                 RunId fstats = {lsn_t(1,0), startLSN, 1};
-                W_COERCE(openForScan(fd, fstats));
-                W_COERCE(loadRunInfo(fd, fstats));
-                W_COERCE(closeScan(fd, fstats));
+                auto runFile = openForScan(fstats);
+                loadRunInfo(runFile, fstats);
+                closeScan(fstats);
             }
         }
     }
@@ -343,27 +342,28 @@ rc_t ArchiveIndex::append(char* data, size_t length, unsigned level)
     return RCOK;
 }
 
-rc_t ArchiveIndex::openForScan(int& fd, const RunId& runid)
+RunFile* ArchiveIndex::openForScan(const RunId& runid)
 {
     spinlock_write_critical_section cs(&_open_file_mutex);
 
-    auto res = _open_files.emplace(runid, std::make_pair<int,int>(-1, 0));
-    auto& p = res.first->second;
+    auto& file = _open_files[runid];
 
-    if (p.second == 0) {
+    if (file.refcount == 0) {
         fs::path fpath = make_run_path(runid.beginLSN, runid.endLSN, runid.level);
         int flags = O_RDONLY;
         if (directIO) { flags |= O_DIRECT; }
-        p.first = ::open(fpath.string().c_str(), flags, 0744 /*mode*/);
+        file.fd = ::open(fpath.string().c_str(), flags, 0744 /*mode*/);
+        file.length = ArchiveIndex::getFileSize(file.fd);
+        file.refcount = 0;
+        file.runid = runid;
     }
 
-    CHECK_ERRNO(p.first);
-    p.second++;
-    fd = p.first;
+    CHECK_ERRNO(file.fd);
+    file.refcount++;
 
     INC_TSTAT(la_open_count);
 
-    return RCOK;
+    return &file;
 }
 
 /** Note: buffer must be allocated for at least readSize + IO_ALIGN bytes,
@@ -405,26 +405,21 @@ rc_t ArchiveIndex::readBlock(int fd, char* buf,
     return RCOK;
 }
 
-rc_t ArchiveIndex::closeScan(int& fd, const RunId& runid)
+void ArchiveIndex::closeScan(const RunId& runid)
 {
     spinlock_write_critical_section cs(&_open_file_mutex);
 
     auto it = _open_files.find(runid);
     w_assert1(it != _open_files.end());
-    w_assert0(fd == it->second.first);
 
-    auto& count = it->second.second;
-    count--;
+    auto& count = it->second.refcount;
+    // count--;
 
     if (count == 0) {
-        auto ret = ::close(fd);
-        CHECK_ERRNO(ret);
-        _open_files.erase(it);
+        // auto ret = ::close(it->second.fd);
+        // CHECK_ERRNO(ret);
+        // _open_files.erase(it);
     }
-
-    fd = -1;
-
-    return RCOK;
 }
 
 void ArchiveIndex::deleteRuns(unsigned replicationFactor)
@@ -661,7 +656,7 @@ lsn_t ArchiveIndex::getFirstLSN(unsigned level)
     return runs[level][0].firstLSN;
 }
 
-rc_t ArchiveIndex::loadRunInfo(int fd, const RunId& fstats)
+void ArchiveIndex::loadRunInfo(RunFile* runFile, const RunId& fstats)
 {
     RunInfo run;
     {
@@ -670,16 +665,16 @@ rc_t ArchiveIndex::loadRunInfo(int fd, const RunId& fstats)
 
         size_t indexBlockCount = 0;
         size_t dataBlockCount = 0;
-        W_DO(getBlockCounts(fd, &indexBlockCount, &dataBlockCount));
+        getBlockCounts(runFile, &indexBlockCount, &dataBlockCount);
 
         off_t offset = dataBlockCount * blockSize;
         w_assert1(dataBlockCount == 0 || offset > 0);
         size_t lastOffset = 0;
 
         while (indexBlockCount > 0) {
-            auto bytesRead = ::pread(fd, readBuffer, blockSize, offset);
+            auto bytesRead = ::pread(runFile->fd, readBuffer, blockSize, offset);
             CHECK_ERRNO(bytesRead);
-            if (bytesRead != (int) blockSize) { return RC(stSHORTIO); }
+            if (bytesRead != (int) blockSize) { W_FATAL(stSHORTIO); }
 
             BlockHeader* h = (BlockHeader*) readBuffer;
 
@@ -717,21 +712,16 @@ rc_t ArchiveIndex::loadRunInfo(int fd, const RunId& fstats)
     }
     runs[fstats.level].push_back(run);
     lastFinished[fstats.level] = runs[fstats.level].size() - 1;
-
-    return RCOK;
 }
 
-rc_t ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
+void ArchiveIndex::getBlockCounts(RunFile* runFile, size_t* indexBlocks,
         size_t* dataBlocks)
 {
-    size_t fsize = ArchiveIndex::getFileSize(fd);
-    w_assert1(fsize % blockSize == 0);
-
     // skip emtpy runs
-    if (fsize == 0) {
+    if (runFile->length == 0) {
         if(indexBlocks) { *indexBlocks = 0; };
         if(dataBlocks) { *dataBlocks = 0; };
-        return RCOK;
+        return;
     }
 
     // read header of last block in file -- its number is the block count
@@ -740,21 +730,19 @@ rc_t ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
     int res = posix_memalign((void**) &buffer, IO_ALIGN, IO_ALIGN);
     w_assert0(res == 0);
 
-    auto bytesRead = ::pread(fd, buffer, IO_ALIGN, fsize - blockSize);
+    auto bytesRead = ::pread(runFile->fd, buffer, IO_ALIGN, runFile->length - blockSize);
     CHECK_ERRNO(bytesRead);
-    if (bytesRead != IO_ALIGN) { return RC(stSHORTIO); }
+    if (bytesRead != IO_ALIGN) { W_FATAL(stSHORTIO); }
 
     BlockHeader* header = (BlockHeader*) buffer;
     if (indexBlocks) {
         *indexBlocks = header->blockNumber + 1;
     }
     if (dataBlocks) {
-        *dataBlocks = (fsize / blockSize) - (header->blockNumber + 1);
+        *dataBlocks = (runFile->length / blockSize) - (header->blockNumber + 1);
         w_assert1(*dataBlocks > 0);
     }
     free(buffer);
-
-    return RCOK;
 }
 
 size_t ArchiveIndex::findRun(lsn_t lsn, unsigned level)
