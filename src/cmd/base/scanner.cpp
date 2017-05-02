@@ -290,10 +290,6 @@ void MergeScanner::run()
 {
     BaseScanner::initialize();
 
-    // CS TODO blockSize not used anymore
-    // CS TODO no option for archiver block size
-    size_t blockSize = DFT_BLOCK_SIZE;
-    // size_t blockSize = options["sm_archiver_block_size"].as<int>();
     size_t bucketSize = options["sm_archiver_bucket_size"].as<int>();
     sm_options opt;
     opt.set_string_option("sm_archdir", archdir);
