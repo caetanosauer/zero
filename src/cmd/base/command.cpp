@@ -349,8 +349,10 @@ void Command::setupSMOptions(po::options_description& options)
         //TODO Stefan Find Implementations
     ("sm_backup_dir", po::value<string>(),
         "Path to a backup directory")
-    ("sm_bufferpool_replacement_policy", po::value<string>(),
-        "Replacement Policy")
+    ("sm_evict_policy", po::value<string>()->default_value("latched"),
+        "Specify a eviction policy. Options: latched, gclock")
+    ("sm_bufferpool_gclock_k", po::value<int>()->default_value(10),
+        "Specify the k-parameter for eviction policy glock")
     ("sm_archdir", po::value<string>()->default_value("archive"),
         "Path to archive directory");
     options.add(smoptions);

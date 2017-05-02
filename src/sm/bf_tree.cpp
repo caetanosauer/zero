@@ -103,9 +103,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     bool bufferpool_swizzle =
         options.get_bool_option("sm_bufferpool_swizzle", false);
-    // clock or random
-    std::string replacement_policy =
-        options.get_string_option("sm_bufferpool_replacement_policy", "clock");
 
     _write_elision = options.get_bool_option("sm_write_elision", false);
 
@@ -120,13 +117,6 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     _block_cnt = nbufpages;
     _enable_swizzling = bufferpool_swizzle;
     _maintain_emlsn = options.get_bool_option("sm_bf_maintain_emlsn", false);
-    // if (strcmp(replacement_policy.c_str(), "clock") == 0) {
-    //     _replacement_policy = POLICY_CLOCK;
-    // } else if (strcmp(replacement_policy.c_str(), "clock+priority") == 0) {
-    //     _replacement_policy = POLICY_CLOCK_PRIORITY;
-    // } else if (strcmp(replacement_policy.c_str(), "random") == 0) {
-    //     _replacement_policy = POLICY_RANDOM;
-    // }
 
     DBGOUT1 (<< "constructing bufferpool with " << nbufpages << " blocks of "
             << SM_PAGESIZE << "-bytes pages... enable_swizzling=" <<
