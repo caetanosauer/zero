@@ -60,6 +60,15 @@ public:
      */
     virtual void            hit_ref(bf_idx idx);
     
+    /*!\fn      unfix_ref(bf_idx idx)
+     * \brief   Updates the eviction statistics on page unfix
+     * \details As RANDOM page eviction doesn't require any statistics, this function
+     *          does nothing.
+     *
+     * @param idx The frame of the \link _bufferpool \endlink that was unfixed.
+     */
+    virtual void            unfix_ref(bf_idx idx);
+    
     /*!\fn      miss_ref(bf_idx b_idx, PageID pid)
      * \brief   Updates the eviction statistics on page miss
      * \details As RANDOM page eviction doesn't require any statistics, this function
@@ -258,6 +267,16 @@ public:
      *            page hit.
      */
     virtual void            hit_ref(bf_idx idx);
+	
+	/*!\fn      unfix_ref(bf_idx idx)
+	 * \brief   Updates the eviction statistics on page unfix
+	 * \details Sets the referenced counter of the specified buffer frame \c idx \c to
+     *          the value specified in \link _k \endlink as this page was still used
+     *          until this point in time.
+	 *
+	 * @param idx The frame of the \link _bufferpool \endlink that was unfixed.
+	 */
+	virtual void            unfix_ref(bf_idx idx);
     
     /*!\fn      miss_ref(bf_idx b_idx, PageID pid)
      * \brief   Updates the eviction statistics on page miss

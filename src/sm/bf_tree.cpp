@@ -736,6 +736,7 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
     // the btcursor code in detail before taking further action on this.
     // w_assert1(get_cb(idx).latch().held_by_me());
     get_cb(idx).unpin();
+    if(_evictioner) _evictioner->unfix_ref(idx);
     DBG(<< "Unpin for refix set pin cnt to " << get_cb(idx)._pin_cnt);
     w_assert1(get_cb(idx)._pin_cnt >= 0);
 }
@@ -1139,6 +1140,7 @@ void bf_tree_m::unfix(const generic_page* p, bool evict)
         w_assert1(cb._pin_cnt >= 0);
     }
     DBG(<< "Unfixed " << idx << " pin count " << cb._pin_cnt);
+    if(_evictioner) _evictioner->unfix_ref(idx);
     cb.latch().latch_release();
 }
 

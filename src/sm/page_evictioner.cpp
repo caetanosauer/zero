@@ -85,7 +85,9 @@ void page_evictioner_base::do_work()
     // cerr << "Eviction done; free frames: " << _bufferpool->_freelist_len << endl;
 }
 
-void page_evictioner_base::hit_ref(bf_idx) {}
+void page_evictioner_base::hit_ref(bf_idx idx) {}
+
+void page_evictioner_base::unfix_ref(bf_idx idx) {}
 
 void page_evictioner_base::miss_ref(bf_idx b_idx, PageID pid) {}
 
@@ -307,10 +309,14 @@ void page_evictioner_gclock::hit_ref(bf_idx idx) {
     _counts[idx] = _k;
 }
 
+void page_evictioner_gclock::unfix_ref(bf_idx idx) {
+    _counts[idx] = _k;
+}
+
 void page_evictioner_gclock::miss_ref(bf_idx b_idx, PageID pid) {}
 
 void page_evictioner_gclock::used_ref(bf_idx idx) {
-    hit_ref(idx);
+    _counts[idx] = _k;
 }
 
 void page_evictioner_gclock::dirty_ref(bf_idx idx) {}
