@@ -19,9 +19,7 @@ page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_optio
     _current_frame = 0;
 }
 
-page_evictioner_base::~page_evictioner_base()
-{
-}
+page_evictioner_base::~page_evictioner_base() {}
 
 void page_evictioner_base::do_work()
 {
@@ -89,8 +87,19 @@ void page_evictioner_base::do_work()
 
 void page_evictioner_base::hit_ref(bf_idx) {}
 
-bf_idx page_evictioner_base::pick_victim()
-{
+void page_evictioner_base::miss_ref(bf_idx b_idx, PageID pid) {}
+
+void page_evictioner_base::used_ref(bf_idx idx) {}
+
+void page_evictioner_base::dirty_ref(bf_idx idx) {}
+
+void page_evictioner_base::block_ref(bf_idx idx) {}
+
+void page_evictioner_base::swizzle_ref(bf_idx idx) {}
+
+void page_evictioner_base::unbuffered(bf_idx idx) {}
+
+bf_idx page_evictioner_base::pick_victim() {
     /*
      * CS: strategy is to try acquiring an EX latch imediately. If it works,
      * page is not that busy, so we can evict it. But only evict leaf pages.
@@ -261,9 +270,26 @@ page_evictioner_gclock::~page_evictioner_gclock()
     delete [] _counts;
 }
 
-void page_evictioner_gclock::hit_ref(bf_idx idx)
-{
+void page_evictioner_gclock::hit_ref(bf_idx idx) {
     _counts[idx] = _k;
+}
+
+void page_evictioner_gclock::miss_ref(bf_idx b_idx, PageID pid) {}
+
+void page_evictioner_gclock::used_ref(bf_idx idx) {
+    hit_ref(idx);
+}
+
+void page_evictioner_gclock::dirty_ref(bf_idx idx) {}
+
+void page_evictioner_gclock::block_ref(bf_idx idx) {
+    _counts[idx] = std::numeric_limits<uint16_t>::max();
+}
+
+void page_evictioner_gclock::swizzle_ref(bf_idx idx) {}
+
+void page_evictioner_gclock::unbuffered(bf_idx idx) {
+    _counts[idx] = 0;
 }
 
 bf_idx page_evictioner_gclock::pick_victim()

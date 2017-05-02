@@ -350,6 +350,7 @@ void bf_tree_m::_add_free_block(bf_idx idx)
     CRITICAL_SECTION(cs, &_freelist_lock);
     w_assert1(idx != FREELIST_HEAD);
     w_assert1(!get_cb(idx)._used);
+    if(_evictioner) _evictioner->unbuffered(idx);
     ++_freelist_len;
     _freelist[idx] = FREELIST_HEAD;
     FREELIST_HEAD = idx;
@@ -547,6 +548,8 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             cb.set_check_recovery(true);
 
             w_assert1(_is_active_idx(idx));
+    
+            if (_evictioner) _evictioner->miss_ref(idx, pid);
 
             // STEP 6) Fix successful -- pin page and downgrade latch
             w_assert1(cb.latch().is_mine());
