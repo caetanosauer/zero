@@ -113,7 +113,6 @@ public:
         }
     };
 
-
     size_t getBlockSize() const { return blockSize; }
     std::string getArchDir() const { return archdir; }
 

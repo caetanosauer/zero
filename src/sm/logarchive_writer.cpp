@@ -114,7 +114,7 @@ bool BlockAssembly::add(logrec_t* lr)
     }
 
     // New PID coming in: reset current PID stuff and check if it's time to add new bucket
-    if (lr->pid() != currentPID) {
+    if (lr->pid() != currentPID || currentPIDfpos == 0) {
         currentPID = lr->pid();
         currentPIDpos = pos;
         currentPIDfpos = fpos;

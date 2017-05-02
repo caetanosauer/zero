@@ -828,15 +828,28 @@ size_t ArchiveIndex::findEntry(RunInfo* run,
 
     w_assert0(i < run->entries.size());
 
+    /* The if below is for the old index organization that used pages (as in a
+     * normal B-tree) rather than buckets. In that case, we have found the pid
+     * as soon as the current entry is <= and the next >= than the given pid.
+     * In the bucket organization, entries never repeat the same pid, so the
+     * search criteria becomes "current entry <= pid && next entry > pid"
+     */
+    // if (run->entries[i].pid <= pid &&
+    //         (i == run->entries.size() - 1 || run->entries[i+1].pid >= pid))
+    // {
+    //     // found it! must first check if previous does not contain same pid
+    //     while (i > 0 && run->entries[i].pid == pid)
+    //             //&& run->entries[i].pid == run->entries[i-1].pid)
+    //     {
+    //         i--;
+    //     }
+    //     return i;
+    // }
+
     if (run->entries[i].pid <= pid &&
-            (i == run->entries.size() - 1 || run->entries[i+1].pid >= pid))
+            (i == run->entries.size() - 1 || run->entries[i+1].pid > pid))
     {
-        // found it! must first check if previous does not contain same pid
-        while (i > 0 && run->entries[i].pid == pid)
-                //&& run->entries[i].pid == run->entries[i-1].pid)
-        {
-            i--;
-        }
+        // found it! -- previous cannot contain the same pid in bucket organization
         return i;
     }
 
@@ -873,6 +886,16 @@ bool ArchiveIndex::probeInRun(ProbeResult& res)
     }
     else {
         entryBegin = findEntry(run, res.pidBegin);
+
+        if (bucketSize == 1 && res.pidBegin == res.pidEnd-1 &&
+                run->entries[entryBegin].pid != res.pidBegin)
+        {
+            // With bucket size one, we know precisely which PIDs are contained
+            // in this run, so what we have is a filter with 100% precision
+            INC_TSTAT(la_avoided_probes);
+            return false;
+        }
+
         // decide if we mean offset zero or entry zero
         if (entryBegin == 0 && run->entries[0].pid >= res.pidBegin)
         {

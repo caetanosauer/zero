@@ -20,8 +20,8 @@ void MergeRuns::setupOptions()
             "Level whose runs will be merged (a run in level+1 will be created)")
         ("fanin", po::value<size_t>(&fanin)->required(),
             "Merge fan-in (required, larger than 1)")
-        ("bucket", po::value<size_t>(&bucketSize)->default_value(16),
-            "Size of log archive index bucked in output runs")
+        ("bucket", po::value<size_t>(&bucketSize)->default_value(1),
+            "Size of log archive index bucket in output runs")
         ("repl", po::value<size_t>(&replFactor)->default_value(0),
             "Delete runs after merge to maintain given replication factor")
     ;
