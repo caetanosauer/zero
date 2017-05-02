@@ -171,6 +171,73 @@ bool ArchiveScanner::RunScanner::next(logrec_t*& lr)
     return true;
 }
 
+ArchiveScanner::MmapRunScanner::MmapRunScanner(lsn_t b, lsn_t e, unsigned level,
+        PageID f, PageID l, off_t offset, ArchiveIndex* index)
+    : runBegin(b), runEnd(e), level(level), firstPID(f), lastPID(l),
+    blockCount(0), pos(offset), runFile(nullptr), archIndex(index)
+{
+    w_assert0(archIndex);
+}
+
+ArchiveScanner::MmapRunScanner::~MmapRunScanner()
+{
+    if (runFile) {
+        archIndex->closeScan(RunId{runBegin, runEnd, level});
+    }
+}
+
+// CS TODO: this is exactly the same as RunScanner::open
+logrec_t* ArchiveScanner::MmapRunScanner::open()
+{
+    logrec_t* lr = nullptr;
+    if (next(lr)) {
+        lsn_t lsn = lr->lsn();
+        PageID pid = lr->pid();
+        DBG(<< "Run scan opened on pid " << lr->pid() << " afer " << firstPID);
+
+        // advance index until firstPID is reached
+        if (pid < firstPID) {
+            bool hasNext = true;
+            while (hasNext && lr->pid() < firstPID) {
+		ADD_TSTAT(la_skipped_bytes, lr->length());
+                hasNext = next(lr);
+            }
+            if (hasNext) {
+                DBG(<< "Run scan advanced to pid " << lr->pid() << " afer " << firstPID);
+                pid = lr->pid();
+                lsn = lr->lsn();
+            }
+            else {
+                INC_TSTAT(la_wasted_read);
+                return nullptr;
+            }
+        }
+    }
+    else {
+        INC_TSTAT(la_wasted_read);
+        return nullptr;
+    }
+
+    return lr;
+}
+
+bool ArchiveScanner::MmapRunScanner::next(logrec_t*& lr)
+{
+    if (!runFile) {
+        runFile = archIndex->openForScan(RunId{runBegin, runEnd, level});
+        w_assert0(runFile);
+        archIndex->getBlockCounts(runFile, nullptr, &blockCount);
+    }
+
+    if (runFile->length == 0) { return false; }
+
+    lr = reinterpret_cast<logrec_t*>(runFile->getOffset(pos));
+    w_assert1(lr->valid_header());
+
+    pos += lr->length();
+    return true;
+}
+
 std::ostream& operator<< (ostream& os,
         const ArchiveScanner::RunScanner& m)
 {

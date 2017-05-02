@@ -60,6 +60,29 @@ public:
         bool nextBlock();
     };
 
+    struct MmapRunScanner {
+        const lsn_t runBegin;
+        const lsn_t runEnd;
+        const unsigned level;
+        const PageID firstPID;
+        const PageID lastPID;
+
+        size_t blockCount;
+        size_t pos;
+
+        RunFile* runFile;
+        ArchiveIndex* archIndex;
+
+        MmapRunScanner(lsn_t b, lsn_t e, unsigned level, PageID f, PageID l, off_t o,
+                ArchiveIndex* index);
+        ~MmapRunScanner();
+
+        logrec_t* open();
+        bool next(logrec_t*& lr);
+
+        friend std::ostream& operator<< (std::ostream& os, const RunScanner& m);
+    };
+
 private:
     ArchiveIndex* archIndex;
 
