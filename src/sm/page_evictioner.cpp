@@ -87,7 +87,7 @@ void page_evictioner_base::do_work()
     // cerr << "Eviction done; free frames: " << _bufferpool->_freelist_len << endl;
 }
 
-void page_evictioner_base::ref(bf_idx) {}
+void page_evictioner_base::hit_ref(bf_idx) {}
 
 bf_idx page_evictioner_base::pick_victim()
 {
@@ -261,7 +261,7 @@ page_evictioner_gclock::~page_evictioner_gclock()
     delete [] _counts;
 }
 
-void page_evictioner_gclock::ref(bf_idx idx)
+void page_evictioner_gclock::hit_ref(bf_idx idx)
 {
     _counts[idx] = _k;
 }

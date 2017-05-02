@@ -441,7 +441,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         w_assert1(cb._pid == _buffer[idx].pid);
 
         cb.inc_ref_count();
-        if(_evictioner) _evictioner->ref(idx);
+        if(_evictioner) _evictioner->hit_ref(idx);
         if (mode == LATCH_EX) { cb.inc_ref_count_ex(); }
 
         page = &(_buffer[idx]);
@@ -586,7 +586,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
             w_assert1(_is_active_idx(idx));
             cb.inc_ref_count();
-            if(_evictioner) _evictioner->ref(idx);
+            if(_evictioner) _evictioner->hit_ref(idx);
             if (mode == LATCH_EX) {
                 cb.inc_ref_count_ex();
             }
@@ -1059,7 +1059,7 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
     // cb.pin();
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
     cb.inc_ref_count();
-    if(_evictioner) _evictioner->ref(idx);
+    if(_evictioner) _evictioner->hit_ref(idx);
     if (mode == LATCH_EX) { ++cb._ref_count_ex; }
     page = &(_buffer[idx]);
     return RCOK;
