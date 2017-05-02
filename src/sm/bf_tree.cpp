@@ -202,6 +202,9 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     else if(s == "latched") {
         _evictioner = new page_evictioner_base(this, ss_m::get_options());
     }
+    else if(s == "car") {
+        _evictioner = new page_evictioner_car(this, ss_m::get_options());
+    }
     else {
         std::cerr << "Invalid buffer policy." << std::endl;
         W_FATAL(eCRASH);

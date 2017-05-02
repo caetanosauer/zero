@@ -76,6 +76,7 @@ class bf_tree_m {
     friend class WarmupThread;
     friend class page_cleaner_decoupled;
     friend class page_evictioner_gclock;
+    friend class page_evictioner_car;
     friend class GenericPageIterator;
 
 public:

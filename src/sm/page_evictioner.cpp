@@ -412,3 +412,473 @@ bf_idx page_evictioner_gclock::pick_victim()
         idx++;
     }
 }
+
+page_evictioner_car::page_evictioner_car(bf_tree_m *bufferpool, const sm_options &options)
+        : page_evictioner_base(bufferpool, options)
+{
+    _clocks = new multi_clock<bf_idx, bool>(_bufferpool->_block_cnt, 2, 0);
+    
+    _b1 = new hashtable_queue<PageID>(1 | SWIZZLED_PID_BIT);
+    _b2 = new hashtable_queue<PageID>(1 | SWIZZLED_PID_BIT);
+    
+    _p = 0;
+    _c = _bufferpool->_block_cnt - 1;
+    
+    _hand_movement = 0;
+    
+    DO_PTHREAD(pthread_mutex_init(&_lock, nullptr));
+}
+
+page_evictioner_car::~page_evictioner_car() {
+    DO_PTHREAD(pthread_mutex_destroy(&_lock));
+    
+    delete(_clocks);
+    
+    delete(_b1);
+    delete(_b2);
+}
+
+void page_evictioner_car::hit_ref(bf_idx idx) {}
+
+void page_evictioner_car::unfix_ref(bf_idx idx) {
+    _clocks->set(idx, true);
+}
+
+void page_evictioner_car::miss_ref(bf_idx b_idx, PageID pid) {
+    DO_PTHREAD(pthread_mutex_lock(&_lock));
+    if (!_b1->contains(pid) && !_b2->contains(pid)) {
+        if (_clocks->size_of(T_1) + _b1->length() >= _c) {
+            _b1->pop();
+        } else if (_clocks->size_of(T_1) + _clocks->size_of(T_2) + _b1->length() + _b2->length() >= 2 * (_c)) {
+            _b2->pop();
+        }
+        w_assert0(_clocks->add_tail(T_1, b_idx));
+        DBG5(<< "Added to T_1: " << b_idx << "; New size: " << _clocks->size_of(T_1) << "; Free frames: " << _bufferpool->_approx_freelist_length);
+        _clocks->set(b_idx, false);
+    } else if (_b1->contains(pid)) {
+        _p = std::min(_p + std::max(u_int32_t(1), (_b2->length() / _b1->length())), _c);
+        w_assert0(_b1->remove(pid));
+        w_assert0(_clocks->add_tail(T_2, b_idx));
+        DBG5(<< "Added to T_2: " << b_idx << "; New size: " << _clocks->size_of(T_2) << "; Free frames: " << _bufferpool->_approx_freelist_length);
+        _clocks->set(b_idx, false);
+    } else {
+        _p = std::max<int32_t>(int32_t(_p) - std::max<int32_t>(1, (_b1->length() / _b2->length())), 0);
+        w_assert0(_b2->remove(pid));
+        w_assert0(_clocks->add_tail(T_2, b_idx));
+        DBG5(<< "Added to T_2: " << b_idx << "; New size: " << _clocks->size_of(T_2) << "; Free frames: " << _bufferpool->_approx_freelist_length);
+        _clocks->set(b_idx, false);
+    }
+    w_assert1(0 <= _clocks->size_of(T_1) + _clocks->size_of(T_2) && _clocks->size_of(T_1) + _clocks->size_of(T_2) <= _c);
+    w_assert1(0 <= _clocks->size_of(T_1) + _b1->length() && _clocks->size_of(T_1) + _b1->length() <= _c);
+    w_assert1(0 <= _clocks->size_of(T_2) + _b2->length() && _clocks->size_of(T_2) + _b2->length() <= 2 * (_c));
+    w_assert1(0 <= _clocks->size_of(T_1) + _clocks->size_of(T_2) + _b1->length() + _b2->length() && _clocks->size_of(T_1) + _clocks->size_of(T_2) + _b1->length() + _b2->length() <= 2 * (_c));
+    DO_PTHREAD(pthread_mutex_unlock(&_lock));
+}
+
+void page_evictioner_car::used_ref(bf_idx idx) {
+    hit_ref(idx);
+}
+
+void page_evictioner_car::dirty_ref(bf_idx idx) {}
+
+void page_evictioner_car::block_ref(bf_idx idx) {}
+
+void page_evictioner_car::swizzle_ref(bf_idx idx) {}
+
+void page_evictioner_car::unbuffered(bf_idx idx) {
+    DO_PTHREAD(pthread_mutex_lock(&_lock));
+    _clocks->remove(idx);
+    DO_PTHREAD(pthread_mutex_unlock(&_lock));
+}
+
+bf_idx page_evictioner_car::pick_victim() {
+    bool evicted_page = false;
+    u_int32_t blocked_t_1 = 0;
+    u_int32_t blocked_t_2 = 0;
+    
+    while (!evicted_page) {
+        if (_hand_movement >= _c) {
+            _bufferpool->get_cleaner()->wakeup(false);
+            DBG3(<< "Run Page_Cleaner ...");
+            _hand_movement = 0;
+        }
+        u_int32_t iterations = (blocked_t_1 + blocked_t_2) / _c;
+        if ((blocked_t_1 + blocked_t_2) % _c == 0 && (blocked_t_1 + blocked_t_2) > 0) {
+            DBG1(<< "Iterated " << iterations << "-times in CAR's pick_victim().");
+        }
+        w_assert1(iterations < 3);
+        DBG3(<< "p = " << _p);
+        DO_PTHREAD(pthread_mutex_lock(&_lock));
+        if ((_clocks->size_of(T_1) >= std::max<u_int32_t>(u_int32_t(1), _p) || blocked_t_2 >= _clocks->size_of(T_2)) && blocked_t_1 < _clocks->size_of(T_1)) {
+            bool t_1_head = false;
+            bf_idx t_1_head_index = 0;
+            _clocks->get_head(T_1, t_1_head);
+            _clocks->get_head_index(T_1, t_1_head_index);
+            w_assert1(t_1_head_index != 0);
+            
+            if (!t_1_head) {
+                PageID evicted_pid;
+                evicted_page = evict_page(t_1_head_index, evicted_pid);
+                
+                if (evicted_page) {
+                    w_assert0(_clocks->remove_head(T_1, t_1_head_index));
+                    w_assert0(_b1->push(evicted_pid));
+                    DBG5(<< "Removed from T_1: " << t_1_head_index << "; New size: " << _clocks->size_of(T_1) << "; Free frames: " << _bufferpool->_approx_freelist_length);
+                    
+                    DO_PTHREAD(pthread_mutex_unlock(&_lock));
+                    return t_1_head_index;
+                } else {
+                    _clocks->move_head(T_1);
+                    blocked_t_1++;
+                    _hand_movement++;
+                    DO_PTHREAD(pthread_mutex_unlock(&_lock));
+                    continue;
+                }
+            } else {
+                w_assert0(_clocks->set_head(T_1, false));
+                
+                _clocks->switch_head_to_tail(T_1, T_2, t_1_head_index);
+                DBG5(<< "Removed from T_1: " << t_1_head_index << "; New size: " << _clocks->size_of(T_1) << "; Free frames: " << _bufferpool->_approx_freelist_length);
+                DBG5(<< "Added to T_2: " << t_1_head_index << "; New size: " << _clocks->size_of(T_2) << "; Free frames: " << _bufferpool->_approx_freelist_length);
+                DO_PTHREAD(pthread_mutex_unlock(&_lock));
+                continue;
+            }
+        } else if (blocked_t_2 < _clocks->size_of(T_2)) {
+            bool t_2_head = false;
+            bf_idx t_2_head_index = 0;
+            _clocks->get_head(T_2, t_2_head);
+            _clocks->get_head_index(T_2, t_2_head_index);
+            w_assert1(t_2_head_index != 0);
+            
+            if (!t_2_head) {
+                PageID evicted_pid;
+                evicted_page = evict_page(t_2_head_index, evicted_pid);
+                
+                if (evicted_page) {
+                    w_assert0(_clocks->remove_head(T_2, t_2_head_index));
+                    w_assert0(_b2->push(evicted_pid));
+                    DBG5(<< "Removed from T_2: " << t_2_head_index << "; New size: " << _clocks->size_of(T_2) << "; Free frames: " << _bufferpool->_approx_freelist_length);
+                    
+                    DO_PTHREAD(pthread_mutex_unlock(&_lock));
+                    return t_2_head_index;
+                } else {
+                    _clocks->move_head(T_2);
+                    blocked_t_2++;
+                    _hand_movement++;
+                    DO_PTHREAD(pthread_mutex_unlock(&_lock));
+                    continue;
+                }
+            } else {
+                w_assert0(_clocks->set_head(T_2, false));
+                
+                _clocks->move_head(T_2);
+                _hand_movement++;
+                DO_PTHREAD(pthread_mutex_unlock(&_lock));
+                continue;
+            }
+        } else {
+            DO_PTHREAD(pthread_mutex_unlock(&_lock));
+            return 0;
+        }
+        
+        DO_PTHREAD(pthread_mutex_unlock(&_lock));
+    }
+    
+    return 0;
+}
+
+template<class key>
+bool hashtable_queue<key>::contains(key k) {
+    return _direct_access_queue->count(k);
+}
+
+template<class key>
+hashtable_queue<key>::hashtable_queue(key invalid_key) {
+    _direct_access_queue = new std::unordered_map<key, key_pair>();
+    _invalid_key = invalid_key;
+    _back = _invalid_key;
+    _front = _invalid_key;
+}
+
+template<class key>
+hashtable_queue<key>::~hashtable_queue() {
+    delete(_direct_access_queue);
+    _direct_access_queue = nullptr;
+}
+
+template<class key>
+bool hashtable_queue<key>::push(key k) {
+    if (!_direct_access_queue->empty()) {
+        auto old_size = _direct_access_queue->size();
+        key old_back = _back;
+        key_pair old_back_entry = (*_direct_access_queue)[old_back];
+        w_assert1(old_back != _invalid_key);
+        w_assert1(old_back_entry._next == _invalid_key);
+        
+        if (this->contains(k)) {
+            return false;
+        }
+        (*_direct_access_queue)[k] = key_pair(old_back, _invalid_key);
+        (*_direct_access_queue)[old_back]._next = k;
+        _back = k;
+        w_assert1(_direct_access_queue->size() == old_size + 1);
+    } else {
+        w_assert1(_back == _invalid_key);
+        w_assert1(_front == _invalid_key);
+        
+        (*_direct_access_queue)[k] = key_pair(_invalid_key, _invalid_key);
+        _back = k;
+        _front = k;
+        w_assert1(_direct_access_queue->size() == 1);
+    }
+    return true;
+}
+
+template<class key>
+bool hashtable_queue<key>::pop() {
+    if (_direct_access_queue->empty()) {
+        return false;
+    } else if (_direct_access_queue->size() == 1) {
+        w_assert1(_back == _front);
+        w_assert1((*_direct_access_queue)[_front]._next == _invalid_key);
+        w_assert1((*_direct_access_queue)[_front]._previous == _invalid_key);
+        
+        _direct_access_queue->erase(_front);
+        _front = _invalid_key;
+        _back = _invalid_key;
+        w_assert1(_direct_access_queue->size() == 0);
+    } else {
+        auto old_size = _direct_access_queue->size();
+        key old_front = _front;
+        key_pair old_front_entry = (*_direct_access_queue)[_front];
+        w_assert1(_back != _front);
+        w_assert1(_back != _invalid_key);
+        
+        _front = old_front_entry._next;
+        (*_direct_access_queue)[old_front_entry._next]._previous = _invalid_key;
+        _direct_access_queue->erase(old_front);
+        w_assert1(_direct_access_queue->size() == old_size - 1);
+    }
+    return true;
+}
+
+template<class key>
+bool hashtable_queue<key>::remove(key k) {
+    if (!this->contains(k)) {
+        return false;
+    } else {
+        auto old_size = _direct_access_queue->size();
+        key_pair old_key = (*_direct_access_queue)[k];
+        if (old_key._next != _invalid_key) {
+            (*_direct_access_queue)[old_key._next]._previous = old_key._previous;
+        } else {
+            _back = old_key._previous;
+        }
+        if (old_key._previous != _invalid_key) {
+            (*_direct_access_queue)[old_key._previous]._next = old_key._next;
+        } else {
+            _front = old_key._next;
+        }
+        _direct_access_queue->erase(k);
+        w_assert1(_direct_access_queue->size() == old_size - 1);
+    }
+    return true;
+}
+
+template<class key>
+u_int32_t hashtable_queue<key>::length() {
+    return _direct_access_queue->size();
+}
+
+template<class key, class value>
+multi_clock<key, value>::multi_clock(key clocksize, clk_idx clocknumber, key invalid_index) {
+    _clocksize = clocksize;
+    _values = new value[_clocksize]();
+    _clocks = new index_pair[_clocksize]();
+    _invalid_index = invalid_index;
+    
+    _clocknumber = clocknumber;
+    _hands = new key[_clocknumber]();
+    _sizes = new key[_clocknumber]();
+    for (int i = 0; i <= _clocknumber - 1; i++) {
+        _hands[i] = _invalid_index;
+    }
+    _invalid_clock_index = _clocknumber;
+    _clock_membership = new clk_idx[_clocksize]();
+    for (int i = 0; i <= _clocksize - 1; i++) {
+        _clock_membership[i] = _invalid_clock_index;
+    }
+}
+
+template<class key, class value>
+multi_clock<key, value>::~multi_clock() {
+    _clocksize = 0;
+    delete[](_values);
+    delete[](_clocks);
+    delete[](_clock_membership);
+    
+    _clocknumber = 0;
+    delete[](_hands);
+    delete[](_sizes);
+}
+
+template<class key, class value>
+bool multi_clock<key, value>::get_head(const clk_idx clock, value &head_value) {
+    if (!empty(clock)) {
+        head_value = _values[_hands[clock]];
+        w_assert1(_clock_membership[_hands[clock]] == clock);
+        return true;
+    } else {
+        head_value = _invalid_index;
+        w_assert1(_hands[clock] == _invalid_index);
+        return false;
+    }
+}
+
+template<class key, class value>
+bool multi_clock<key, value>::set_head(const clk_idx clock, const value new_value) {
+    if (!empty(clock)) {
+        _values[_hands[clock]] = new_value;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template<class key, class value>
+bool multi_clock<key, value>::get_head_index(const clk_idx clock, key &head_index) {
+    if (!empty(clock)) {
+        head_index = _hands[clock];
+        w_assert1(_clock_membership[_hands[clock]] == clock);
+        return true;
+    } else {
+        head_index = _invalid_index;
+        w_assert1(head_index == _invalid_index);
+        return false;
+    }
+}
+
+template<class key, class value>
+bool multi_clock<key, value>::move_head(const clk_idx clock) {
+    if (!empty(clock)) {
+        _hands[clock] = _clocks[_hands[clock]]._after;
+        w_assert1(_clock_membership[_hands[clock]] == clock);
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template<class key, class value>
+bool multi_clock<key, value>::add_tail(const clk_idx clock, const key index) {
+    if (valid_index(index) && !contained_index(index)
+     && valid_clock_index(clock)) {
+        if (empty(clock)) {
+            _hands[clock] = index;
+            _clocks[index]._before = index;
+            _clocks[index]._after = index;
+        } else {
+            _clocks[index]._before = _clocks[_hands[clock]]._before;
+            _clocks[index]._after = _hands[clock];
+            _clocks[_clocks[_hands[clock]]._before]._after = index;
+            _clocks[_hands[clock]]._before = index;
+        }
+        _sizes[clock]++;
+        _clock_membership[index] = clock;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template<class key, class value>
+bool multi_clock<key, value>::add_after(const key inside, const key new_entry) {
+    if (valid_index(new_entry) && !contained_index(new_entry)
+     && contained_index(inside)) {
+        w_assert1(_sizes[_clock_membership[inside]] >= 1);
+        _clocks[new_entry]._after = _clocks[inside]._after;
+        _clocks[new_entry]._before = inside;
+        _clocks[inside]._after = new_entry;
+        _clock_membership[new_entry] = _clock_membership[inside];
+        _sizes[_clock_membership[inside]]++;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template<class key, class value>
+bool multi_clock<key, value>::add_before(const key inside, const key new_entry) {
+    if (valid_index(new_entry) && !contained_index(new_entry)
+     && contained_index(inside)) {
+        w_assert1(_sizes[_clock_membership[inside]] >= 1);
+        _clocks[new_entry]._before = _clocks[inside]._before;
+        _clocks[new_entry]._after = inside;
+        _clocks[inside]._before = new_entry;
+        _clock_membership[new_entry] = _clock_membership[inside];
+        _sizes[_clock_membership[inside]]++;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template<class key, class value>
+bool multi_clock<key, value>::remove_head(const clk_idx clock, key &removed_index) {
+    if (!empty(clock)) {
+        removed_index = _hands[clock];
+        w_assert0(remove(removed_index));
+        return true;
+    } else {
+        removed_index = _invalid_index;
+        w_assert1(_hands[clock] == _invalid_index);
+        return false;
+    }
+}
+
+template<class key, class value>
+bool multi_clock<key, value>::remove(key &index) {
+    if (contained_index(index)) {
+        clk_idx clock = _clock_membership[index];
+        if (_sizes[clock] == 1) {
+            w_assert1(_hands[clock] >= 0 && _hands[clock] <= _clocksize - 1 && _hands[clock] != _invalid_index);
+            w_assert1(_clocks[_hands[clock]]._before == _hands[clock]);
+            w_assert1(_clocks[_hands[clock]]._after == _hands[clock]);
+            
+            _clocks[index]._before = _invalid_index;
+            _clocks[index]._after = _invalid_index;
+            _hands[clock] = _invalid_index;
+            _clock_membership[index] = _invalid_clock_index;
+            _sizes[clock]--;
+            return true;
+        } else {
+            _clocks[_clocks[index]._before]._after = _clocks[index]._after;
+            _clocks[_clocks[index]._after]._before = _clocks[index]._before;
+            _hands[clock] = _clocks[index]._after;
+            _clocks[index]._before = _invalid_index;
+            _clocks[index]._after = _invalid_index;
+            _clock_membership[index] = _invalid_clock_index;
+            _sizes[clock]--;
+            
+            w_assert1(_hands[clock] != _invalid_index);
+            return true;
+        }
+    } else {
+        return false;
+    }
+}
+
+template<class key, class value>
+bool multi_clock<key, value>::switch_head_to_tail(const clk_idx source, const clk_idx destination,
+                                                  key &moved_index) {
+    moved_index = _invalid_index;
+    if (!empty(source) && valid_clock_index(destination)) {
+        w_assert0(remove_head(source, moved_index));
+        w_assert1(moved_index != _invalid_index);
+        w_assert0(add_tail(destination, moved_index));
+        
+        return true;
+    } else {
+        return false;
+    }
+}
