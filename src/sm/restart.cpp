@@ -581,8 +581,13 @@ void SprIterator::open(PageID pid, lsn_t firstLSN, lsn_t lastLSN, bool prioritiz
         // What we have to do now is fetch the log records between current_lsn and
         // nxt (both exclusive intervals) from the log archive and add them into
         // the buffer as well.
+#ifndef USE_MMAP
         archive_scan.reset(new ArchiveScanner{ss_m::logArchiver->getIndex()});
         merger = archive_scan->open(pid, pid+1, firstLSN);
+#else
+        merger = make_shared<ArchiveScan>(ss_m::logArchiver->getIndex(),
+                pid, pid+1, firstLSN);
+#endif
     }
 
     lr_iter = lr_offsets.begin();

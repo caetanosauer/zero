@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <memory>
+#include <vector>
 
 #include "basics.h"
 #include "lsn.h"
@@ -12,6 +13,48 @@ class ArchiveIndex;
 class LogScanner;
 class RunFile;
 class logrec_t;
+
+struct MergeInput
+{
+    RunFile* runFile;
+    size_t pos;
+    lsn_t keyLSN;
+    PageID keyPID;
+    PageID endPID;
+
+
+    logrec_t* logrec();
+    bool open(PageID startPID);
+    bool hasNext();
+    void next();
+
+    friend bool mergeInputCmpGt(const MergeInput& a, const MergeInput& b);
+};
+
+
+// Merge input should be exactly 1/2 of a cacheline
+static_assert(sizeof(MergeInput) == 32, "Misaligned MergeInput");
+
+class ArchiveScan {
+public:
+    ArchiveScan(ArchiveIndex*, PageID startPID, PageID endPID, lsn_t startLSN);
+    ~ArchiveScan();
+
+    bool next(logrec_t*&);
+
+    void dumpHeap();
+
+private:
+    // Thread-local storage for merge inputs
+    static thread_local std::vector<MergeInput> _mergeInputVector;
+
+    std::vector<MergeInput>::iterator heapBegin;
+    std::vector<MergeInput>::iterator heapEnd;
+
+    ArchiveIndex* archIndex;
+
+    lsn_t prevLSN;
+};
 
 /** \brief Provides scans over the log archive for restore operations.
  *

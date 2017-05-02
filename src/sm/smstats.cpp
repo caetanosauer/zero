@@ -264,6 +264,7 @@ const char* get_stat_name(sm_stat_id s)
         case sm_stat_id::la_img_compressed_bytes: return "la_img_compressed_bytes";
         case sm_stat_id::log_img_format_bytes: return "log_img_format_bytes";
         case sm_stat_id::la_skipped_bytes: return "la_skipped_bytes";
+        case sm_stat_id::la_img_trimmed: return "la_img_trimmed";
         case sm_stat_id::backup_not_prefetched: return "backup_not_prefetched";
         case sm_stat_id::backup_evict_segment: return "backup_evict_segment";
         case sm_stat_id::backup_eviction_stuck: return "backup_eviction_stuck";
@@ -496,6 +497,7 @@ const char* get_stat_expl(sm_stat_id s)
         case sm_stat_id::la_img_compressed_bytes: return "Bytes saved by applying page image compression";
         case sm_stat_id::log_img_format_bytes: return "Bytes added to transaction log by generating page images";
         case sm_stat_id::la_skipped_bytes: return "Bytes skipped in open method of archive index probes";
+        case sm_stat_id::la_img_trimmed: return "Log archive lookups trimmed off thanks to page_img logrecs";
         case sm_stat_id::backup_not_prefetched: return "How often a segment was fixed without being prefetched first";
         case sm_stat_id::backup_evict_segment: return "A buffered segment had to be evicted in the brackup prefetcher";
         case sm_stat_id::backup_eviction_stuck: return "Backup prefetcher could not find a segment to evict";

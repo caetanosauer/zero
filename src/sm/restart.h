@@ -128,8 +128,12 @@ private:
     size_t buffer_capacity;
     std::list<uint32_t> lr_offsets;
     std::list<uint32_t>::const_iterator lr_iter;
+#ifndef USE_MMAP
     std::unique_ptr<ArchiveScanner> archive_scan;
     std::shared_ptr<ArchiveScanner::RunMerger> merger;
+#else
+    std::shared_ptr<ArchiveScan> merger;
+#endif
 
     lsn_t last_lsn;
     unsigned replayed_count;

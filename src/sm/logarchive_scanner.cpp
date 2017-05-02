@@ -1,5 +1,7 @@
 #include "logarchive_scanner.h"
 
+#include <vector>
+
 #include "stopwatch.h"
 #include "smthread.h"
 #include "logarchive_index.h"
@@ -9,6 +11,137 @@
 // We could try using 512 (typical hard drive sector) at some point,
 // but none of this is actually standardized or portable
 const size_t IO_ALIGN = 512;
+
+thread_local std::vector<MergeInput> ArchiveScan::_mergeInputVector;
+
+bool mergeInputCmpGt(const MergeInput& a, const MergeInput& b)
+{
+    if (a.keyPID != b.keyPID) { return a.keyPID > b.keyPID; }
+    return a.keyLSN > b.keyLSN;
+}
+
+ArchiveScan::ArchiveScan(ArchiveIndex* archIndex,
+        PageID startPID, PageID endPID, lsn_t startLSN)
+    : archIndex(archIndex)
+{
+    auto& inputs = _mergeInputVector;
+
+    archIndex->probe(inputs, startPID, endPID, startLSN);
+
+    // 1) Open inputs and trim when page-image log record is found
+    heapBegin = inputs.begin();
+    auto it = inputs.rbegin();
+    while (it != inputs.rend())
+    {
+        if (it->open(startPID)) {
+            auto lr = it->logrec();
+            it++;
+            if (lr->type() == logrec_t::t_page_img_format) {
+                // Any entries beyond it (including it are ignored)
+                heapBegin = it.base();
+                ADD_TSTAT(la_img_trimmed, heapBegin - inputs.begin());
+                break;
+            }
+        }
+        else {
+            std::advance(it, 1);
+            inputs.erase(it.base());
+        }
+    }
+
+    heapEnd = inputs.end();
+    std::make_heap(heapBegin, heapEnd, mergeInputCmpGt);
+}
+
+bool ArchiveScan::next(logrec_t*& lr)
+{
+    if (heapBegin == heapEnd) { return false; }
+
+    std::pop_heap(heapBegin, heapEnd, mergeInputCmpGt);
+    auto top = std::prev(heapEnd);
+
+
+    if (top->hasNext()) {
+        lr = top->logrec();
+        top->next();
+        std::push_heap(heapBegin, heapEnd, mergeInputCmpGt);
+    }
+    else {
+        heapEnd--;
+        return next(lr);
+    }
+
+    w_assert1(lr->has_page_img(lr->pid()) || lr->page_prev_lsn() == prevLSN);
+    prevLSN = lr->lsn();
+
+    return true;
+}
+
+ArchiveScan::~ArchiveScan()
+{
+    for (auto it : _mergeInputVector) {
+        archIndex->closeScan(it.runFile->runid);
+    }
+    _mergeInputVector.clear();
+}
+
+void ArchiveScan::dumpHeap()
+{
+    for (auto it = heapBegin; it != heapEnd; it++) {
+        std::cout << *(it->logrec()) << std::endl;
+    }
+}
+
+logrec_t* MergeInput::logrec()
+{
+    return reinterpret_cast<logrec_t*>(runFile->getOffset(pos));
+}
+
+bool MergeInput::open(PageID startPID)
+{
+    if (hasNext()) {
+        auto lr = logrec();
+        keyLSN = lr->lsn();
+        keyPID = lr->pid();
+
+        // advance index until firstPID is reached
+        if (keyPID < startPID) {
+            while (hasNext() && lr->pid() < startPID) {
+                ADD_TSTAT(la_skipped_bytes, lr->length());
+                next();
+                lr = logrec();
+            }
+            if (hasNext()) {
+                keyPID = lr->pid();
+                keyLSN = lr->lsn();
+            }
+            else {
+                INC_TSTAT(la_wasted_read);
+                return false;
+            }
+        }
+    }
+    else {
+        INC_TSTAT(la_wasted_read);
+        return false;
+    }
+
+    return true;
+}
+
+bool MergeInput::hasNext()
+{
+    if (!runFile || runFile->length == 0) { return false; }
+    auto lr = logrec();
+    return lr->type() != logrec_t::t_skip && (endPID == 0 || lr->pid() < endPID);
+}
+
+void MergeInput::next()
+{
+    w_assert1(hasNext());
+    pos += logrec()->length();
+    w_assert1(logrec()->valid_header());
+}
 
 ArchiveScanner::ArchiveScanner(ArchiveIndex* index)
     : archIndex(index)

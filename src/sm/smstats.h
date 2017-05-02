@@ -351,6 +351,7 @@ enum class sm_stat_id : size_t
     la_img_compressed_bytes,
     log_img_format_bytes,
     la_skipped_bytes,
+    la_img_trimmed,
     backup_not_prefetched,
     backup_evict_segment,
     backup_eviction_stuck,

@@ -162,6 +162,9 @@ public:
     void probe(std::vector<ProbeResult>& probes,
             PageID startPID, PageID endPID, lsn_t startLSN);
 
+    template <class Input>
+    void probe(std::vector<Input>&, PageID, PageID, lsn_t);
+
     void getBlockCounts(RunFile*, size_t* indexBlocks, size_t* dataBlocks);
     void loadRunInfo(RunFile*, const RunId&);
     void startNewRun(unsigned level);
@@ -258,5 +261,53 @@ public:
     const static string run_regex;
     const static string current_regex;
 };
+
+template <class Input>
+void ArchiveIndex::probe(std::vector<Input>& inputs,
+        PageID startPID, PageID endPID, lsn_t startLSN)
+{
+    spinlock_read_critical_section cs(&_mutex);
+
+    Input input;
+    input.endPID = endPID;
+    unsigned level = maxLevel;
+    inputs.clear();
+
+    while (level > 0) {
+        size_t index = findRun(startLSN, level);
+
+        while ((int) index <= lastFinished[level]) {
+            auto& run = runs[level][index];
+            index++;
+            startLSN = run.lastLSN;
+
+            if (startPID > run.maxPID) {
+                // INC_TSTAT(la_avoided_probes);
+                continue;
+            }
+
+            if (run.entries.size() > 0) {
+                size_t entryBegin = findEntry(&run, startPID);
+
+                if (bucketSize == 1 && startPID == endPID-1 &&
+                        run.entries[entryBegin].pid != startPID)
+                {
+                    // With bucket size one, we know precisely which PIDs are contained
+                    // in this run, so what we have is a filter with 100% precision
+                    // INC_TSTAT(la_avoided_probes);
+                    continue;
+                }
+
+                input.pos = run.entries[entryBegin].offset;
+                input.runFile =
+                    openForScan(RunId{run.firstLSN, run.lastLSN, level});
+                w_assert1(input.pos < input.runFile->length);
+                inputs.push_back(input);
+            }
+        }
+
+        level--;
+    }
+}
 
 #endif
