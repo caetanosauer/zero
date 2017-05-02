@@ -110,9 +110,9 @@ bf_idx page_evictioner_base::pick_victim() {
 
     bool ignore_dirty = _bufferpool->is_no_db_mode() || _bufferpool->_write_elision;
 
-     bf_idx idx = _current_frame;
-     unsigned rounds = 0;
-     while(true) {
+    bf_idx idx = _current_frame;
+    unsigned rounds = 0;
+    while(true) {
 
         if (should_exit()) return 0; // in bf_tree.h, 0 is never used, means null
 
@@ -128,47 +128,80 @@ bf_idx page_evictioner_base::pick_victim() {
             INC_TSTAT(bf_eviction_stuck);
         }
 
-        auto& cb = _bufferpool->get_cb(idx);
-
-        // Step 1: latch page in EX mode and check if eligible for eviction
-        rc_t latch_rc;
-        latch_rc = cb.latch().latch_acquire(LATCH_EX, timeout_t::WAIT_IMMEDIATE);
-        if (latch_rc.is_error()) {
-            idx++;
-            DBG3(<< "Eviction failed on latch for " << idx);
-            continue;
-        }
-        w_assert1(cb.latch().is_mine());
-
-        // now we hold an EX latch -- check if leaf and not dirty
-        btree_page_h p;
-        p.fix_nonbufferpool_page(_bufferpool->_buffer + idx);
-        if (p.tag() != t_btree_p || !p.is_leaf()
-                || (!ignore_dirty && cb.is_dirty())
-                || !cb._used || p.pid() == p.root() || p.get_foster() != 0)
-        {
-            cb.latch().latch_release();
-            DBG5(<< "Eviction failed on flags for " << idx);
+        PageID evicted_page;
+        if (evict_page(idx, evicted_page)) {
+            w_assert1(_bufferpool->_is_active_idx(idx));
+            _current_frame = idx + 1;
+            
+            return idx;
+        } else {
             idx++;
             continue;
         }
-
-        // page is a B-tree leaf -- check if pin count is zero
-        if (cb._pin_cnt != 0)
-        {
-            // pin count -1 means page was already evicted
-            cb.latch().latch_release();
-            DBG3(<< "Eviction failed on for " << idx
-                    << " pin count is " << cb._pin_cnt);
-            idx++;
-            continue;
-        }
-        w_assert1(_bufferpool->_is_active_idx(idx));
-
-        // If we got here, we passed all tests and have a victim!
-        _current_frame = idx +1;
-        return idx;
     }
+}
+
+bool page_evictioner_base::evict_page(bf_idx idx, PageID &evicted_page) {
+    bool ignore_dirty = _bufferpool->is_no_db_mode() || _bufferpool->_write_elision;
+    
+    // Step 1: Get the control block of the eviction candidate
+    bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
+    evicted_page = cb._pid;
+    
+    // Step 2: Latch page in EX mode and check if eligible for eviction
+    rc_t latch_rc;
+    latch_rc = cb.latch().latch_acquire(LATCH_EX, timeout_t::WAIT_IMMEDIATE);
+    if (latch_rc.is_error()) {
+        idx++;
+        DBG3(<< "Eviction failed on latch for " << idx);
+        return false;
+    }
+    w_assert1(cb.latch().is_mine());
+    
+    btree_page_h p;
+    p.fix_nonbufferpool_page(_bufferpool->_buffer + idx);
+    
+    // Step 3: Check if the page is evictable (root pages and non-b+tree pages cannot be evicted)
+    if (p.tag() != t_btree_p || p.pid() == p.root() /* || !p.is_leaf() */) {
+        block_ref(idx);
+        cb.latch().latch_release();
+        DBG3(<< "Eviction failed on page type for " << idx);
+        return false;
+    }
+    
+    // Step 4: Check if the page is dirty and therefore cannot be evicted (when write elision is not used)
+    if (!ignore_dirty && cb.is_dirty()) {
+        dirty_ref(idx);
+        cb.latch().latch_release();
+        DBG3(<< "Eviction failed on update propagation for " << idx);
+        return false;
+    }
+    
+    // Step 5: Check if the buffer frame is used as an empty buffer frame cannot be freed
+    if (!cb._used) {
+        unbuffered(idx);
+        cb.latch().latch_release();
+        DBG3(<< "Eviction failed on emptiness for " << idx);
+        return false;
+    }
+    
+    // Step 6: Check if the page contains a swizzled pointer as this prevents the eviction
+    if (_swizzling_enabled && _bufferpool->has_swizzled_child(idx)) {
+        swizzle_ref(idx);
+        cb.latch().latch_release();
+        DBG3(<< "Eviction failed on swizzled pointer for " << idx);
+        return false;
+    }
+    
+    // Step 7: Check if page is currently evictable (not pinned)
+    if (p.get_foster() != 0 || cb._pin_cnt != 0) {
+        used_ref(idx);
+        cb.latch().latch_release();
+        DBG3(<< "Eviction failed on usage for " << idx);
+        return false;
+    }
+    
+    return true;
 }
 
 bool page_evictioner_base::unswizzle_and_update_emlsn(bf_idx idx)
@@ -238,10 +271,10 @@ bool page_evictioner_base::unswizzle_and_update_emlsn(bf_idx idx)
     _bufferpool->_buffer[idx].lsn = cb.get_page_lsn();
     if (_maintain_emlsn && old < _bufferpool->_buffer[idx].lsn) {
         DBG3(<< "Updated EMLSN on page " << parent_h.pid()
-                << " slot=" << child_slotid
-                << " (child pid=" << pid << ")"
-                << ", OldEMLSN=" << old << " NewEMLSN=" <<
-                _bufferpool->_buffer[idx].lsn);
+             << " slot=" << child_slotid
+             << " (child pid=" << pid << ")"
+             << ", OldEMLSN=" << old
+             << " NewEMLSN=" << _bufferpool->_buffer[idx].lsn);
 
         w_assert1(parent_cb.latch().is_mine());
 

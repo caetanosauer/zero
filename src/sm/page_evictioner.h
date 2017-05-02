@@ -150,6 +150,20 @@ protected:
      *         be found.
      */
     virtual bf_idx          pick_victim();
+    
+    /*!\fn      evict_page(bf_idx idx, PageID &evicted_page)
+     * \brief   Prepares a page for eviction
+     * \details Checks a buffer frame if it can be freed (in use, contained page
+     *          not pinned, etc.). If it can be freed, the checked buffer frame is
+     *          latched in exclusive mode after the execution of this function.
+     *
+     * @param idx          The buffer frame that should be freed. If it can be freed,
+     *                     it gets latched exclusively by this function.
+     * @param evicted_page Returns the page in the selected buffer frame \c idx \c.
+     * @return             Returns \c true \c if the page can be evicted and \c false \c
+     *                     if some property prevents the eviction of that page.
+     */
+    bool evict_page(bf_idx idx, PageID &evicted_page);
 
 
 private:
