@@ -622,7 +622,7 @@ lsn_t ArchiveIndex::getLastLSN()
 
     lsn_t last = lsn_t(1,0);
 
-    for (int l = 1; l <= maxLevel; l++) {
+    for (unsigned l = 1; l <= maxLevel; l++) {
         if (lastFinished[l] >= 0) {
             auto& run = runs[l][lastFinished[l]];
             if (run.lastLSN > last) {

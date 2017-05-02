@@ -303,7 +303,7 @@ void MergeScanner::run()
     ArchiveIndex* directory = new ArchiveIndex(opt);
     ArchiveScanner logScan(directory);
 
-    auto merger = logScan.open(0, 0, lsn_t::null, blockSize);
+    auto merger = logScan.open(0, 0, lsn_t::null);
 
     logrec_t* lr;
 

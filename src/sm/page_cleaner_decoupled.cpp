@@ -30,8 +30,7 @@ void page_cleaner_decoupled::do_work()
     ERROUT(<< "Cleaner thread activated from " << _clean_lsn);
 
     ArchiveScanner logScan(smlevel_0::logArchiver->getIndex());
-    // CS TODO block size
-    auto merger = logScan.open(0, 0, _clean_lsn, 1048576);
+    auto merger = logScan.open(0, 0, _clean_lsn);
 
     generic_page* page = nullptr;
     PageID currentPid = 0, firstPid = 0;

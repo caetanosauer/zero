@@ -568,7 +568,7 @@ SprIterator::SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
         // nxt (both exclusive intervals) from the log archive and add them into
         // the buffer as well.
         archive_scan.reset(new ArchiveScanner{ss_m::logArchiver->getIndex()});
-        merger = archive_scan->open(pid, pid+1, firstLSN, 0);
+        merger = archive_scan->open(pid, pid+1, firstLSN);
     }
 
     lr_iter = lr_offsets.begin();

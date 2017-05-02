@@ -20,8 +20,7 @@ ArchiveScanner::ArchiveScanner(ArchiveIndex* index)
 }
 
 std::shared_ptr<ArchiveScanner::RunMerger>
-ArchiveScanner::open(PageID startPID, PageID endPID,
-        lsn_t startLSN, size_t readSize)
+ArchiveScanner::open(PageID startPID, PageID endPID, lsn_t startLSN)
 {
     auto merger = std::make_shared<RunMerger>();
     vector<ArchiveIndex::ProbeResult> probes;
@@ -38,8 +37,7 @@ ArchiveScanner::open(PageID startPID, PageID endPID,
                 probes[i].pidBegin,
                 probes[i].pidEnd,
                 probes[i].offset,
-                archIndex,
-                readSize
+                archIndex
         );
 
         merger->addInput(runScanner);

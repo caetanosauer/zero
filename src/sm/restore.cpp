@@ -658,7 +658,7 @@ void RestoreMgr::restoreLoop(unsigned id)
 
         lsn_t backupLSN = volume->get_backup_lsn();
 
-        auto merger = logScan.open(startPID, endPID, backupLSN, 0);
+        auto merger = logScan.open(startPID, endPID, backupLSN);
 
         DBG3(<< "RunMerger opened with " << merger->heapSize() << " runs"
                 << " starting on LSN " << backupLSN);
