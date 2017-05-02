@@ -140,13 +140,16 @@ bool BlockAssembly::add(logrec_t* lr)
         //  Simply discard all log records produced for the current PID do far
         pos = currentPIDpos;
         fpos = currentPIDfpos;
-        // Adjust per-page log chain to satisfy redo assertions
-        lr->set_page_prev_lsn(currentPIDprevLSN);
     }
-
     w_assert1(pos > 0 || fpos % blockSize == 0);
 
     memcpy(dest + pos, lr, lr->length());
+
+    if (enableCompression && lr->type() == logrec_t::t_page_img_format) {
+        // Adjust per-page log chain to satisfy redo assertions
+        reinterpret_cast<logrec_t*>(dest + pos)->set_page_prev_lsn(currentPIDprevLSN);
+    }
+
     pos += lr->length();
     fpos += lr->length();
     return true;
