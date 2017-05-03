@@ -133,6 +133,18 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
         }
     };
 
+    struct alloc_format_log : public logrec_t {
+        static constexpr kind_t TYPE = logrec_t::t_alloc_format;
+        template <class Ptr> void construct (Ptr)
+        {
+        }
+        template <class Ptr> void redo(Ptr p)
+        {
+            auto page = reinterpret_cast<alloc_page*>(p->get_generic_page());
+            page->format_empty();
+        }
+    };
+
     struct create_store_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_create_store;
     template <class PagePtr>

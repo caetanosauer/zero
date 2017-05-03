@@ -16,9 +16,11 @@ stnode_cache_t::stnode_cache_t(bool create)
     W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX, false, create));
 
     if (create) {
+        sys_xct_section_t ssx(true);
         auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
         spage->format_empty();
         Logger::log_p<stnode_format_log>(&p);
+        W_COERCE(ssx.end_sys_xct(RCOK));
     }
 }
 
@@ -93,21 +95,15 @@ rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum) const
 
 rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext) const
 {
+    sys_xct_section_t ssx(true);
+
     fixable_page_h p;
     W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX));
     auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
-
     spage->set_last_extent(snum, ext);
-
-    // There is no format log record for alloc page, so we just perform
-    // a virgin fix to format it here (just set PID and null LSN).
-    fixable_page_h alloc_p;
-    W_COERCE(alloc_p.fix_direct(ext * alloc_cache_t::extent_size, LATCH_EX,
-                false, true /* virgin */));
-    alloc_p.set_tag(t_alloc_p);
-
     Logger::log_p<append_extent_log>(&p, snum, ext);
-    return RCOK;
+
+    return ssx.end_sys_xct(RCOK);
 }
 
 void stnode_cache_t::dump(std::ostream& out) const

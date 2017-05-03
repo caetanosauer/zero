@@ -16,17 +16,8 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin, bool clustere
     : stcache(stcache)
 {
     if (virgin) {
-        // first extent (which has stnode page) is assigned to store 0,
-        // which baiscally means the extent does not belong to any particular
-        // store
-        {
-            // Initialize page 0
-            fixable_page_h p;
-            W_COERCE(p.fix_direct(0, LATCH_EX, false, true /*virgin*/));
-            p.set_tag(t_alloc_p);
-        }
         PageID pid;
-        W_COERCE(sx_allocate_page(pid, 0));
+        W_COERCE(sx_allocate_page(pid, 0 /* stid */));
         w_assert1(pid == stnode_page::stpid);
     }
     else if (clustered) {
@@ -99,7 +90,7 @@ bool alloc_cache_t::is_allocated(PageID pid)
 
 rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid)
 {
-    bool virgin = false;
+    sys_xct_section_t ssx(true);
 
     // get pid and update last_alloc_page in critical section
     {
@@ -111,11 +102,23 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid)
 
         pid = last_alloc_page[stid] + 1;
 
-        if ((stid != 0 && pid == 1) || pid % extent_size == 0) {
-            extent_id_t ext = _get_last_allocated_pid_internal() / extent_size + 1;
-            pid = ext * extent_size + 1;
+        // If last_alloc_page[stid] was 0 or the last pid in an extent,
+        // it's time to allocate a new extend for that store
+        if (pid == 1 || pid % extent_size == 0) {
+            // Find next extent ID to allocate based on maximum pid allocated
+            // so far. If no pages were allocated yet (max_pid == 0), this
+            // means we are initializing the alloc_cache, and the extent 0
+            // should be allocated.
+            PageID max_pid = _get_last_allocated_pid_internal();
+            extent_id_t ext = max_pid == 0 ? 0 : max_pid / extent_size + 1;
             W_DO(stcache.sx_append_extent(stid, ext));
-            virgin = true;
+
+            // Format alloc page for the new extent
+            PageID alloc_pid = ext * extent_size;
+            W_DO(sx_format_alloc_page(alloc_pid));
+
+            // Allocated pid will be the first on that extent
+            pid = ext * extent_size + 1;
         }
 
         last_alloc_page[stid] = pid;
@@ -132,13 +135,33 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid)
     // Now set the corresponding bit in the alloc page
     fixable_page_h p;
     PageID alloc_pid = pid - (pid % extent_size);
-    constexpr bool conditional = false;
+    constexpr bool conditional = false, virgin = false;
     W_DO(p.fix_direct(alloc_pid, LATCH_EX, conditional, virgin));
-    alloc_page* page = (alloc_page*) p.get_generic_page();
+    auto page = reinterpret_cast<alloc_page*>(p.get_generic_page());
     w_assert1(!page->get_bit(pid - alloc_pid));
     page->set_bit(pid - alloc_pid);
     Logger::log_p<alloc_page_log>(&p, pid);
 
+    W_DO(ssx.end_sys_xct(RCOK));
+
+    return RCOK;
+}
+
+rc_t alloc_cache_t::sx_format_alloc_page(PageID alloc_pid)
+{
+    w_assert1(alloc_pid % extent_size == 0);
+
+    sys_xct_section_t ssx(true);
+
+    fixable_page_h p;
+    constexpr bool conditional = false, virgin = true;
+    W_DO(p.fix_direct(alloc_pid, LATCH_EX, conditional, virgin));
+
+    auto apage = reinterpret_cast<alloc_page*>(p.get_generic_page());
+    apage->format_empty();
+    Logger::log_p<alloc_format_log>(&p);
+
+    W_DO(ssx.end_sys_xct(RCOK));
     return RCOK;
 }
 

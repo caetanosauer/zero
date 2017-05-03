@@ -4,8 +4,9 @@
 
 #include "alloc_page.h"
 
-void alloc_page::reset_all()
+void alloc_page::format_empty()
 {
+    tag = t_alloc_p;
     memset(&bitmap, 0, bitmapsize);
 }
 

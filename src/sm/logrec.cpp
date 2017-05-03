@@ -138,6 +138,8 @@ logrec_t::get_type_str(kind_t type)
 		return "dealloc_page";
 	case t_create_store :
 		return "create_store";
+	case t_alloc_format :
+		return "alloc_format";
 	case t_stnode_format :
 		return "stnode_format";
 	case t_append_extent :
@@ -318,6 +320,9 @@ void logrec_t::redo(PagePtr page)
 		break;
 	case t_dealloc_page :
 		((dealloc_page_log *) this)->redo(page);
+		break;
+	case t_alloc_format :
+		((alloc_format_log *) this)->redo(page);
 		break;
 	case t_stnode_format :
 		((stnode_format_log *) this)->redo(page);
@@ -501,6 +506,9 @@ void logrec_t::undo(PagePtr page)
 		W_FATAL(eINTERNAL);
 		break;
 	case t_dealloc_page :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_alloc_format :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_stnode_format :

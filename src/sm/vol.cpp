@@ -195,6 +195,18 @@ void vol_t::checkpoint_dirty_pages(chkpt_t& chkpt) const
     }
 }
 
+void vol_t::clear_dirty_pages()
+{
+    if (!_dirty_pages) { return; }
+
+    spinlock_write_critical_section cs(&_mutex);
+
+    if (_dirty_pages) {
+        delete _dirty_pages;
+        _dirty_pages = nullptr;
+    }
+}
+
 void vol_t::open_backup()
 {
     // mutex held by caller -- no concurrent backup being added

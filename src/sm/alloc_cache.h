@@ -42,6 +42,12 @@ public:
      */
     rc_t sx_deallocate_page(PageID pid);
 
+    /**
+     * Formats an alloc page for a new extent. Called internally in
+     * sx_allocate_page.
+     */
+    rc_t sx_format_alloc_page(PageID alloc_pid);
+
     bool is_allocated (PageID pid);
 
     /// Returns last allocated PID of a given store

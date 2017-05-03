@@ -52,9 +52,9 @@ void LogAnalysis::run()
         for(buf_tab_t::const_iterator it = chkpt.buf_tab.begin();
                 it != chkpt.buf_tab.end(); ++it)
         {
-            cout << it->first << "(REC: " << it->second.rec_lsn
-                << ", PAGE: " << it->second.page_lsn
-                << ", CLEAN " << it->second.clean_lsn << ") " << endl;
+            cout << it->first << " REC " << it->second.rec_lsn
+                << " PAGE " << it->second.page_lsn
+                << " CLEAN " << it->second.clean_lsn << endl;
         }
         cout << endl;
         cout << endl;

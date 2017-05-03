@@ -151,6 +151,8 @@ public:
 
     void checkpoint_dirty_pages(chkpt_t& chkpt) const;
 
+    void clear_dirty_pages();
+
 private:
     // variables read from volume header -- remain constant after mount
     int              _fd;

@@ -221,14 +221,19 @@ void restart_thread_t::redo_page_pass()
 {
     stopwatch_t timer;
 
+    // CS TODO: restart_m should maintain dirty pages, and not vol_t
     auto page_cnt = smlevel_0::vol->get_dirty_page_count();
     PageID pid;
     while (smlevel_0::vol->grab_a_dirty_page(pid)) {
         // simply fixing the page will take care of single-page recovery
         fixable_page_h p;
-        // CS TODO: do I need to knwo here if this is a virgin page or not???? probably YES!
+        // CS TODO: do I need to know here if this is a virgin page or not???
+        // I don't think so -- a page that is dirty cannot be virgin (i.e., there
+        // must have been at least one update on it)
         p.fix_direct(pid, LATCH_SH, false, false);
-        smlevel_0::vol->delete_dirty_page(pid);
+
+        // CS TODO: do not issue one delete for each page, just iterate and delete whole set at once
+        // smlevel_0::vol->delete_dirty_page(pid);
 
         if (should_exit()) { return; }
     }
@@ -419,6 +424,7 @@ void restart_thread_t::do_work()
 
     if (log_based) { redo_log_pass(); }
     else { redo_page_pass(); }
+    smlevel_0::vol->clear_dirty_pages();
 
     // In traditional ARIES, undo must come after redo
     if (!instantRestart) { undo_pass(); }

@@ -28,14 +28,11 @@ typedef uint32_t extent_id_t;
 class alloc_page : public generic_page_header {
 public:
 
-    // CS TODO: these two fields are unused!
-    extent_id_t extent_id;
-    StoreID store_id;
-
     // Fill first section of page with char array (unused part). This is
-    // currently 4KB, whereas the bitmap occupies the rest 4KB.
-    char _fill[sizeof(generic_page)/2 - sizeof(generic_page_header)
-                - sizeof(extent_id_t) - sizeof(StoreID)];
+    // currently 4KB, whereas the bitmap occupies the remaining 4KB.
+    // This reserved space of 4KB is kept here just for future uses; it is
+    // currently not used.
+    char _fill[sizeof(generic_page)/2 - sizeof(generic_page_header)];
 
 
     /**
@@ -67,7 +64,7 @@ public:
 
     uint32_t get_last_set_bit();
     void set_bits(uint32_t from, uint32_t to);
-    void reset_all();
+    void format_empty();
 };
 BOOST_STATIC_ASSERT(sizeof(alloc_page) == generic_page_header::page_sz);
 

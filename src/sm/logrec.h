@@ -157,7 +157,7 @@ public:
 	t_chkpt_xct_tab = 5,
 	t_chkpt_xct_lock = 6,
         t_warmup_done = 7,
-	// t_chkpt_backup_tab = 8,
+        t_alloc_format = 8,
 	t_chkpt_end = 9,
 	t_add_backup = 10,
 	t_xct_abort = 11,
@@ -319,7 +319,10 @@ public:
         // CS TODO: I think the condition for norec_alloc should be == and not !=
             (type() == logrec_t::t_btree_norec_alloc && page_id != pid())
             || (type() == logrec_t::t_btree_split && page_id == pid())
-            || (type() == logrec_t::t_page_img_format);
+            || (type() == logrec_t::t_page_img_format)
+            || (type() == logrec_t::t_stnode_format)
+            || (type() == logrec_t::t_alloc_format)
+            ;
     }
 
     friend ostream& operator<<(ostream&, const logrec_t&);
@@ -696,6 +699,7 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 
 	case t_alloc_page : return t_redo|t_single_sys_xct;
 	case t_stnode_format : return t_redo|t_single_sys_xct;
+	case t_alloc_format : return t_redo|t_single_sys_xct;
 	case t_dealloc_page : return t_redo|t_single_sys_xct;
 	case t_create_store : return t_redo|t_single_sys_xct;
 	case t_append_extent : return t_redo|t_single_sys_xct;
