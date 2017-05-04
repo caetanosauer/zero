@@ -86,6 +86,12 @@ private:
      */
     std::vector<PageID> last_alloc_page;
 
+    /**
+     * Keep track of which stores have been initialized, i.e., for which stores
+     * the last extent was already loaded and last_alloc_page properly set.
+     */
+    std::vector<bool> initialized;
+
     stnode_cache_t& stcache;
 
     /** This lath protects access to last_alloc_page */

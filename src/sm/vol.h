@@ -138,10 +138,7 @@ public:
     /** Return largest PID allocated for this volume yet **/
     PageID get_last_allocated_pid() const;
 
-    /** Method to create _alloc_cache and _stnode_cache */
-    void build_caches(bool truncate, chkpt_t* = nullptr);
-
-    bool caches_ready() { return _alloc_cache && _stnode_cache; }
+    void post_init(chkpt_t* chkpt_info);
 
     PageID get_dirty_page_count() const;
 

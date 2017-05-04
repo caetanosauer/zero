@@ -12,10 +12,10 @@ constexpr PageID stnode_page::stpid = 1;
 
 stnode_cache_t::stnode_cache_t(bool create)
 {
-    fixable_page_h p;
-    W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX, false, create));
-
     if (create) {
+        fixable_page_h p;
+        W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX, false, create));
+
         sys_xct_section_t ssx(true);
         auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
         spage->format_empty();
@@ -75,6 +75,19 @@ void stnode_cache_t::get_used_stores(std::vector<StoreID>& ret) const
     }
 }
 
+size_t get_store_count() const
+{
+    fixable_page_h p;
+    W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_SH));
+    auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
+
+    size_t count = 0;
+    for (size_t i = 1; i < stnode_page::max; ++i) {
+        if (spage->get(i).is_used()) { count++; }
+    }
+    return count;
+}
+
 rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum) const
 {
     fixable_page_h p;
@@ -124,6 +137,15 @@ void stnode_cache_t::dump(std::ostream& out) const
     }
 }
 
+extent_id_t stnode_cache_t::get_last_extent() const
+{
+    fixable_page_h p;
+    W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_SH));
+    auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
+
+    return spage->get_last_extent();
+}
+
 extent_id_t stnode_cache_t::get_last_extent(StoreID snum) const
 {
     fixable_page_h p;
@@ -131,4 +153,13 @@ extent_id_t stnode_cache_t::get_last_extent(StoreID snum) const
     auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
 
     return spage->get_last_extent(snum);
+}
+
+bool stnode_cache_t::is_used(StoreID snum) const
+{
+    fixable_page_h p;
+    W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_SH));
+    auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
+
+    return spage->is_used(snum);
 }

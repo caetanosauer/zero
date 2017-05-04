@@ -270,7 +270,7 @@ bf_tree_m::~bf_tree_m()
 
 page_cleaner_base* bf_tree_m::get_cleaner()
 {
-    if (_no_db_mode || !ss_m::vol || !ss_m::vol->caches_ready()) {
+    if (_no_db_mode || !ss_m::vol) {
         // No volume manager initialized -- no point in starting cleaner
         return nullptr;
     }

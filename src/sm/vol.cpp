@@ -90,28 +90,25 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
             sx_add_backup(chkpt_info->bkp_path, true);
         }
     }
+
+    _stnode_cache = new stnode_cache_t(truncate);
+    w_assert1(_stnode_cache);
+    // _stnode_cache->dump(cerr);
+
+    _alloc_cache = new alloc_cache_t(*_stnode_cache, truncate, _cluster_stores);
+    w_assert1(_alloc_cache);
 }
 
 vol_t::~vol_t()
 {
-    if (_alloc_cache) {
-        delete _alloc_cache;
-        _alloc_cache = NULL;
-    }
-    if (_stnode_cache) {
-        delete _stnode_cache;
-        _stnode_cache = NULL;
-    }
+    delete _alloc_cache;
+    delete _stnode_cache;
 
     w_assert1(_fd == -1);
     w_assert1(_backup_fd == -1);
-    if (_restore_mgr) {
-        delete _restore_mgr;
-    }
+    if (_restore_mgr) { delete _restore_mgr; }
 
-    if (_dirty_pages) {
-        delete _dirty_pages;
-    }
+    if (_dirty_pages) { delete _dirty_pages; }
 }
 
 void vol_t::sync()
@@ -120,15 +117,8 @@ void vol_t::sync()
     CHECK_ERRNO(ret);
 }
 
-void vol_t::build_caches(bool truncate, chkpt_t* chkpt_info)
+void vol_t::post_init(chkpt_t* chkpt_info)
 {
-    _stnode_cache = new stnode_cache_t(truncate);
-    w_assert1(_stnode_cache);
-    _stnode_cache->dump(cerr);
-
-    _alloc_cache = new alloc_cache_t(*_stnode_cache, truncate, _cluster_stores);
-    w_assert1(_alloc_cache);
-
     // kick out pre-failure restore
     // (unless in nodb mode, where restore_segment log records are generated
     // during buffer pool warmup)

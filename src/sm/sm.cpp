@@ -263,24 +263,16 @@ ss_m::_construct_once()
     bool logBasedRedo = _options.get_bool_option("sm_restart_log_based_redo", true);
     bool format = _options.get_bool_option("sm_format", false);
 
-    ERROUT(<< "[" << timer.time_ms() << "] Initializing volume manager");
-
-    vol = new vol_t(_options, chkpt_info);
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer manager");
 
     bf = new bf_tree_m(_options);
-    if (! bf) {
-        W_FATAL(eOUTOFMEMORY);
-    }
-
-    ERROUT(<< "[" << timer.time_ms() << "] Building volume manager caches");
-
-    if (instantRestart || !logBasedRedo) {
-        vol->build_caches(format, chkpt_info);
-    }
 
     smlevel_0::statistics_enabled = _options.get_bool_option("sm_statistics", true);
+
+    ERROUT(<< "[" << timer.time_ms() << "] Initializing volume manager");
+
+    vol = new vol_t(_options, chkpt_info);
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer cleaner and other services");
 
@@ -299,17 +291,18 @@ ss_m::_construct_once()
 
     ERROUT(<< "[" << timer.time_ms() << "] Starting recovery thread");
 
+    // Initialize no-db batch warmup coordinator (if enabled)
     bf->post_init();
 
+    // Spawn recovery thread and wait for it to complete if not in instant restart
     recovery->fork();
     recovery->wakeup();
-    if (!instantRestart) {
-        recovery->join();
-        // metadata caches can only be constructed now
-        if (logBasedRedo) { vol->build_caches(format, nullptr); }
-    }
+    if (!instantRestart) { recovery->join(); }
 
-    // Initialize cleaner once vol caches are built
+    // Restart pre-failure restore process, if one was going on
+    vol->post_init(chkpt_info);
+
+    // Initialize cleaner after recovery
     int cleaner_int = _options.get_int_option("sm_cleaner_interval", 0);
     if (cleaner_int >= 0) {
         // Getter will initialize cleaner on demand

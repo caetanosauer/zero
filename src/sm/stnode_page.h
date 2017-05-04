@@ -81,10 +81,30 @@ public:
         stnode[index].last_extent = ext;
     }
 
-    extent_id_t get_last_extent(size_t index)
+    extent_id_t get_last_extent(size_t index) const
     {
         w_assert1(index < max);
         return stnode[index].last_extent;
+    }
+
+    extent_id_t get_last_extent() const
+    {
+        extent_id_t ext = 0;
+        for (size_t i = 1; i < stnode_page::max; ++i) {
+            if (!stnode[i].is_used()) {
+                break;
+            }
+            else if (stnode[i].last_extent > ext) {
+                ext = stnode[i].last_extent;
+            }
+        }
+        return ext;
+    }
+
+    bool is_used(size_t index) const
+    {
+        w_assert1(index < max);
+        return stnode[index].is_used();
     }
 
     void format_empty() {
@@ -153,13 +173,19 @@ public:
     /// Returns the StoreID of all allocated stores in the volume.
     void get_used_stores(std::vector<StoreID>&) const;
 
+    size_t get_store_count() const;
+
     rc_t sx_create_store(PageID root_pid, StoreID& snum) const;
 
     rc_t sx_append_extent(StoreID store, extent_id_t ext) const;
 
     void dump(std::ostream& out) const;
 
+    extent_id_t get_last_extent() const;
+
     extent_id_t get_last_extent(StoreID stid) const;
+
+    bool is_used(StoreID stid) const;
 
 private:
     /// Returns the first StoreID that can be used for a new store in

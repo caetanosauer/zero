@@ -45,7 +45,6 @@ void DBScan::run()
     // auto vol = make_shared<vol_t>(_options);
     vol_t* vol = new vol_t(_options);
     smlevel_0::vol = vol;
-    vol->build_caches(false);
 
     vector<generic_page, memalign_allocator<generic_page>> buffer(BUFSIZE);
 

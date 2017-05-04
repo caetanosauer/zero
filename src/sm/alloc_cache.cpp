@@ -16,36 +16,23 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin, bool clustere
     : stcache(stcache)
 {
     if (virgin) {
+        // Allocate first extent and stnode pid in it. First extent (which has
+        // stnode page) is assigned to store 0, which baiscally means the
+        // extent does not belong to any particular store.
         PageID pid;
-        W_COERCE(sx_allocate_page(pid, 0 /* stid */));
-        w_assert1(pid == stnode_page::stpid);
-    }
-    else if (clustered) {
-        vector<StoreID> stores;
-        stcache.get_used_stores(stores);
-
-        // Load last allocated PID of each store using the last extent
-        // recorded in the stnode page
-        last_alloc_page.resize(stores.size() + 1, 0);
-        for (auto s : stores) {
-            extent_id_t ext = stcache.get_last_extent(s);
-            W_COERCE(load_alloc_page(s, ext));
-        }
-    }
-    else {
-        last_alloc_page.resize(1, 0);
-        extent_id_t ext = stcache.get_last_extent(0);
-        W_COERCE(load_alloc_page(0, ext));
+        constexpr StoreID stid = 0;
+        W_COERCE(sx_allocate_page(pid, stid));
+        w_assert0(pid == stnode_page::stpid);
     }
 }
 
 rc_t alloc_cache_t::load_alloc_page(StoreID stid, extent_id_t ext)
 {
-    spinlock_write_critical_section cs(&_latch);
+    // caller must hold latch
 
     PageID alloc_pid = ext * extent_size;
     fixable_page_h p;
-    W_DO(p.fix_direct(alloc_pid, LATCH_SH, false, false));
+    W_DO(p.fix_direct(alloc_pid, LATCH_SH));
     alloc_page* page = (alloc_page*) p.get_generic_page();
 
     auto last_set = page->get_last_set_bit();
@@ -70,7 +57,13 @@ PageID alloc_cache_t::get_last_allocated_pid() const
 PageID alloc_cache_t::_get_last_allocated_pid_internal() const
 {
     PageID max = 0;
-    for (auto p : last_alloc_page) {
+    size_t used_stores = stcache.get_store_count();
+    for (size_t i = 0; i <= used_stores; i++) {
+        if (!initialized[i]) {
+            auto ext = stcache.get_last_extent(i);
+            W_COERCE(load_alloc_page(i, ext));
+        }
+        auto p = last_alloc_page[i];
         if (p > max) { max = p; }
     }
     return max;
@@ -98,6 +91,21 @@ rc_t alloc_cache_t::sx_allocate_page(PageID& pid, StoreID stid)
 
         if (last_alloc_page.size() <= stid) {
             last_alloc_page.resize(stid + 1, 0);
+            initialized.resize(stid + 1, false);
+        }
+
+        if (!initialized[stid]) {
+            if (!stcache.is_used(stid)) {
+                // Allocate first extent of the given store on demand
+                auto new_ext = stcache.get_last_extent() + 1;
+                W_COERCE(stcache.sx_append_extent(stid, new_ext));
+                W_COERCE(sx_format_alloc_page(new_ext * extent_size));
+            }
+            else {
+                auto ext = stcache.get_last_extent(stid);
+                W_DO(load_alloc_page(stid, ext));
+            }
+            initialized[stid] = true;
         }
 
         pid = last_alloc_page[stid] + 1;
