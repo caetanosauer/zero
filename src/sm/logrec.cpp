@@ -1375,7 +1375,7 @@ template void logrec_t::template undo<fixable_page_h*>(fixable_page_h*);
 template void page_evict_log::template construct<btree_page_h*>(btree_page_h* p,
                                 general_recordid_t child_slot, lsn_t child_lsn);
 
-// page_img_format only works for btree pages
+template void page_img_format_log::template construct<fixable_page_h*>(fixable_page_h*);
 template void page_img_format_log::template construct<btree_page_h*>(btree_page_h*);
 
 template void create_store_log::template construct<fixable_page_h*>(fixable_page_h*, PageID, StoreID);

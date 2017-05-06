@@ -61,15 +61,9 @@ public:
         if (!should_log)  { return lsn_t::null; }
 
         if (_should_apply_img_compression(Logrec::TYPE, p)) {
-            // page_img_format only works with btree pages
-            // CS: I know this looks ugly, but that's what we have to do with all this
-            // cumbersome "page handler" stuff
-            borrowed_btree_page_h borrowed {p};
-            auto btree_p = reinterpret_cast<btree_page_h*>(&borrowed);
-
             // log this page image as an SX to keep it out of the xct undo chain
             sys_xct_section_t sx {false};
-            log_p<page_img_format_log>(btree_p);
+            log_p<page_img_format_log>(p);
             sx.end_sys_xct(RCOK);
 
             // Keep track of additional space created by page images on log
@@ -211,7 +205,6 @@ public:
     static bool _should_apply_img_compression(logrec_t::kind_t type, PagePtr page)
     {
         if (type == logrec_t::t_page_img_format) { return false; }
-        if (page->tag() != t_btree_p) { return false; }
 
         auto comp = ss_m::log->get_page_img_compression();
         if (comp == 0) { return false; }

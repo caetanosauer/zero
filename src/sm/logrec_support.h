@@ -2,6 +2,9 @@
 #define LOGREC_SUPPORT_H
 
 #include "lock.h"
+#include "btree_page.h"
+#include "alloc_page.h"
+#include "stnode_page.h"
 
 /**
  * Classes used to store structured log record data used by certain
@@ -44,12 +47,42 @@ struct page_img_format_t {
 
     int size()        { return 2 * sizeof(size_t) + beginning_bytes + ending_bytes; }
 
-    page_img_format_t (const PagePtr page)
+    page_img_format_t (const PagePtr p)
     {
-        size_t unused_length;
-        char* unused = page->page()->unused_part(unused_length);
+        /*
+         * The mid-section of a btree page is usually not used, since head
+         * entries are stored on the beginning of the page and variable-sized
+         * "bodies" (i.e., key-value data) at the end of the page. This method
+         * returns a pointer to the beginning of the unused part and its length.
+         * The loc record then just contains the parts before and after the
+         * unused section. For pages other than btree ones, the unused part
+         * is either at the beginning or at the end of the page, and it must
+         * be set to zero when replaying the log record.
+         */
 
-        const char *pp_bin = (const char *) page->_pp;
+        size_t unused_length;
+        char* unused;
+        switch (p->tag()) {
+            case t_alloc_p: {
+                auto page = reinterpret_cast<alloc_page*>(p->get_generic_page());
+                unused = page->unused_part(unused_length);
+                break;
+            }
+            case t_stnode_p: {
+                auto page = reinterpret_cast<stnode_page*>(p->get_generic_page());
+                unused = page->unused_part(unused_length);
+                break;
+            }
+            case t_btree_p: {
+                auto page = reinterpret_cast<btree_page*>(p->get_generic_page());
+                unused = page->unused_part(unused_length);
+                break;
+            }
+            default:
+                W_FATAL(eNOTIMPLEMENTED);
+        }
+
+        const char *pp_bin = (const char *) p->get_generic_page();
         beginning_bytes = unused - pp_bin;
         ending_bytes    = sizeof(generic_page) - (beginning_bytes + unused_length);
 

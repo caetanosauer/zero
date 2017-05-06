@@ -95,6 +95,21 @@ public:
         memset(&stnode, 0, sizeof(stnode_t) * max);
     }
 
+    // Used to generate page_img_format log records.
+    char* unused_part(size_t& length)
+    {
+        size_t first_unused = 0;
+        for (size_t i = 1; i < stnode_page::max; ++i) {
+            if (!stnode[i].is_used()) {
+                first_unused = i;
+                break;
+            }
+        }
+        size_t used_length = sizeof(stnode_t) * first_unused;
+        length = sizeof(stnode_page) - used_length;
+        return reinterpret_cast<char*>(this) + used_length;
+    }
+
 
 private:
     /// stnode[i] is the stnode_t for store # i of this volume
