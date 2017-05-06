@@ -400,7 +400,7 @@ void log_storage::add_checkpoint(lsn_t lsn)
 
 unsigned log_storage::delete_old_partitions(bool chkpt_only, partition_number_t older_than)
 {
-    if (!_delete_old_partitions && !chkpt_only) { return 0; }
+    if (!smlevel_0::log || (!_delete_old_partitions && !chkpt_only)) { return 0; }
 
     if (older_than == 0 && smlevel_0::chkpt) {
         lsn_t min_lsn = smlevel_0::chkpt->get_min_active_lsn();
