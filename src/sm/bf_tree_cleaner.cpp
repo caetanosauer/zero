@@ -234,7 +234,9 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     // the data back to the original pointer.  we need to do this
     // before releasing SH latch because the pointer might be
     // unswizzled by other threads.
-    _bufferpool->_convert_to_disk_page(&pdest);
+    if (pdest.tag == t_btree_p) {
+        _bufferpool->_convert_to_disk_page(&pdest);
+    }
 
     // Record the fact that we are taking a copy for flushing in the CB
     cb.mark_persisted_lsn();
