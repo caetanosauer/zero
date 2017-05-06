@@ -34,15 +34,6 @@ void page_evictioner_base::do_work()
         DBG5(<< "Waiting for pick_victim...");
         bf_idx victim = pick_victim();
         DBG5(<< "Found victim idx=" << victim);
-
-        if(victim == 0) {
-            /* idx 0 is never used, so this means pick_victim() exited without
-             * finding a victim. This might happen when the page_evictioner is
-             * shutting down, for example. */
-            notify_all();
-            return;
-        }
-
         w_assert1(victim != 0);
 
         bf_tree_cb_t& cb = _bufferpool->get_cb(victim);
@@ -136,12 +127,29 @@ bf_idx page_evictioner_base::pick_victim()
         }
         w_assert1(cb.latch().is_mine());
 
-        // now we hold an EX latch -- check if leaf and not dirty
+        // now we hold an EX latch -- check if page qualifies for eviction
         btree_page_h p;
         p.fix_nonbufferpool_page(_bufferpool->_buffer + idx);
-        if (p.tag() != t_btree_p || !p.is_leaf()
+        // We do not consider for eviction...
+        if (
+                // ... the stnode page
+                p.tag() == t_stnode_p
+                // ... B-tree inner (non-leaf) pages
+                // (requires unswizzling, which is not supported)
+                || (p.tag() == t_btree_p && !p.is_leaf())
+                // ... B-tree root pages
+                // (note, single-node B-tree is both root and leaf)
+                || (p.tag() == t_btree_p && p.pid() == p.root())
+                // ... B-tree pages that have a foster child
+                // (requires unswizzling, which is not supported)
+                || (p.tag() == t_btree_p && p.get_foster() != 0)
+                // ... dirty pages, unless we're told to ignore them
                 || (!ignore_dirty && cb.is_dirty())
-                || !cb._used || p.pid() == p.root() || p.get_foster() != 0)
+                // ... unused frames, which don't hold a valid page
+                || !cb._used
+                // ... pinned frames, i.e., someone required it not be evicted
+                || cb._pin_cnt != 0
+        )
         {
             cb.latch().latch_release();
             DBG5(<< "Eviction failed on flags for " << idx);
@@ -149,19 +157,9 @@ bf_idx page_evictioner_base::pick_victim()
             continue;
         }
 
-        // page is a B-tree leaf -- check if pin count is zero
-        if (cb._pin_cnt != 0)
-        {
-            // pin count -1 means page was already evicted
-            cb.latch().latch_release();
-            DBG3(<< "Eviction failed on for " << idx
-                    << " pin count is " << cb._pin_cnt);
-            idx++;
-            continue;
-        }
-        w_assert1(_bufferpool->_is_active_idx(idx));
-
         // If we got here, we passed all tests and have a victim!
+        w_assert1(_bufferpool->_is_active_idx(idx));
+        w_assert0(idx != 0);
         _current_frame = idx +1;
         return idx;
     }
