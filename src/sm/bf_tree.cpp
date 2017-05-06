@@ -577,7 +577,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             W_DO(cb.latch().latch_acquire(temp_mode, conditional ?
                         timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
 
-            if (!cb.is_in_use() < 0 || cb._pid != pid) {
+            if (!cb.is_in_use() || cb._pid != pid) {
                 // Page was evicted between hash table probe and latching
                 DBG(<< "Page evicted right before latching. Retrying.");
                 cb.latch().latch_release();
