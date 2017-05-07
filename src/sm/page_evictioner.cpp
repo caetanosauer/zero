@@ -121,6 +121,11 @@ bf_idx page_evictioner_base::pick_victim()
 
         auto& cb = _bufferpool->get_cb(idx);
 
+        if (!cb._used) {
+            idx++;
+            continue;
+        }
+
         // Step 1: latch page in EX mode and check if eligible for eviction
         rc_t latch_rc;
         latch_rc = cb.latch().latch_acquire(LATCH_EX, timeout_t::WAIT_IMMEDIATE);
