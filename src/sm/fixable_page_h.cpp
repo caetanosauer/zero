@@ -12,13 +12,24 @@
 #include "logrec.h"
 #include "bf_tree.h"
 #include "xct_logger.h"
+#include "alloc_cache.h"
 
 
 int fixable_page_h::force_Q_fixing = 0;  // <<<>>>
 
+void check_page_tags(generic_page* s)
+{
+    w_assert1(s->tag != t_alloc_p  || (s->pid % alloc_cache_t::extent_size == 0));
+    w_assert1(s->tag != t_stnode_p || s->pid == stnode_page::stpid);
+    w_assert1(s->tag != t_btree_p  || (s->pid != stnode_page::stpid &&
+                (s->pid % alloc_cache_t::extent_size > 0)));
+    w_assert1(s->tag == t_alloc_p || s->tag == t_stnode_p || s->tag == t_btree_p);
+}
+
 void fixable_page_h::unfix(bool evict)
 {
     if (_pp) {
+        check_page_tags(_pp);
         if (_bufferpool_managed) {
             smlevel_0::bf->unfix(_pp, evict);
         }
@@ -39,6 +50,7 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent,
                 virgin_page, only_if_hit));
     w_assert1(bf_tree_m::is_swizzled_pointer(shpid)
             || smlevel_0::bf->get_cb(_pp)->_pid == shpid);
+    if (!virgin_page) { check_page_tags(_pp); }
     _bufferpool_managed = true;
     _mode               = mode;
 
@@ -58,6 +70,7 @@ w_rc_t fixable_page_h::fix_direct(PageID shpid, latch_mode_t mode,
 
     w_assert1(bf_tree_m::is_swizzled_pointer(shpid)
             || smlevel_0::bf->get_cb(_pp)->_pid == shpid);
+    if (!virgin_page) { check_page_tags(_pp); }
 
     _bufferpool_managed = true;
     _mode               = mode;
@@ -77,6 +90,7 @@ w_rc_t fixable_page_h::refix_direct (bf_idx idx, latch_mode_t mode, bool conditi
 
     unfix();
     W_DO(smlevel_0::bf->refix_direct(_pp, idx, mode, conditional));
+    check_page_tags(_pp);
     _bufferpool_managed = true;
     _mode               = mode;
     return RCOK;
@@ -89,6 +103,7 @@ w_rc_t fixable_page_h::fix_root (StoreID store, latch_mode_t mode,
 
     unfix();
     W_DO(smlevel_0::bf->fix_root(_pp, store, mode, conditional, virgin));
+    if (!virgin) { check_page_tags(_pp); }
 
     _bufferpool_managed = true;
     _mode               = mode;
@@ -98,6 +113,10 @@ w_rc_t fixable_page_h::fix_root (StoreID store, latch_mode_t mode,
 void fixable_page_h::fix_nonbufferpool_page(generic_page* s)
 {
     w_assert1(s != NULL);
+    // This method is used to recover pages with single-page recovery, which
+    // means we might be fixing a garbage page that will be formatted.
+    // check_page_tags(s);
+
     unfix();
     _pp                 = s;
     _bufferpool_managed = false;
@@ -221,6 +240,7 @@ void fixable_page_h::setup_for_restore(generic_page* pp)
     _mode = LATCH_EX;
 
     _pp = pp;
+    check_page_tags(_pp);
 }
 
 
