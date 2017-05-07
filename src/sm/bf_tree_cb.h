@@ -76,23 +76,10 @@ struct bf_tree_cb_t {
      */
     static const uint16_t BP_INITIAL_REFCOUNT = 0;
 
-    /** clears all properties. */
-    inline void clear () {
-        clear_latch();
-        clear_except_latch();
-    }
-
-    /** clears all properties but latch. */
-    inline void clear_except_latch () {
-        signed char latch_offset = _latch_offset;
-        ::memset(this, 0, sizeof(bf_tree_cb_t));
-        _latch_offset = latch_offset;
-    }
-
     /** Initializes all fields -- called by fix when fetching a new page */
-    void init(PageID pid, lsn_t page_lsn)
+    void init(PageID pid = 0, lsn_t page_lsn = lsn_t::null)
     {
-        clear_except_latch();
+        w_assert1(_pin_cnt == -1);
         _pin_cnt = 0;
         _pid = pid;
         _swizzled = false;
@@ -249,10 +236,10 @@ struct bf_tree_cb_t {
     // increment pin count atomically
     bool pin()
     {
+        int32_t old = _pin_cnt;
         while (true) {
-            int32_t old = _pin_cnt;
             if (old < 0) { return false; }
-            if (std::atomic_compare_exchange_strong(&_pin_cnt, &old, old + 1)) {
+            if (_pin_cnt.compare_exchange_strong(old, old + 1)) {
                 return true;
             }
         }
@@ -261,7 +248,7 @@ struct bf_tree_cb_t {
     // decrement pin count atomically
     void unpin()
     {
-        auto v = _pin_cnt--;
+        auto v = --_pin_cnt;
         // only prepare_for_eviction may set negative pin count
         w_assert1(v >= 0);
     }
@@ -270,7 +257,8 @@ struct bf_tree_cb_t {
     {
         w_assert1(_pin_cnt >= 0);
         int32_t old = 0;
-        if (!std::atomic_compare_exchange_strong(&_pin_cnt, &old, -1)) {
+        if (!_pin_cnt.compare_exchange_strong(old, -1)) {
+            w_assert1(_pin_cnt >= 0);
             return false;
         }
         _used = false;

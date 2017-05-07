@@ -56,6 +56,7 @@ void page_evictioner_base::do_work()
         // remove it from hashtable.
         w_assert1(cb._pid ==  _bufferpool->_buffer[victim].pid);
         w_assert1(cb._pin_cnt < 0);
+        w_assert1(!cb._used);
         bool removed = _bufferpool->_hashtable->remove(cb._pid);
         w_assert1(removed);
 

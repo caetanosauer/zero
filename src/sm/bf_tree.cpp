@@ -161,8 +161,10 @@ bf_tree_m::bf_tree_m(const sm_options& options)
                 << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks.");
         W_FATAL(eOUTOFMEMORY);
     }
-    ::memset (buf, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t)
-                    nbufpages) + 1LLU));
+    // CS: no need to memset control blocks with zero since we loop over them below to
+    // initialize (btw, setting pin count to -1 and used to false is enough)
+    // ::memset (buf, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t)
+    //                 nbufpages) + 1LLU));
     _control_blocks = reinterpret_cast<bf_tree_cb_t*>(reinterpret_cast<char
             *>(buf) + sizeof(bf_tree_cb_t));
     w_assert0(_control_blocks != NULL);
@@ -181,10 +183,15 @@ bf_tree_m::bf_tree_m(const sm_options& options)
      */
     for (bf_idx i = 0; i < nbufpages; i++) {
         BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) < SCHAR_MAX);
+
+        auto& cb = get_cb(i);
+        cb._pin_cnt = -1;
+        cb._used = false;
+
         if (i & 0x1) { /* odd */
-            get_cb(i)._latch_offset = -static_cast<int8_t>(sizeof(bf_tree_cb_t)); // place the latch before the control block
+            cb._latch_offset = -static_cast<int8_t>(sizeof(bf_tree_cb_t)); // place the latch before the control block
         } else { /* even */
-            get_cb(i)._latch_offset = sizeof(bf_tree_cb_t); // place the latch after the control block
+            cb._latch_offset = sizeof(bf_tree_cb_t); // place the latch after the control block
         }
     }
 
@@ -310,6 +317,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret)
                 DBG5(<< "Grabbing idx " << idx);
                 w_assert1(_is_valid_idx(idx));
                 w_assert1 (!get_cb(idx)._used);
+                w_assert1 (get_cb(idx)._pin_cnt < 0);
                 ret = idx;
 
                 --_freelist_len;
@@ -360,6 +368,7 @@ void bf_tree_m::_add_free_block(bf_idx idx)
     CRITICAL_SECTION(cs, &_freelist_lock);
     w_assert1(idx != FREELIST_HEAD);
     w_assert1(!get_cb(idx)._used);
+    w_assert1(get_cb(idx)._pin_cnt < 0);
     ++_freelist_len;
     _freelist[idx] = FREELIST_HEAD;
     FREELIST_HEAD = idx;
@@ -490,9 +499,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
             // STEP 1) Grab a free frame to read into
             W_DO(_grab_free_block(idx));
-            w_assert1(_is_valid_idx(idx));
             bf_tree_cb_t &cb = get_cb(idx);
-            w_assert1(!cb._used);
 
             // STEP 2) Acquire EX latch before hash table insert, to make sure
             // nobody will access this page until we're done
@@ -517,12 +524,10 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
             // Read page from disk
             page = &_buffer[idx];
-            cb.init(pid, lsn_t::null);
 
             if (!virgin_page && !_no_db_mode) {
                 INC_TSTAT(bf_fix_nonroot_miss_count);
 
-                // CS TODO: use option to deactivate emlsn maintenance and usage
                 if (parent && emlsn.is_null() && _maintain_emlsn) {
                     // Get emlsn from parent
                     general_recordid_t recordid = find_page_id_slot(parent, pid);
@@ -537,7 +542,6 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                 if (read_rc.is_error())
                 {
                     _hashtable->remove(pid);
-                    cb.clear_except_latch();
                     cb.latch().latch_release();
                     _add_free_block(idx);
                     return read_rc;
@@ -546,6 +550,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             }
             else {
                 // initialize contents of virgin page
+                cb.init(pid, lsn_t::null);
                 ::memset(page, 0, sizeof(generic_page));
                 page->pid = pid;
             }
@@ -726,7 +731,7 @@ bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
     w_assert1(get_cb(idx).latch().held_by_me());
 
     bool pinned = get_cb(idx).pin();
-    w_assert1(pinned);
+    w_assert0(pinned);
     DBG(<< "Refix set pin cnt to " << get_cb(idx)._pin_cnt);
     return idx;
 }
