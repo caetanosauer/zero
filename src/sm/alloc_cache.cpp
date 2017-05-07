@@ -23,6 +23,7 @@ alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin, bool clustere
             // Initialize page 0
             fixable_page_h p;
             W_COERCE(p.fix_direct(0, LATCH_EX, false, true /*virgin*/));
+            p.set_tag(t_alloc_p);
         }
         PageID pid;
         W_COERCE(sx_allocate_page(pid, 0));

@@ -168,6 +168,8 @@ public:
 
     void set_check_recovery(bool);
 
+    void set_tag(page_tag_t tag) { _pp->tag = tag; }
+
 
     latch_mode_t latch_mode() const { return _mode; }
     /// Do we hold our page's latch in SH or EX mode?
