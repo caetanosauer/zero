@@ -15,6 +15,7 @@
 #include <iosfwd>
 #include "page_cleaner.h"
 #include "page_evictioner.h"
+#include "restart.h"
 #include "restore.h"
 
 #include <array>
@@ -476,6 +477,10 @@ private:
 
     static thread_local unsigned _fix_cnt;
     static thread_local unsigned _hit_cnt;
+
+    /// Single-page-recovery iterator used for instant restart redo
+    /// (see bf_tree_m::recover_if_needed)
+    static thread_local SprIterator _localSprIter;
 
     using RestoreCoord = RestoreCoordinator<
         std::function<decltype(SegmentRestorer::bf_restore)>>;

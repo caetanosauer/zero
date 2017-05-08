@@ -32,13 +32,12 @@
 #include "xct.h"
 #include "xct_logger.h"
 
-#include "restart.h"
-
 // Template definitions
 #include "bf_hashtable.cpp"
 
 thread_local unsigned bf_tree_m::_fix_cnt = 0;
 thread_local unsigned bf_tree_m::_hit_cnt = 0;
+thread_local SprIterator bf_tree_m::_localSprIter;
 
 // lots of help from Wikipedia here!
 int64_t w_findprime(int64_t min)
@@ -400,8 +399,8 @@ void bf_tree_m::recover_if_needed(bf_tree_cb_t& cb, generic_page* page, bool onl
         btree_page_h p;
         p.fix_nonbufferpool_page(page);
         constexpr bool use_archive = true;
-        SprIterator iter {pid, page->lsn, expected_lsn, use_archive};
-        iter.apply(p);
+        _localSprIter.open(pid, page->lsn, expected_lsn, use_archive);
+        _localSprIter.apply(p);
         w_assert0(page->lsn >= expected_lsn);
 
         smlevel_0::vol->delete_dirty_page(pid);

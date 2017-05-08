@@ -106,10 +106,11 @@ class SprIterator
 {
 public:
 
-    // CS TODO: expand it to cover a pid range and reuse it for restore
-    SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
-            bool prioritizeArchive = true);
+    SprIterator();
     ~SprIterator();
+
+    void open(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
+            bool prioritizeArchive = true);
 
     bool next(logrec_t*& lr);
 

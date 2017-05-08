@@ -488,22 +488,29 @@ void grow_buffer(char*& buffer, size_t& buffer_capacity, size_t pos, logrec_t** 
     }
 }
 
-SprIterator::SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
-        bool prioritizeArchive)
-    :
-    buffer_capacity{1 << 18 /* 256KB */},
-    last_lsn{lsn_t::null},
-    replayed_count{0}
+SprIterator::SprIterator()
+    : buffer_capacity{1 << 18 /* 256KB */}
 {
+    // Allocate initial buffer -- expand later if needed
+    buffer = new char[buffer_capacity];
+}
+
+SprIterator::~SprIterator()
+{
+    delete[] buffer;
+}
+
+void SprIterator::open(PageID pid, lsn_t firstLSN, lsn_t lastLSN, bool prioritizeArchive)
+{
+    last_lsn = lsn_t::null,
+    replayed_count = 0;
+    lr_offsets.clear();
+    size_t pos = 0;
+
     if (!lastLSN.is_null()) {
         // make sure log is durable until the lsn we're trying to fetch
         smlevel_0::log->flush(lastLSN);
     }
-
-    // Allocate initial buffer -- expand later if needed
-    // CS: regular allocation is fine since SPR isn't such a critical operation
-    buffer = new char[buffer_capacity];
-    size_t pos = 0;
 
     lsn_t archivedLSN = lsn_t::null;
     if (smlevel_0::logArchiver) {
@@ -530,7 +537,7 @@ SprIterator::SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
             break;
         }
         else { W_COERCE(rc); }
-        w_assert0(lsn == nxt);
+        w_assert1(lsn == nxt);
 
         if (sizeof(logrec_t) > buffer_capacity - pos) {
             grow_buffer(buffer, buffer_capacity, pos, &lr);
@@ -548,17 +555,17 @@ SprIterator::SprIterator(PageID pid, lsn_t firstLSN, lsn_t lastLSN,
             nxt = lr->page_prev_lsn();
         }
         else {
-            w_assert0(lr->is_multi_page());
+            w_assert1(lr->is_multi_page());
             // Multi-page log record, this is a page rebalance log record (split or merge)
             // while the 2nd page is the source page
             // In this case, the page we are trying to recover was the source page during
             // a page rebalance operation, follow the proper log chain
-            w_assert0(lr->data_ssx_multi()->_page2_pid == pid);
+            w_assert1(lr->data_ssx_multi()->_page2_pid == pid);
             nxt = lr->data_ssx_multi()->_page2_prv;
         }
 
-        // In the cases below, the scan can stop since the page is initialized
-        // with this log record
+        // If log record contains a page image, the scan can stop since the
+        // page is initialized with this log record
         if (lr->has_page_img(pid)) { break; }
     }
 
@@ -609,11 +616,6 @@ bool SprIterator::next(logrec_t*& lr)
     }
 
     return false;
-}
-
-SprIterator::~SprIterator()
-{
-    if (buffer) { delete[] buffer; }
 }
 
 void SprIterator::apply(fixable_page_h &p)

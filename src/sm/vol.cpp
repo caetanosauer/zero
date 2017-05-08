@@ -526,7 +526,8 @@ rc_t vol_t::read_page_verify(PageID pid, generic_page* const buf, lsn_t emlsn)
         p.fix_nonbufferpool_page(buf);
         p.update_page_lsn(buf->lsn);
 
-        SprIterator iter {pid, p.lsn(), emlsn, _prioritize_archive};
+        SprIterator iter;
+        iter.open(pid, p.lsn(), emlsn, _prioritize_archive);
         iter.apply(p);
         w_assert0(_no_db_mode || p.lsn() == emlsn);
         w_assert0(!_no_db_mode || p.lsn() >= emlsn);
