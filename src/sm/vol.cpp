@@ -48,13 +48,13 @@ int64_t gethrtime()
     return (tsp.tv_sec * 1000* 1000 * 1000) + tsp.tv_nsec; // nanosecs
 }
 
-vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
+vol_t::vol_t(const sm_options& options)
              : _fd(-1),
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
                _alloc_cache(NULL), _stnode_cache(NULL),
                _failed(false),
-               _restore_mgr(NULL), _dirty_pages(NULL), _backup_fd(-1),
+               _restore_mgr(NULL), _backup_fd(-1),
                _current_backup_lsn(lsn_t::null), _backup_write_fd(-1),
                _log_page_reads(false), _prioritize_archive(true)
 {
@@ -82,14 +82,6 @@ vol_t::vol_t(const sm_options& options, chkpt_t* chkpt_info)
     auto fd = open(dbfile.c_str(), open_flags, 0666 /*mode*/);
     CHECK_ERRNO(fd);
     _fd = fd;
-
-    bool instantRestart = options.get_bool_option("sm_restart_instant", true);
-    if (chkpt_info) {
-        _dirty_pages = new buf_tab_t(chkpt_info->buf_tab);
-        if (!chkpt_info->bkp_path.empty()) {
-            sx_add_backup(chkpt_info->bkp_path, true);
-        }
-    }
 }
 
 vol_t::~vol_t()
@@ -108,10 +100,6 @@ vol_t::~vol_t()
     if (_restore_mgr) {
         delete _restore_mgr;
     }
-
-    if (_dirty_pages) {
-        delete _dirty_pages;
-    }
 }
 
 void vol_t::sync()
@@ -129,6 +117,10 @@ void vol_t::build_caches(bool truncate, chkpt_t* chkpt_info)
     _alloc_cache = new alloc_cache_t(*_stnode_cache, truncate, _cluster_stores);
     w_assert1(_alloc_cache);
 
+    if (chkpt_info && !chkpt_info->bkp_path.empty()) {
+        sx_add_backup(chkpt_info->bkp_path, true);
+    }
+
     // kick out pre-failure restore
     // (unless in nodb mode, where restore_segment log records are generated
     // during buffer pool warmup)
@@ -136,74 +128,6 @@ void vol_t::build_caches(bool truncate, chkpt_t* chkpt_info)
         mark_failed(false, true, chkpt_info->restore_page_cnt);
         _restore_mgr->markRestoredFromList(chkpt_info->restore_tab);
         _restore_mgr->start();
-    }
-}
-
-lsn_t vol_t::get_dirty_page_emlsn(PageID pid) const
-{
-    if (!_dirty_pages) { return lsn_t::null; }
-
-    spinlock_read_critical_section cs(&_mutex);
-
-    buf_tab_t::const_iterator it = _dirty_pages->find(pid);
-    if (it == _dirty_pages->end()) { return lsn_t::null; }
-    return it->second.page_lsn;
-}
-
-void vol_t::delete_dirty_page(PageID pid)
-{
-    if (!_dirty_pages) { return; }
-
-    spinlock_write_critical_section cs(&_mutex);
-
-    buf_tab_t::iterator it = _dirty_pages->find(pid);
-    if (it != _dirty_pages->end()) {
-        _dirty_pages->erase(it);
-    }
-}
-
-bool vol_t::grab_a_dirty_page(PageID& pid) const
-{
-    if (!_dirty_pages) { return false; }
-
-    spinlock_read_critical_section cs(&_mutex);
-    if (_dirty_pages->size() == 0) {
-        return false;
-    }
-
-    auto it = _dirty_pages->cbegin();
-    pid = it->first;
-    return true;
-
-}
-
-PageID vol_t::get_dirty_page_count() const
-{
-    if (!_dirty_pages) { return 0; }
-
-    spinlock_read_critical_section cs(&_mutex);
-    return _dirty_pages->size();
-}
-
-void vol_t::checkpoint_dirty_pages(chkpt_t& chkpt) const
-{
-    if (!_dirty_pages) { return; }
-
-    spinlock_read_critical_section cs(&_mutex);
-    for (auto e : *_dirty_pages) {
-        chkpt.mark_page_dirty(e.first, e.second.page_lsn, e.second.rec_lsn);
-    }
-}
-
-void vol_t::clear_dirty_pages()
-{
-    if (!_dirty_pages) { return; }
-
-    spinlock_write_critical_section cs(&_mutex);
-
-    if (_dirty_pages) {
-        delete _dirty_pages;
-        _dirty_pages = nullptr;
     }
 }
 
@@ -495,56 +419,6 @@ bool vol_t::set_fake_disk_latency(const int adelay)
 rc_t vol_t::read_page(PageID pnum, generic_page* const buf)
 {
     return read_many_pages(pnum, buf, 1);
-}
-
-rc_t vol_t::read_page_verify(PageID pid, generic_page* const buf, lsn_t emlsn)
-{
-    if (!_no_db_mode) {
-        W_DO(read_many_pages(pid, buf, 1));
-    }
-    else {
-        memset(buf, '\0', sizeof(generic_page));
-    }
-
-    // check for more recent LSN in dirty page table
-    lsn_t dirty_lsn = get_dirty_page_emlsn(pid);
-    if (dirty_lsn > emlsn) { emlsn = dirty_lsn; }
-
-    // CS TODO: ignoring page corruption for now
-    // uint32_t checksum = buf->calculate_checksum();
-    // if (checksum != buf->checksum && !emlsn.is_null())
-
-    if (buf->lsn < emlsn || _no_db_mode) {
-        // if (buf->lsn == lsn_t::null) { // virgin page
-        //     buf->lsn = lsn_t::null;
-        //     buf->pid = pid;
-        //     buf->tag = t_btree_p;
-        // }
-
-        btree_page_h p;
-        buf->pid = pid;
-        p.fix_nonbufferpool_page(buf);
-        p.update_page_lsn(buf->lsn);
-
-        SprIterator iter;
-        iter.open(pid, p.lsn(), emlsn, _prioritize_archive);
-        iter.apply(p);
-        w_assert0(_no_db_mode || p.lsn() == emlsn);
-        w_assert0(!_no_db_mode || p.lsn() >= emlsn);
-        w_assert0(!p.lsn().is_null());
-        // cerr << "Recovered " << pid << " to LSN " << emlsn << endl;
-    }
-
-    if (!dirty_lsn.is_null()) {
-        delete_dirty_page(pid);
-    }
-
-    // if (buf->pid != pid) {
-    //     W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
-    //         << pid << " was " << buf->pid);
-    // }
-
-    return RCOK;
 }
 
 /*********************************************************************

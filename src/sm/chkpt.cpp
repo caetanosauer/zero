@@ -575,7 +575,7 @@ void chkpt_m::take(chkpt_t* chkpt)
         }
         else {
             chkpt->init();
-            smlevel_0::vol->checkpoint_dirty_pages(*chkpt);
+            smlevel_0::recovery->checkpoint_dirty_pages(*chkpt);
             smlevel_0::bf->fuzzy_checkpoint(*chkpt);
             xct_t::fuzzy_checkpoint(*chkpt);
             chkpt->set_last_scan_start(begin_lsn);

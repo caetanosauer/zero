@@ -63,6 +63,12 @@ public:
     chkpt_t* get_chkpt() { return &chkpt; }
     bool hasLogAnalysisFinished() {return logAnalysisFinished;}
 
+    PageID get_dirty_page_count() const;
+    lsn_t get_dirty_page_emlsn(PageID pid) const;
+    void checkpoint_dirty_pages(chkpt_t& chkpt) const;
+
+    bool isInstant() { return instantRestart; }
+
 private:
     bool log_based;
     bool instantRestart;
@@ -74,9 +80,9 @@ private:
 
     bool logAnalysisFinished;
 
-    // Child thread, used only if open system after Log Analysis phase while REDO and UNDO
-    // will be performed with concurrent user transactions
-    restart_thread_t*           _restart_thread;
+    void clear_chkpt();
+
+    mutable srwlock_t chkpt_mutex;
 
 public:
 

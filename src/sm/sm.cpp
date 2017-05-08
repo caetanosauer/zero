@@ -265,7 +265,7 @@ ss_m::_construct_once()
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing volume manager");
 
-    vol = new vol_t(_options, chkpt_info);
+    vol = new vol_t(_options);
 
     ERROUT(<< "[" << timer.time_ms() << "] Initializing buffer manager");
 
@@ -276,7 +276,7 @@ ss_m::_construct_once()
 
     ERROUT(<< "[" << timer.time_ms() << "] Building volume manager caches");
 
-    if (instantRestart || !logBasedRedo) {
+    if (recovery->isInstant() || !logBasedRedo) {
         vol->build_caches(format, chkpt_info);
     }
 

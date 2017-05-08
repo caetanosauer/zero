@@ -6,6 +6,7 @@
 
 #include "sm_base.h"
 #include "lock_lil.h"
+#include "xct.h"
 #include <sys/time.h>
 
 /**

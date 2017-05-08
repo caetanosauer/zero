@@ -7,7 +7,6 @@
 
 #include "w_defines.h"
 #include "stnode_page.h"
-#include "chkpt.h"
 
 #include <list>
 #include <stdlib.h>
@@ -16,13 +15,12 @@ class alloc_cache_t;
 class stnode_cache_t;
 class RestoreMgr;
 class sm_options;
-class chkpt_restore_tab_t;
-
+class chkpt_t;
 
 class vol_t
 {
 public:
-    vol_t(const sm_options&, chkpt_t* chkpt_info = nullptr);
+    vol_t(const sm_options&);
     virtual ~vol_t();
 
     void finish_restore();
@@ -56,14 +54,6 @@ public:
     }
 
     rc_t read_page(PageID page, generic_page* const buf);
-
-    /**
-     * Read page and verify if it is either corrupted or out-of-date according
-     * to the given EMLSN (expected minimum LSN). If that's the case, invoke
-     * single-page recovery to restore page to its most recent state.
-     */
-    rc_t read_page_verify(PageID pnum, generic_page* const buf,
-            lsn_t emlsn = lsn_t::null);
 
     rc_t                read_many_pages(
         PageID             first_page,
@@ -143,16 +133,6 @@ public:
 
     bool caches_ready() { return _alloc_cache && _stnode_cache; }
 
-    PageID get_dirty_page_count() const;
-
-    bool grab_a_dirty_page(PageID& pid) const;
-
-    lsn_t get_dirty_page_emlsn(PageID pid) const;
-
-    void checkpoint_dirty_pages(chkpt_t& chkpt) const;
-
-    void clear_dirty_pages();
-
 private:
     // variables read from volume header -- remain constant after mount
     int              _fd;
@@ -187,10 +167,6 @@ private:
     std::vector<string> _backups;
     std::vector<lsn_t> _backup_lsns;
 
-    /** Dirty pages that require REDO after restart **/
-    // CS TODO: this should be destroyed once recovery is complete
-    buf_tab_t* _dirty_pages;
-
     /** Currently opened backup (during restore only) */
     int _backup_fd;
     lsn_t _current_backup_lsn;
@@ -218,8 +194,6 @@ private:
     /** Open backup file descriptor for retore or taking new backup */
     void open_backup();
 
-public:
-    void delete_dirty_page(PageID pid);
 };
 
 inline bool vol_t::is_valid_store(StoreID f) const

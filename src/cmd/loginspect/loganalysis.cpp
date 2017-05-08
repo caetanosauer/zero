@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include "logarchiver.h"
+#include "chkpt.h"
 
 void LogAnalysis::setupOptions()
 {

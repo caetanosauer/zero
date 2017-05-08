@@ -221,19 +221,16 @@ void restart_thread_t::redo_page_pass()
 {
     stopwatch_t timer;
 
-    // CS TODO: restart_m should maintain dirty pages, and not vol_t
-    auto page_cnt = smlevel_0::vol->get_dirty_page_count();
-    PageID pid;
-    while (smlevel_0::vol->grab_a_dirty_page(pid)) {
+    auto page_cnt = get_dirty_page_count();
+    for (auto e : chkpt.buf_tab) {
+        auto pid = e.first;
         // simply fixing the page will take care of single-page recovery
         fixable_page_h p;
-        // CS TODO: do I need to know here if this is a virgin page or not???
-        // I don't think so -- a page that is dirty cannot be virgin (i.e., there
-        // must have been at least one update on it)
+        // Virgin is always false, since the existence of a log record to be
+        // replayed implies that the page has been (or will be just now)
+        // initialized.
+        constexpr bool conditional = false, virgin = false;
         p.fix_direct(pid, LATCH_SH, false, false);
-
-        // CS TODO: do not issue one delete for each page, just iterate and delete whole set at once
-        // smlevel_0::vol->delete_dirty_page(pid);
 
         if (should_exit()) { return; }
     }
@@ -241,8 +238,6 @@ void restart_thread_t::redo_page_pass()
     ADD_TSTAT(restart_redo_time, timer.time_us());
     ERROUT(<< "Finished REDO of " << page_cnt << " pages");
     Logger::log_sys<redo_done_log>();
-
-    w_assert1(smlevel_0::vol->get_dirty_page_count() == 0);
 }
 
 void restart_thread_t::undo_pass()
@@ -424,7 +419,6 @@ void restart_thread_t::do_work()
 
     if (log_based) { redo_log_pass(); }
     else { redo_page_pass(); }
-    smlevel_0::vol->clear_dirty_pages();
 
     // In traditional ARIES, undo must come after redo
     if (!instantRestart) { undo_pass(); }
@@ -438,6 +432,9 @@ void restart_thread_t::do_work()
     // have to compete with the cleaner's writes during recovery, making
     // restart and warm-up time substantially higher.
     smlevel_0::bf->wakeup_cleaner();
+
+    // Clear dirty page and active transaction tables
+    clear_chkpt();
 
     // restart only does one round, so we quit voluntarily here
     quit();
@@ -651,5 +648,34 @@ void SprIterator::apply(fixable_page_h &p)
 
         prev_lsn = lr->lsn();
     }
+}
+
+lsn_t restart_thread_t::get_dirty_page_emlsn(PageID pid) const
+{
+    spinlock_read_critical_section cs(&chkpt_mutex);
+
+    buf_tab_t::const_iterator it = chkpt.buf_tab.find(pid);
+    if (it == chkpt.buf_tab.end()) { return lsn_t::null; }
+    return it->second.page_lsn;
+}
+
+PageID restart_thread_t::get_dirty_page_count() const
+{
+    spinlock_read_critical_section cs(&chkpt_mutex);
+    return chkpt.buf_tab.size();
+}
+
+void restart_thread_t::checkpoint_dirty_pages(chkpt_t& chkpt) const
+{
+    spinlock_read_critical_section cs(&chkpt_mutex);
+    for (auto e : chkpt.buf_tab) {
+        chkpt.mark_page_dirty(e.first, e.second.page_lsn, e.second.rec_lsn);
+    }
+}
+
+void restart_thread_t::clear_chkpt()
+{
+    spinlock_write_critical_section cs(&chkpt_mutex);
+    chkpt.init();
 }
 

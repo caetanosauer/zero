@@ -4,6 +4,7 @@
 #include "log_storage.h"
 #include "stnode_page.h"
 #include "alloc_cache.h"
+#include "chkpt.h"
 
 class PropStatsHandler : public Handler {
 public:

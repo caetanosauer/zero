@@ -768,7 +768,7 @@ size_t ShoreEnv::get_total_pages_to_recover()
 
 size_t ShoreEnv::get_dirty_page_count()
 {
-    return smlevel_0::vol->get_dirty_page_count();
+    return smlevel_0::recovery->get_dirty_page_count();
 }
 
 bool ShoreEnv::has_log_analysis_finished()
