@@ -112,24 +112,12 @@ logrec_t::get_type_str(kind_t type)
 		return "skip";
 	case t_chkpt_begin :
 		return "chkpt_begin";
-	case t_chkpt_bf_tab :
-		return "chkpt_bf_tab";
-	case t_chkpt_xct_tab :
-		return "chkpt_xct_tab";
-	case t_chkpt_xct_lock :
-		return "chkpt_xct_lock";
-	case t_chkpt_end :
-		return "chkpt_end";
 	case t_add_backup :
 		return "add_backup";
 	case t_xct_abort :
 		return "xct_abort";
-	case t_xct_freeing_space :
-		return "xct_freeing_space";
 	case t_xct_end :
 		return "xct_end";
-	case t_xct_end_group :
-		return "xct_end_group";
 	case t_xct_latency_dump :
 		return "xct_latency_dump";
 	case t_alloc_page :
@@ -285,31 +273,13 @@ void logrec_t::redo(PagePtr page)
 	case t_chkpt_begin :
 		W_FATAL(eINTERNAL);
 		break;
-	case t_chkpt_bf_tab :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_chkpt_xct_tab :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_chkpt_xct_lock :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_chkpt_end :
-		W_FATAL(eINTERNAL);
-		break;
 	case t_add_backup :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_xct_abort :
 		W_FATAL(eINTERNAL);
 		break;
-	case t_xct_freeing_space :
-		W_FATAL(eINTERNAL);
-		break;
 	case t_xct_end :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_xct_end_group :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_xct_latency_dump :
@@ -472,31 +442,13 @@ void logrec_t::undo(PagePtr page)
 	case t_chkpt_begin :
 		W_FATAL(eINTERNAL);
 		break;
-	case t_chkpt_bf_tab :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_chkpt_xct_tab :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_chkpt_xct_lock :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_chkpt_end :
-		W_FATAL(eINTERNAL);
-		break;
 	case t_add_backup :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_xct_abort :
 		W_FATAL(eINTERNAL);
 		break;
-	case t_xct_freeing_space :
-		W_FATAL(eINTERNAL);
-		break;
 	case t_xct_end :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_xct_end_group :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_xct_latency_dump :
@@ -657,32 +609,6 @@ void logrec_t::remove_info_for_pid(PageID pid)
 
 /*********************************************************************
  *
- *  xct_freeing_space
- *
- *  Status Log to mark the end of transaction and the beginning
- *  of space recovery.
- *  Synchronous for commit. Async for abort.
- *
- *********************************************************************/
-void xct_freeing_space_log::construct()
-{
-}
-
-
-/*********************************************************************
- *
- *  xct_end_group_log
- *
- *  Status Log to mark the end of transaction and space recovery
- *  for a group of transactions.
- *
- *********************************************************************/
-void xct_end_group_log::construct(const xct_t *list[], int listlen)
-{
-    set_size((new (_data) xct_list_t(list, listlen))->size());
-}
-/*********************************************************************
- *
  *  xct_end_log
  *  xct_abort_log
  *
@@ -764,91 +690,10 @@ void page_evict_log::redo(PagePtr page) {
 }
 
 
-/*********************************************************************
- *
- *  chkpt_end_log(const lsn_t &master, const lsn_t& min_rec_lsn, const lsn_t& min_txn_lsn)
- *
- *  Status Log to mark completion of fussy checkpoint.
- *  Master is the lsn of the record that began this chkpt.
- *  min_rec_lsn is the earliest lsn for all dirty pages in this chkpt.
- *  min_txn_lsn is the earliest lsn for all txn in this chkpt.
- *
- *********************************************************************/
-void chkpt_end_log::construct(const lsn_t& lsn, const lsn_t& min_rec_lsn,
-                                const lsn_t& min_txn_lsn)
-{
-    // initialize _data
-    lsn_t *l = new (_data) lsn_t(lsn);
-    l++; //grot
-    *l = min_rec_lsn;
-    l++; //grot
-    *l = min_txn_lsn;
-
-    set_size((3 * sizeof(lsn_t)) + (3 * sizeof(int)));
-}
-
 void xct_latency_dump_log::construct(unsigned long nsec)
 {
     *((unsigned long*) _data) = nsec;
     set_size(sizeof(unsigned long));
-}
-
-
-/*********************************************************************
- *
- *  chkpt_bf_tab_log
- *
- *  Data Log to save dirty page table at checkpoint.
- *  Contains, for each dirty page, its pid, minimum recovery lsn and page (latest) lsn.
- *
- *********************************************************************/
-void chkpt_bf_tab_log::construct(
-    int                 cnt,        // I-  # elements in pids[] and rlsns[]
-    const PageID*         pid,        // I-  id of of dirty pages
-    const lsn_t*         rec_lsn,// I-  rec_lsn[i] is recovery lsn (oldest) of pids[i]
-    const lsn_t*         page_lsn)// I-  page_lsn[i] is page lsn (latest) of pids[i]
-{
-    set_size((new (_data) chkpt_bf_tab_t(cnt, pid, rec_lsn, page_lsn))->size());
-}
-
-
-/*********************************************************************
- *
- *  chkpt_xct_tab_log
- *
- *  Data log to save transaction table at checkpoint.
- *  Contains, for each active xct, its id, state, last_lsn
- *
- *********************************************************************/
-void chkpt_xct_tab_log::construct(
-    const tid_t&                         youngest,
-    int                                 cnt,
-    const tid_t*                         tid,
-    const smlevel_0::xct_state_t*         state,
-    const lsn_t*                         last_lsn,
-    const lsn_t*                         first_lsn)
-{
-    set_size((new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
-                                         last_lsn, first_lsn))->size());
-}
-
-
-/*********************************************************************
- *
- *  chkpt_xct_lock_log
- *
- *  Data log to save acquired transaction locks for an active transaction at checkpoint.
- *  Contains, each active lock, its hash and lock mode
- *
- *********************************************************************/
-void chkpt_xct_lock_log::construct(
-    const tid_t&                        tid,
-    int                                 cnt,
-    const okvl_mode*                    lock_mode,
-    const uint32_t*                     lock_hash)
-{
-    set_size((new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
-                                         lock_hash))->size());
 }
 
 void add_backup_log::construct(const string& path, lsn_t backupLSN)
@@ -1053,18 +898,6 @@ operator<<(ostream& o, const logrec_t& l)
     }
 
     switch(l.type()) {
-        case logrec_t::t_chkpt_xct_tab:
-            {
-                chkpt_xct_tab_t* dp = (chkpt_xct_tab_t*) l.data();
-                o << " xct_count: " << dp->count;
-                break;
-            }
-        case logrec_t::t_chkpt_bf_tab:
-            {
-                chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) l.data();
-                o << " dirty_page_count: " << dp->count;
-                break;
-            }
         case logrec_t::t_comment :
             {
                 o << " " << (const char *)l._data;

@@ -554,16 +554,6 @@ ss_m::commit_sys_xct()
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::commit_xct_group()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::commit_xct_group(xct_t *list[], int listlen)
-{
-    W_DO(_commit_xct_group(list, listlen));
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
  *  ss_m::commit_xct()                                          *
  *--------------------------------------------------------------*/
 rc_t
@@ -960,80 +950,6 @@ ss_m::_commit_xct(sm_stats_t*& _stats, bool lazy,
     delete xp;
     w_assert3(was_sys_xct || xct() == 0);
 
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_commit_xct_group( xct_t *list[], len)                *
- *--------------------------------------------------------------*/
-
-rc_t
-ss_m::_commit_xct_group(xct_t *list[], int listlen)
-{
-    // We don't care what, if any, xct is attached
-    xct_t* x = xct();
-    if(x) smthread_t::detach_xct(x);
-
-    DBG(<<"commit group " );
-
-    // 1) verify either all are participating in 2pc
-    // in same way (not, prepared, not prepared)
-    // Some may be read-only
-    // 2) do the first part of the commit for each one.
-    // 3) write the group-commit log record.
-    // (TODO: we should remove the read-only xcts from this list)
-    //
-    int participating=0;
-    for(int i=0; i < listlen; i++) {
-        // verify list
-        x = list[i];
-        w_assert3(x->state()==xct_active);
-    }
-    if(participating > 0 && participating < listlen) {
-        // some transaction is not participating in external 2-phase commit
-        // but others are. Don't delete any xcts.
-        // Leave it up to the server to decide how to deal with this; it's
-        // a server error.
-        return RC(eNOTEXTERN2PC);
-    }
-
-    for(int i=0; i < listlen; i++) {
-        x = list[i];
-        /*
-         * Do a partial commit -- all but logging the
-         * commit and freeing the locks.
-         */
-        smthread_t::attach_xct(x);
-        {
-        W_DO( x->commit_as_group_member() );
-        }
-        w_assert1(smthread_t::xct() == NULL);
-
-        if(x->is_instrumented()) {
-            // remove the stats, delete them
-            sm_stats_t* _stats = x->steal_stats();
-            delete _stats;
-        }
-    }
-
-    // Write group commit record
-    // Failure here requires that the server abort them individually.
-    // I don't know why the compiler won't convert from a
-    // non-const to a const xct_t * list.
-    W_DO(xct_t::group_commit((const xct_t **)list, listlen));
-
-    // Destroy the xcts
-    for(int i=0; i < listlen; i++) {
-        /*
-         *  Free all locks for each transaction
-         */
-        x = list[i];
-        w_assert1(smthread_t::xct() == NULL);
-        smthread_t::attach_xct(x);
-        W_DO(x->commit_free_locks());
-        smthread_t::detach_xct(x);
-        delete x;
-    }
     return RCOK;
 }
 

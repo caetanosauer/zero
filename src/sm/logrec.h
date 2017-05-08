@@ -153,17 +153,17 @@ public:
 	t_compensate = 1,
 	t_skip = 2,
 	t_chkpt_begin = 3,
-	t_chkpt_bf_tab = 4,
-	t_chkpt_xct_tab = 5,
-	t_chkpt_xct_lock = 6,
+	// t_chkpt_bf_tab = 4,
+	// t_chkpt_xct_tab = 5,
+	// t_chkpt_xct_lock = 6,
         t_warmup_done = 7,
         t_alloc_format = 8,
-	t_chkpt_end = 9,
+	// t_chkpt_end = 9,
 	t_add_backup = 10,
 	t_xct_abort = 11,
-	t_xct_freeing_space = 12,
+	// t_xct_freeing_space = 12,
 	t_xct_end = 13,
-	t_xct_end_group = 14,
+	// t_xct_end_group = 14,
 	t_xct_latency_dump = 15,
 	t_alloc_page = 16,
 	t_dealloc_page = 17,
@@ -676,10 +676,6 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_page_read : return t_system;
 	case t_skip : return t_system;
 	case t_chkpt_begin : return t_system;
-	case t_chkpt_bf_tab : return t_system;
-	case t_chkpt_xct_tab : return t_system;
-	case t_chkpt_xct_lock : return t_system;
-	case t_chkpt_end : return t_system;
 	case t_loganalysis_begin : return t_system;
 	case t_loganalysis_end : return t_system;
 	case t_redo_done : return t_system;
@@ -693,9 +689,7 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 
 	case t_compensate : return t_logical;
 	case t_xct_abort : return t_logical;
-	case t_xct_freeing_space : return t_logical;
 	case t_xct_end : return t_logical;
-	case t_xct_end_group : return t_logical;
 
 	case t_alloc_page : return t_redo|t_single_sys_xct;
 	case t_stnode_format : return t_redo|t_single_sys_xct;

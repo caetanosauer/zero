@@ -597,15 +597,6 @@ xct_t::commit_as_group_member()
     return _commit(t_normal|t_group);
 }
 
-/* Group commit: static; write the list of xct ids in the single loc record */
-rc_t
-xct_t::group_commit(const xct_t *list[], int listlen)
-{
-    // Log the whole bunch.
-    Logger::log<xct_end_group_log>(list, listlen);
-    return RCOK;
-}
-
 rc_t
 xct_t::chain(bool lazy)
 {

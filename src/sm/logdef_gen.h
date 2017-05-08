@@ -57,26 +57,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     void construct ();
     };
 
-    struct chkpt_bf_tab_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_chkpt_bf_tab;
-    void construct (int cnt, const PageID* pid, const lsn_t* rec_lsn, const lsn_t* page_lsn);
-    };
-
-    struct chkpt_xct_tab_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_chkpt_xct_tab;
-    void construct (const tid_t& youngest, int cnt, const tid_t* tid, const smlevel_0::xct_state_t* state, const lsn_t* last_lsn, const lsn_t* first_lsn);;
-    };
-
-    struct chkpt_xct_lock_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_chkpt_xct_lock;
-    void construct (const tid_t& tid, int cnt, const okvl_mode* lock_mode, const uint32_t* lock_hash);
-    };
-
-    struct chkpt_end_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_chkpt_end;
-    void construct (const lsn_t& master, const lsn_t& min_rec_lsn, const lsn_t& min_xct_lsn);
-    };
-
     struct add_backup_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_add_backup;
     void construct (const string& path, lsn_t backupLSN);
@@ -87,19 +67,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     void construct ();
     };
 
-    struct xct_freeing_space_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_xct_freeing_space;
-    void construct ();
-    };
-
     struct xct_end_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_xct_end;
     void construct ();
-    };
-
-    struct xct_end_group_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_xct_end_group;
-    void construct (const xct_t** l, int llen);
     };
 
     struct xct_latency_dump_log : public logrec_t {

@@ -287,11 +287,6 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
             xct->mark_ended();
             break;
 
-        case logrec_t::t_xct_end_group:
-            // CS TODO: is this type of group commit still used?
-            w_assert0(false);
-            break;
-
         case logrec_t::t_page_write:
             {
                 char* pos = r.data();
