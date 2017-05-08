@@ -352,6 +352,9 @@ ss_m::_destruct_once()
         smthread_t::detach_xct(xct());
     }
 
+    // retire chkpt thread (calling take() directly still possible)
+    chkpt->stop();
+
     ERROUT(<< "Terminating recovery manager");
 
     if (recovery) {
@@ -360,9 +363,6 @@ ss_m::_destruct_once()
         recovery = 0;
     }
     vol->finish_restore();
-
-    // retire chkpt thread (calling take() directly still possible)
-    chkpt->stop();
 
     // remove all transactions, aborting them in case of clean shutdown
     xct_t::cleanup(shutdown_clean);

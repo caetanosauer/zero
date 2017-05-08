@@ -223,6 +223,12 @@ TEST_BIG_ENDIAN(WORDS_BIGENDIAN)
 # then finally call CONFIGURE_FILE to generate shore-config-env.h
 CONFIGURE_FILE( ${CMAKE_SOURCE_DIR}/config/shore-config-env.h.cmake ${CMAKE_BINARY_DIR}/config/shore-config-env.h )
 
+# configuration options passed as preprocessor flags
+option(USE_MMAP "Use mmap to read from log and log archive" ON)
+if (USE_MMAP)
+    add_definitions(-DUSE_MMAP)
+endif()
+
 add_subdirectory(src) # main source codes
 add_subdirectory(config) # to be eliminated
 add_subdirectory(gtest-1.7.0) # google-test library
