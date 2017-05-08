@@ -68,6 +68,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 // files and stuff
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <sys/uio.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -82,10 +83,15 @@ partition_t::partition_t(log_storage *owner, partition_number_t num)
     : _num(num), _owner(owner), _size(-1),
       _fhdl_rd(invalid_fhdl), _fhdl_app(invalid_fhdl)
 {
+    _max_partition_size = owner->get_partition_size();
+#ifndef USE_MMAP
 #if SM_PAGESIZE < 8192
     _readbuf = new char[log_storage::BLOCK_SIZE*4];
 #else
     _readbuf = new char[SM_PAGESIZE*4];
+#endif
+#else
+    _readbuf = nullptr;
 #endif
 }
 
@@ -230,16 +236,46 @@ rc_t partition_t::prime_buffer(char* buffer, lsn_t lsn, size_t& prime_offset)
 {
     if (get_size() > 0) {
         logrec_t* lr;
+#ifdef USE_MMAP
+        size_t offset = XFERSIZE * (lsn.lo() / XFERSIZE);
+        lsn_t block_lsn = lsn_t(num(), offset);
+        W_DO(read(lr, block_lsn, NULL));
+        memcpy(buffer, lr, XFERSIZE);
+        prime_offset = lsn.lo() - offset;
+#else
         W_DO(read(lr, lsn, NULL));
         memcpy(buffer, _readbuf, XFERSIZE);
         prime_offset = (char*) lr - _readbuf;
         release_read();
+#endif
     }
     else { prime_offset = 0; }
 
     return RCOK;
 }
 
+#ifdef USE_MMAP
+rc_t partition_t::read(logrec_t *&rp, lsn_t &ll, lsn_t* prev_lsn)
+{
+    w_assert1(ll.hi() == num());
+    w_assert3(is_open_for_read());
+
+    size_t pos = ll.lo();
+    rp = reinterpret_cast<logrec_t*>(_readbuf + pos);
+
+    if (prev_lsn) {
+        if (pos == 0) {
+            *prev_lsn = lsn_t::null;
+        }
+        else {
+            w_assert1(pos > sizeof(lsn_t) + sizeof(baseLogHeader));
+            *prev_lsn = *(reinterpret_cast<lsn_t*>(_readbuf + pos - sizeof(lsn_t)));
+        }
+    }
+
+    return RCOK;
+}
+#else
 rc_t partition_t::read(logrec_t *&rp, lsn_t &ll, lsn_t* prev_lsn)
 {
     _read_mutex.lock();
@@ -314,6 +350,7 @@ rc_t partition_t::read(logrec_t *&rp, lsn_t &ll, lsn_t* prev_lsn)
     w_assert0(rp->valid_header(ll));
     return RCOK;
 }
+#endif
 
 size_t partition_t::read_block(void* buf, size_t count, off_t offset)
 {
@@ -326,11 +363,14 @@ size_t partition_t::read_block(void* buf, size_t count, off_t offset)
 
 void partition_t::release_read()
 {
+#ifndef USE_MMAP
     _read_mutex.unlock();
+#endif
 }
 
 rc_t partition_t::open_for_read()
 {
+    // mmap code needs lock just to synchronize multiple open calls, reads don't need it
     lock_guard<mutex> lck(_read_mutex);
 
     if(_fhdl_rd == invalid_fhdl) {
@@ -340,6 +380,11 @@ rc_t partition_t::open_for_read()
         CHECK_ERRNO(fd);
         w_assert3(_fhdl_rd == invalid_fhdl);
         _fhdl_rd = fd;
+#ifdef USE_MMAP
+        _readbuf = reinterpret_cast<char*>(
+                mmap(nullptr, _max_partition_size, PROT_READ, MAP_SHARED, _fhdl_rd, 0));
+        CHECK_ERRNO((long) _readbuf);
+#endif
     }
     w_assert3(is_open_for_read());
 
@@ -401,8 +446,13 @@ rc_t partition_t::close_for_append()
 rc_t partition_t::close_for_read()
 {
     if (_fhdl_rd != invalid_fhdl)  {
-        auto ret = close(_fhdl_rd);
+#ifdef USE_MMAP
+        auto ret = munmap(_readbuf, _max_partition_size);
         CHECK_ERRNO(ret);
+        _readbuf = nullptr;
+#endif
+        auto ret2 = close(_fhdl_rd);
+        CHECK_ERRNO(ret2);
         _fhdl_rd = invalid_fhdl;
     }
     return RCOK;
