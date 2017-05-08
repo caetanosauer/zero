@@ -349,6 +349,11 @@ void bf_tree_m::set_warmup_done()
         _warmup_done = true;
         _restore_coord = nullptr;
         Logger::log_sys<warmup_done_log>();
+
+        // start cleaner only after buffer is warmed-up
+        // CS TODO: relax this constraint a bit -- start cleaning after
+        // buffer is "semi-warm"
+        // wakeup_cleaner();
     }
 }
 

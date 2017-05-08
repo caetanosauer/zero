@@ -309,13 +309,6 @@ ss_m::_construct_once()
         if (logBasedRedo) { vol->build_caches(format, nullptr); }
     }
 
-    // Initialize cleaner once vol caches are built
-    int cleaner_int = _options.get_int_option("sm_cleaner_interval", 0);
-    if (cleaner_int >= 0) {
-        // Getter will initialize cleaner on demand
-        bf->get_cleaner();
-    }
-
     ERROUT(<< "[" << timer.time_ms() << "] Finished SM initialization");
 }
 
