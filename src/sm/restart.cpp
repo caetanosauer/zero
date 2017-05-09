@@ -203,15 +203,15 @@ void restart_thread_t::_redo_log_with_pid(logrec_t& r, PageID pid, bool &redone)
     lsn_t page_lsn = page.lsn();
     if (page_lsn < r.lsn())
     {
-        w_assert0(pid == r.pid() || pid == r.pid2());
-        w_assert0(r.has_page_img(pid) || pid != r.pid()
+        w_assert1(pid == r.pid() || pid == r.pid2());
+        w_assert1(r.has_page_img(pid) || pid != r.pid()
                     || (r.page_prev_lsn() == lsn_t::null
                     ||  r.page_prev_lsn() == page_lsn));
 
-        w_assert0(pid != r.pid2() || (r.page2_prev_lsn() == lsn_t::null ||
+        w_assert1(pid != r.pid2() || (r.page2_prev_lsn() == lsn_t::null ||
             r.page2_prev_lsn() == page_lsn));
 
-        w_assert0(page.is_fixed());
+        w_assert1(page.is_fixed());
         r.redo(&page);
         redone = true;
     }
@@ -635,12 +635,12 @@ void SprIterator::apply(fixable_page_h &p)
             DBGOUT1(<< "SPR page(" << p.pid()
                     << ") LSN=" << p.lsn() << ", log=" << *lr);
 
-            w_assert0(pid == lr->pid() || pid == lr->pid2());
-            w_assert0(lr->has_page_img(pid) || pid != lr->pid()
+            w_assert1(pid == lr->pid() || pid == lr->pid2());
+            w_assert1(lr->has_page_img(pid) || pid != lr->pid()
                     || (lr->page_prev_lsn() == lsn_t::null
                     || lr->page_prev_lsn() == p.lsn()));
 
-            w_assert0(pid != lr->pid2() || (lr->page2_prev_lsn() == lsn_t::null ||
+            w_assert1(pid != lr->pid2() || (lr->page2_prev_lsn() == lsn_t::null ||
                         lr->page2_prev_lsn() == p.lsn()));
 
             lr->redo(&p);
