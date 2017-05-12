@@ -253,6 +253,10 @@ void Command::setupSMOptions(po::options_description& options)
         "Lock table size")
     ("sm_rawlock_xctpool_initseg", po::value<int>(),
         "Transaction Pool Initialization Segment")
+    ("sm_bf_warmup_hit_ratio", po::value<int>(),
+        "Hit ratio to be achieved until system is considered warmed up (int from 0 to 100)")
+    ("sm_bf_warmup_min_fixes", po::value<int>(),
+        "Only consider warmup hit ratio once this minimum number of fixes has been performed")
     ("sm_cleaner_decoupled", po::value<bool>(),
         "Enable/Disable decoupled cleaner")
     ("sm_cleaner_interval", po::value<int>(),

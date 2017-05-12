@@ -82,6 +82,9 @@ restart_thread_t::restart_thread_t(const sm_options& options)
     take_chkpt = options.get_bool_option("sm_chkpt_after_log_analysis", false);
     // CS TODO: instant restart should also allow log-based redo
     if (instantRestart) { log_based = false; }
+
+    // Thread waits for wakeup anyway with default interval -1, so we can fork
+    fork();
 };
 
 void restart_thread_t::log_analysis()

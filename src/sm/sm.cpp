@@ -259,7 +259,6 @@ ss_m::_construct_once()
     recovery->log_analysis();
     chkpt_t* chkpt_info = recovery->get_chkpt();
 
-    bool instantRestart = _options.get_bool_option("sm_restart_instant", true);
     bool logBasedRedo = _options.get_bool_option("sm_restart_log_based_redo", true);
     bool format = _options.get_bool_option("sm_format", false);
 
@@ -301,9 +300,8 @@ ss_m::_construct_once()
 
     bf->post_init();
 
-    recovery->fork();
-    recovery->wakeup();
-    if (!instantRestart) {
+    if (!recovery->isInstant()) {
+        recovery->wakeup();
         recovery->join();
         // metadata caches can only be constructed now
         if (logBasedRedo) { vol->build_caches(format, nullptr); }

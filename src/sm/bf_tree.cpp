@@ -112,6 +112,15 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     _no_db_mode = options.get_bool_option("sm_no_db", false);
     _batch_segment_size = options.get_int_option("sm_batch_segment_size", 16);
     _batch_warmup = _batch_segment_size > 1;
+
+    // Warm-up options
+    // Warm-up hit ratio must be an int between 0 and 100
+    auto warmup_hr = options.get_int_option("sm_bf_warmup_hit_ratio", 100);
+    if (warmup_hr < 0) { _warmup_hit_ratio = 0; }
+    else if (warmup_hr > 100) { _warmup_hit_ratio = 1; }
+    else { _warmup_hit_ratio = static_cast<double>(warmup_hr) / 100; }
+    // CS TODO min_fixes should be proportional to buffer size somehow
+    _warmup_min_fixes = options.get_int_option("sm_bf_warmup_min_fixes", 1000000);
     _warmup_done = false;
 
     _root_pages.fill(0);
@@ -354,14 +363,21 @@ void bf_tree_m::set_warmup_done()
         // CS TODO: relax this constraint a bit -- start cleaning after
         // buffer is "semi-warm"
         // wakeup_cleaner();
+
+        // Start backgroud recovery after warmup, in order to not interfere
+        // with on-demand recovery.
+        if (smlevel_0::recovery->isInstant()) {
+            smlevel_0::recovery->wakeup();
+        }
     }
 }
 
 void bf_tree_m::check_warmup_done()
 {
-    constexpr unsigned min_fixes = 100000;
-    if (!_warmup_done) {
-        if (_fix_cnt > min_fixes && (double) _hit_cnt/_fix_cnt > WARMUP_HIT_RATIO) {
+    // if warm-up hit ratio is 100%, we don't even bother
+    if (!_warmup_done && _warmup_hit_ratio < 1.0 && _fix_cnt > _warmup_min_fixes) {
+        double hit_ratio = static_cast<double>(_hit_cnt)/_fix_cnt;
+        if (hit_ratio > _warmup_hit_ratio) {
             set_warmup_done();
         }
     }

@@ -417,10 +417,14 @@ private:
      */
     void check_warmup_done();
 
-    /// Buffer is considered warm when hit ratio goes above this
-    static constexpr float WARMUP_HIT_RATIO = 0.98;
-
     void set_warmup_done();
+
+    /// Buffer is considered warm when hit ratio goes above this
+    double _warmup_hit_ratio;
+
+    /// Only check after this number of fixes
+    unsigned _warmup_min_fixes;
+
 
 private:
     /** count of blocks (pages) in this bufferpool. */
