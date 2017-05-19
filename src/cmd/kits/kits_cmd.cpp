@@ -155,36 +155,6 @@ KitsCommand::KitsCommand()
     : mtype(MT_UNDEF), clientsForked(false), failure_thread(nullptr)
 {}
 
-/*
- * Thread object usied for the simple purpose of setting the skew parameters.
- * This is required because the random number generator is available as a
- * member of the Kits thread_t class. Thus, calling URand from a non-Kits
- * thread causes a failure.
- *
- * TODO: Get rid of this nonsense design and decouple random number generation
- * from thread objetcs. In fact, we could try to get rid of thread_t completely
- */
-class skew_setter_thread : public thread_t
-{
-public:
-    skew_setter_thread(ShoreEnv* shoreEnv)
-        : thread_t("skew_setter"), shoreEnv(shoreEnv)
-    {}
-
-    virtual ~skew_setter_thread()
-    {}
-
-    virtual void work()
-    {
-        // area, load, start_imbalance, skew_type
-        shoreEnv->set_skew(20, 80, 1, 1);
-        shoreEnv->start_load_imbalance();
-    }
-
-private:
-    ShoreEnv* shoreEnv;
-};
-
 void KitsCommand::run()
 {
     init();
@@ -474,6 +444,11 @@ void KitsCommand::initShoreEnv()
         pre_init_crash_thread =
             std::make_shared<CrashThread<ShoreEnv>>(shoreEnv, opt_crashDelay, false);
         pre_init_crash_thread->fork();
+    }
+
+    if (opt_skew) {
+        shoreEnv->set_skew(10, 90, 1, 1);
+        shoreEnv->start_load_imbalance();
     }
 
     shoreEnv->start();
