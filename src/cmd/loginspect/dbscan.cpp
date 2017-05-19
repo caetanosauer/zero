@@ -38,14 +38,15 @@ void DBScan::run()
     static constexpr size_t BUFSIZE = 1024;
 
     _options.set_string_option("sm_dbfile", dbfile);
+    _options.set_bool_option("sm_vol_cluster_stores", true);
 
-    smlevel_0::bf = new bf_tree_m(_options);
-
-    // CS TODO: manage SM sub-components with shared_ptr
-    // auto vol = make_shared<vol_t>(_options);
     vol_t* vol = new vol_t(_options);
     smlevel_0::vol = vol;
+    smlevel_0::bf = new bf_tree_m(_options);
+
     vol->build_caches(false);
+
+    smlevel_0::bf->post_init();
 
     vector<generic_page, memalign_allocator<generic_page>> buffer(BUFSIZE);
 
