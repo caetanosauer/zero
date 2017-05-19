@@ -324,7 +324,7 @@ bool LogConsumer::next(logrec_t*& lr)
         if (!nextBlock()) { return false; }
     }
 
-    int lrLength;
+    int lrLength = 0;
     bool scanned = logScanner->nextLogrec(currentBlock, pos, lr, &nextLSN,
             &endLSN, &lrLength);
 

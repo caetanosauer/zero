@@ -163,6 +163,22 @@ private:
     lsn_t prev_lsn;
 };
 
+class BackwardFetchLogScanner
+{
+public:
+    BackwardFetchLogScanner(lsn_t start_lsn) : curr_lsn(start_lsn)
+    {
+    }
+
+    bool next(logrec_t*& lr)
+    {
+        return smlevel_0::log->fetch_direct(curr_lsn, lr, curr_lsn);
+    }
+
+private:
+    lsn_t curr_lsn;
+};
+
 chkpt_m::chkpt_m(const sm_options& options, chkpt_t* chkpt_info)
     : worker_thread_t(options.get_int_option("sm_chkpt_interval", -1))
 {
@@ -208,8 +224,14 @@ void chkpt_t::scan_log(lsn_t scan_start, lsn_t archived_lsn)
     // Set when scan finds begin of previous checkpoint
     lsn_t scan_stop = lsn_t(1,0);
 
+#ifdef USE_MMAP
+    // BackwardFetchLogScanner scan {scan_start};
     constexpr size_t bufferSize = 8 * 1024 * 1024;
     BackwardLogScanner scan {bufferSize, scan_start, scan_stop};
+#else
+    constexpr size_t bufferSize = 8 * 1024 * 1024;
+    BackwardLogScanner scan {bufferSize, scan_start, scan_stop};
+#endif
 
     logrec_t* lr;
     lsn_t lsn = lsn_t::max;

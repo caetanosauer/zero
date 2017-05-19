@@ -413,7 +413,7 @@ void ArchiveIndex::closeScan(const RunId& runid)
     w_assert1(it != _open_files.end());
 
     auto& count = it->second.refcount;
-    // count--;
+    count--;
 
     if (count == 0) {
         // auto ret = ::close(it->second.fd);

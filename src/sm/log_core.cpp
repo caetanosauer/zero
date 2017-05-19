@@ -202,7 +202,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
         size_t i = ll.hi() - _fetch_buf_first;
         if (_fetch_buffers[i]) {
             logrec_t* rp = (logrec_t*) (_fetch_buffers[i] + ll.lo());
-            w_assert0(rp->valid_header(ll));
+            w_assert1(rp->valid_header(ll));
 
             if (rp->type() == logrec_t::t_skip)
             {
@@ -215,7 +215,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
                 }
 
                 rp = (logrec_t*) (_fetch_buffers[i] + ll.lo());
-                w_assert0(rp->valid_header(ll));
+                w_assert1(rp->valid_header(ll));
             }
 
             if (nxt) {
@@ -242,7 +242,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
     }
 
     if (forward && ll >= durable_lsn()) {
-        w_assert0(ll == durable_lsn());
+        w_assert1(ll == durable_lsn());
         // reading the durable_lsn during recovery yields a skip log record,
         return RC(eEOF);
     }
@@ -260,7 +260,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
     lsn_t prev_lsn = lsn_t::null;
     DBGOUT3(<< "fetch @ lsn: " << ll);
     W_COERCE(p->read(rp, ll, forward ? NULL : &prev_lsn));
-    w_assert0(rp->valid_header(ll));
+    w_assert1(rp->valid_header(ll));
 
     // handle skip log record
     if (rp->type() == logrec_t::t_skip)
@@ -278,16 +278,16 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
             DBGOUT3(<< "fetch @ lsn: " << ll);
             W_DO(p->open_for_read());
             W_COERCE(p->read(rp, ll));
-            w_assert0(rp->valid_header(ll));
+            w_assert1(rp->valid_header(ll));
         }
         else { // backward scan
             // just get previous log record using prev_lsn which was set inside
             // the first call to p->read()
-            w_assert0(prev_lsn != lsn_t::null);
+            w_assert1(prev_lsn != lsn_t::null);
             ll = prev_lsn;
             DBGOUT3(<< "fetch @ lsn: " << ll);
             W_COERCE(p->read(rp, ll, &prev_lsn));
-            w_assert0(rp->valid_header(ll));
+            w_assert1(rp->valid_header(ll));
         }
     }
 
@@ -315,9 +315,29 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
 
     memcpy(buf, rp, rp->length());
     p->release_read();
-    w_assert0(((logrec_t*) buf)->valid_header(ll));
+    w_assert1(((logrec_t*) buf)->valid_header(ll));
 
     return RCOK;
+}
+
+bool log_core::fetch_direct(lsn_t lsn, logrec_t*& lr, lsn_t& prev_lsn)
+{
+    auto p = _storage->get_partition(lsn.hi());
+    if(!p) { return false; }
+    W_COERCE(p->open_for_read());
+
+    W_COERCE(p->read(lr, lsn, &prev_lsn));
+
+    if (prev_lsn.is_null() && lsn.hi() > 1) {
+	p = _storage->get_partition(lsn.hi() - 1);
+	if (p) {
+	    prev_lsn = lsn_t(p->num(), p->get_size());
+	}
+    }
+    w_assert0(lr->valid_header(lsn));
+    p->release_read();
+
+    return true;
 }
 
 void log_core::shutdown()
