@@ -126,6 +126,7 @@ void restart_thread_t::log_analysis()
     ADD_TSTAT(restart_log_analysis_time, timer.time_us());
     Logger::log_sys<loganalysis_end_log>();
 
+    SET_TSTAT(restart_dirty_pages, chkpt.buf_tab.size());
     ERROUT(<< "Log analysis found "
             << chkpt.buf_tab.size() << " dirty pages and "
             << chkpt.xct_tab.size() << " active transactions");
@@ -155,17 +156,17 @@ restart_thread_t::redo_log_pass()
 {
     stopwatch_t timer;
 
-    lsn_t cur_lsn = smlevel_0::log->curr_lsn();
+    lsn_t dur_lsn = smlevel_0::log->durable_lsn();
     lsn_t redo_lsn = chkpt.get_min_rec_lsn();
 
     // Open a forward scan of the recovery log, starting from the redo_lsn which
     // is the earliest lsn determined in the Log Analysis phase
     const size_t blockSize = 1048576;
     LogConsumer iter {redo_lsn, blockSize};
-    iter.open(cur_lsn);
+    iter.open(dur_lsn);
 
-    if(redo_lsn < cur_lsn) {
-        ERROUT(<< "Redoing log from " << redo_lsn << " to " << cur_lsn);
+    if(redo_lsn < dur_lsn) {
+        ERROUT(<< "Redoing log from " << redo_lsn << " to " << dur_lsn);
     }
 
     logrec_t* lr;
@@ -185,7 +186,6 @@ restart_thread_t::redo_log_pass()
         }
 
         DBGOUT5(<< "redo_log_pass: (" << (redone ? " redone" : " skipped") << ") " << *lr);
-
     }
 
     ADD_TSTAT(restart_redo_time, timer.time_us());
@@ -229,11 +229,7 @@ void restart_thread_t::redo_page_pass()
         auto pid = e.first;
         // simply fixing the page will take care of single-page recovery
         fixable_page_h p;
-        // Virgin is always false, since the existence of a log record to be
-        // replayed implies that the page has been (or will be just now)
-        // initialized.
-        constexpr bool conditional = false, virgin = false;
-        p.fix_direct(pid, LATCH_SH, false, false);
+        p.fix_direct(pid, LATCH_SH);
 
         if (should_exit()) { return; }
     }

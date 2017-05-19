@@ -126,6 +126,7 @@ lock_core_m::~lock_core_m()
 {
     DBGOUT3( << " lock_core_m::~lock_core_m()" );
     DBGOUT1( << "Checking if all locks were released..." );
+#if W_DEBUG_LEVEL >= 1
     for (uint32_t i = 0; i < _htabsz; ++i) {
         if (!_htab[i].head.next.is_null()) {
             ERROUT( << "There is some lock not released!" );
@@ -134,6 +135,7 @@ lock_core_m::~lock_core_m()
             break;
         }
     }
+#endif
 
     _lock_pool->gc_wakeup_functor = NULL;
     _xct_pool->gc_wakeup_functor = NULL;

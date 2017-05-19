@@ -366,7 +366,7 @@ void bf_tree_m::set_warmup_done()
 
         // Start backgroud recovery after warmup, in order to not interfere
         // with on-demand recovery.
-        if (smlevel_0::recovery->isInstant()) {
+        if (smlevel_0::recovery && smlevel_0::recovery->isInstant()) {
             smlevel_0::recovery->wakeup();
         }
     }
@@ -407,7 +407,7 @@ void bf_tree_m::post_init()
 
 void bf_tree_m::recover_if_needed(bf_tree_cb_t& cb, generic_page* page, bool only_if_dirty)
 {
-    if (!cb._check_recovery) { return; }
+    if (!cb._check_recovery || !smlevel_0::recovery) { return; }
 
     w_assert1(cb.latch().is_mine());
 

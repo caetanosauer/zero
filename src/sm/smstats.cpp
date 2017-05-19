@@ -235,6 +235,7 @@ const char* get_stat_name(sm_stat_id s)
         case sm_stat_id::bf_batch_wait_time: return "bf_batch_wait_time";
         case sm_stat_id::restart_log_analysis_time: return "restart_log_analysis_time";
         case sm_stat_id::restart_redo_time: return "restart_redo_time";
+        case sm_stat_id::restart_dirty_pages: return "restart_dirty_pages";
         case sm_stat_id::restore_sched_seq: return "restore_sched_seq";
         case sm_stat_id::restore_sched_queued: return "restore_sched_queued";
         case sm_stat_id::restore_sched_random: return "restore_sched_random";
@@ -466,6 +467,7 @@ const char* get_stat_expl(sm_stat_id s)
         case sm_stat_id::bf_batch_wait_time: return "Time spent waiting for batch warmup when ficing pages (usec; nodb mode only)";
         case sm_stat_id::restart_log_analysis_time: return "Time spend with log analysis (usec)";
         case sm_stat_id::restart_redo_time: return "Time spend with non-concurrent REDO (usec)";
+        case sm_stat_id::restart_dirty_pages: return "Number of dirty pages computed in restart log analysis";
         case sm_stat_id::restore_sched_seq: return "Restore scheduled a page in single-pass restore";
         case sm_stat_id::restore_sched_queued: return "Restore scheduled a page which was queued (on-demand)";
         case sm_stat_id::restore_sched_random: return "Restore scheduled a page at random";

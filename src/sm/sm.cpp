@@ -357,8 +357,6 @@ ss_m::_destruct_once()
 
     if (recovery) {
         recovery->stop();
-        delete recovery;
-        recovery = 0;
     }
     vol->finish_restore();
 
@@ -388,6 +386,11 @@ ss_m::_destruct_once()
 
     delete chkpt; chkpt = 0;
     bf->shutdown();
+
+    if (recovery) {
+        delete recovery;
+        recovery = 0;
+    }
 
     ERROUT(<< "Terminating log archiver");
     if (logArchiver) { logArchiver->shutdown(); }

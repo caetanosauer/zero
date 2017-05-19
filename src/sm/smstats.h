@@ -322,6 +322,7 @@ enum class sm_stat_id : size_t
     bf_batch_wait_time,
     restart_log_analysis_time,
     restart_redo_time,
+    restart_dirty_pages,
     restore_sched_seq,
     restore_sched_queued,
     restore_sched_random,
