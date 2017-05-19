@@ -85,9 +85,6 @@ class flush_daemon_thread_t;
 
 class log_core
 {
-    // CArray interface needs to be exposed to plog_xct_t to implement
-    // atomic commit protocol.
-    friend class plog_xct_t;
 public:
     log_core(const sm_options&);
     virtual           ~log_core();

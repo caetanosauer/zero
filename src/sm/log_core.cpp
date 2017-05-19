@@ -436,7 +436,7 @@ log_core::log_core(const sm_options& options)
     }
 
     _group_commit_size = options.get_int_option("sm_group_commit_size", 0);
-    _group_commit_timeout = options.get_int_option("sm_group_commit_timeout", 100);
+    _group_commit_timeout = options.get_int_option("sm_group_commit_timeout", 0);
 
     _page_img_compression = options.get_int_option("sm_page_img_compression", 0);
 
@@ -1075,7 +1075,9 @@ bool log_core::_should_group_commit(long write_size)
     // Do not flush if write size is less than group commit size
     if (write_size < _group_commit_size) {
         // Only supress flush if timeout hasn't expired
-        if (_group_commit_timer.time_ms() < _group_commit_timeout) {
+        if (_group_commit_timeout > 0 &&
+                _group_commit_timer.time_ms() < _group_commit_timeout)
+        {
             return false;
         }
     }
