@@ -430,7 +430,7 @@ void restart_thread_t::do_work()
     // Now we can wake up cleaner. Otherwise, reads on the DB device will
     // have to compete with the cleaner's writes during recovery, making
     // restart and warm-up time substantially higher.
-    smlevel_0::bf->wakeup_cleaner();
+    // smlevel_0::bf->wakeup_cleaner();
 
     // Clear dirty page and active transaction tables
     clear_chkpt();

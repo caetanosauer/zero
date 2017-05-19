@@ -360,9 +360,7 @@ void bf_tree_m::set_warmup_done()
         Logger::log_sys<warmup_done_log>();
 
         // start cleaner only after buffer is warmed-up
-        // CS TODO: relax this constraint a bit -- start cleaning after
-        // buffer is "semi-warm"
-        // wakeup_cleaner();
+        wakeup_cleaner();
 
         // Start backgroud recovery after warmup, in order to not interfere
         // with on-demand recovery.
