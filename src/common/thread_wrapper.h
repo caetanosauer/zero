@@ -52,19 +52,17 @@ public:
         latch_t::on_thread_destroy();
     }
 
-    w_rc_t fork()
+    void fork()
     {
         thread_ptr.reset(new std::thread ([this] { spawn(); }));
-        return RCOK;
     }
 
-    w_rc_t join()
+    void join()
     {
         if (thread_ptr) {
             thread_ptr->join();
             thread_ptr = nullptr;
         }
-        return RCOK;
     }
 
 private:

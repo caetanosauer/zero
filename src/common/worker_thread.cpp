@@ -64,7 +64,7 @@ void worker_thread_t::quit()
 
 void worker_thread_t::run()
 {
-    auto predicate = [this] { return wakeup_requested; };
+    auto predicate = [this] { return wakeup_requested || should_exit(); };
     auto timeout = std::chrono::milliseconds(interval_msec);
 
     while (true) {
@@ -117,7 +117,7 @@ void log_worker_thread_t::wakeup_until_lsn(lsn_t lsn, bool wait, int rounds_to_w
     while (true) {
         lsn_t curr = endLSN;
         if (lsn < curr) { break; }
-        if (std::atomic_compare_exchange_strong(&endLSN, &curr, lsn))
+        if (endLSN.compare_exchange_strong(curr, lsn))
         {
             break;
         }
