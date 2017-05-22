@@ -54,6 +54,7 @@ private:
     int _wh;
     trx_worker_t* _worker;
     double _qf;
+    int _tspread;
 
 
 public:
@@ -63,7 +64,8 @@ public:
     baseline_tpcc_client_t(std::string tname, const int id, ShoreTPCCEnv* env,
                            const MeasurementType aType, const int trxid,
                            const int numOfTrxs,
-                           int aprsid, const int sWH, const double qf);
+                           int aprsid, const int sWH, const double qf,
+                           int tspread);
 
     ~baseline_tpcc_client_t() { }
 

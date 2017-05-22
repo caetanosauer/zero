@@ -172,39 +172,39 @@ struct mbench_mix_input_t
 
 
 acct_update_input_t create_acct_update_input(int SF,
-                                             int specificBr = 0);
+                                             int specificBr = 0, int tspread = 0);
 
 
 populate_db_input_t create_populate_db_input(int SF,
-                                             int specificBr = 0);
+                                             int specificBr = 0, int tspread = 0);
 
 
 mbench_insert_only_input_t create_mbench_insert_only_input(int SF,
-							   int specificBr = 0);
+							   int specificBr = 0, int tspread = 0);
 
 
 mbench_delete_only_input_t create_mbench_delete_only_input(int SF,
-							   int specificBr = 0);
+							   int specificBr = 0, int tspread = 0);
 
 
 mbench_probe_only_input_t create_mbench_probe_only_input(int SF,
-							  int specificBr = 0);
+							  int specificBr = 0, int tspread = 0);
 
 
 mbench_insert_delete_input_t create_mbench_insert_delete_input(int SF,
-							       int specificBr = 0);
+							       int specificBr = 0, int tspread = 0);
 
 
 mbench_insert_probe_input_t create_mbench_insert_probe_input(int SF,
-							     int specificBr = 0);
+							     int specificBr = 0, int tspread = 0);
 
 
 mbench_delete_probe_input_t create_mbench_delete_probe_input(int SF,
-							     int specificBr = 0);
+							     int specificBr = 0, int tspread = 0);
 
 
 mbench_mix_input_t create_mbench_mix_input(int SF,
-					   int specificBr = 0);
+					   int specificBr = 0, int tspread = 0);
 
 
 #endif

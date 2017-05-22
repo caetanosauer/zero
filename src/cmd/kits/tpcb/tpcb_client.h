@@ -53,6 +53,7 @@ private:
     int _selid;
     trx_worker_t* _worker;
     double _qf;
+    int _tspread;
 
 public:
 
@@ -61,7 +62,8 @@ public:
     baseline_tpcb_client_t(std::string tname, const int id, ShoreTPCBEnv* env,
                            const MeasurementType aType, const int trxid,
                            const int numOfTrxs,
-                           int aprsid, const int selID, const double qf);
+                           int aprsid, const int selID, const double qf,
+                           int tspread = 0);
 
     ~baseline_tpcb_client_t() { }
 

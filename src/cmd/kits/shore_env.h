@@ -152,7 +152,8 @@ const int SHORE_NUM_OF_RETRIES       = 3;
 
 #define DEFINE_RUN_WITHOUT_INPUT_TRX_WRAPPER(cname,trxlid,trximpl)      \
     w_rc_t cname::run_##trximpl(Request* prequest) {                    \
-        trxlid##_input_t in = create_##trxlid##_input(_queried_factor, prequest->selectedID()); \
+        trxlid##_input_t in = create_##trxlid##_input(_queried_factor, \
+                prequest->selectedID(), prequest->tspread()); \
         return (run_##trximpl(prequest, in)); }
 
 

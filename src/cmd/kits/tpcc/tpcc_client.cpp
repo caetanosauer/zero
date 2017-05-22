@@ -45,9 +45,10 @@ baseline_tpcc_client_t::baseline_tpcc_client_t(std::string tname, const int id,
                                                const int trxid,
                                                const int numOfTrxs,
                                                int aprsid,
-                                               const int sWH, const double qf)
+                                               const int sWH, const double qf,
+                                               int tspread)
     : base_client_t(tname,id,env,aType,trxid,numOfTrxs,aprsid),
-      _wh(sWH), _qf(qf)
+      _wh(sWH), _qf(qf), _tspread(tspread)
 {
     assert (env);
     assert (_wh>=0 && _qf>0);
@@ -111,7 +112,7 @@ w_rc_t baseline_tpcc_client_t::submit_one(int xct_type, int xctid)
     // Get one action from the trash stack
     trx_request_t* arequest = new (_env->_request_pool) trx_request_t;
     tid_t atid;
-    arequest->set(NULL,atid,xctid,atrt,xct_type,whid);
+    arequest->set(NULL,atid,xctid,atrt,xct_type,whid,_tspread);
 
     // Enqueue to worker thread
     assert (_worker);

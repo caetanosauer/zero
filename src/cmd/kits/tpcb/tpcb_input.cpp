@@ -58,9 +58,12 @@ bool _change_load = false;
 
 
 acct_update_input_t create_acct_update_input(int sf,
-                                             int specificBr)
+                                             int specificBr, int tspread)
 {
     assert (sf>0);
+
+    // CS TODO not used -- copy get_wh stuff from tpcc
+    (void) tspread;
 
     acct_update_input_t auin;
 
@@ -114,7 +117,7 @@ acct_update_input_t create_acct_update_input(int sf,
 
 
 populate_db_input_t create_populate_db_input(int sf,
-                                             int specificSub)
+                                             int specificSub, int tspread)
 {
     assert (sf>0);
     populate_db_input_t pdbin(sf,specificSub);
@@ -131,7 +134,7 @@ populate_db_input_t create_populate_db_input(int sf,
 volatile unsigned long balance = 0; // TODO: not used not, to be removed later
 
 mbench_insert_only_input_t create_mbench_insert_only_input(int sf,
-							   int specificBr)
+							   int specificBr, int tspread)
 {
     assert (sf>0);
 
@@ -169,7 +172,7 @@ void mbench_insert_only_input_t::print()
 
 
 mbench_delete_only_input_t create_mbench_delete_only_input(int sf,
-							   int specificBr)
+							   int specificBr, int tspread)
 {
     assert (sf>0);
 
@@ -206,7 +209,7 @@ void mbench_delete_only_input_t::print()
 
 
 mbench_probe_only_input_t create_mbench_probe_only_input(int sf,
-							 int specificBr)
+							 int specificBr, int tspread)
 {
     assert (sf>0);
 
@@ -243,13 +246,13 @@ void mbench_probe_only_input_t::print()
 
 
 mbench_insert_delete_input_t create_mbench_insert_delete_input(int sf,
-							       int specificBr)
+							       int specificBr, int tspread)
 {
     assert (sf>0);
 
     mbench_insert_delete_input_t midin;
     mbench_insert_only_input_t mioin;
-    mioin = create_mbench_insert_only_input(sf, specificBr);
+    mioin = create_mbench_insert_only_input(sf, specificBr, tspread);
     midin.b_id = mioin.b_id;
     midin.a_id = mioin.a_id;
     midin.balance = mioin.balance;
@@ -266,13 +269,13 @@ mbench_insert_delete_input_t create_mbench_insert_delete_input(int sf,
 
 
 mbench_insert_probe_input_t create_mbench_insert_probe_input(int sf,
-							     int specificBr)
+							     int specificBr, int tspread)
 {
     assert (sf>0);
 
     mbench_insert_probe_input_t mipin;
     mbench_insert_only_input_t mioin;
-    mioin = create_mbench_insert_only_input(sf, specificBr);
+    mioin = create_mbench_insert_only_input(sf, specificBr, tspread);
     mipin.b_id = mioin.b_id;
     mipin.a_id = mioin.a_id;
     mipin.balance = mioin.balance;
@@ -289,13 +292,13 @@ mbench_insert_probe_input_t create_mbench_insert_probe_input(int sf,
 
 
 mbench_delete_probe_input_t create_mbench_delete_probe_input(int sf,
-							     int specificBr)
+							     int specificBr, int tspread)
 {
     assert (sf>0);
 
     mbench_delete_probe_input_t mdpin;
     mbench_delete_only_input_t mdoin;
-    mdoin = create_mbench_delete_only_input(sf, specificBr);
+    mdoin = create_mbench_delete_only_input(sf, specificBr, tspread);
     mdpin.b_id = mdoin.b_id;
     mdpin.a_id = mdoin.a_id;
     mdpin.balance = mdoin.balance;
@@ -313,13 +316,13 @@ mbench_delete_probe_input_t create_mbench_delete_probe_input(int sf,
 
 
 mbench_mix_input_t create_mbench_mix_input(int sf,
-					   int specificBr)
+					   int specificBr, int tspread)
 {
     assert (sf>0);
 
     mbench_mix_input_t mmin;
     mbench_insert_only_input_t mioin;
-    mioin = create_mbench_insert_only_input(sf, specificBr);
+    mioin = create_mbench_insert_only_input(sf, specificBr, tspread);
     mmin.b_id = mioin.b_id;
     mmin.a_id = mioin.a_id;
     mmin.balance = mioin.balance;

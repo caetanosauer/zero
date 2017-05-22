@@ -75,6 +75,20 @@ namespace tpcc {
 skewer_t w_skewer;
 bool _change_load = false;
 
+int get_wh(int sf, int specificWH, int tspread)
+{
+    int wh = _change_load ? w_skewer.get_input() : URand(1, sf);
+    if (specificWH > 0) {
+        w_assert0(tspread > 0);
+        w_assert0(specificWH <= tspread);
+        wh = (wh / tspread) * tspread + specificWH;
+        if (wh > sf) { wh -= tspread; }
+        w_assert0(wh <= sf);
+        w_assert0(wh > 0);
+    }
+    return wh;
+}
+
 /* ----------------------- */
 /* --- NEW_ORDER_INPUT --- */
 /* ----------------------- */
@@ -202,7 +216,7 @@ with_item_nord_input_t::operator= (const with_item_nord_input_t& rhs)
  *
  *********************************************************************/
 
-new_order_input_t create_new_order_input(int sf, int specificWH)
+new_order_input_t create_new_order_input(int sf, int specificWH, int tspread)
 {
     // check scaling factor
     assert (sf>0);
@@ -212,15 +226,7 @@ new_order_input_t create_new_order_input(int sf, int specificWH)
 
 #ifndef USE_SAME_INPUT
 
-    if(_change_load) {
-	noin._wh_id = w_skewer.get_input();
-    } else {
-	if (specificWH>0)
-	    noin._wh_id = specificWH;
-	else
-	    noin._wh_id = URand(1, sf);
-    }
-
+    noin._wh_id = get_wh(sf, specificWH, tspread);
     noin._d_id   = URand(1, 10);
     noin._c_id   = NURand(1023, 1, 3000);
     noin._ol_cnt = URand(5, 15);
@@ -318,7 +324,7 @@ payment_input_t::operator= (const payment_input_t& rhs)
  *
  *********************************************************************/
 
-payment_input_t create_payment_input(int sf, int specificWH)
+payment_input_t create_payment_input(int sf, int specificWH, int tspread)
 {
     // check scaling factor
     assert (sf>0);
@@ -328,15 +334,7 @@ payment_input_t create_payment_input(int sf, int specificWH)
 
 #ifndef USE_SAME_INPUT
 
-    if(_change_load) {
-	pin._home_wh_id = w_skewer.get_input();
-    } else {
-	if (specificWH>0)
-	    pin._home_wh_id = specificWH;
-	else
-	    pin._home_wh_id = URand(1, sf);
-    }
-
+    pin._home_wh_id  = get_wh(sf, specificWH, tspread);
     pin._home_d_id = URand(1, 10);
     pin._h_amount = (long)URand(100, 500000)/(long)100.00;
     pin._h_date = time(NULL);
@@ -435,7 +433,7 @@ order_status_input_t::operator= (const order_status_input_t& rhs)
  *
  *********************************************************************/
 
-order_status_input_t create_order_status_input(int sf, int specificWH)
+order_status_input_t create_order_status_input(int sf, int specificWH, int tspread)
 {
     // check scaling factor
     assert (sf > 0);
@@ -445,15 +443,7 @@ order_status_input_t create_order_status_input(int sf, int specificWH)
 
 #ifndef USE_SAME_INPUT
 
-    if(_change_load) {
-	osin._wh_id = w_skewer.get_input();
-    } else {
-	if (specificWH>0)
-	    osin._wh_id = specificWH;
-	else
-	    osin._wh_id    = URand(1, sf);
-    }
-
+    osin._wh_id = get_wh(sf, specificWH, tspread);
     osin._d_id     = URand(1, 10);
 
 #ifdef USE_SAFE_PATHS
@@ -509,7 +499,7 @@ delivery_input_t::operator= (const delivery_input_t& rhs)
  *
  *********************************************************************/
 
-delivery_input_t create_delivery_input(int sf, int specificWH)
+delivery_input_t create_delivery_input(int sf, int specificWH, int tspread)
 {
     // check scaling factor
     assert (sf > 0);
@@ -519,15 +509,7 @@ delivery_input_t create_delivery_input(int sf, int specificWH)
 
 #ifndef USE_SAME_INPUT
 
-    if(_change_load) {
-	din._wh_id = w_skewer.get_input();
-    } else {
-	if (specificWH>0)
-	    din._wh_id = specificWH;
-	else
-	    din._wh_id = URand(1, sf);
-    }
-
+    din._wh_id = get_wh(sf, specificWH, tspread);
     din._carrier_id = URand(1, 10);
 
 #else
@@ -570,7 +552,7 @@ stock_level_input_t::operator= (const stock_level_input_t& rhs)
  *
  *********************************************************************/
 
-stock_level_input_t create_stock_level_input(int sf, int specificWH)
+stock_level_input_t create_stock_level_input(int sf, int specificWH, int tspread)
 {
     // check scaling factor
     assert (sf > 0);
@@ -580,15 +562,7 @@ stock_level_input_t create_stock_level_input(int sf, int specificWH)
 
 #ifndef USE_SAME_INPUT
 
-    if(_change_load) {
-	slin._wh_id = w_skewer.get_input();
-    } else {
-	if (specificWH>0)
-	    slin._wh_id = specificWH;
-	else
-	    slin._wh_id = URand(1, sf);
-    }
-
+    slin._wh_id = get_wh(sf, specificWH, tspread);
     slin._d_id      = URand(1, 10);
     slin._threshold = URand(10, 20);
 
@@ -628,7 +602,7 @@ mbench_wh_input_t::operator= (const mbench_wh_input_t& rhs)
  *
  *********************************************************************/
 
-mbench_wh_input_t create_mbench_wh_input(int sf, int specificWH)
+mbench_wh_input_t create_mbench_wh_input(int sf, int specificWH, int tspread)
 {
     // check scaling factor
     assert (sf > 0);
@@ -683,7 +657,7 @@ mbench_cust_input_t::operator= (const mbench_cust_input_t& rhs)
  *
  *********************************************************************/
 
-mbench_cust_input_t create_mbench_cust_input(int sf, int specificWH)
+mbench_cust_input_t create_mbench_cust_input(int sf, int specificWH, int tspread)
 {
     // check scaling factor
     assert (sf > 0);

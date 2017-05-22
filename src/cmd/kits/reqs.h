@@ -255,6 +255,7 @@ struct trx_request_t : public base_request_t
 {
     int                 _xct_type;
     int                 _spec_id;
+    int _tspread;
 
     trx_request_t()
         : base_request_t(), _xct_type(-1),_spec_id(0)
@@ -262,9 +263,10 @@ struct trx_request_t : public base_request_t
 
     trx_request_t(xct_t* pxct, const tid_t& atid, const int axctid,
                   const trx_result_tuple_t& aresult,
-                  const int axcttype, const int aspecid)
+                  const int axcttype, const int aspecid,
+                  int tspread = 0)
         : base_request_t(pxct,atid,axctid,aresult),
-          _xct_type(axcttype), _spec_id(aspecid)
+          _xct_type(axcttype), _spec_id(aspecid), _tspread(tspread)
     {
     }
 
@@ -272,16 +274,18 @@ struct trx_request_t : public base_request_t
 
     void set(xct_t* pxct, const tid_t& atid, const int axctid,
              const trx_result_tuple_t& aresult,
-             const int axcttype, const int aspecid)
+             const int axcttype, const int aspecid, int tspread)
     {
         base_request_t::set(pxct,atid,axctid,aresult);
         _xct_type = axcttype;
         _spec_id = aspecid;
+        _tspread = tspread;
     }
 
     inline int type() const { return (_xct_type); }
     inline void set_type(const int atype) { _xct_type = atype; }
     inline int selectedID() { return (_spec_id); }
+    int tspread() const { return _tspread; }
 
 }; // EOF: trx_request_t
 

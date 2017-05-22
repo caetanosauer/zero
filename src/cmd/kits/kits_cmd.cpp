@@ -338,7 +338,8 @@ void KitsCommand::createClients()
                 mtype, opt_select_trx,
                 trxsPerThread,
                 current_prs_id /* cpu id -- see below */,
-                wh_id, opt_queried_sf);
+                wh_id, opt_queried_sf,
+                opt_num_threads);
         w_assert0(client);
         clients.push_back(client);
     }
