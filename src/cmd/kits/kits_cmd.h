@@ -7,6 +7,7 @@
 class ShoreEnv;
 class sm_options;
 class FailureThread;
+template <class T> class CrashThread;
 
 class KitsCommand : public Command
 {
@@ -44,10 +45,13 @@ protected:
     bool opt_asyncCommit;
     bool opt_warmup;
     int opt_crashDelay;
+    bool opt_crashDelayAfterInit;
     int opt_failDelay;
 
     bool hasFailed;
     MeasurementType mtype;
+
+    std::shared_ptr<CrashThread<ShoreEnv>> pre_init_crash_thread;
 
     // overridden in sub-commands to set their own options
     virtual void loadOptions(sm_options& opt);

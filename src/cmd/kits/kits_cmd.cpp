@@ -30,8 +30,6 @@ public:
     {
     }
 
-    virtual ~CrashThread() {}
-
     virtual void run()
     {
         if (wait_for_warmup) {
@@ -41,7 +39,7 @@ public:
         std::this_thread::sleep_for(std::chrono::seconds(delay));
 
         cerr << "Crash thread will now shutdown SM" << endl;
-        env->set_sm_shudown_filthy(true);
+        // env->set_sm_shudown_filthy(true);
         env->set_stop_benchmark(true);
     }
 
@@ -140,6 +138,8 @@ void KitsCommand::setupOptions()
         ("crashDelay", po::value<int>(&opt_crashDelay)->default_value(-1),
             "Time (sec) to wait before aborting execution to simulate system \
             failure (negative disables)")
+        ("crashDelayAfterInit", po::value<bool>(&opt_crashDelayAfterInit)->default_value(true),
+            "Start counting crash delay only after SM is initialized (and recovered if in ARIES)")
         ("failDelay", po::value<int>(&opt_failDelay)->default_value(-1),
             "Time to wait before marking the volume as failed (simulates media failure)")
     ;
@@ -209,6 +209,11 @@ void KitsCommand::run()
         failure_thread->join();
         delete failure_thread;
     }
+
+    if (pre_init_crash_thread) {
+        pre_init_crash_thread->join();
+        pre_init_crash_thread = nullptr;
+    }
     // crash_thread aborts the program, so we don't worry about joining it
 }
 
@@ -225,8 +230,8 @@ void KitsCommand::randomRootPageFailure()
     std::vector<StoreID> stores;
     smlevel_0::vol->get_stnode_cache()->get_used_stores(stores);
     int randomStore = random()%(stores.size() -1);
-    StoreID stid = stores.at(randomStore);
-    PageID root_pid = smlevel_0::vol->get_stnode_cache()->get_root_pid(stid);
+    // StoreID stid = stores.at(randomStore);
+    // PageID root_pid = smlevel_0::vol->get_stnode_cache()->get_root_pid(stid);
     fixable_page_h page;
 
     page.fix_root(stores.at(randomStore), LATCH_EX);
@@ -283,11 +288,11 @@ void KitsCommand::runBenchmarkSpec()
         createClients<Client, Environment>();
 
         // Spawn crash thread if requested
-        if (opt_crashDelay >= 0) {
+        if (opt_crashDelay >= 0 && opt_crashDelayAfterInit) {
             forkClients();
 
             auto crash_thread =
-                std::make_shared<CrashThread<ShoreEnv>>(shoreEnv, opt_warmup, opt_crashDelay);
+                std::make_shared<CrashThread<ShoreEnv>>(shoreEnv, opt_crashDelay, opt_warmup);
             crash_thread->fork();
             crash_thread->join();
 
@@ -467,6 +472,12 @@ void KitsCommand::initShoreEnv()
     w_assert0(res == 0);
     shoreEnv->set_clobber(opt_load);
     loadOptions(shoreEnv->get_opts());
+
+    if (opt_crashDelay >= 0 && !opt_crashDelayAfterInit) {
+        pre_init_crash_thread =
+            std::make_shared<CrashThread<ShoreEnv>>(shoreEnv, opt_crashDelay, false);
+        pre_init_crash_thread->fork();
+    }
 
     shoreEnv->start();
 }
