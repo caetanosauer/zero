@@ -7,6 +7,7 @@
 class ShoreEnv;
 class sm_options;
 class FailureThread;
+class SkewShiftingThread;
 template <class T> class CrashThread;
 
 class KitsCommand : public Command
@@ -47,11 +48,13 @@ protected:
     int opt_crashDelay;
     bool opt_crashDelayAfterInit;
     int opt_failDelay;
+    int opt_skewShiftDelay;
 
     bool hasFailed;
     MeasurementType mtype;
 
     std::shared_ptr<CrashThread<ShoreEnv>> pre_init_crash_thread;
+    std::shared_ptr<SkewShiftingThread> skew_shifter;
 
     // overridden in sub-commands to set their own options
     virtual void loadOptions(sm_options& opt);

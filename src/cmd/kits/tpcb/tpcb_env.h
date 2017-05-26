@@ -239,7 +239,7 @@ public:
     ShoreTPCBTrxStats _get_stats();
 
     // set load imbalance and time to apply it
-    void set_skew(int area, int load, int start_imbalance, int skew_type);
+    void set_skew(int area, int load, int start_imbalance, int skew_type, bool shifting);
     void start_load_imbalance();
     void reset_skew();
 

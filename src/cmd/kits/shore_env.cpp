@@ -365,7 +365,7 @@ void ShoreEnv::set_crash_delay(int crash_delay)
  *  @brief: Set the load imbalance and the time to start it
  *
  ********************************************************************/
-void ShoreEnv::set_skew(int area, int load, int start_imbalance, int skew_type)
+void ShoreEnv::set_skew(int area, int load, int start_imbalance, int skew_type, bool)
 {
     (void) area;
     (void) load;

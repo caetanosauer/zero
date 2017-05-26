@@ -16,6 +16,7 @@ namespace fs = boost::filesystem;
 #include "tpcb/tpcb_client.h"
 #include "tpcc/tpcc_env.h"
 #include "tpcc/tpcc_client.h"
+#include "tpcc/tpcc_input.h"
 
 #include "util/stopwatch.h"
 
@@ -77,6 +78,25 @@ public:
 private:
     unsigned delay;
     bool* flag;
+};
+
+class SkewShiftingThread : public worker_thread_t
+{
+public:
+    SkewShiftingThread(unsigned delay)
+        : worker_thread_t(0), delay(delay)
+    {
+    }
+
+    virtual void do_work()
+    {
+        // CS TODO: onlt works for TPC-C!
+        ::sleep(delay);
+        tpcc::w_skewer.increment_intervals();
+    }
+
+private:
+    unsigned delay;
 };
 
 void KitsCommand::set_stop_benchmark(bool stop)
@@ -142,6 +162,8 @@ void KitsCommand::setupOptions()
             "Start counting crash delay only after SM is initialized (and recovered if in ARIES)")
         ("failDelay", po::value<int>(&opt_failDelay)->default_value(-1),
             "Time to wait before marking the volume as failed (simulates media failure)")
+        ("skewShiftDelay", po::value<int>(&opt_skewShiftDelay)->default_value(0),
+            "Shift skewed are every N seconds")
     ;
     options.add(kits);
 }
@@ -169,6 +191,10 @@ void KitsCommand::run()
         mediaFailure(opt_failDelay);
     }
 
+    if (opt_skew && opt_skewShiftDelay > 0) {
+        skew_shifter = std::make_shared<SkewShiftingThread>(opt_skewShiftDelay);
+    }
+
     if (runBenchAfterLoad()) {
         runBenchmark();
     }
@@ -178,6 +204,10 @@ void KitsCommand::run()
     if (failure_thread) {
         failure_thread->join();
         delete failure_thread;
+    }
+
+    if (skew_shifter) {
+        skew_shifter->stop();
     }
 
     if (pre_init_crash_thread) {
@@ -448,7 +478,8 @@ void KitsCommand::initShoreEnv()
     }
 
     if (opt_skew) {
-        shoreEnv->set_skew(10, 90, 1, 1);
+        bool shifting = opt_skewShiftDelay > 0;
+        shoreEnv->set_skew(10, 90, 1, 1, shifting);
         shoreEnv->start_load_imbalance();
     }
 

@@ -106,15 +106,15 @@ w_rc_t ShoreTPCBEnv::load_and_register_fids()
  *  @brief: sets load imbalance for TPC-B
  *
  ********************************************************************/
-void ShoreTPCBEnv::set_skew(int area, int load, int start_imbalance, int skew_type)
+void ShoreTPCBEnv::set_skew(int area, int load, int start_imbalance, int skew_type, bool shifting)
 {
     ShoreEnv::set_skew(area, load, start_imbalance, skew_type);
     // for branches
-    b_skewer.set(area, 0, _scaling_factor-1, load);
+    b_skewer.set(area, 0, _scaling_factor-1, load, shifting);
     // for tellers
-    t_skewer.set(area, 0, TPCB_TELLERS_PER_BRANCH-1, load);
+    t_skewer.set(area, 0, TPCB_TELLERS_PER_BRANCH-1, load, shifting);
     // for accounts
-    a_skewer.set(area, 0, TPCB_ACCOUNTS_PER_BRANCH-1, load);
+    a_skewer.set(area, 0, TPCB_ACCOUNTS_PER_BRANCH-1, load, shifting);
 }
 
 

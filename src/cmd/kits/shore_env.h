@@ -589,7 +589,8 @@ public:
     void set_sm_shudown_filthy(bool);
 
     // load imbalance related
-    virtual void set_skew(int area, int load, int start_imbalance, int skew_type);
+    virtual void set_skew(int area, int load, int start_imbalance, int skew_type,
+            bool shifting = false);
     virtual void reset_skew();
     virtual void start_load_imbalance();
 

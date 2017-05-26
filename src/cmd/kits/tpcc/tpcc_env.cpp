@@ -264,11 +264,11 @@ w_rc_t ShoreTPCCEnv::load_and_register_fids()
  *  @brief: sets load imbalance for TPC-C
  *
  ********************************************************************/
-void ShoreTPCCEnv::set_skew(int area, int load, int start_imbalance, int skew_type)
+void ShoreTPCCEnv::set_skew(int area, int load, int start_imbalance, int skew_type, bool shifting)
 {
     ShoreEnv::set_skew(area, load, start_imbalance, skew_type);
     // for warehouses
-    w_skewer.set(area, 1, _scaling_factor, load);
+    w_skewer.set(area, 1, _scaling_factor, load, shifting);
 }
 
 
