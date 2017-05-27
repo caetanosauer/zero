@@ -10,7 +10,7 @@
 
 constexpr PageID stnode_page::stpid = 1;
 
-stnode_cache_t::stnode_cache_t(bool create)
+stnode_cache_t::stnode_cache_t(bool create, bool cluster_stores)
 {
     fixable_page_h p;
     W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX, false, create));
@@ -18,7 +18,7 @@ stnode_cache_t::stnode_cache_t(bool create)
     if (create) {
         sys_xct_section_t ssx(true);
         auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
-        spage->format_empty();
+        spage->format_empty(cluster_stores);
         Logger::log_p<stnode_format_log>(&p);
         W_COERCE(ssx.end_sys_xct(RCOK));
     }
@@ -39,6 +39,14 @@ stnode_t stnode_cache_t::get_stnode(StoreID store) const
     W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_SH));
     auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
     return spage->get(store);
+}
+
+stnode_metadata_t stnode_cache_t::get_metadata() const
+{
+    fixable_page_h p;
+    W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_SH));
+    auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
+    return spage->get_metadata();
 }
 
 bool stnode_cache_t::is_allocated(StoreID store) const

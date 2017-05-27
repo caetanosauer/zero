@@ -110,7 +110,7 @@ void vol_t::sync()
 
 void vol_t::build_caches(bool truncate, chkpt_t* chkpt_info)
 {
-    _stnode_cache = new stnode_cache_t(truncate);
+    _stnode_cache = new stnode_cache_t(truncate, _cluster_stores);
     w_assert1(_stnode_cache);
     _stnode_cache->dump(cerr);
 

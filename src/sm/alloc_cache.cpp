@@ -15,6 +15,10 @@ const size_t alloc_cache_t::extent_size = alloc_page::bits_held;
 alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin, bool clustered)
     : stcache(stcache)
 {
+    if (stcache.get_metadata().use_clustered_stores != clustered) {
+        W_FATAL_MSG(eINTERNAL, << "Incompatible clustered-stores option given! "
+                << "Change it or reload the database");
+    }
     if (virgin) {
         PageID pid;
         W_COERCE(sx_allocate_page(pid, 0 /* stid */));

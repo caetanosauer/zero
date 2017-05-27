@@ -50,6 +50,10 @@ struct alignas(8) stnode_t {
 };
 
 
+struct alignas(8) stnode_metadata_t {
+    bool use_clustered_stores;
+};
+
 /**
  * \brief Store-node page that contains one stnode_t for each
  * (possibly deleted or uncreated) store belonging to a given volume.
@@ -59,8 +63,12 @@ public:
 
     /// max # \ref stnode_t's on a single stnode_page; thus, the
     /// maximum number of stores per volume
+    static constexpr size_t occupied_bytes =
+        sizeof(generic_page_header) + sizeof(stnode_metadata_t);
     static constexpr size_t max =
-        (page_sz - sizeof(generic_page_header)) / sizeof(stnode_t);
+        (sizeof(generic_page) - occupied_bytes) / sizeof(stnode_t);
+    static constexpr size_t fill_bytes =
+        sizeof(generic_page) - occupied_bytes - max*sizeof(stnode_t);
 
     // Page ID used by the stnode page
     static const PageID stpid;
@@ -87,10 +95,11 @@ public:
         return stnode[index].last_extent;
     }
 
-    void format_empty() {
+    void format_empty(bool cluster_stores = false) {
         memset(this, 0, sizeof(generic_page_header));
         pid = stnode_page::stpid;
         tag = t_stnode_p;
+        _metadata.use_clustered_stores = cluster_stores;
 
         memset(&stnode, 0, sizeof(stnode_t) * max);
     }
@@ -110,10 +119,19 @@ public:
         return reinterpret_cast<char*>(this) + used_length;
     }
 
+    stnode_metadata_t get_metadata() const
+    {
+        return _metadata;
+    }
+
 
 private:
+    stnode_metadata_t _metadata;
+
     /// stnode[i] is the stnode_t for store # i of this volume
     stnode_t stnode[max];
+
+    uint8_t _fill[fill_bytes];
 };
 BOOST_STATIC_ASSERT(sizeof(stnode_page) == generic_page_header::page_sz);
 
@@ -134,7 +152,7 @@ BOOST_STATIC_ASSERT(sizeof(stnode_page) == generic_page_header::page_sz);
  */
 class stnode_cache_t {
 public:
-    stnode_cache_t(bool virgin);
+    stnode_cache_t(bool virgin, bool cluster_stores = false);
 
     /**
      * Returns the root page ID of the given store.
@@ -160,6 +178,8 @@ public:
     void dump(std::ostream& out) const;
 
     extent_id_t get_last_extent(StoreID stid) const;
+
+    stnode_metadata_t get_metadata() const;
 
 private:
     /// Returns the first StoreID that can be used for a new store in
