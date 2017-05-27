@@ -152,7 +152,13 @@ struct bf_tree_cb_t {
 
     bool is_dirty()
     {
-        W_COERCE(latch().latch_acquire(LATCH_SH));
+        // Unconditional latch may cause deadlocks!
+        auto rc = latch().latch_acquire(LATCH_SH, timeout_t::WAIT_IMMEDIATE);
+        if (rc.is_error()) {
+            // If could not acquire latch, assume dirty: false positives are
+            // fine, whereas false negative cause lost updates on recovery
+            return true;
+        }
         bool res = _page_lsn > _persisted_lsn;
         latch().latch_release();
         return res;
@@ -191,7 +197,14 @@ struct bf_tree_cb_t {
     {
         // SH latch is enough because we are only worried about races with
         // set_page_lsn, which always holds an EX latch
-        W_COERCE(latch().latch_acquire(LATCH_SH));
+        // Unconditional latch may cause deadlocks!
+        auto rc = latch().latch_acquire(LATCH_SH, timeout_t::WAIT_IMMEDIATE);
+        if (rc.is_error()) {
+            // We have to leave the page as dirty for now, as long as we
+            // can't be sure that these LSN updates can be done latch-free
+            // (which I don't think so).
+            return;
+        }
         _persisted_lsn = _next_persisted_lsn;
         _rec_lsn = _next_rec_lsn;
         latch().latch_release();

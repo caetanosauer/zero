@@ -198,10 +198,10 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     const generic_page* const page_buffer = _bufferpool->_buffer;
     bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
 
-    // CS TODO: policy option: wait for latch or just attempt conditionally
-    W_COERCE(cb.latch().latch_acquire(LATCH_SH, timeout_t::WAIT_FOREVER));
+    auto rc = cb.latch().latch_acquire(LATCH_SH, timeout_t::WAIT_IMMEDIATE);
+    if (rc.is_error()) { return false; }
 
-    // No need to pin CB here because we hold EX latch (eviction cannot clear CB)
+    // No need to pin CB here because eviction must hold EX latch
 
     fixable_page_h page;
     page.fix_nonbufferpool_page(const_cast<generic_page*>(&page_buffer[idx]));
