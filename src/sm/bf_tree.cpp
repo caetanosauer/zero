@@ -232,13 +232,14 @@ bf_tree_m::bf_tree_m(const sm_options& options)
         W_FATAL(eCRASH);
     }
 
-    _evictioner->fork();
+    _async_eviction = options.get_bool_option("sm_async_eviction", false);
+    if (_async_eviction) { _evictioner->fork(); }
 }
 
 void bf_tree_m::shutdown()
 {
     // evictioner calls cleaner, so it must be destroyed before!
-    if(_evictioner) {
+    if(_async_eviction) {
         _evictioner->stop();
         _evictioner = nullptr;
     }
@@ -342,9 +343,22 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret)
         // no free frames -> warmup is done
         set_warmup_done();
 
-        // if the freelist was empty, let's evict some page.
-        // this will block until we get a notification that a frame was evicted
-        _evictioner->wakeup(true);
+        // no more free pages -- invoke eviction
+        if (_async_eviction) {
+            // this will block until we get a notification that a frame was evicted
+            _evictioner->wakeup(true);
+        }
+        else {
+            bool success = false;
+            bf_idx victim = 0;
+            while (!success) {
+                victim = _evictioner->pick_victim();
+                w_assert0(victim > 0);
+                success = _evictioner->evict_one(victim);
+            }
+            ret = victim;
+            return RCOK;
+        }
     }
     return RCOK;
 }
@@ -464,7 +478,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         w_assert1(cb._pid == _buffer[idx].pid);
 
         cb.inc_ref_count();
-        if(_evictioner) _evictioner->ref(idx);
+        _evictioner->ref(idx);
         if (mode == LATCH_EX) { cb.inc_ref_count_ex(); }
 
         page = &(_buffer[idx]);
@@ -605,7 +619,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
             w_assert1(_is_active_idx(idx));
             cb.inc_ref_count();
-            if(_evictioner) _evictioner->ref(idx);
+            _evictioner->ref(idx);
             if (mode == LATCH_EX) {
                 cb.inc_ref_count_ex();
             }
@@ -1078,7 +1092,7 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
     // cb.pin();
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
     cb.inc_ref_count();
-    if(_evictioner) _evictioner->ref(idx);
+    _evictioner->ref(idx);
     if (mode == LATCH_EX) { ++cb._ref_count_ex; }
     page = &(_buffer[idx]);
     return RCOK;

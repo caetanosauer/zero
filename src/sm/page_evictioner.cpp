@@ -34,40 +34,10 @@ void page_evictioner_base::do_work()
         DBG5(<< "Waiting for pick_victim...");
         bf_idx victim = pick_victim();
         DBG5(<< "Found victim idx=" << victim);
-        w_assert1(victim != 0);
 
-        bf_tree_cb_t& cb = _bufferpool->get_cb(victim);
-        w_assert1(cb.latch().is_mine());
-
-        if (!unswizzle_and_update_emlsn(victim)) {
-            /* We were not able to unswizzle/update parent, therefore we cannot
-             * proceed with this victim. We just jump to the next iteration and
-             * hope for better luck next time. */
-            cb.latch().latch_release();
-            continue;
+        if (evict_one(victim)) {
+            _bufferpool->_add_free_block(victim);
         }
-
-        // Try to atomically set pin from 0 to -1; give up if it fails
-        if (!cb.prepare_for_eviction()) {
-            cb.latch().latch_release();
-            continue;
-        }
-
-        // remove it from hashtable.
-        w_assert1(cb._pid ==  _bufferpool->_buffer[victim].pid);
-        w_assert1(cb._pin_cnt < 0);
-        w_assert1(!cb._used);
-        bool removed = _bufferpool->_hashtable->remove(cb._pid);
-        w_assert1(removed);
-
-        // DBG2(<< "EVICTED " << victim << " pid " << pid
-        //                          << " log-tail " << smlevel_0::log->curr_lsn());
-
-        _bufferpool->_add_free_block(victim);
-
-        cb.latch().latch_release();
-
-        INC_TSTAT(bf_evict);
 
         /* Rather than waiting for all the pages to be evicted, we notify
          * waiting threads every time a page is evicted. One of them is going to
@@ -77,6 +47,42 @@ void page_evictioner_base::do_work()
     }
 
     // cerr << "Eviction done; free frames: " << _bufferpool->_freelist_len << endl;
+}
+
+bool page_evictioner_base::evict_one(bf_idx victim)
+{
+    bf_tree_cb_t& cb = _bufferpool->get_cb(victim);
+    w_assert1(cb.latch().is_mine());
+
+    if(!unswizzle_and_update_emlsn(victim)) {
+        /* We were not able to unswizzle/update parent, therefore we cannot
+         * proceed with this victim. We just jump to the next iteration and
+         * hope for better luck next time. */
+        cb.latch().latch_release();
+        return false;
+    }
+
+    // Try to atomically set pin from 0 to -1; give up if it fails
+    if (!cb.prepare_for_eviction()) {
+        cb.latch().latch_release();
+        return false;
+    }
+
+    // remove it from hashtable.
+    PageID pid = _bufferpool->_buffer[victim].pid;
+    w_assert1(cb._pid ==  pid);
+    w_assert1(cb._pin_cnt < 0);
+    w_assert1(!cb._used);
+    bool removed = _bufferpool->_hashtable->remove(pid);
+    w_assert1(removed);
+
+    DBG2(<< "EVICTED " << victim << " pid " << pid
+            << " log-tail " << smlevel_0::log->curr_lsn());
+
+    cb.latch().latch_release();
+
+    INC_TSTAT(bf_evict);
+    return true;
 }
 
 void page_evictioner_base::ref(bf_idx) {}

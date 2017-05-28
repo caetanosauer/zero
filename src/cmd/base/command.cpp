@@ -275,6 +275,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Collect candidate frames to be cleaned in an asynchronous thread")
     ("sm_evict_policy", po::value<string>(),
         "Policy to use in eviction (a.k.a. page replacement)")
+    ("sm_async_eviction", po::value<bool>(),
+        "Perform eviction in a dedicated thread, while fixing threads wait")
     ("sm_archiver_workspace_size", po::value<int>(),
         "Workspace size archiver")
     // CS TODO: archiver currently only works with 1MB blocks

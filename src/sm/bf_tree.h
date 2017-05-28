@@ -463,6 +463,10 @@ private:
     /** worker thread responsible for evicting pages. */
     std::shared_ptr<page_evictioner_base> _evictioner;
 
+    /** Perform eviction on dedicated thread; fixing threads just wait until a free
+     * frame is available */
+    bool _async_eviction;
+
     /** whether to swizzle non-root pages. */
     bool                 _enable_swizzling;
 

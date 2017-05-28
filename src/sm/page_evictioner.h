@@ -27,18 +27,20 @@ public:
     virtual void            ref(bf_idx idx);
 
 
-protected:
-    /** the buffer pool this cleaner deals with. */
-    bf_tree_m*                  _bufferpool;
-    bool                        _swizzling_enabled;
-    bool                        _maintain_emlsn;
-
     /**
      * Pick victim must return the bf_idx. The corresponding CB must be latched
      * in EX mode. If for any reason it must exit without a victim, this method
      * must return bf_idx 0.
      */
     virtual bf_idx          pick_victim();
+
+    bool evict_one(bf_idx);
+
+protected:
+    /** the buffer pool this cleaner deals with. */
+    bf_tree_m*                  _bufferpool;
+    bool                        _swizzling_enabled;
+    bool                        _maintain_emlsn;
 
 
 private:
