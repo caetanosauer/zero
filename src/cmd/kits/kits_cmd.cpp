@@ -426,10 +426,7 @@ void KitsCommand::doWork()
 
     // If running for a time duration, wait specified number of seconds
     if (mtype == MT_TIME_DUR) {
-        int remaining = opt_duration;
-        while (remaining > 0) {
-            remaining = ::sleep(remaining);
-        }
+        std::this_thread::sleep_for(std::chrono::seconds(opt_duration));
     }
     else if (mtype == MT_LOG_VOL) {
         // check every second
