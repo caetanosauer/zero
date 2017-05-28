@@ -220,12 +220,12 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     _cleaner_decoupled = options.get_bool_option("sm_cleaner_decoupled", false);
 
-    std::string s = ss_m::get_options().get_string_option("sm_evict_policy", "latched");
+    std::string s = options.get_string_option("sm_evict_policy", "latched");
     if(s == "gclock") {
-        _evictioner = new page_evictioner_gclock(this, ss_m::get_options());
+        _evictioner = std::make_shared<page_evictioner_gclock>(this, options);
     }
     else if(s == "latched") {
-        _evictioner = new page_evictioner_base(this, ss_m::get_options());
+        _evictioner = std::make_shared<page_evictioner_base>(this, options);
     }
     else {
         std::cerr << "Invalid buffer policy." << std::endl;
@@ -240,14 +240,12 @@ void bf_tree_m::shutdown()
     // evictioner calls cleaner, so it must be destroyed before!
     if(_evictioner) {
         _evictioner->stop();
-        delete _evictioner;
-        _evictioner = NULL;
+        _evictioner = nullptr;
     }
 
     if (_cleaner) {
         _cleaner->stop();
-        delete _cleaner;
-        _cleaner = NULL;
+        _cleaner = nullptr;
     }
 }
 
@@ -276,7 +274,7 @@ bf_tree_m::~bf_tree_m()
     }
 }
 
-page_cleaner_base* bf_tree_m::get_cleaner()
+std::shared_ptr<page_cleaner_base> bf_tree_m::get_cleaner()
 {
     if (_no_db_mode || !ss_m::vol || !ss_m::vol->caches_ready()) {
         // No volume manager initialized -- no point in starting cleaner
@@ -286,11 +284,11 @@ page_cleaner_base* bf_tree_m::get_cleaner()
     if (!_cleaner) {
         if(_cleaner_decoupled) {
             w_assert0(smlevel_0::logArchiver);
-            _cleaner = new page_cleaner_decoupled(this,
+            _cleaner = std::make_shared<page_cleaner_decoupled>(this,
                     ss_m::get_options());
         }
         else{
-            _cleaner = new bf_tree_cleaner (this, ss_m::get_options());
+            _cleaner = std::make_shared<bf_tree_cleaner>(this, ss_m::get_options());
         }
         _cleaner->fork();
     }

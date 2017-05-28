@@ -273,6 +273,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Ignore min_write_size every N rounds of cleaning")
     ("sm_cleaner_async_candidate_collection", po::value<bool>(),
         "Collect candidate frames to be cleaned in an asynchronous thread")
+    ("sm_evict_policy", po::value<string>(),
+        "Policy to use in eviction (a.k.a. page replacement)")
     ("sm_archiver_workspace_size", po::value<int>(),
         "Workspace size archiver")
     // CS TODO: archiver currently only works with 1MB blocks

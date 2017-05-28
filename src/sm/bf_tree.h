@@ -295,7 +295,7 @@ public:
 
     size_t get_size() { return _block_cnt; }
 
-    page_cleaner_base* get_cleaner();
+    std::shared_ptr<page_cleaner_base> get_cleaner();
 
     template <typename... Args>
     void wakeup_cleaner(Args... args)
@@ -458,10 +458,10 @@ private:
     tatas_lock           _freelist_lock;
 
     /** the dirty page cleaner. */
-    page_cleaner_base*   _cleaner;
+    std::shared_ptr<page_cleaner_base>   _cleaner;
 
     /** worker thread responsible for evicting pages. */
-    page_evictioner_base* _evictioner;
+    std::shared_ptr<page_evictioner_base> _evictioner;
 
     /** whether to swizzle non-root pages. */
     bool                 _enable_swizzling;
