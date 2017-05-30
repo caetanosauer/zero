@@ -544,7 +544,7 @@ void SprIterator::open(PageID pid, lsn_t firstLSN, lsn_t lastLSN, bool prioritiz
             grow_buffer(buffer, buffer_capacity, pos, &lr);
         }
 
-        lr_offsets.push_front(pos);
+        lr_offsets.push_back(pos);
         pos += lr->length();
 
         // STEP 2: Obtain LSN of previous log record on the same page (nxt)
@@ -581,16 +581,16 @@ void SprIterator::open(PageID pid, lsn_t firstLSN, lsn_t lastLSN, bool prioritiz
         // What we have to do now is fetch the log records between current_lsn and
         // nxt (both exclusive intervals) from the log archive and add them into
         // the buffer as well.
-#ifndef USE_MMAP
-        archive_scan.reset(new ArchiveScanner{ss_m::logArchiver->getIndex()});
-        merger = archive_scan->open(pid, pid+1, firstLSN);
-#else
+#ifdef USE_MMAP
         merger = make_shared<ArchiveScan>(ss_m::logArchiver->getIndex(),
                 pid, pid+1, firstLSN);
+#else
+        archive_scan.reset(new ArchiveScanner{ss_m::logArchiver->getIndex()});
+        merger = archive_scan->open(pid, pid+1, firstLSN);
 #endif
     }
 
-    lr_iter = lr_offsets.begin();
+    lr_iter = lr_offsets.crbegin();
 }
 
 bool SprIterator::next(logrec_t*& lr)
@@ -607,18 +607,16 @@ bool SprIterator::next(logrec_t*& lr)
         merger = nullptr;
     }
 
-    if (buffer) {
-        lsn_t curr_lsn = lsn_t::null;
-        while (curr_lsn <= last_lsn && lr_iter != lr_offsets.end()) {
-            lr = reinterpret_cast<logrec_t*>(buffer + *lr_iter);
-            lr_iter++;
-            curr_lsn = lr->lsn();
-        }
-        if (curr_lsn > last_lsn) {
-            replayed_count++;
-            last_lsn = curr_lsn;
-            return true;
-        }
+    lsn_t curr_lsn = lsn_t::null;
+    while (curr_lsn <= last_lsn && lr_iter != lr_offsets.crend()) {
+        lr = reinterpret_cast<logrec_t*>(buffer + *lr_iter);
+        lr_iter++;
+        curr_lsn = lr->lsn();
+    }
+    if (curr_lsn > last_lsn) {
+        replayed_count++;
+        last_lsn = curr_lsn;
+        return true;
     }
 
     return false;
