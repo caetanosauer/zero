@@ -282,7 +282,7 @@ void Command::setupSMOptions(po::options_description& options)
     // CS TODO: archiver currently only works with 1MB blocks
     // ("sm_archiver_block_size", po::value<int>()->default_value(1024*1024),
     //     "Archiver Block size")
-    ("sm_archiver_bucket_size", po::value<int>()->default_value(128),
+    ("sm_archiver_bucket_size", po::value<int>(),
         "Archiver bucket size")
     ("sm_archiver_merging", po::value<bool>(),
         "Whether to turn on asynchronous merging with log archiver")
