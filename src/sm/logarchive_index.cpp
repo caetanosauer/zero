@@ -355,6 +355,7 @@ RunFile* ArchiveIndex::openForScan(const RunId& runid)
         int flags = O_RDONLY;
         if (directIO) { flags |= O_DIRECT; }
         file.fd = ::open(fpath.string().c_str(), flags, 0744 /*mode*/);
+        CHECK_ERRNO(file.fd);
         file.length = ArchiveIndex::getFileSize(file.fd);
 #ifdef USE_MMAP
         if (file.length > 0) {
@@ -366,7 +367,6 @@ RunFile* ArchiveIndex::openForScan(const RunId& runid)
         file.runid = runid;
     }
 
-    CHECK_ERRNO(file.fd);
     file.refcount++;
 
     INC_TSTAT(la_open_count);
@@ -421,7 +421,7 @@ void ArchiveIndex::closeScan(const RunId& runid)
     w_assert1(it != _open_files.end());
 
     auto& count = it->second.refcount;
-    count--;
+    // count--;
 
     if (count == 0) {
 #ifdef USE_MMAP
