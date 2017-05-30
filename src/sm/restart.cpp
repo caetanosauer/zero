@@ -667,11 +667,11 @@ PageID restart_thread_t::get_dirty_page_count() const
     return chkpt.buf_tab.size();
 }
 
-void restart_thread_t::checkpoint_dirty_pages(chkpt_t& chkpt) const
+void restart_thread_t::checkpoint_dirty_pages(chkpt_t& ex_chkpt) const
 {
     spinlock_read_critical_section cs(&chkpt_mutex);
     for (auto e : chkpt.buf_tab) {
-        chkpt.mark_page_dirty(e.first, e.second.page_lsn, e.second.rec_lsn);
+        ex_chkpt.mark_page_dirty(e.first, e.second.page_lsn, e.second.rec_lsn);
     }
 }
 
