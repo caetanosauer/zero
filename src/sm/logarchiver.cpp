@@ -20,10 +20,11 @@ const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
 LogArchiver::LogArchiver(
         ArchiveIndex* d, LogConsumer* c, ArchiverHeap* h, BlockAssembly* b)
     :
-    index(d), consumer(c), heap(h), blkAssemb(b),
+    consumer(c), heap(h), blkAssemb(b),
     shutdownFlag(false), control(&shutdownFlag), selfManaged(false),
     flushReqLSN(lsn_t::null)
 {
+    index.reset(d);
     nextActLSN = index->getLastLSN();
 }
 
@@ -45,17 +46,17 @@ LogArchiver::LogArchiver(const sm_options& options)
             "sm_archiver_slow_log_grace_period", DFT_GRACE_PERIOD);
     bool compression = options.get_int_option("sm_page_img_compression", 0);
 
-    index = new ArchiveIndex(options);
+    index = std::make_shared<ArchiveIndex>(options);
     nextActLSN = index->getLastLSN();
     w_assert1(nextActLSN.hi() > 0);
 
     consumer = new LogConsumer(nextActLSN, blockSize);
     heap = new ArchiverHeap(workspaceSize);
-    blkAssemb = new BlockAssembly(index, 1 /*level*/, compression);
+    blkAssemb = new BlockAssembly(index.get(), 1 /*level*/, compression);
 
     merger = nullptr;
     if (options.get_bool_option("sm_archiver_merging", false)) {
-        merger = new MergerDaemon(options, index);
+        merger = new MergerDaemon(options, index.get());
         merger->fork();
         merger->wakeup();
     }
@@ -99,7 +100,7 @@ LogArchiver::~LogArchiver()
         delete blkAssemb;
         delete consumer;
         delete heap;
-        delete index;
+        index = nullptr;
         if (merger) { delete merger; }
     }
 }

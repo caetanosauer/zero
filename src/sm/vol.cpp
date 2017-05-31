@@ -192,7 +192,7 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo, PageID lastUsedPid)
     }
 
     _restore_mgr = new RestoreMgr(ss_m::get_options(),
-            ss_m::logArchiver->getIndex(), this, lastUsedPid, useBackup);
+            ss_m::logArchiver->getIndex().get(), this, lastUsedPid, useBackup);
 
     _failed = true;
 
@@ -580,7 +580,7 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     DBG1(<< "Taking backup until LSN " << backupLSN);
 
     // Instantiate special restore manager for taking backup
-    RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getIndex(),
+    RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getIndex().get(),
             this, useBackup, true /* takeBackup */);
 
     restore.setInstant(false);

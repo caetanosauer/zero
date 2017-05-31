@@ -491,6 +491,9 @@ void grow_buffer(char*& buffer, size_t& buffer_capacity, size_t pos, logrec_t** 
 
 SprIterator::SprIterator()
     : buffer_capacity{1 << 18 /* 256KB */}
+#ifdef USE_MMAP
+    , archive_scan{smlevel_0::logArchiver->getIndex()}
+#endif
 {
     // Allocate initial buffer -- expand later if needed
     buffer = new char[buffer_capacity];
@@ -582,8 +585,7 @@ void SprIterator::open(PageID pid, lsn_t firstLSN, lsn_t lastLSN, bool prioritiz
         // nxt (both exclusive intervals) from the log archive and add them into
         // the buffer as well.
 #ifdef USE_MMAP
-        merger = make_shared<ArchiveScan>(ss_m::logArchiver->getIndex(),
-                pid, pid+1, firstLSN);
+        archive_scan.open(pid, pid+1, firstLSN);
 #else
         archive_scan.reset(new ArchiveScanner{ss_m::logArchiver->getIndex()});
         merger = archive_scan->open(pid, pid+1, firstLSN);
@@ -595,16 +597,10 @@ void SprIterator::open(PageID pid, lsn_t firstLSN, lsn_t lastLSN, bool prioritiz
 
 bool SprIterator::next(logrec_t*& lr)
 {
-    if (merger) {
-        bool ret = merger->next(lr);
-        if (ret) {
-            last_lsn = lr->lsn();
-            replayed_count++;
-            return true;
-        }
-
-        // archive scan is over -- delete it
-        merger = nullptr;
+    if (archive_scan.next(lr)) {
+        last_lsn = lr->lsn();
+        replayed_count++;
+        return true;
     }
 
     lsn_t curr_lsn = lsn_t::null;

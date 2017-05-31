@@ -196,7 +196,8 @@ void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize)
     GenericPageIterator pbegin {first_pid, segmentSize, true /*virgin*/};
     GenericPageIterator pend;
 
-    ArchiveScanner logScan {smlevel_0::logArchiver->getIndex()};
+    // CS TODO use mmap and new ArchiveScan
+    ArchiveScanner logScan {smlevel_0::logArchiver->getIndex().get()};
     auto logiter = logScan.open(first_pid, 0, lsn_t::null);
 
     if (logiter) {

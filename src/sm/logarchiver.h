@@ -217,7 +217,7 @@ public:
     void requestFlushSync(lsn_t);
     void archiveUntilLSN(lsn_t);
 
-    ArchiveIndex* getIndex() { return index; }
+    std::shared_ptr<ArchiveIndex> getIndex() { return index; }
     lsn_t getNextConsumedLSN() { return consumer->getNextLSN(); }
     void setEager(bool e)
     {
@@ -237,7 +237,7 @@ public:
     const static int DFT_GRACE_PERIOD = 1000000; // 1 sec
 
 private:
-    ArchiveIndex* index;
+    std::shared_ptr<ArchiveIndex> index;
     LogConsumer* consumer;
     ArchiverHeap* heap;
     BlockAssembly* blkAssemb;

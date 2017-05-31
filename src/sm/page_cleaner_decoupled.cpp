@@ -29,7 +29,7 @@ void page_cleaner_decoupled::do_work()
 
     ERROUT(<< "Cleaner thread activated from " << _clean_lsn);
 
-    ArchiveScanner logScan(smlevel_0::logArchiver->getIndex());
+    ArchiveScanner logScan(smlevel_0::logArchiver->getIndex().get());
     auto merger = logScan.open(0, 0, _clean_lsn);
 
     generic_page* page = nullptr;

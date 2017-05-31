@@ -20,10 +20,15 @@ bool mergeInputCmpGt(const MergeInput& a, const MergeInput& b)
     return a.keyLSN > b.keyLSN;
 }
 
-ArchiveScan::ArchiveScan(ArchiveIndex* archIndex,
-        PageID startPID, PageID endPID, lsn_t startLSN)
-    : archIndex(archIndex)
+ArchiveScan::ArchiveScan(std::shared_ptr<ArchiveIndex> archIndex)
+    : archIndex(archIndex), prevLSN(lsn_t::null), singlePage(false)
 {
+    clear();
+}
+
+void ArchiveScan::open(PageID startPID, PageID endPID, lsn_t startLSN)
+{
+    clear();
     auto& inputs = _mergeInputVector;
 
     archIndex->probe(inputs, startPID, endPID, startLSN);
@@ -51,24 +56,53 @@ ArchiveScan::ArchiveScan(ArchiveIndex* archIndex,
 
     heapEnd = inputs.end();
     std::make_heap(heapBegin, heapEnd, mergeInputCmpGt);
+
+    singlePage = (endPID == startPID+1);
+}
+
+bool ArchiveScan::finished()
+{
+    return heapBegin == heapEnd;
+}
+
+void ArchiveScan::clear()
+{
+    auto& inputs = _mergeInputVector;
+    for (auto it : inputs) {
+        archIndex->closeScan(it.runFile->runid);
+    }
+    inputs.clear();
+    heapBegin = inputs.end();
+    heapEnd = inputs.end();
+    prevLSN = lsn_t::null;
 }
 
 bool ArchiveScan::next(logrec_t*& lr)
 {
-    if (heapBegin == heapEnd) { return false; }
+    if (finished()) { return false; }
 
-    std::pop_heap(heapBegin, heapEnd, mergeInputCmpGt);
-    auto top = std::prev(heapEnd);
-
-
-    if (top->hasNext()) {
-        lr = top->logrec();
-        top->next();
-        std::push_heap(heapBegin, heapEnd, mergeInputCmpGt);
+    if (singlePage) {
+        if (heapBegin->hasNext()) {
+            lr = heapBegin->logrec();
+            heapBegin->next();
+        }
+        else {
+            heapBegin++;
+            return next(lr);
+        }
     }
     else {
-        heapEnd--;
-        return next(lr);
+        std::pop_heap(heapBegin, heapEnd, mergeInputCmpGt);
+        auto top = std::prev(heapEnd);
+        if (top->hasNext()) {
+            lr = top->logrec();
+            top->next();
+            std::push_heap(heapBegin, heapEnd, mergeInputCmpGt);
+        }
+        else {
+            heapEnd--;
+            return next(lr);
+        }
     }
 
     w_assert1(lr->has_page_img(lr->pid()) || lr->page_prev_lsn() == prevLSN);
@@ -79,10 +113,7 @@ bool ArchiveScan::next(logrec_t*& lr)
 
 ArchiveScan::~ArchiveScan()
 {
-    for (auto it : _mergeInputVector) {
-        archIndex->closeScan(it.runFile->runid);
-    }
-    _mergeInputVector.clear();
+    clear();
 }
 
 void ArchiveScan::dumpHeap()

@@ -37,10 +37,12 @@ static_assert(sizeof(MergeInput) == 32, "Misaligned MergeInput");
 
 class ArchiveScan {
 public:
-    ArchiveScan(ArchiveIndex*, PageID startPID, PageID endPID, lsn_t startLSN);
+    ArchiveScan(std::shared_ptr<ArchiveIndex>);
     ~ArchiveScan();
 
+    void open(PageID startPID, PageID endPID, lsn_t startLSN);
     bool next(logrec_t*&);
+    bool finished();
 
     void dumpHeap();
 
@@ -51,9 +53,11 @@ private:
     std::vector<MergeInput>::iterator heapBegin;
     std::vector<MergeInput>::iterator heapEnd;
 
-    ArchiveIndex* archIndex;
-
+    std::shared_ptr<ArchiveIndex> archIndex;
     lsn_t prevLSN;
+    bool singlePage;
+
+    void clear();
 };
 
 /** \brief Provides scans over the log archive for restore operations.
