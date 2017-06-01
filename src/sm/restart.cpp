@@ -492,7 +492,7 @@ void grow_buffer(char*& buffer, size_t& buffer_capacity, size_t pos, logrec_t** 
 SprIterator::SprIterator()
     : buffer_capacity{1 << 18 /* 256KB */}
 #ifdef USE_MMAP
-    , archive_scan{smlevel_0::logArchiver->getIndex()}
+    , archive_scan{smlevel_0::logArchiver ? smlevel_0::logArchiver->getIndex() : nullptr}
 #endif
 {
     // Allocate initial buffer -- expand later if needed

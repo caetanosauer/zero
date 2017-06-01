@@ -28,6 +28,7 @@ ArchiveScan::ArchiveScan(std::shared_ptr<ArchiveIndex> archIndex)
 
 void ArchiveScan::open(PageID startPID, PageID endPID, lsn_t startLSN)
 {
+    w_assert0(archIndex);
     clear();
     auto& inputs = _mergeInputVector;
 
