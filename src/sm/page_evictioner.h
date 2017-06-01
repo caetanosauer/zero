@@ -57,6 +57,9 @@ private:
      */
     bf_idx                      _current_frame;
 
+    // Used by simple CLOCK policy
+    std::vector<bool> _clock_ref_bits;
+
     /**
      * In case swizziling is enabled, it will unswizzle the parent point.
      * Additionally, it will update the parent emlsn.

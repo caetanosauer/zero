@@ -619,7 +619,6 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
             w_assert1(_is_active_idx(idx));
             cb.inc_ref_count();
-            _evictioner->ref(idx);
             if (mode == LATCH_EX) {
                 cb.inc_ref_count_ex();
             }
@@ -630,6 +629,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             DBG(<< "Fixed page " << pid << " (hit) to frame " << idx);
         }
 
+        _evictioner->ref(idx);
         INC_TSTAT(bf_fix_cnt);
         _fix_cnt++;
 

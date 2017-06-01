@@ -19,6 +19,8 @@ page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_optio
     _maintain_emlsn = options.get_bool_option("sm_bf_maintain_emlsn", false);
     _flush_dirty = options.get_bool_option("sm_evict_dirty_pages", false);
     _current_frame = 0;
+
+    _clock_ref_bits.resize(_bufferpool->get_block_cnt(), false);
 }
 
 page_evictioner_base::~page_evictioner_base()
@@ -113,7 +115,10 @@ void page_evictioner_base::flush_dirty_page(const bf_tree_cb_t& cb)
     Logger::log_sys<page_write_log>(cb._pid, clean_lsn, 1);
 }
 
-void page_evictioner_base::ref(bf_idx) {}
+void page_evictioner_base::ref(bf_idx idx)
+{
+    if (!_clock_ref_bits[idx]) { _clock_ref_bits[idx] = true; }
+}
 
 bf_idx page_evictioner_base::pick_victim()
 {
@@ -146,9 +151,22 @@ bf_idx page_evictioner_base::pick_victim()
             INC_TSTAT(bf_eviction_stuck);
         }
 
+        // Before starting, let's fire some prefetching for the next step.
+        // (hack by Lucas)
+        bf_idx next_idx = ((idx+1) % (_bufferpool->_block_cnt-1)) + 1;
+        __builtin_prefetch(&_bufferpool->_buffer[next_idx]);
+        __builtin_prefetch(_bufferpool->get_cbp(next_idx));
+
         auto& cb = _bufferpool->get_cb(idx);
 
         if (!cb._used) {
+            idx++;
+            continue;
+        }
+
+        // Only evict if clock refbit is not set
+        if (_clock_ref_bits[idx]) {
+            _clock_ref_bits[idx] = false;
             idx++;
             continue;
         }
