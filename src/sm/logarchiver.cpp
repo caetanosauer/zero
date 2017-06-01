@@ -6,6 +6,7 @@
 #include "logarchiver.h"
 #include "sm_options.h"
 #include "log_core.h"
+#include "bf_tree.h" // to check for warmup
 #include "logarchive_scanner.h" // CS TODO just for RunMerger -- remove
 
 #include <algorithm>
@@ -494,6 +495,11 @@ bool LogArchiver::shouldActivate(bool logTooSlow)
 {
     if (flushReqLSN == control.endLSN) {
         return control.endLSN > nextActLSN;
+    }
+
+    // CS TODO: temporary hack -- do not kick-off archiver until buffer pool has warmed up
+    if (!smlevel_0::bf || !smlevel_0::bf->is_warmup_done()) {
+        return false;
     }
 
     if (logTooSlow && control.endLSN == smlevel_0::log->durable_lsn()) {
