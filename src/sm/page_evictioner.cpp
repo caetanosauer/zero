@@ -2,6 +2,7 @@
 
 #include "bf_tree.h"
 #include "log_core.h"
+#include "xct_logger.h"
 #include "btree_page_h.h"
 
 // Template definitions
@@ -16,6 +17,7 @@ page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_optio
 {
     _swizzling_enabled = options.get_bool_option("sm_bufferpool_swizzle", false);
     _maintain_emlsn = options.get_bool_option("sm_bf_maintain_emlsn", false);
+    _flush_dirty = options.get_bool_option("sm_evict_dirty_pages", false);
     _current_frame = 0;
 }
 
@@ -68,6 +70,14 @@ bool page_evictioner_base::evict_one(bf_idx victim)
         return false;
     }
 
+    // We're passed the point of no return: eviction must happen no mather what
+
+    // Check if page needs to be flushed
+    if (_flush_dirty && cb.is_dirty()) {
+        // is_dirty acquires SH latch, which must succeed since we already hold EX
+        flush_dirty_page(cb);
+    }
+
     // remove it from hashtable.
     PageID pid = _bufferpool->_buffer[victim].pid;
     w_assert1(cb._pid ==  pid);
@@ -85,6 +95,24 @@ bool page_evictioner_base::evict_one(bf_idx victim)
     return true;
 }
 
+void page_evictioner_base::flush_dirty_page(const bf_tree_cb_t& cb)
+{
+    // Straight-forward write -- no need to do it asynchronously or worry about
+    // any race conditions. We hold EX latch and the entry hasn't been removed
+    // from the buffer-pool hash table yet. Any thread attempting to fix the
+    // page will be waiting on the EX latch, after which it will notice that the
+    // CB pin count is -1, which means it must try the fix again.
+    generic_page* page = _bufferpool->get_page(&cb);
+    W_COERCE(smlevel_0::vol->write_page(cb._pid, page));
+
+    // Log the write operation so that log analysis sees the page as clean.
+    // clean_lsn cannot be page_lsn, otherwise page is considered dirty, so
+    // simply use any LSN above that (clean_lsn doesn't have to be of a valid
+    // log record)
+    lsn_t clean_lsn = page->lsn + 1;
+    Logger::log_sys<page_write_log>(cb._pid, clean_lsn, 1);
+}
+
 void page_evictioner_base::ref(bf_idx) {}
 
 bf_idx page_evictioner_base::pick_victim()
@@ -97,7 +125,8 @@ bf_idx page_evictioner_base::pick_victim()
      * to implement and, most importantly, does not have concurrency bugs!
      */
 
-    bool ignore_dirty = _bufferpool->is_no_db_mode() || _bufferpool->_write_elision;
+    bool ignore_dirty = _flush_dirty ||
+        _bufferpool->is_no_db_mode() || _bufferpool->_write_elision;
 
      bf_idx idx = _current_frame;
      unsigned rounds = 0;
@@ -110,7 +139,7 @@ bf_idx page_evictioner_base::pick_victim()
         if (idx == _current_frame - 1) {
             // We iterate over all pages and no victim was found.
             DBG3(<< "Eviction did a full round");
-            _bufferpool->wakeup_cleaner(false);
+            if (!ignore_dirty) {_bufferpool->wakeup_cleaner(false); }
             if (rounds++ == MAX_ROUNDS) {
                 W_FATAL_MSG(fcINTERNAL, << "Eviction got stuck!");
             }

@@ -17,7 +17,8 @@ struct bf_tree_cb_t;
 
 class page_evictioner_base : public worker_thread_t {
 public:
-	page_evictioner_base(bf_tree_m* bufferpool, const sm_options& options);
+
+    page_evictioner_base(bf_tree_m* bufferpool, const sm_options& options);
     virtual ~page_evictioner_base();
 
     /**
@@ -41,30 +42,32 @@ protected:
     bf_tree_m*                  _bufferpool;
     bool                        _swizzling_enabled;
     bool                        _maintain_emlsn;
-
+    bool                        _flush_dirty;
 
 private:
-	/**
-	 * When eviction is triggered, _about_ this number of cb will be evicted at
-	 * once. If this amount of cb is already free, the eviction does nothing and
-	 * goes back to sleep. Given as a ratio of the buffer size (currently 1%).
-	 */
-	const float EVICT_BATCH_RATIO = 0.01;
+    /**
+     * When eviction is triggered, _about_ this number of cb will be evicted at
+     * once. If this amount of cb is already free, the eviction does nothing and
+     * goes back to sleep. Given as a ratio of the buffer size (currently 1%).
+     */
+    const float EVICT_BATCH_RATIO = 0.01;
 
-	/**
-	 * Last control block examined.
-	 */
-	bf_idx                      _current_frame;
+    /**
+     * Last control block examined.
+     */
+    bf_idx                      _current_frame;
 
-	/**
-	 * In case swizziling is enabled, it will unswizzle the parent point.
-	 * Additionally, it will update the parent emlsn.
-	 * This two operations are kept in a single method because both require
-	 * looking up the parent, latching, etc, so we save some work.
-	 */
-	bool unswizzle_and_update_emlsn(bf_idx idx);
+    /**
+     * In case swizziling is enabled, it will unswizzle the parent point.
+     * Additionally, it will update the parent emlsn.
+     * This two operations are kept in a single method because both require
+     * looking up the parent, latching, etc, so we save some work.
+     */
+    bool unswizzle_and_update_emlsn(bf_idx idx);
 
-	virtual void do_work ();
+    void flush_dirty_page(const bf_tree_cb_t& cb);
+
+    virtual void do_work ();
 };
 
 class page_evictioner_gclock : public page_evictioner_base {
