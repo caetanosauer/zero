@@ -186,7 +186,7 @@ chkpt_m::chkpt_m(const sm_options& options, chkpt_t* chkpt_info)
     _min_xct_lsn = chkpt_info->get_min_xct_lsn();
     _last_end_lsn = chkpt_info->get_last_scan_start();
     if (_last_end_lsn.is_null()) { _last_end_lsn = lsn_t(1, 0); }
-    _no_db_mode = options.get_bool_option("sm_no_db", false);
+    _use_log_archive = options.get_bool_option("sm_chkpt_use_log_archive", false);
     _log_based = options.get_bool_option("sm_chkpt_log_based", false);
 
     fork();
@@ -583,7 +583,7 @@ void chkpt_m::take(chkpt_t* chkpt)
     W_COERCE(ss_m::log->flush(begin_lsn));
 
     lsn_t archived_lsn = lsn_t::null;
-    if (_no_db_mode) {
+    if (_use_log_archive) {
         // In no-db mode, updates that have been archived are considered clean
         archived_lsn = smlevel_0::logArchiver->getIndex()->getLastLSN();
     }
@@ -613,7 +613,7 @@ void chkpt_m::take(chkpt_t* chkpt)
     fs::rename(fpath, newpath);
     smlevel_0::log->get_storage()->add_checkpoint(begin_lsn);
 
-    if (_no_db_mode) {
+    if (_use_log_archive) {
         // In no-db mode, the min_rec_lsn value is meaningless, since there is
         // no page cleaner. The equivalent in this case, i.e., the point up
         // to which the recovery log can be truncated, is determined by the

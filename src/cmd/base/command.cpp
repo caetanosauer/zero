@@ -185,6 +185,8 @@ void Command::setupSMOptions(po::options_description& options)
             "Interval for checkpoint flushes")
     ("sm_chkpt_log_based", po::value<bool>(),
         "Take checkpoints decoupled from buffer and transaction manager, using log scans")
+    ("sm_chkpt_use_log_archive", po::value<bool>(),
+        "Checkpoints use archived LSN to compute min_rec_lsn")
     ("sm_chkpt_only_root_pages", po::value<bool>(),
         "Checkpoints only record dirty root pages and SPR takes care of rest")
     ("sm_log_fetch_buf_partitions", po::value<uint>()->default_value(0),
