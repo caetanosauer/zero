@@ -315,6 +315,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Enable/Disable ticker (currently always enabled)")
     ("sm_ticker_msec", po::value<int>(),
         "Ticker interval in millisec")
+    ("sm_ticker_print_tput", po::value<bool>(),
+        "Print transaction throughput on every tick to a file tput.txt")
     ("sm_prefetch", po::value<bool>(),
         "Enable/Disable prefetching")
     ("sm_backup_prefetcher_segments", po::value<int>(),

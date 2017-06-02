@@ -69,13 +69,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
 #include "xct_logger.h"
-
 #include "bf_tree.h"
-
 #include "fixable_page_h.h"
 
 #include <algorithm>
 #include <sstream>
+#include <fstream>
 
 // files and stuff
 #include <sys/types.h>
@@ -93,47 +92,61 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 class ticker_thread_t : public thread_wrapper_t
 {
 public:
-    ticker_thread_t(bool msec = false)
-        : msec(msec)
+    ticker_thread_t(bool msec = false, bool print_tput = false)
+        : msec(msec), print_tput(print_tput), even_round(true)
     {
         interval_usec = 1000; // 1ms
-        if (!msec) {
-            interval_usec *= 1000;
-        }
+        if (!msec) { interval_usec *= 1000; }
         stop = false;
-    }
 
-    virtual ~ticker_thread_t() {}
+        stats[0].fill(0);
+        stats[1].fill(0);
+    }
 
     void shutdown()
     {
         stop = true;
-        lintel::atomic_thread_fence(lintel::memory_order_release);
     }
 
     void run()
     {
-        while (true) {
-            lintel::atomic_thread_fence(lintel::memory_order_acquire);
-            if (stop) {
-                return;
-            }
-            ::usleep(interval_usec);
-            if (msec) {
-                Logger::log_sys<tick_msec_log>();
-            }
-            else {
-                Logger::log_sys<tick_sec_log>();
-            }
+        std::ofstream ofs;
+        if (print_tput) {
+            ofs.open("tput.txt", std::ofstream::out | std::ofstream::trunc);
         }
+
+        while (true) {
+            if (stop) { break; }
+
+            std::this_thread::sleep_for(std::chrono::microseconds(interval_usec));
+
+            if (print_tput) {
+                auto& st = stats[even_round ? 0 : 1];
+                auto& prev_st = stats[even_round ? 1 : 0];
+
+                ss_m::gather_stats(st);
+                auto diff = st[enum_to_base(sm_stat_id::commit_xct_cnt)] -
+                    prev_st[enum_to_base(sm_stat_id::commit_xct_cnt)];
+                ofs << diff << std::endl;
+            }
+
+            if (msec) { Logger::log_sys<tick_msec_log>(); }
+            else { Logger::log_sys<tick_sec_log>(); }
+
+            even_round ^= true;
+        }
+
+        if (print_tput) { ofs.close(); }
     }
 
 private:
     int interval_usec;
     bool msec;
-    bool stop;
-    // 80 bytes is enough to hold ticker logrec
-    char lrbuf[80];
+    bool print_tput;
+    std::atomic<bool> stop;
+
+    std::array<sm_stats_t, 2> stats;
+    bool even_round;
 };
 
 class fetch_buffer_loader_t : public thread_wrapper_t
@@ -432,7 +445,8 @@ log_core::log_core(const sm_options& options)
     _ticker = NULL;
     if (options.get_bool_option("sm_ticker_enable", false)) {
         bool msec = options.get_bool_option("sm_ticker_msec", false);
-        _ticker = new ticker_thread_t(msec);
+        bool print_tput = options.get_bool_option("sm_ticker_print_tput", false);
+        _ticker = new ticker_thread_t(msec, print_tput);
     }
 
     _group_commit_size = options.get_int_option("sm_group_commit_size", 0);
