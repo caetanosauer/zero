@@ -13,15 +13,19 @@ constexpr unsigned MAX_ROUNDS = 1000;
 page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_options& options)
     :
     worker_thread_t(options.get_int_option("sm_evictioner_interval_millisec", 1000)),
-    _bufferpool(bufferpool)
+    _bufferpool(bufferpool),
+    _rnd_distr(1, _bufferpool->get_block_cnt() - 1)
 {
     _swizzling_enabled = options.get_bool_option("sm_bufferpool_swizzle", false);
     _maintain_emlsn = options.get_bool_option("sm_bf_maintain_emlsn", false);
     _flush_dirty = options.get_bool_option("sm_evict_dirty_pages", false);
+    _random_pick = options.get_bool_option("sm_evict_random", false);
+    _use_clock = options.get_bool_option("sm_evict_use_clock", false);
     _log_evictions = options.get_bool_option("sm_log_page_evictions", false);
-    _current_frame = 0;
 
-    _clock_ref_bits.resize(_bufferpool->get_block_cnt(), false);
+    if (_use_clock) { _clock_ref_bits.resize(_bufferpool->get_block_cnt(), false); }
+
+    _current_frame = 0;
 }
 
 page_evictioner_base::~page_evictioner_base()
@@ -122,7 +126,7 @@ void page_evictioner_base::flush_dirty_page(const bf_tree_cb_t& cb)
 
 void page_evictioner_base::ref(bf_idx idx)
 {
-    if (!_clock_ref_bits[idx]) { _clock_ref_bits[idx] = true; }
+    if (_use_clock && !_clock_ref_bits[idx]) { _clock_ref_bits[idx] = true; }
 }
 
 bf_idx page_evictioner_base::pick_victim()
@@ -138,7 +142,8 @@ bf_idx page_evictioner_base::pick_victim()
     bool ignore_dirty = _flush_dirty ||
         _bufferpool->is_no_db_mode() || _bufferpool->_write_elision;
 
-     bf_idx idx = _current_frame;
+     bf_idx idx = _random_pick ? get_random_idx() : _current_frame;
+
      unsigned rounds = 0;
      while(true) {
 
@@ -146,7 +151,7 @@ bf_idx page_evictioner_base::pick_victim()
 
         if (idx == _bufferpool->_block_cnt) { idx = 1; }
 
-        if (idx == _current_frame - 1) {
+        if (!_random_pick && idx == _current_frame - 1) {
             // We iterate over all pages and no victim was found.
             DBG3(<< "Eviction did a full round");
             if (!ignore_dirty) {_bufferpool->wakeup_cleaner(false); }
@@ -156,11 +161,13 @@ bf_idx page_evictioner_base::pick_victim()
             INC_TSTAT(bf_eviction_stuck);
         }
 
-        // Before starting, let's fire some prefetching for the next step.
-        // (hack by Lucas)
-        bf_idx next_idx = ((idx+1) % (_bufferpool->_block_cnt-1)) + 1;
-        __builtin_prefetch(&_bufferpool->_buffer[next_idx]);
-        __builtin_prefetch(_bufferpool->get_cbp(next_idx));
+        if (!_random_pick) {
+            // Before starting, let's fire some prefetching for the next step.
+            // (hack by Lucas)
+            bf_idx next_idx = ((idx+1) % (_bufferpool->_block_cnt-1)) + 1;
+            __builtin_prefetch(&_bufferpool->_buffer[next_idx]);
+            __builtin_prefetch(_bufferpool->get_cbp(next_idx));
+        }
 
         auto& cb = _bufferpool->get_cb(idx);
 
@@ -170,7 +177,7 @@ bf_idx page_evictioner_base::pick_victim()
         }
 
         // Only evict if clock refbit is not set
-        if (_clock_ref_bits[idx]) {
+        if (_use_clock && _clock_ref_bits[idx]) {
             _clock_ref_bits[idx] = false;
             idx++;
             continue;

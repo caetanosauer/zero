@@ -44,6 +44,13 @@ protected:
     bool                        _maintain_emlsn;
     bool                        _flush_dirty;
     bool                        _log_evictions;
+    bool                        _random_pick;
+    bool                        _use_clock;
+
+    std::default_random_engine _rnd_gen;
+    std::uniform_int_distribution<bf_idx> _rnd_distr;
+    bf_idx get_random_idx() { return _rnd_distr(_rnd_gen); }
+
 
 private:
     /**

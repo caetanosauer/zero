@@ -279,6 +279,10 @@ void Command::setupSMOptions(po::options_description& options)
         "Policy to use in eviction (a.k.a. page replacement)")
     ("sm_evict_dirty_pages", po::value<bool>(),
         "Do not skip dirty pages when performing eviction and write them out if necessary")
+    ("sm_evict_random", po::value<bool>(),
+        "Pick eviction victim at random, instead of going round-robin over frames")
+    ("sm_evict_use_clock", po::value<bool>(),
+        "Maintain clock bits on buffer frames and only evict if clock bit is zero")
     ("sm_async_eviction", po::value<bool>(),
         "Perform eviction in a dedicated thread, while fixing threads wait")
     ("sm_log_page_evictions", po::value<bool>(),
