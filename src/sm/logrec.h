@@ -179,7 +179,7 @@ public:
 	// t_page_set_to_be_deleted = 27,
         t_stnode_format = 27,
 	t_page_img_format = 28,
-	t_page_evict = 29,
+	t_update_emlsn = 29,
 	t_btree_norec_alloc = 30,
 	t_btree_insert = 31,
 	t_btree_insert_nonghost = 32,
@@ -698,7 +698,7 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_create_store : return t_redo|t_single_sys_xct;
 	case t_append_extent : return t_redo|t_single_sys_xct;
 	case t_page_img_format : return t_redo | t_undo;
-	case t_page_evict : return t_redo|t_single_sys_xct;
+	case t_update_emlsn : return t_redo|t_single_sys_xct;
 	case t_btree_norec_alloc : return t_redo|t_multi|t_single_sys_xct;
 	case t_btree_insert : return t_redo|t_undo|t_logical;
 	case t_btree_insert_nonghost : return t_redo|t_undo|t_logical;

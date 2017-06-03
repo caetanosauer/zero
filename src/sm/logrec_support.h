@@ -7,30 +7,6 @@
 #include "stnode_page.h"
 
 /**
- * Classes used to store structured log record data used by certain
- * log record types.
- *
- * CS TODO: this is a temporary and transitional header -- we should get rid of
- * these classes in the log manager clean-up
- */
-
-/**
- * \brief Log content of page_evict to maintain EMLSN in parent page.
- * \ingroup Single-Page-Recovery
- * \details
- * This is the log of the system transaction to maintain EMLSN.
- * The log is generated whenever we evict a page from bufferpool to maintain EMLSN
- * in the parent page.
- * @see log_page_evict()
- */
-struct page_evict_t {
-    lsn_t                   _child_lsn;
-    general_recordid_t      _child_slot;
-    page_evict_t(const lsn_t &child_lsn, general_recordid_t child_slot)
-        : _child_lsn (child_lsn), _child_slot(child_slot) {}
-};
-
-/**
  * This is a special way of logging the creation of a new page.
  * New page creation is usually a page split, so the new page has many
  * records in it. To simplify and to avoid many log entries in that case,

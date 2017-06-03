@@ -150,8 +150,8 @@ logrec_t::get_type_str(kind_t type)
 		return "warmup_done";
 	case t_page_img_format :
 		return "page_img_format";
-	case t_page_evict :
-		return "page_evict";
+	case t_update_emlsn :
+		return "update_emlsn";
 	case t_btree_norec_alloc :
 		return "btree_norec_alloc";
 	case t_btree_insert :
@@ -330,8 +330,8 @@ void logrec_t::redo(PagePtr page)
 	case t_page_img_format :
 		((page_img_format_log *) this)->redo(page);
 		break;
-	case t_page_evict :
-		((page_evict_log *) this)->redo(page);
+	case t_update_emlsn :
+		((update_emlsn_log *) this)->redo(page);
 		break;
 	case t_btree_norec_alloc :
 		((btree_norec_alloc_log *) this)->redo(page);
@@ -499,7 +499,7 @@ void logrec_t::undo(PagePtr page)
 	case t_page_img_format :
 		((page_img_format_log *) this)->undo(page);
 		break;
-	case t_page_evict :
+	case t_update_emlsn :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_btree_norec_alloc :
@@ -674,18 +674,25 @@ void chkpt_begin_log::construct()
 {
 }
 
+struct update_emlsn_t {
+    lsn_t                   _child_lsn;
+    general_recordid_t      _child_slot;
+    update_emlsn_t(const lsn_t &child_lsn, general_recordid_t child_slot)
+        : _child_lsn (child_lsn), _child_slot(child_slot) {}
+};
+
 template <class PagePtr>
-void page_evict_log::construct (const PagePtr /*p*/,
+void update_emlsn_log::construct (const PagePtr /*p*/,
                                 general_recordid_t child_slot, lsn_t child_lsn)
 {
-    new (data_ssx()) page_evict_t(child_lsn, child_slot);
-    set_size(sizeof(page_evict_t));
+    new (data_ssx()) update_emlsn_t(child_lsn, child_slot);
+    set_size(sizeof(update_emlsn_t));
 }
 
 template <class PagePtr>
-void page_evict_log::redo(PagePtr page) {
+void update_emlsn_log::redo(PagePtr page) {
     borrowed_btree_page_h bp(page);
-    page_evict_t *dp = (page_evict_t*) data_ssx();
+    update_emlsn_t *dp = (update_emlsn_t*) data_ssx();
     bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
 }
 
@@ -903,9 +910,9 @@ operator<<(ostream& o, const logrec_t& l)
                 o << " " << (const char *)l._data;
                 break;
             }
-        case logrec_t::t_page_evict:
+        case logrec_t::t_update_emlsn:
             {
-                page_evict_t* pev = (page_evict_t*) l._data;
+                update_emlsn_t* pev = (update_emlsn_t*) l._data;
                 o << " slot: " << pev->_child_slot << " emlsn: "
                     << pev->_child_lsn;
                 break;
@@ -1205,7 +1212,7 @@ template void logrec_t::template redo<btree_page_h*>(btree_page_h*);
 template void logrec_t::template redo<fixable_page_h*>(fixable_page_h*);
 template void logrec_t::template undo<fixable_page_h*>(fixable_page_h*);
 
-template void page_evict_log::template construct<btree_page_h*>(btree_page_h* p,
+template void update_emlsn_log::template construct<btree_page_h*>(btree_page_h* p,
                                 general_recordid_t child_slot, lsn_t child_lsn);
 
 template void page_img_format_log::template construct<fixable_page_h*>(fixable_page_h*);
