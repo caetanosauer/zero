@@ -281,6 +281,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Do not skip dirty pages when performing eviction and write them out if necessary")
     ("sm_async_eviction", po::value<bool>(),
         "Perform eviction in a dedicated thread, while fixing threads wait")
+    ("sm_log_page_evictions", po::value<bool>(),
+        "Generate evict_page log records for every page evicted from the buffer pool")
     ("sm_archiver_workspace_size", po::value<int>(),
         "Workspace size archiver")
     // CS TODO: archiver currently only works with 1MB blocks

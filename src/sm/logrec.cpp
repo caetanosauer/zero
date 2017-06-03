@@ -114,6 +114,8 @@ logrec_t::get_type_str(kind_t type)
 		return "chkpt_begin";
 	case t_add_backup :
 		return "add_backup";
+	case t_evict_page :
+		return "evict_page";
 	case t_xct_abort :
 		return "xct_abort";
 	case t_xct_end :
@@ -274,6 +276,9 @@ void logrec_t::redo(PagePtr page)
 		W_FATAL(eINTERNAL);
 		break;
 	case t_add_backup :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_evict_page :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_xct_abort :
@@ -443,6 +448,9 @@ void logrec_t::undo(PagePtr page)
 		W_FATAL(eINTERNAL);
 		break;
 	case t_add_backup :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_evict_page :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_xct_abort :
@@ -711,6 +719,18 @@ void add_backup_log::construct(const string& path, lsn_t backupLSN)
     set_size(sizeof(lsn_t) + path.length());
 }
 
+void evict_page_log::construct(PageID pid, bool was_dirty)
+{
+    char* data = data_ssx();
+    *(reinterpret_cast<PageID*>(data)) = pid;
+    data += sizeof(PageID);
+
+    *(reinterpret_cast<bool*>(data)) = was_dirty;
+    data += sizeof(bool);
+
+    set_size(sizeof(data - data_ssx()));
+}
+
 void undo_done_log::construct()
 {
 }
@@ -882,7 +902,7 @@ void page_write_log::construct(PageID pid, lsn_t lsn, uint32_t count)
  *
  *********************************************************************/
 ostream&
-operator<<(ostream& o, const logrec_t& l)
+operator<<(ostream& o, logrec_t& l)
 {
     ios_fmtflags        f = o.flags();
     o.setf(ios::left, ios::left);
@@ -915,6 +935,13 @@ operator<<(ostream& o, const logrec_t& l)
                 update_emlsn_t* pev = (update_emlsn_t*) l._data;
                 o << " slot: " << pev->_child_slot << " emlsn: "
                     << pev->_child_lsn;
+                break;
+            }
+        case logrec_t::t_evict_page:
+            {
+                PageID pid = *(reinterpret_cast<PageID*>(l.data_ssx()));
+                bool was_dirty = *(reinterpret_cast<bool*>(l.data_ssx() + sizeof(PageID)));
+                o << " pid: " << pid << (was_dirty ? " dirty" : " clean");
                 break;
             }
         case logrec_t::t_alloc_page:

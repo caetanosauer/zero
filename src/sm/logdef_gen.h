@@ -62,6 +62,11 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     void construct (const string& path, lsn_t backupLSN);
     };
 
+    struct evict_page_log : public logrec_t {
+        static constexpr kind_t TYPE = logrec_t::t_evict_page;
+        void construct (PageID pid, bool was_dirty);
+    };
+
     struct xct_abort_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_xct_abort;
     void construct ();

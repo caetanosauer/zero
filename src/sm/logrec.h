@@ -158,7 +158,7 @@ public:
 	// t_chkpt_xct_lock = 6,
         t_warmup_done = 7,
         t_alloc_format = 8,
-	// t_chkpt_end = 9,
+        t_evict_page = 9,
 	t_add_backup = 10,
 	t_xct_abort = 11,
 	// t_xct_freeing_space = 12,
@@ -325,7 +325,7 @@ public:
             ;
     }
 
-    friend ostream& operator<<(ostream&, const logrec_t&);
+    friend ostream& operator<<(ostream&, logrec_t&);
 
 protected:
 
@@ -686,6 +686,7 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 	case t_restore_end : return t_system;
 	case t_xct_latency_dump : return t_system;
 	case t_add_backup : return t_system;
+	case t_evict_page : return t_system;
 
 	case t_compensate : return t_logical;
 	case t_xct_abort : return t_logical;

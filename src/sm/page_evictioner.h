@@ -43,6 +43,7 @@ protected:
     bool                        _swizzling_enabled;
     bool                        _maintain_emlsn;
     bool                        _flush_dirty;
+    bool                        _log_evictions;
 
 private:
     /**

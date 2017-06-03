@@ -18,6 +18,7 @@ page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_optio
     _swizzling_enabled = options.get_bool_option("sm_bufferpool_swizzle", false);
     _maintain_emlsn = options.get_bool_option("sm_bf_maintain_emlsn", false);
     _flush_dirty = options.get_bool_option("sm_evict_dirty_pages", false);
+    _log_evictions = options.get_bool_option("sm_log_page_evictions", false);
     _current_frame = 0;
 
     _clock_ref_bits.resize(_bufferpool->get_block_cnt(), false);
@@ -75,10 +76,14 @@ bool page_evictioner_base::evict_one(bf_idx victim)
     // We're passed the point of no return: eviction must happen no mather what
 
     // Check if page needs to be flushed
+    bool was_dirty = false;
     if (_flush_dirty && cb.is_dirty()) {
         // is_dirty acquires SH latch, which must succeed since we already hold EX
         flush_dirty_page(cb);
+        was_dirty = true;
     }
+
+    Logger::log_sys<evict_page_log>(cb._pid, was_dirty);
 
     // remove it from hashtable.
     PageID pid = _bufferpool->_buffer[victim].pid;
