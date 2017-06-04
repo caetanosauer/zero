@@ -6,11 +6,19 @@
 
 page_cleaner_base::page_cleaner_base(bf_tree_m* bufferpool, const sm_options& _options)
     :
-    worker_thread_t(_options.get_int_option("sm_cleaner_interval", 1000)),
+    worker_thread_t(_options.get_int_option("sm_cleaner_interval", -1)),
     _bufferpool(bufferpool),
     _clean_lsn(lsn_t(1,0))
 {
-    _workspace_size = _options.get_int_option("sm_cleaner_workspace_size", 128);
+    _workspace_size = _options.get_int_option("sm_cleaner_workspace_size", 0);
+
+    if (_workspace_size == 0) {
+        // if 0 given, set workspace size to 1/128 of the buffer pool size
+        auto bufpoolsize = _bufferpool->get_block_cnt();
+        _workspace_size = bufpoolsize >> 7;
+        if (_workspace_size == 0) { _workspace_size = 1; }
+    }
+
     _write_elision = _options.get_bool_option("sm_write_elision", false);
 
     _workspace.resize(_workspace_size);
