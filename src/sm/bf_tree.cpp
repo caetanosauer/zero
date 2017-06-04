@@ -277,23 +277,6 @@ bf_tree_m::~bf_tree_m()
 
 std::shared_ptr<page_cleaner_base> bf_tree_m::get_cleaner()
 {
-    if (_no_db_mode || !ss_m::vol || !ss_m::vol->caches_ready()) {
-        // No volume manager initialized -- no point in starting cleaner
-        return nullptr;
-    }
-
-    if (!_cleaner) {
-        if(_cleaner_decoupled) {
-            w_assert0(smlevel_0::logArchiver);
-            _cleaner = std::make_shared<page_cleaner_decoupled>(this,
-                    ss_m::get_options());
-        }
-        else{
-            _cleaner = std::make_shared<bf_tree_cleaner>(this, ss_m::get_options());
-        }
-        _cleaner->fork();
-    }
-
     return _cleaner;
 }
 
@@ -413,6 +396,16 @@ void bf_tree_m::post_init()
         _restore_coord = std::make_shared<RestoreCoord>
             (_batch_segment_size, segcount, SegmentRestorer::bf_restore);
     }
+
+    if(_cleaner_decoupled) {
+        w_assert0(smlevel_0::logArchiver);
+        _cleaner = std::make_shared<page_cleaner_decoupled>(this,
+                ss_m::get_options());
+    }
+    else{
+        _cleaner = std::make_shared<bf_tree_cleaner>(this, ss_m::get_options());
+    }
+    _cleaner->fork();
 }
 
 void bf_tree_m::recover_if_needed(bf_tree_cb_t& cb, generic_page* page, bool only_if_dirty)

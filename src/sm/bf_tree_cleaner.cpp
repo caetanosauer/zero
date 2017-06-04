@@ -67,6 +67,11 @@ bf_tree_cleaner::~bf_tree_cleaner()
 
 void bf_tree_cleaner::do_work()
 {
+    if (ss_m::bf->is_no_db_mode() || !ss_m::vol || !ss_m::vol->caches_ready()) {
+        // No volume manager initialized -- no point in starting cleaner
+        return;
+    }
+
     // Only used in async mode
     unsigned long round = 0;
 
