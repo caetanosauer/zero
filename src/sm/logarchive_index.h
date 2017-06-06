@@ -289,6 +289,7 @@ void ArchiveIndex::probe(std::vector<Input>& inputs,
             if (run.entries.size() > 0) {
                 size_t entryBegin = findEntry(&run, startPID);
 
+                // CS TODO this if could just be run.entris[entryBEgin].pid >= endPID
                 if (bucketSize == 1 && startPID == endPID-1 &&
                         run.entries[entryBegin].pid != startPID)
                 {
