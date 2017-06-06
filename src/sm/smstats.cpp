@@ -80,6 +80,7 @@ const char* get_stat_name(sm_stat_id s)
         case sm_stat_id::bf_fg_scan_cnt: return "bf_fg_scan_cnt";
         case sm_stat_id::bf_unfix_cleaned: return "bf_unfix_cleaned";
         case sm_stat_id::bf_evict: return "bf_evict";
+        case sm_stat_id::bf_evict_duration: return "bf_evict_duration";
         case sm_stat_id::rwlock_r_waits: return "rwlock_r_waits";
         case sm_stat_id::rwlock_w_waits: return "rwlock_w_waits";
         case sm_stat_id::need_latch_condl: return "need_latch_condl";
@@ -313,6 +314,7 @@ const char* get_stat_expl(sm_stat_id s)
         case sm_stat_id::bf_fg_scan_cnt: return "Foreground scans of buffer pool";
         case sm_stat_id::bf_unfix_cleaned: return "Unfix-clean cleaned a page that had a rec_lsn";
         case sm_stat_id::bf_evict: return "Evicted page from buffer pool";
+        case sm_stat_id::bf_evict_duration: return "Duration of eviction calls in nanosecond";
         case sm_stat_id::rwlock_r_waits: return "Number of waits for read lock on srwlock";
         case sm_stat_id::rwlock_w_waits: return "Number of waits for write lock on srwlock";
         case sm_stat_id::need_latch_condl: return "Conditional latch requests ";

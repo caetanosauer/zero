@@ -295,6 +295,10 @@ bf_idx bf_tree_m::lookup(PageID pid) const
 w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret)
 {
     ret = 0;
+
+    using namespace std::chrono;
+    auto time1 = steady_clock::now();
+
     while (true) {
         // once the bufferpool becomes full, getting _freelist_lock everytime will be
         // too costly. so, we check _freelist_len without lock first.
@@ -319,7 +323,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret)
                 }
                 DBG5(<< "New head " << FREELIST_HEAD);
                 w_assert1(ret != FREELIST_HEAD);
-                return RCOK;
+                break;
             }
         } // exit the scope to do the following out of the critical section
 
@@ -340,9 +344,13 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret)
                 success = _evictioner->evict_one(victim);
             }
             ret = victim;
-            return RCOK;
+            break;
         }
     }
+
+    auto time2 = steady_clock::now();
+    ADD_TSTAT(bf_evict_duration, duration_cast<nanoseconds>(time2-time1).count());
+
     return RCOK;
 }
 
@@ -557,8 +565,6 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                     emlsn = parent_h.get_emlsn_general(recordid);
                 }
 
-                // CS TODO: remove method read_page_verify and move chkpt info to recovery_m
-                // w_rc_t read_rc = smlevel_0::vol->read_page_verify(pid, page, emlsn);
                 rc_t read_rc = smlevel_0::vol->read_page(pid, page);
                 if (read_rc.is_error())
                 {

@@ -167,6 +167,7 @@ enum class sm_stat_id : size_t
     bf_fg_scan_cnt,
     bf_unfix_cleaned,
     bf_evict,
+    bf_evict_duration,
     rwlock_r_waits,
     rwlock_w_waits,
     need_latch_condl,
