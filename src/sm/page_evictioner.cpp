@@ -87,7 +87,9 @@ bool page_evictioner_base::evict_one(bf_idx victim)
         was_dirty = true;
     }
 
-    Logger::log_sys<evict_page_log>(cb._pid, was_dirty);
+    if (_log_evictions) {
+        Logger::log_sys<evict_page_log>(cb._pid, was_dirty);
+    }
 
     // remove it from hashtable.
     PageID pid = _bufferpool->_buffer[victim].pid;
@@ -115,6 +117,7 @@ void page_evictioner_base::flush_dirty_page(const bf_tree_cb_t& cb)
     // CB pin count is -1, which means it must try the fix again.
     generic_page* page = _bufferpool->get_page(&cb);
     W_COERCE(smlevel_0::vol->write_page(cb._pid, page));
+    smlevel_0::vol->sync();
 
     // Log the write operation so that log analysis sees the page as clean.
     // clean_lsn cannot be page_lsn, otherwise page is considered dirty, so
@@ -131,14 +134,6 @@ void page_evictioner_base::ref(bf_idx idx)
 
 bf_idx page_evictioner_base::pick_victim()
 {
-    /*
-     * CS: strategy is to try acquiring an EX latch imediately. If it works,
-     * page is not that busy, so we can evict it. But only evict leaf pages.
-     * This is like a random policy that only evicts uncontented pages. It is
-     * not as effective as LRU or CLOCK, but it is better than RANDOM, simple
-     * to implement and, most importantly, does not have concurrency bugs!
-     */
-
     bool ignore_dirty = _flush_dirty ||
         _bufferpool->is_no_db_mode() || _bufferpool->_write_elision;
 
@@ -149,7 +144,7 @@ bf_idx page_evictioner_base::pick_victim()
 
         if (should_exit()) return 0; // in bf_tree.h, 0 is never used, means null
 
-        if (idx == _bufferpool->_block_cnt) { idx = 1; }
+        if (idx >= _bufferpool->_block_cnt || idx == 0) { idx = 1; }
 
         if (!_random_pick && idx == _current_frame - 1) {
             // We iterate over all pages and no victim was found.
@@ -165,7 +160,7 @@ bf_idx page_evictioner_base::pick_victim()
             // Before starting, let's fire some prefetching for the next step.
             // (hack by Lucas)
             bf_idx next_idx = ((idx+1) % (_bufferpool->_block_cnt-1)) + 1;
-            __builtin_prefetch(&_bufferpool->_buffer[next_idx]);
+            // __builtin_prefetch(&_bufferpool->_buffer[next_idx]);
             __builtin_prefetch(_bufferpool->get_cbp(next_idx));
         }
 
@@ -176,9 +171,19 @@ bf_idx page_evictioner_base::pick_victim()
             continue;
         }
 
-        // Only evict if clock refbit is not set
-        if (_use_clock && _clock_ref_bits[idx]) {
-            _clock_ref_bits[idx] = false;
+        // If I already hold the latch on this page (e.g., with latch
+        // coupling), then the latch acquisition below will succeed, but the
+        // page is obvisouly not available for eviction. This would not happen
+        // if every fix would also pin the page, which I didn't wan't to do
+        // because it seems like a waste.  Note that this is only a problem
+        // with threads perform their own eviction (i.e., with the option
+        // _async_eviction set to false in bf_tree_m), because otherwise the
+        // evictioner thread never holds any latches other than when trying to
+        // evict a page.  This bug cost me 2 days of work. Anyway, it should
+        // work with the check below for now.
+        if (cb.latch().held_by_me()) {
+            // I (this thread) currently have the latch on this frame, so
+            // obviously I should not evict it
             idx++;
             continue;
         }
@@ -192,6 +197,14 @@ bf_idx page_evictioner_base::pick_victim()
             continue;
         }
         w_assert1(cb.latch().is_mine());
+
+        // Only evict if clock refbit is not set
+        if (_use_clock && _clock_ref_bits[idx]) {
+            _clock_ref_bits[idx] = false;
+            cb.latch().latch_release();
+            idx++;
+            continue;
+        }
 
         // now we hold an EX latch -- check if page qualifies for eviction
         btree_page_h p;
