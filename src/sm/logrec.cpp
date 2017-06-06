@@ -956,6 +956,19 @@ operator<<(ostream& o, logrec_t& l)
                 o << " root_pid: " << *((PageID*) (l.data_ssx() + sizeof(StoreID)));
                 break;
             }
+        case logrec_t::t_page_read:
+            {
+                char* pos = (char*) l._data;
+
+                PageID pid = *((PageID*) pos);
+                pos += sizeof(PageID);
+
+                uint32_t count = *((uint32_t*) pos);
+                PageID end = pid + count - 1;
+
+                o << " pids: " << pid << "-" << end;
+                break;
+            }
         case logrec_t::t_page_write:
             {
                 char* pos = (char*) l._data;
@@ -967,7 +980,7 @@ operator<<(ostream& o, logrec_t& l)
                 pos += sizeof(lsn_t);
 
                 uint32_t count = *((uint32_t*) pos);
-                PageID end = pid + count;
+                PageID end = pid + count - 1;
 
                 o << " pids: " << pid << "-" << end << " clean_lsn: " << clean_lsn;
                 break;
