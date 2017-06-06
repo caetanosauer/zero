@@ -23,6 +23,9 @@ public:
     // Counter of page updates
     size_t updates;
 
+    // Keep track of updates on each page to determine rec_lsn
+    std::unordered_map<PageID, std::vector<lsn_t>> page_lsns;
+
     PropStatsHandler(size_t psize)
         : psize(psize), page_writes(0), commits(0), updates(0)
     {
@@ -31,6 +34,24 @@ public:
     virtual void initialize()
     {
         out() << "# dirty_pages redo_length page_writes xct_end updates" << endl;
+    }
+
+    void process_page_write(PageID pid, lsn_t clean_lsn)
+    {
+        // Delete updates with lsn < clean_lsn
+        auto& vec = page_lsns[pid];
+        size_t i = 0;
+        while (i < vec.size()) {
+            if (vec[i] >= clean_lsn) { break; }
+            i++;
+        }
+
+        if (i < vec.size()) {
+            vec.erase(vec.begin(), vec.begin() + i);
+        }
+        else {
+            vec.clear();
+        }
     }
 
     virtual void invoke(logrec_t& r)
@@ -52,10 +73,12 @@ public:
             lsn_t lsn = r.lsn();
             w_assert0(r.is_redo());
             chkpt.mark_page_dirty(r.pid(), lsn, lsn);
+            page_lsns[r.pid()].push_back(lsn);
 
             if (r.is_multi_page()) {
                 w_assert0(r.pid2() != 0);
                 chkpt.mark_page_dirty(r.pid2(), lsn, lsn);
+                page_lsns[r.pid2()].push_back(lsn);
             }
             updates++;
         }
@@ -72,7 +95,7 @@ public:
             PageID end = pid + count;
 
             while (pid < end) {
-                chkpt.mark_page_clean(pid, clean_lsn);
+                process_page_write(pid, clean_lsn);
                 pid++;
             }
 
@@ -85,31 +108,25 @@ public:
 
     void dumpStats(lsn_t lsn)
     {
-        // CS TODO: we now support correct rec_lsn tracking in buffer pool!
-        // TODO implement forward checkpoints and precise, rec_lsn-based  propstats
-        // A checkpoint taken with a forward scan does not update rec_lsn
-        // correctly, so it will always be the first update on each page. We
-        // take min_clean_lsn here since it should be a good approximation
-        lsn_t rec_lsn = lsn_t::max;
-        for(buf_tab_t::const_iterator it = chkpt.buf_tab.begin();
-                it != chkpt.buf_tab.end(); ++it)
-        {
-            if (it->second.clean_lsn != lsn_t::null && it->second.clean_lsn < rec_lsn) {
-                rec_lsn = it->second.clean_lsn;
+        lsn_t min_rec_lsn = lsn_t::max;
+        for (auto e : page_lsns) {
+            if (e.second.size() > 0) {
+                lsn_t rec = e.second[0];
+                if (rec < min_rec_lsn) { min_rec_lsn = rec; }
             }
         }
-        if (rec_lsn == lsn_t::max) { rec_lsn = lsn_t::null; }
+        if (min_rec_lsn == lsn_t::max) { min_rec_lsn = lsn_t::null; }
 
         size_t redo_length = 0;
-        if (rec_lsn.hi() == lsn.hi()) {
-            redo_length = lsn.lo() - rec_lsn.lo();
+        if (min_rec_lsn.hi() == lsn.hi()) {
+            redo_length = lsn.lo() - min_rec_lsn.lo();
         }
-        else if (rec_lsn != lsn_t::null) {
-            w_assert0(lsn > rec_lsn);
-            size_t rest = lsn.lo() + psize - rec_lsn.lo();
-            redo_length = psize * (lsn.hi() - rec_lsn.hi()) + rest;
+        else if (min_rec_lsn != lsn_t::null) {
+            w_assert0(lsn > min_rec_lsn);
+            size_t rest = lsn.lo() + psize - min_rec_lsn.lo();
+            redo_length = psize * (lsn.hi() - min_rec_lsn.hi()) + rest;
         }
-        ERROUT(<< "min_rec_lsn: " << rec_lsn);
+        ERROUT(<< "min_rec_lsn: " << min_rec_lsn);
 
         size_t dirty_page_count = 0;
         for (auto e : chkpt.buf_tab) {
