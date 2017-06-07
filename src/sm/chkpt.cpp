@@ -453,6 +453,15 @@ lsn_t chkpt_t::get_min_rec_lsn() const
     return min_rec_lsn;
 }
 
+void chkpt_t::set_redo_low_water_mark(lsn_t lsn)
+{
+    // Used by nodb mode (see restart_thread_t::notify_archived_lsn)
+    for (auto it  = buf_tab.begin(); it != buf_tab.end(); ) {
+        if(it->second.page_lsn < lsn) { it = buf_tab.erase(it); }
+        else { ++it; }
+    }
+}
+
 void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
 {
     w_assert1(xct.is_active());

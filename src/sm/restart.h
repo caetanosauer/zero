@@ -67,6 +67,10 @@ public:
     lsn_t get_dirty_page_emlsn(PageID pid) const;
     void checkpoint_dirty_pages(chkpt_t& chkpt) const;
 
+    // Methods used in nodb mode
+    void add_dirty_page(PageID pid, lsn_t lsn);
+    void notify_archived_lsn(lsn_t lsn);
+
     bool isInstant() { return instantRestart; }
 
 private:

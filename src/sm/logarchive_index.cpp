@@ -14,6 +14,7 @@
 #include "log_core.h"
 #include "stopwatch.h"
 #include "worker_thread.h"
+#include "restart.h"
 
 class RunRecycler : public worker_thread_t
 {
@@ -319,6 +320,11 @@ rc_t ArchiveIndex::closeCurrentRun(lsn_t runEndLSN, unsigned level, PageID maxPI
             spinlock_write_critical_section cs(&_open_file_mutex);
 
             lastFinished[level]++;
+        }
+
+        // This is used for nodb mode only
+        if (smlevel_0::recovery && level == 1) {
+            smlevel_0::recovery->notify_archived_lsn(runEndLSN);
         }
     }
 

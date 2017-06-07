@@ -403,6 +403,7 @@ void restart_thread_t::do_work()
     if (should_exit()) { return; }
 
     // No redo recovery needed in no-db mode
+    // (dirty page table remains)
     if (no_db_mode)
     {
         undo_pass();
@@ -655,6 +656,29 @@ lsn_t restart_thread_t::get_dirty_page_emlsn(PageID pid) const
     buf_tab_t::const_iterator it = chkpt.buf_tab.find(pid);
     if (it == chkpt.buf_tab.end()) { return lsn_t::null; }
     return it->second.page_lsn;
+}
+
+void restart_thread_t::add_dirty_page(PageID pid, lsn_t lsn)
+{
+    spinlock_write_critical_section cs(&chkpt_mutex);
+
+    w_assert1(no_db_mode);
+    chkpt.mark_page_dirty(pid, lsn, lsn);
+}
+
+void restart_thread_t::notify_archived_lsn(lsn_t lsn)
+{
+    spinlock_write_critical_section cs(&chkpt_mutex);
+
+    /*
+     * When a new partition is added to the log archive in nodb mode, we don't
+     * need to keep track of page LSNs below the end LSN of the new partition,
+     * because log records below this LSN will be found automatically without
+     * the per-page log chain traversal done in the SprIterator object.
+     */
+
+    w_assert1(no_db_mode);
+    chkpt.set_redo_low_water_mark(lsn);
 }
 
 PageID restart_thread_t::get_dirty_page_count() const

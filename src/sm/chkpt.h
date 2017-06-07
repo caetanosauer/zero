@@ -185,6 +185,9 @@ public:
     void serialize_binary(ofstream& ofs);
     void deserialize_binary(ifstream& ofs, lsn_t archived_lsn = lsn_t::null);
 
+    // Used by nodb mode
+    void set_redo_low_water_mark(lsn_t lsn);
+
 private:
     void cleanup();
     void acquire_lock(xct_tab_entry_t& xct, logrec_t& r);

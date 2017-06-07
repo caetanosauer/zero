@@ -91,15 +91,17 @@ bool page_evictioner_base::evict_one(bf_idx victim)
         Logger::log_sys<evict_page_log>(cb._pid, was_dirty);
     }
 
+    if (_bufferpool->is_no_db_mode()) {
+        smlevel_0::recovery->add_dirty_page(cb._pid, cb.get_page_lsn());
+    }
+
     // remove it from hashtable.
-    PageID pid = _bufferpool->_buffer[victim].pid;
-    w_assert1(cb._pid ==  pid);
     w_assert1(cb._pin_cnt < 0);
     w_assert1(!cb._used);
-    bool removed = _bufferpool->_hashtable->remove(pid);
+    bool removed = _bufferpool->_hashtable->remove(cb._pid);
     w_assert1(removed);
 
-    DBG2(<< "EVICTED " << victim << " pid " << pid
+    DBG2(<< "EVICTED " << victim << " pid " << cb._pid
             << " log-tail " << smlevel_0::log->curr_lsn());
 
     cb.latch().latch_release();
