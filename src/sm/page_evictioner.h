@@ -11,6 +11,8 @@
 
 #include "worker_thread.h"
 
+#include <random>
+
 class bf_tree_m;
 class generic_page;
 struct bf_tree_cb_t;
