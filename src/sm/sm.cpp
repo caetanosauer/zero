@@ -384,8 +384,10 @@ ss_m::_destruct_once()
         ERROUT(<< "SM performing dirty shutdown");
     }
 
-    delete chkpt; chkpt = 0;
+    // Stop cleaner and evictioner
     bf->shutdown();
+
+    delete chkpt; chkpt = 0;
 
     if (recovery) {
         delete recovery;
@@ -396,7 +398,6 @@ ss_m::_destruct_once()
     if (logArchiver) { logArchiver->shutdown(); }
 
     ERROUT(<< "Terminating buffer manager");
-    bf->shutdown();
     delete bf; bf = 0;
 
     ERROUT(<< "Terminating other services");
@@ -415,11 +416,8 @@ ss_m::_destruct_once()
     delete vol; vol = 0;
 
     ERROUT(<< "Terminating log manager");
-    if(log) {
-        log->shutdown();
-        delete log;
-    }
-    log = 0;
+    log->shutdown();
+    delete log; log = 0;
 
 
      if (shutdown_filthy) {
@@ -442,7 +440,6 @@ rc_t ss_m::_truncate_log()
     DBGTHRD(<< "Truncating log on LSN " << log->durable_lsn());
 
     // Wait for cleaner to finish its current round
-    bf->shutdown();
     W_DO(log->flush_all());
 
     // CS this first archiveUntilLSN() is only needed if we want to truncate
