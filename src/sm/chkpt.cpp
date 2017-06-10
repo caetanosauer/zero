@@ -189,6 +189,11 @@ chkpt_m::chkpt_m(const sm_options& options, chkpt_t* chkpt_info)
     _use_log_archive = options.get_bool_option("sm_chkpt_use_log_archive", false);
     _log_based = options.get_bool_option("sm_chkpt_log_based", false);
 
+    // _use_log_archive mandatory with nodb mode
+    if (options.get_bool_option("sm_no_db", false)) {
+        _use_log_archive = true;
+    }
+
     fork();
 }
 

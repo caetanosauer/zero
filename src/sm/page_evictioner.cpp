@@ -34,6 +34,12 @@ page_evictioner_base::~page_evictioner_base()
 
 void page_evictioner_base::do_work()
 {
+    /**
+     * When eviction is triggered, _about_ this number of frames will be evicted at once.
+     * Given as a ratio of the buffer size (currently 1%)
+     */
+    constexpr float EVICT_BATCH_RATIO = 0.01;
+
     uint32_t preferred_count = EVICT_BATCH_RATIO * _bufferpool->_block_cnt + 1;
 
     // In principle, _freelist_len requires a fence, but here it should be OK

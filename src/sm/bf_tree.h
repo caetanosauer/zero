@@ -44,13 +44,7 @@ enum evict_urgency_t {
 };
 
 /** a swizzled pointer (page ID) has this bit ON. */
-const uint32_t SWIZZLED_PID_BIT = 0x80000000;
-
-/**
-* When eviction is triggered, _about_ this number of frames will be evicted at once.
-* Given as a ratio of the buffer size (currently 1%)
-*/
-const float EVICT_BATCH_RATIO = 0.01;
+constexpr uint32_t SWIZZLED_PID_BIT = 0x80000000;
 
 /**
  * \Brief The new buffer manager that exploits the tree structure of indexes.

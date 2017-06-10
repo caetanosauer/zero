@@ -110,7 +110,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     // No-DB options
     _no_db_mode = options.get_bool_option("sm_no_db", false);
-    _batch_segment_size = options.get_int_option("sm_batch_segment_size", 16);
+    _batch_segment_size = options.get_int_option("sm_batch_segment_size", 1);
     _batch_warmup = _batch_segment_size > 1;
 
     _log_fetches = options.get_bool_option("sm_log_page_fetches", false);
@@ -702,6 +702,8 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
 void bf_tree_m::fuzzy_checkpoint(chkpt_t& chkpt) const
 {
+    if (_no_db_mode) { return; }
+
     for (size_t i = 1; i < _block_cnt; i++) {
         auto& cb = get_cb(i);
         /*
@@ -820,7 +822,9 @@ void bf_tree_m::switch_parent(PageID pid, generic_page* parent)
     }
 
     // page cannot be evicted since first lookup because caller latched it
-    w_assert0(found);
+    // CS Update: yes it can be evicted, in adoption for example, where we
+    // don't hold latch on the foster child
+    // w_assert0(found);
 }
 
 void bf_tree_m::_convert_to_disk_page(generic_page* page) const
