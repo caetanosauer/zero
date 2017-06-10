@@ -483,6 +483,8 @@ private:
     size_t _batch_segment_size;
     bool _warmup_done;
 
+    bool _log_fetches;
+
     static thread_local unsigned _fix_cnt;
     static thread_local unsigned _hit_cnt;
 

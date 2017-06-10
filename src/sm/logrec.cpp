@@ -116,6 +116,8 @@ logrec_t::get_type_str(kind_t type)
 		return "add_backup";
 	case t_evict_page :
 		return "evict_page";
+	case t_fetch_page :
+		return "fetch_page";
 	case t_xct_abort :
 		return "xct_abort";
 	case t_xct_end :
@@ -276,6 +278,9 @@ void logrec_t::redo(PagePtr page)
 		W_FATAL(eINTERNAL);
 		break;
 	case t_add_backup :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_fetch_page :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_evict_page :
@@ -448,6 +453,9 @@ void logrec_t::undo(PagePtr page)
 		W_FATAL(eINTERNAL);
 		break;
 	case t_add_backup :
+		W_FATAL(eINTERNAL);
+		break;
+	case t_fetch_page :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_evict_page :
@@ -731,6 +739,18 @@ void evict_page_log::construct(PageID pid, bool was_dirty)
     set_size(sizeof(data - data_ssx()));
 }
 
+void fetch_page_log::construct(PageID pid, lsn_t page_lsn)
+{
+    char* data = data_ssx();
+    *(reinterpret_cast<PageID*>(data)) = pid;
+    data += sizeof(PageID);
+
+    *(reinterpret_cast<lsn_t*>(data)) = page_lsn;
+    data += sizeof(lsn_t);
+
+    set_size(sizeof(data - data_ssx()));
+}
+
 void undo_done_log::construct()
 {
 }
@@ -942,6 +962,13 @@ operator<<(ostream& o, logrec_t& l)
                 PageID pid = *(reinterpret_cast<PageID*>(l.data_ssx()));
                 bool was_dirty = *(reinterpret_cast<bool*>(l.data_ssx() + sizeof(PageID)));
                 o << " pid: " << pid << (was_dirty ? " dirty" : " clean");
+                break;
+            }
+        case logrec_t::t_fetch_page:
+            {
+                PageID pid = *(reinterpret_cast<PageID*>(l.data_ssx()));
+                lsn_t plsn = *(reinterpret_cast<lsn_t*>(l.data_ssx() + sizeof(PageID)));
+                o << " pid: " << pid << " page_lsn = " << plsn;
                 break;
             }
         case logrec_t::t_alloc_page:

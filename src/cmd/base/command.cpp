@@ -287,6 +287,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Perform eviction in a dedicated thread, while fixing threads wait")
     ("sm_log_page_evictions", po::value<bool>(),
         "Generate evict_page log records for every page evicted from the buffer pool")
+    ("sm_log_page_fetches", po::value<bool>(),
+        "Generate fetch_page log records for every page fetched (and recovered) into the buffer pool")
     ("sm_archiver_workspace_size", po::value<int>(),
         "Workspace size archiver")
     // CS TODO: archiver currently only works with 1MB blocks

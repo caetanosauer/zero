@@ -113,6 +113,8 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     _batch_segment_size = options.get_int_option("sm_batch_segment_size", 16);
     _batch_warmup = _batch_segment_size > 1;
 
+    _log_fetches = options.get_bool_option("sm_log_page_fetches", false);
+
     // Warm-up options
     // Warm-up hit ratio must be an int between 0 and 100
     auto warmup_hr = options.get_int_option("sm_bf_warmup_hit_ratio", 100);
@@ -436,7 +438,12 @@ void bf_tree_m::recover_if_needed(bf_tree_cb_t& cb, generic_page* page, bool onl
         w_assert0(page->lsn >= expected_lsn);
     }
 
+    w_assert0(page->lsn > lsn_t::null);
     cb.set_check_recovery(false);
+
+    if (_log_fetches) {
+        Logger::log_sys<fetch_page_log>(pid, page->lsn);
+    }
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////
