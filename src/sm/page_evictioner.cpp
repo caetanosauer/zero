@@ -114,6 +114,11 @@ bool page_evictioner_base::evict_one(bf_idx victim)
 
     cb.latch().latch_release();
 
+//     if (_bufferpool->is_no_db_mode()) {
+//         auto lsn = smlevel_0::recovery->get_dirty_page_emlsn(cb._pid);
+//         w_assert0(!lsn.is_null());
+//     }
+
     INC_TSTAT(bf_evict);
     return true;
 }

@@ -509,9 +509,9 @@ bool LogArchiver::shouldActivate(bool logTooSlow)
     }
 
     // CS TODO: temporary hack -- do not kick-off archiver until buffer pool has warmed up
-    if (!smlevel_0::bf || !smlevel_0::bf->is_warmup_done()) {
-        return false;
-    }
+    // if (!smlevel_0::bf || !smlevel_0::bf->is_warmup_done()) {
+    //     return false;
+    // }
 
     if (logTooSlow && control.endLSN == smlevel_0::log->durable_lsn()) {
         // Special case: log is not only groing too slow, but it has actually
