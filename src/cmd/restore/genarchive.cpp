@@ -13,7 +13,7 @@ void GenArchive::setupOptions()
             "Directory containing the log to be archived")
         ("archdir,a", po::value<string>(&archdir)->required(),
             "Directory where the archive runs will be stored (must exist)")
-        ("bucket", po::value<size_t>(&bucketSize)->default_value(16),
+        ("bucket", po::value<size_t>(&bucketSize)->default_value(1),
             "Size of log archive index bucked in output runs")
         // ("maxLogSize,m", po::value<long>(&maxLogSize)->default_value(m),
         //     "max_logsize parameter of Shore-MT (default should be fine)")
@@ -29,30 +29,17 @@ void GenArchive::run()
     opt.set_int_option("sm_archiver_bucket_size", bucketSize);
     opt.set_int_option("sm_page_img_compression", 16384);
 
-    LogArchiver* la = new LogArchiver(opt);;
     log_core* log = new log_core(opt);
     W_COERCE(log->init());
     smlevel_0::log = log;
+    LogArchiver* la = new LogArchiver(opt);;
 
     lsn_t durableLSN = log->durable_lsn();
     cerr << "Activating log archiver until LSN " << durableLSN << endl;
 
     la->fork();
 
-    // wait for log record to be consumed
-    while (la->getNextConsumedLSN() < durableLSN) {
-        la->activate(durableLSN, true);
-        ::usleep(10000); // 10ms
-    }
-
-    // Time to wait until requesting a log archive flush (msec). If we're
-    // lucky, log is archiving very fast and a flush request is not needed.
-    int waitBeforeFlush = 100;
-    ::usleep(waitBeforeFlush * 1000);
-
-    if (la->getIndex()->getLastLSN() < durableLSN) {
-        la->requestFlushSync(durableLSN);
-    }
+    la->requestFlushSync(durableLSN);
 
     la->shutdown();
     la->join();

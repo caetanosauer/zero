@@ -290,11 +290,10 @@ void MergeScanner::run()
 {
     BaseScanner::initialize();
 
-    size_t bucketSize = options["sm_archiver_bucket_size"].as<int>();
     sm_options opt;
     opt.set_string_option("sm_archdir", archdir);
     // opt.set_int_option("sm_archiver_block_size", blockSize);
-    opt.set_int_option("sm_archiver_bucket_size", bucketSize);
+    // opt.set_int_option("sm_archiver_bucket_size", bucketSize);
 
     ArchiveIndex* directory = new ArchiveIndex(opt);
     ArchiveScanner logScan(directory);
