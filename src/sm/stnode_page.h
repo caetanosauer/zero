@@ -105,9 +105,11 @@ public:
                 break;
             }
         }
-        size_t used_length = sizeof(stnode_t) * first_unused;
-        length = sizeof(stnode_page) - used_length;
-        return reinterpret_cast<char*>(this) + used_length;
+        std::cout << "first unused store: " << first_unused << std::endl;
+        char* unused = reinterpret_cast<char*>(&(stnode[first_unused]));
+        char* page_begin = reinterpret_cast<char*>(this);
+        length = (page_begin + sizeof(stnode_page)) - unused;
+        return unused;
     }
 
 
