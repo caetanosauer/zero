@@ -65,3 +65,9 @@ std::string lsn_t::str()
     ss << *this;
     return ss.str();
 }
+
+// to use in gdb
+void print_lsn(lsn_t lsn)
+{
+    std::cout << lsn.file() << "." << lsn.rba() << std::endl;
+}
