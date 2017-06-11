@@ -16,6 +16,7 @@
 #include "tracerestore.h"
 #include "archstats.h"
 #include "logrecinfo.h"
+#include "nodbgen.h"
 
 #include <boost/foreach.hpp>
 
@@ -47,6 +48,7 @@ void Command::init()
     REGISTER_COMMAND("verifylog", VerifyLog);
     REGISTER_COMMAND("truncatelog", TruncateLog);
     REGISTER_COMMAND("dbscan", DBScan);
+    REGISTER_COMMAND("nodbgen", NoDBGen);
     REGISTER_COMMAND("addbackup", AddBackup);
     REGISTER_COMMAND("xctlatency", XctLatency);
     REGISTER_COMMAND("agglog", AggLog);
