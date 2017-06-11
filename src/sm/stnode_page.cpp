@@ -77,6 +77,8 @@ void stnode_cache_t::get_used_stores(std::vector<StoreID>& ret) const
 
 rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum) const
 {
+    w_assert1(root_pid > 0);
+
     fixable_page_h p;
     W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX));
     auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());

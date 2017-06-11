@@ -231,7 +231,6 @@ public:
      * IMPORTANT: the block size must be a multiple of the log
      * page size to ensure that logrec headers are not truncated
      */
-    const static int DFT_WSPACE_SIZE= 100; // 100MB
     const static bool DFT_EAGER = true;
     const static bool DFT_READ_WHOLE_BLOCKS = true;
     const static int DFT_GRACE_PERIOD = 1000000; // 1 sec

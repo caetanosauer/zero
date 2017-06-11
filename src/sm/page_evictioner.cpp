@@ -92,6 +92,7 @@ bool page_evictioner_base::evict_one(bf_idx victim)
         flush_dirty_page(cb);
         was_dirty = true;
     }
+    w_assert1(cb.latch().is_mine());
 
     if (_log_evictions) {
         Logger::log_sys<evict_page_log>(cb._pid, was_dirty);
@@ -99,6 +100,7 @@ bool page_evictioner_base::evict_one(bf_idx victim)
 
     if (_bufferpool->is_no_db_mode()) {
         smlevel_0::recovery->add_dirty_page(cb._pid, cb.get_page_lsn());
+        w_assert0(cb.get_page_lsn() != lsn_t::null);
     }
 
     // remove it from hashtable.

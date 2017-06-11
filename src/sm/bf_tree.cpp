@@ -558,6 +558,7 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                 continue;
             }
 
+            w_assert1(idx != parent_idx);
             // Read page from disk
             page = &_buffer[idx];
 

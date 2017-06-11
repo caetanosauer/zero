@@ -78,6 +78,7 @@ public:
     void set_last_extent(size_t index, extent_id_t ext)
     {
         w_assert1(index < max);
+        w_assert1(index == 0 || stnode[index].is_used());
         stnode[index].last_extent = ext;
     }
 
