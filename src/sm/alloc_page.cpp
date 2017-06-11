@@ -8,6 +8,8 @@ void alloc_page::format_empty()
 {
     tag = t_alloc_p;
     memset(&bitmap, 0, bitmapsize);
+    // allogc page itself is allocated by default (i.e., bit is set)
+    set_bit(0);
 }
 
 void alloc_page::set_bits(uint32_t from, uint32_t to)
