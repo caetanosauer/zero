@@ -51,6 +51,15 @@ LogArchiver::LogArchiver(const sm_options& options)
     nextActLSN = index->getLastLSN();
     w_assert1(nextActLSN.hi() > 0);
 
+    constexpr bool startFromFirstLogPartition = true;
+    if (smlevel_0::log && nextActLSN == lsn_t(1,0) && startFromFirstLogPartition) {
+        std::vector<partition_number_t> partitions;
+        smlevel_0::log->get_storage()->list_partitions(partitions);
+        if (partitions.size() > 0) {
+            nextActLSN = lsn_t(partitions[0], 0);
+        }
+    }
+
     consumer = new LogConsumer(nextActLSN, blockSize);
     heap = new ArchiverHeap(workspaceSize);
     blkAssemb = new BlockAssembly(index.get(), 1 /*level*/, compression);
