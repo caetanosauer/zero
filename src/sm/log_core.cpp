@@ -131,9 +131,12 @@ public:
                     prev_st[enum_to_base(sm_stat_id::commit_xct_cnt)];
                 ofs << diff << std::endl;
 
-                diff = st[enum_to_base(sm_stat_id::bf_evict_duration)] -
+                auto duration = st[enum_to_base(sm_stat_id::bf_evict_duration)] -
                     prev_st[enum_to_base(sm_stat_id::bf_evict_duration)];
-                ofs2 << diff << std::endl;
+                auto count = st[enum_to_base(sm_stat_id::bf_evict)] -
+                    prev_st[enum_to_base(sm_stat_id::bf_evict)];
+                auto evict_time = count > 0 ? (duration / count) : 0;
+                ofs2 << evict_time << std::endl;
             }
 
             if (msec) { Logger::log_sys<tick_msec_log>(); }
