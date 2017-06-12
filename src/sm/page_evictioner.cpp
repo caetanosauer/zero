@@ -42,13 +42,15 @@ void page_evictioner_base::do_work()
 
     uint32_t preferred_count = EVICT_BATCH_RATIO * _bufferpool->_block_cnt + 1;
 
+    if (_bufferpool->_freelist_len < preferred_count) {
+        _bufferpool->wakeup_cleaner();
+    }
+
     // In principle, _freelist_len requires a fence, but here it should be OK
     // because we don't need to read a consistent value every time.
     while(_bufferpool->_freelist_len < preferred_count)
     {
-        DBG5(<< "Waiting for pick_victim...");
         bf_idx victim = pick_victim();
-        DBG5(<< "Found victim idx=" << victim);
 
         if (evict_one(victim)) {
             _bufferpool->_add_free_block(victim);
