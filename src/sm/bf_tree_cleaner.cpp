@@ -27,9 +27,15 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& option
     string pstr = options.get_string_option("sm_cleaner_policy", "");
     policy = make_cleaner_policy(pstr);
 
-    if (num_candidates > 0) {
-        candidates.reserve(num_candidates);
+    if (num_candidates == 0) {
+        // Setting num_candidates to zero means that at every round, ALL pages
+        // in the buffer pool are cleaned, and the policy therefore doesn't
+        // matter at all. Because this kind of behavior doesn't really make
+        // sense, we set num_candidates to be the workspace size.
+        num_candidates = _workspace_size;
     }
+
+    candidates.reserve(num_candidates);
 }
 
 bf_tree_cleaner::~bf_tree_cleaner()
