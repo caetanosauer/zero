@@ -48,11 +48,8 @@ struct cleaner_cb_info {
 using policy_predicate_t =
     std::function<bool(const cleaner_cb_info&, const cleaner_cb_info&)>;
 
-// Forward declaration
-class candidate_collector_thread;
-
-class bf_tree_cleaner : public page_cleaner_base {
-    friend class candidate_collector_thread;
+class bf_tree_cleaner : public page_cleaner_base
+{
 public:
     /**
      * Constructs this object. This merely allocates arrays and objects.
@@ -91,11 +88,8 @@ private:
 
     /**
      * List of candidate dirty frames to be considered for cleaning.
-     * We use two lists -- one is filled in parallel by the candidate collector
-     * thread and the other, already collected one, is used to copy and flush.
      */
-    unique_ptr<vector<cleaner_cb_info>> next_candidates;
-    unique_ptr<vector<cleaner_cb_info>> curr_candidates;
+    unique_ptr<vector<cleaner_cb_info>> candidates;
 
     /// Cleaner policy options
     size_t num_candidates;
@@ -106,12 +100,6 @@ private:
 
     // Ignore min write size every N rounds (0 for never)
     size_t min_write_ignore_freq;
-
-    /// Use an asynchronous thread to collect candidates, thus allowing overlap
-    /// of CPU utilization and I/O
-    bool async_candidate_collection;
-
-    unique_ptr<candidate_collector_thread> collector;
 };
 
 inline cleaner_policy make_cleaner_policy(string s)
