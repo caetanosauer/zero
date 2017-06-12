@@ -49,16 +49,64 @@ void bf_tree_cleaner::do_work()
         return;
     }
 
-    // Only used in async mode
-    unsigned long round = 0;
-
-    // fill up list of next candidates
-    candidates.clear();
-    collect_candidates();
-
-    // if there's something in the current list, clean it
-    if (candidates.size() > 0) {
+    if (policy == cleaner_policy::no_policy) {
+        clean_no_policy();
+    }
+    else {
+        collect_candidates();
         clean_candidates();
+    }
+}
+
+/*
+ * Without a cleaner policy (i.e., policy == no_policy), one cleaner round
+ * consists simply of flushing all dirty pages we can find in one sweep
+ * of the whole buffer pool.
+ */
+void bf_tree_cleaner::clean_no_policy()
+{
+    size_t w_index = 0;
+    for (bf_idx idx = 1; idx < _bufferpool->get_block_cnt(); ++idx) {
+        auto& cb = _bufferpool->get_cb(idx);
+        if (!cb.pin()) { continue; }
+
+        // If page is not dirty or not in use, no need to flush
+        if (!cb.is_dirty() || !cb._used || cb.get_rec_lsn().is_null()) {
+            cb.unpin();
+            continue;
+        }
+
+        if (!latch_and_copy(cb._pid, idx, w_index)) {
+            continue;
+        }
+        w_index++;
+
+        if (w_index == _workspace_size) {
+            flush_workspace_no_clusters(w_index);
+            w_index = 0;
+        }
+
+        cb.unpin();
+    }
+
+    flush_workspace_no_clusters(w_index);
+}
+
+// Used by no_policy_round
+void bf_tree_cleaner::flush_workspace_no_clusters(size_t count)
+{
+    w_assert1(count <= _workspace_size);
+
+    for (size_t i = 0; i < count; i++) {
+        write_pages(i, 1);
+    }
+
+    smlevel_0::vol->sync();
+
+    for (size_t i = 0; i < count; i++) {
+        PageID pid = _workspace[i].pid;
+        Logger::log_sys<page_write_log>(pid, _clean_lsn, 1);
+        mark_pages_clean(i, i+1);
     }
 }
 
@@ -70,7 +118,7 @@ void bf_tree_cleaner::clean_candidates()
     stopwatch_t timer;
 
     size_t i = 0;
-    bool ignore_min_write = ignore_min_write_now();
+    // bool ignore_min_write = ignore_min_write_now();
 
     // keeps track of cluster positions in the workspace, so that
     // they can be flush asynchronously below
@@ -137,8 +185,6 @@ void bf_tree_cleaner::clean_candidates()
         clusters.clear();
         i += k;
     }
-
-    candidates.clear();
 }
 
 void bf_tree_cleaner::flush_clusters(const vector<size_t>& clusters)
@@ -250,7 +296,7 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate()
 void bf_tree_cleaner::collect_candidates()
 {
     stopwatch_t timer;
-    w_assert1(candidates.empty());
+    candidates.clear();
 
     // Comparator to be used by the heap
     auto heap_cmp = get_policy_predicate();
@@ -258,10 +304,10 @@ void bf_tree_cleaner::collect_candidates()
     bf_idx block_cnt = _bufferpool->_block_cnt;
 
     // mixed policy = ignore null clean LSNs every 2 rounds
-    bool ignore_empty_clean_lsn = false;
-    if (policy == cleaner_policy::mixed) {
-        ignore_empty_clean_lsn = get_rounds_completed() % 4 != 0;
-    }
+    // bool ignore_empty_clean_lsn = false;
+    // if (policy == cleaner_policy::mixed) {
+    //     ignore_empty_clean_lsn = get_rounds_completed() % 4 != 0;
+    // }
 
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
         auto& cb = _bufferpool->get_cb(idx);

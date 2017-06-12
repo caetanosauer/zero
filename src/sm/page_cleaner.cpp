@@ -38,6 +38,9 @@ void page_cleaner_base::flush_workspace(size_t from, size_t to)
 
     write_pages(from, to - from);
 
+    // CS TODO: this method is used only by dec. cleaner, but it is WRONG,
+    // because we mark pages clean without fsync and without logging
+    // --> Fix decoupled cleaner!
     mark_pages_clean(from, to);
 }
 
