@@ -53,6 +53,11 @@ protected:
     std::uniform_int_distribution<bf_idx> _rnd_distr;
     bf_idx get_random_idx() { return _rnd_distr(_rnd_gen); }
 
+    // Maximum number of pick_victim attempts before throwing "eviction stuck" error
+    unsigned _max_attempts;
+
+    // Cleaner is waken up every this many eviction attempts
+    unsigned _wakeup_cleaner_attempts;
 
 private:
     /**

@@ -151,7 +151,7 @@ enum class sm_stat_id : size_t
     cleaner_time_io,
     cleaner_time_copy,
     bf_already_evicted,
-    bf_eviction_stuck,
+    bf_eviction_attempts,
     bf_dirty_page_cleaned,
     bf_flushed_OHD_page,
     bf_kick_full,

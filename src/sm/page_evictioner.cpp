@@ -8,8 +8,6 @@
 // Template definitions
 #include "bf_hashtable.cpp"
 
-constexpr unsigned MAX_ROUNDS = 1000;
-
 page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_options& options)
     :
     worker_thread_t(options.get_int_option("sm_evictioner_interval_millisec", 1000)),
@@ -26,6 +24,11 @@ page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_optio
     if (_use_clock) { _clock_ref_bits.resize(_bufferpool->get_block_cnt(), false); }
 
     _current_frame = 0;
+
+    // CS: Warning! Magical arbitrary constants without any empirical decision support below!
+    constexpr unsigned max_rounds = 1000;
+    _max_attempts = max_rounds * _bufferpool->get_block_cnt();
+    _wakeup_cleaner_attempts = 42;
 }
 
 page_evictioner_base::~page_evictioner_base()
@@ -156,21 +159,19 @@ bf_idx page_evictioner_base::pick_victim()
 
      bf_idx idx = _random_pick ? get_random_idx() : _current_frame;
 
-     unsigned rounds = 0;
+     unsigned attempts = 0;
      while(true) {
 
         if (should_exit()) return 0; // in bf_tree.h, 0 is never used, means null
 
         if (idx >= _bufferpool->_block_cnt || idx == 0) { idx = 1; }
 
-        if (!_random_pick && idx == _current_frame - 1) {
-            // We iterate over all pages and no victim was found.
-            DBG3(<< "Eviction did a full round");
-            if (!ignore_dirty) {_bufferpool->wakeup_cleaner(false); }
-            if (rounds++ == MAX_ROUNDS) {
-                W_FATAL_MSG(fcINTERNAL, << "Eviction got stuck!");
-            }
-            INC_TSTAT(bf_eviction_stuck);
+        attempts++;
+        if (attempts >= _max_attempts) {
+            W_FATAL_MSG(fcINTERNAL, << "Eviction got stuck!");
+        }
+        else if (!ignore_dirty && attempts % _wakeup_cleaner_attempts == 0) {
+            _bufferpool->wakeup_cleaner();
         }
 
         if (!_random_pick) {
@@ -257,6 +258,7 @@ bf_idx page_evictioner_base::pick_victim()
         w_assert1(_bufferpool->_is_active_idx(idx));
         w_assert0(idx != 0);
         _current_frame = idx +1;
+        ADD_TSTAT(bf_eviction_attempts, attempts);
         return idx;
     }
 }
