@@ -52,6 +52,8 @@ public:
         else {
             vec.clear();
         }
+
+        chkpt.mark_page_clean(pid, clean_lsn);
     }
 
     virtual void invoke(logrec_t& r)
@@ -126,7 +128,7 @@ public:
             size_t rest = lsn.lo() + psize - min_rec_lsn.lo();
             redo_length = psize * (lsn.hi() - min_rec_lsn.hi()) + rest;
         }
-        ERROUT(<< "min_rec_lsn: " << min_rec_lsn);
+        // ERROUT(<< "min_rec_lsn: " << min_rec_lsn);
 
         size_t dirty_page_count = 0;
         for (auto e : chkpt.buf_tab) {
