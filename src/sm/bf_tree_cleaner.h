@@ -89,7 +89,7 @@ private:
     /**
      * List of candidate dirty frames to be considered for cleaning.
      */
-    unique_ptr<vector<cleaner_cb_info>> candidates;
+    vector<cleaner_cb_info> candidates;
 
     /// Cleaner policy options
     size_t num_candidates;
