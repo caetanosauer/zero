@@ -258,7 +258,7 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate()
 {
     // A less-than function makes pop_heap return the highest value, and a
     // greater-than function the lowest. Because the heap's top element should
-    // be the lowest in a "highest" policy and vice-versa, less-than should be
+    // be the lowest in a "highest" policy and vice-versa, greater-than should be
     // used for "highest" policies and vice-versa. When testing if an element
     // should replace the current top of the heap, the inverse of the
     // comparison function should be used, e.g., in a "highest" policy, an
@@ -268,17 +268,16 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate()
         case cleaner_policy::highest_refcount:
             return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
             {
-                return a.ref_count < b.ref_count;
+                return a.ref_count > b.ref_count;
             };
         case cleaner_policy::lowest_refcount:
             return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
             {
-                return a.ref_count > b.ref_count;
+                return a.ref_count < b.ref_count;
             };
         case cleaner_policy::oldest_lsn: default: // mixed also falls here
             return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
             {
-                // return a.clean_lsn > b.clean_lsn;
                 return a.rec_lsn < b.rec_lsn;
             };
     }

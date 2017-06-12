@@ -1104,7 +1104,7 @@ w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
     DBG(<< "Refix direct of " << idx << " set pin cnt to " << cb._pin_cnt);
     cb.inc_ref_count();
     _evictioner->ref(idx);
-    if (mode == LATCH_EX) { ++cb._ref_count_ex; }
+    if (mode == LATCH_EX) { cb.inc_ref_count_ex(); }
     page = &(_buffer[idx]);
     return RCOK;
 }

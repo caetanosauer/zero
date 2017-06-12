@@ -63,6 +63,8 @@ void page_cleaner_base::mark_pages_clean(size_t from, size_t to)
         if (cb._pid == _workspace[i].pid) {
             w_assert1(cb.is_in_use());
             cb.notify_write();
+            // CS TODO: should do this only if policy == highest_refcount
+            cb.reset_ref_count_ex();
         }
 
         cb.unpin();

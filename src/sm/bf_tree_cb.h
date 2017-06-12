@@ -71,11 +71,6 @@ struct bf_tree_cb_t {
      */
     static const uint16_t BP_MAX_REFCOUNT = 1024;
 
-    /**
-     * Initial value of the per-frame refcount (reference counter).
-     */
-    static const uint16_t BP_INITIAL_REFCOUNT = 0;
-
     /** Initializes all fields -- called by fix when fetching a new page */
     void init(PageID pid = 0, lsn_t page_lsn = lsn_t::null)
     {
@@ -83,8 +78,8 @@ struct bf_tree_cb_t {
         _pin_cnt = 0;
         _pid = pid;
         _swizzled = false;
-        _ref_count = BP_INITIAL_REFCOUNT;
-        _ref_count_ex = BP_INITIAL_REFCOUNT;
+        _ref_count = 0;
+        _ref_count_ex = 0;
         _page_lsn = page_lsn;
         _rec_lsn = lsn_t::null;
         _persisted_lsn = page_lsn;
@@ -295,6 +290,11 @@ struct bf_tree_cb_t {
         if (_ref_count < BP_MAX_REFCOUNT) {
             ++_ref_count_ex;
         }
+    }
+
+    void reset_ref_count_ex()
+    {
+        _ref_count_ex = 0;
     }
 
     // disabled (no implementation)
