@@ -66,7 +66,7 @@ vol_t::vol_t(const sm_options& options)
     _readonly = options.get_bool_option("sm_vol_readonly", false);
     _prioritize_archive =
         options.get_bool_option("sm_recovery_prioritize_archive", false);
-    _cluster_stores = options.get_bool_option("sm_vol_cluster_stores", false);
+    _cluster_stores = options.get_bool_option("sm_vol_cluster_stores", true);
 
     _no_db_mode = options.get_bool_option("sm_no_db", false);
     if (_no_db_mode) {
