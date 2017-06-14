@@ -64,6 +64,8 @@ void page_evictioner_base::do_work()
          * be able to re-use the freed slot, the others will go back to waiting.
          */
         notify_one();
+
+        if (should_exit()) { break; }
     }
 
     // cerr << "Eviction done; free frames: " << _bufferpool->_freelist_len << endl;
