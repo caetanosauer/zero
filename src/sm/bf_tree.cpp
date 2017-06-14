@@ -364,9 +364,6 @@ void bf_tree_m::set_warmup_done()
         _restore_coord = nullptr;
         Logger::log_sys<warmup_done_log>();
 
-        // start cleaner only after buffer is warmed-up
-        wakeup_cleaner();
-
         // Start backgroud recovery after warmup, in order to not interfere
         // with on-demand recovery.
         if (smlevel_0::recovery && smlevel_0::recovery->isInstant()) {

@@ -45,10 +45,6 @@ void page_evictioner_base::do_work()
 
     uint32_t preferred_count = EVICT_BATCH_RATIO * _bufferpool->_block_cnt + 1;
 
-    if (_bufferpool->_freelist_len < preferred_count) {
-        _bufferpool->wakeup_cleaner();
-    }
-
     // In principle, _freelist_len requires a fence, but here it should be OK
     // because we don't need to read a consistent value every time.
     while(_bufferpool->_freelist_len < preferred_count)
