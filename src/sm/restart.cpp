@@ -372,7 +372,7 @@ void restart_thread_t::undo_pass()
                 // Loser transaction but no undo_nxt, must be a compensation
                 // operation, nothing to undo
                 // CS TODO: can this ever happen? Can we just ignore it like that?
-                w_assert0(false);
+                // w_assert0(false);
             }
         }
         else
