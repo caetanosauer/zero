@@ -159,13 +159,21 @@ bf_idx page_evictioner_base::pick_victim()
     bool ignore_dirty = _flush_dirty ||
         _bufferpool->is_no_db_mode() || _bufferpool->_write_elision;
 
-     bf_idx idx = _random_pick ? get_random_idx() : _current_frame;
+     auto next_idx = [this]
+     {
+         if (_current_frame > _bufferpool->_block_cnt) {
+             // race condition here, but it's not a big deal
+             _current_frame = 1;
+         }
+         return _random_pick ? get_random_idx() : _current_frame++;
+     };
 
      unsigned attempts = 0;
      while(true) {
 
         if (should_exit()) return 0; // in bf_tree.h, 0 is never used, means null
 
+        bf_idx idx = next_idx();
         if (idx >= _bufferpool->_block_cnt || idx == 0) { idx = 1; }
 
         attempts++;
@@ -176,18 +184,9 @@ bf_idx page_evictioner_base::pick_victim()
             _bufferpool->wakeup_cleaner();
         }
 
-        if (!_random_pick) {
-            // Before starting, let's fire some prefetching for the next step.
-            // (hack by Lucas)
-            bf_idx next_idx = ((idx+1) % (_bufferpool->_block_cnt-1)) + 1;
-            // __builtin_prefetch(&_bufferpool->_buffer[next_idx]);
-            __builtin_prefetch(_bufferpool->get_cbp(next_idx));
-        }
-
         auto& cb = _bufferpool->get_cb(idx);
 
         if (!cb._used) {
-            idx++;
             continue;
         }
 
@@ -204,7 +203,6 @@ bf_idx page_evictioner_base::pick_victim()
         if (cb.latch().held_by_me()) {
             // I (this thread) currently have the latch on this frame, so
             // obviously I should not evict it
-            idx++;
             continue;
         }
 
@@ -212,7 +210,6 @@ bf_idx page_evictioner_base::pick_victim()
         rc_t latch_rc;
         latch_rc = cb.latch().latch_acquire(LATCH_EX, timeout_t::WAIT_IMMEDIATE);
         if (latch_rc.is_error()) {
-            idx++;
             DBG3(<< "Eviction failed on latch for " << idx);
             continue;
         }
@@ -222,7 +219,6 @@ bf_idx page_evictioner_base::pick_victim()
         if (_use_clock && _clock_ref_bits[idx]) {
             _clock_ref_bits[idx] = false;
             cb.latch().latch_release();
-            idx++;
             continue;
         }
 
@@ -252,14 +248,12 @@ bf_idx page_evictioner_base::pick_victim()
         {
             cb.latch().latch_release();
             DBG5(<< "Eviction failed on flags for " << idx);
-            idx++;
             continue;
         }
 
         // If we got here, we passed all tests and have a victim!
         w_assert1(_bufferpool->_is_active_idx(idx));
         w_assert0(idx != 0);
-        _current_frame = idx +1;
         ADD_TSTAT(bf_eviction_attempts, attempts);
         return idx;
     }

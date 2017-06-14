@@ -70,7 +70,7 @@ private:
     /**
      * Last control block examined.
      */
-    bf_idx                      _current_frame;
+    std::atomic<bf_idx>                      _current_frame;
 
     // Used by simple CLOCK policy
     std::vector<bool> _clock_ref_bits;
