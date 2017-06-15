@@ -170,6 +170,7 @@ private:
     /** Currently opened backup (during restore only) */
     int _backup_fd;
     lsn_t _current_backup_lsn;
+    size_t _backup_pages;
 
     /** Backup being currently taken */
     int _backup_write_fd;

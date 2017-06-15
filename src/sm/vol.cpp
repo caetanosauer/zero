@@ -25,6 +25,7 @@
 // files and stuff
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
 #include <fcntl.h>
 
 #include "sm.h"
@@ -118,7 +119,8 @@ void vol_t::build_caches(bool truncate, chkpt_t* chkpt_info)
     w_assert1(_alloc_cache);
 
     if (chkpt_info && !chkpt_info->bkp_path.empty()) {
-        sx_add_backup(chkpt_info->bkp_path, true);
+        sx_add_backup(chkpt_info->bkp_path, chkpt_info->bkp_lsn, true);
+        ERROUT(<< "Added backup: " << chkpt_info->bkp_path);
     }
 
     // kick out pre-failure restore
@@ -143,6 +145,12 @@ void vol_t::open_backup()
     CHECK_ERRNO(fd);
     _backup_fd = fd;
     _current_backup_lsn = _backup_lsns.back();
+
+    struct stat stat;
+    auto ret = ::fstat(fd, &stat);
+    CHECK_ERRNO(ret);
+    _backup_pages = (stat.st_size / sizeof(generic_page));
+    w_assert0(stat.st_size % sizeof(generic_page) == 0);
 }
 
 lsn_t vol_t::get_backup_lsn()
@@ -518,14 +526,17 @@ rc_t vol_t::read_backup(PageID first, size_t count, void* buf)
                 << "Cannot read from backup because it is not active");
     }
 
+    memset(buf, 0, sizeof(generic_page) * count);
+    if (first >= _backup_pages) {
+        return RCOK;
+    }
+
     // adjust count to avoid short I/O
-    if (first + count > num_used_pages()) {
-        count = num_used_pages() - first;
+    if (first + count > _backup_pages) {
+        count = _backup_pages - first;
     }
 
     size_t offset = size_t(first) * sizeof(generic_page);
-    memset(buf, 0, sizeof(generic_page) * count);
-
     int read_count = pread(_backup_fd, (char *) buf, count * sizeof(generic_page), offset);
     CHECK_ERRNO(read_count);
 
