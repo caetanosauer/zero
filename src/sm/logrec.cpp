@@ -739,7 +739,7 @@ void evict_page_log::construct(PageID pid, bool was_dirty)
     set_size(sizeof(data - data_ssx()));
 }
 
-void fetch_page_log::construct(PageID pid, lsn_t page_lsn)
+void fetch_page_log::construct(PageID pid, lsn_t page_lsn, StoreID store)
 {
     char* data = data_ssx();
     *(reinterpret_cast<PageID*>(data)) = pid;
@@ -747,6 +747,9 @@ void fetch_page_log::construct(PageID pid, lsn_t page_lsn)
 
     *(reinterpret_cast<lsn_t*>(data)) = page_lsn;
     data += sizeof(lsn_t);
+
+    *(reinterpret_cast<StoreID*>(data)) = store;
+    data += sizeof(StoreID);
 
     set_size(sizeof(data - data_ssx()));
 }
@@ -966,9 +969,17 @@ operator<<(ostream& o, logrec_t& l)
             }
         case logrec_t::t_fetch_page:
             {
-                PageID pid = *(reinterpret_cast<PageID*>(l.data_ssx()));
-                lsn_t plsn = *(reinterpret_cast<lsn_t*>(l.data_ssx() + sizeof(PageID)));
-                o << " pid: " << pid << " page_lsn = " << plsn;
+                char* pos = l.data_ssx();
+                PageID pid = *(reinterpret_cast<PageID*>(pos));
+                pos += sizeof(PageID);
+
+                lsn_t plsn = *(reinterpret_cast<lsn_t*>(pos));
+                pos += sizeof(lsn_t);
+
+                StoreID store = *(reinterpret_cast<StoreID*>(pos));
+                pos += sizeof(StoreID);
+
+                o << " pid: " << pid << " page_lsn: " << plsn << " store: " << store;
                 break;
             }
         case logrec_t::t_alloc_page:

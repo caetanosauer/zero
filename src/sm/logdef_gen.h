@@ -69,7 +69,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
     struct fetch_page_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_fetch_page;
-        void construct (PageID pid, lsn_t page_lsn);
+        void construct (PageID pid, lsn_t page_lsn, StoreID store);
     };
 
     struct xct_abort_log : public logrec_t {

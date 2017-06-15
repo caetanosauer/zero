@@ -439,7 +439,7 @@ void bf_tree_m::recover_if_needed(bf_tree_cb_t& cb, generic_page* page, bool onl
     cb.set_check_recovery(false);
 
     if (_log_fetches) {
-        Logger::log_sys<fetch_page_log>(pid, page->lsn);
+        Logger::log_sys<fetch_page_log>(pid, page->lsn, page->store);
     }
 }
 

@@ -26,6 +26,10 @@ public:
     // Keep track of updates on each page to determine rec_lsn
     std::unordered_map<PageID, std::vector<lsn_t>> page_lsns;
 
+    // Kep track of pages belonging to static (i.e., non-growing) tables and
+    // indixces (TPC-C only!)
+    std::unordered_set<PageID> static_pids;
+
     PropStatsHandler(size_t psize)
         : psize(psize), page_writes(0), commits(0), updates(0)
     {
@@ -33,10 +37,34 @@ public:
 
     virtual void initialize()
     {
-        out() << "# dirty_pages redo_length page_writes xct_end updates" << endl;
+        out() << "# dirty_pages redo_length page_writes xct_end updates pages_static" << endl;
     }
 
-    void process_page_write(PageID pid, lsn_t clean_lsn)
+    bool is_static_store(StoreID store)
+    {
+        /*
+         * TPC-C store IDs:
+         * 2 - warehouse
+         * 3 - district
+         * 4 - customer
+         * 5 - customer name index
+         * 6 - history
+         * 7 - new_order
+         * 8 - order
+         * 9 - order customer_id index
+         * 10 - order_line
+         * 11 - item
+         * 12 - stock
+         */
+        return !(
+            store == 6 ||
+            store == 8 ||
+            store == 9 ||
+            store == 10
+            );
+    }
+
+    void process_page_write(PageID pid, lsn_t clean_lsn, StoreID store)
     {
         // Delete updates with lsn < clean_lsn
         auto& vec = page_lsns[pid];
@@ -46,14 +74,21 @@ public:
             i++;
         }
 
-        if (i < vec.size()) {
+        if (i > 0) {
             vec.erase(vec.begin(), vec.begin() + i);
-        }
-        else {
-            vec.clear();
         }
 
         chkpt.mark_page_clean(pid, clean_lsn);
+    }
+
+    void mark_dirty(PageID pid, lsn_t lsn, StoreID store)
+    {
+        chkpt.mark_page_dirty(pid, lsn, lsn);
+        auto& vec = page_lsns[pid];
+        vec.push_back(lsn);
+        if (is_static_store(store)) {
+            static_pids.insert(pid);
+        }
     }
 
     virtual void invoke(logrec_t& r)
@@ -72,15 +107,11 @@ public:
                 return;
             }
 
-            lsn_t lsn = r.lsn();
-            w_assert0(r.is_redo());
-            chkpt.mark_page_dirty(r.pid(), lsn, lsn);
-            page_lsns[r.pid()].push_back(lsn);
+            mark_dirty(r.pid(), r.lsn(), r.stid());
 
             if (r.is_multi_page()) {
                 w_assert0(r.pid2() != 0);
-                chkpt.mark_page_dirty(r.pid2(), lsn, lsn);
-                page_lsns[r.pid2()].push_back(lsn);
+                mark_dirty(r.pid2(), r.lsn(), r.stid());
             }
             updates++;
         }
@@ -97,11 +128,19 @@ public:
             PageID end = pid + count;
 
             while (pid < end) {
-                process_page_write(pid, clean_lsn);
+                process_page_write(pid, clean_lsn, r.stid());
                 pid++;
             }
 
             page_writes += count;
+        }
+        else if (r.type() == logrec_t::t_evict_page) {
+            PageID pid = *(reinterpret_cast<PageID*>(r.data_ssx()));
+            bool was_dirty = *(reinterpret_cast<bool*>(r.data_ssx() + sizeof(PageID)));
+            if (!was_dirty) {
+                page_lsns[pid].clear();
+            }
+            chkpt.buf_tab.erase(pid);
         }
         else if (r.type() == logrec_t::t_xct_end) {
             commits++;
@@ -128,11 +167,17 @@ public:
             size_t rest = lsn.lo() + psize - min_rec_lsn.lo();
             redo_length = psize * (lsn.hi() - min_rec_lsn.hi()) + rest;
         }
-        // ERROUT(<< "min_rec_lsn: " << min_rec_lsn);
+        ERROUT(<< "min_rec_lsn: " << min_rec_lsn);
 
         size_t dirty_page_count = 0;
+        size_t pages_static = 0;
         for (auto e : chkpt.buf_tab) {
-            if (e.second.is_dirty()) { dirty_page_count++; }
+            if (e.second.is_dirty()) {
+                dirty_page_count++;
+            }
+                if (static_pids.count(e.first) > 0) {
+                    pages_static++;
+                }
         }
 
         out() << "" << dirty_page_count
@@ -140,6 +185,7 @@ public:
             << " " << page_writes
             << " " << commits
             << " " << updates
+            << " " << pages_static
             << endl;
 
         page_writes = 0;
