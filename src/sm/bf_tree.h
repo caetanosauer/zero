@@ -613,6 +613,7 @@ public:
         swap(a._count, b._count);
         swap(a._virgin, b._virgin);
         swap(a._current, b._current);
+        swap(a._current_pid, b._current_pid);
         swap(a.fix_depth, b.fix_depth);
     }
 
@@ -626,6 +627,8 @@ public:
     {
         return !(*this == other);
     }
+
+    PageID current_pid() const { return _current_pid; }
 
 private:
     PageID _first;
