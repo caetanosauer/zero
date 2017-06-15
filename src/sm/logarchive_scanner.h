@@ -25,7 +25,7 @@ struct MergeInput
 
     logrec_t* logrec();
     bool open(PageID startPID);
-    bool hasNext();
+    bool finished();
     void next();
 
     friend bool mergeInputCmpGt(const MergeInput& a, const MergeInput& b);
@@ -55,6 +55,7 @@ private:
 
     std::shared_ptr<ArchiveIndex> archIndex;
     lsn_t prevLSN;
+    PageID prevPID;
     bool singlePage;
 
     void clear();

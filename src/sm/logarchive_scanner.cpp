@@ -21,7 +21,7 @@ bool mergeInputCmpGt(const MergeInput& a, const MergeInput& b)
 }
 
 ArchiveScan::ArchiveScan(std::shared_ptr<ArchiveIndex> archIndex)
-    : archIndex(archIndex), prevLSN(lsn_t::null), singlePage(false)
+    : archIndex(archIndex), prevLSN(lsn_t::null), prevPID(0), singlePage(false)
 {
     clear();
 }
@@ -34,7 +34,8 @@ void ArchiveScan::open(PageID startPID, PageID endPID, lsn_t startLSN)
 
     archIndex->probe(inputs, startPID, endPID, startLSN);
 
-    // 1) Open inputs and trim when page-image log record is found
+    singlePage = (endPID == startPID+1);
+
     heapBegin = inputs.begin();
     auto it = inputs.rbegin();
     while (it != inputs.rend())
@@ -42,7 +43,7 @@ void ArchiveScan::open(PageID startPID, PageID endPID, lsn_t startLSN)
         if (it->open(startPID)) {
             auto lr = it->logrec();
             it++;
-            if (lr->type() == logrec_t::t_page_img_format) {
+            if (singlePage && lr->type() == logrec_t::t_page_img_format) {
                 // Any entries beyond it (including it are ignored)
                 heapBegin = it.base();
                 ADD_TSTAT(la_img_trimmed, heapBegin - inputs.begin());
@@ -57,8 +58,6 @@ void ArchiveScan::open(PageID startPID, PageID endPID, lsn_t startLSN)
 
     heapEnd = inputs.end();
     std::make_heap(heapBegin, heapEnd, mergeInputCmpGt);
-
-    singlePage = (endPID == startPID+1);
 }
 
 bool ArchiveScan::finished()
@@ -76,6 +75,7 @@ void ArchiveScan::clear()
     heapBegin = inputs.end();
     heapEnd = inputs.end();
     prevLSN = lsn_t::null;
+    prevPID = 0;
 }
 
 bool ArchiveScan::next(logrec_t*& lr)
@@ -83,7 +83,7 @@ bool ArchiveScan::next(logrec_t*& lr)
     if (finished()) { return false; }
 
     if (singlePage) {
-        if (heapBegin->hasNext()) {
+        if (!heapBegin->finished()) {
             lr = heapBegin->logrec();
             heapBegin->next();
         }
@@ -95,8 +95,9 @@ bool ArchiveScan::next(logrec_t*& lr)
     else {
         std::pop_heap(heapBegin, heapEnd, mergeInputCmpGt);
         auto top = std::prev(heapEnd);
-        if (top->hasNext()) {
+        if (!top->finished()) {
             lr = top->logrec();
+            w_assert1(lr->lsn() == top->keyLSN && lr->pid() == top->keyPID);
             top->next();
             std::push_heap(heapBegin, heapEnd, mergeInputCmpGt);
         }
@@ -106,8 +107,10 @@ bool ArchiveScan::next(logrec_t*& lr)
         }
     }
 
-    w_assert1(lr->has_page_img(lr->pid()) || lr->page_prev_lsn() == prevLSN);
+    w_assert1(prevLSN.is_null() || lr->pid() > prevPID ||
+            lr->has_page_img(lr->pid()) || lr->page_prev_lsn() == prevLSN);
     prevLSN = lr->lsn();
+    prevPID = lr->pid();
 
     return true;
 }
@@ -131,23 +134,19 @@ logrec_t* MergeInput::logrec()
 
 bool MergeInput::open(PageID startPID)
 {
-    if (hasNext()) {
+    if (!finished()) {
         auto lr = logrec();
         keyLSN = lr->lsn();
         keyPID = lr->pid();
 
         // advance index until firstPID is reached
         if (keyPID < startPID) {
-            while (hasNext() && lr->pid() < startPID) {
+            while (!finished() && lr->pid() < startPID) {
                 ADD_TSTAT(la_skipped_bytes, lr->length());
                 next();
                 lr = logrec();
             }
-            if (hasNext()) {
-                keyPID = lr->pid();
-                keyLSN = lr->lsn();
-            }
-            else {
+            if (finished()) {
                 INC_TSTAT(la_wasted_read);
                 return false;
             }
@@ -158,21 +157,24 @@ bool MergeInput::open(PageID startPID)
         return false;
     }
 
+    w_assert1(keyLSN == logrec()->lsn());
     return true;
 }
 
-bool MergeInput::hasNext()
+bool MergeInput::finished()
 {
-    if (!runFile || runFile->length == 0) { return false; }
+    if (!runFile || runFile->length == 0) { return true; }
     auto lr = logrec();
-    return lr->type() != logrec_t::t_skip && (endPID == 0 || lr->pid() < endPID);
+    return lr->type() == logrec_t::t_skip || (endPID != 0 && lr->pid() >= endPID);
 }
 
 void MergeInput::next()
 {
-    w_assert1(hasNext());
+    w_assert1(!finished());
     pos += logrec()->length();
     w_assert1(logrec()->valid_header());
+    keyPID = logrec()->pid();
+    keyLSN = logrec()->lsn();
 }
 
 ArchiveScanner::ArchiveScanner(ArchiveIndex* index)
