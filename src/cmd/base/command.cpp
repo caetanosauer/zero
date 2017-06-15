@@ -427,6 +427,8 @@ void LogScannerCommand::setupOptions()
              "Number of log records to scan")
         ("level", po::value<int>(&level)->default_value(-1),
              "Level of log archive to scan (-1 for all)")
+        ("pid", po::value<PageID>(&scan_pid)->default_value(0),
+             "PageID on which to begin scan (archive only)")
         ;
     options.add(logscanner);
 }

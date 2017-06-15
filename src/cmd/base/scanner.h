@@ -73,6 +73,7 @@ private:
     lsn_t runBegin;
     lsn_t runEnd;
     int level;
+    PageID scan_pid;
 
     void findFirstFile();
     string getNextFile();
@@ -87,6 +88,7 @@ public:
 private:
     string archdir;
     int level;
+    PageID scan_pid;
 };
 
 #endif

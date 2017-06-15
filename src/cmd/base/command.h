@@ -60,6 +60,7 @@ protected:
     bool merge;
     string filename;
     int level;
+    PageID scan_pid;
 
 private:
     size_t limit;

@@ -190,6 +190,7 @@ LogArchiveScanner::LogArchiveScanner(const po::variables_map& options)
 {
     archdir = options["logdir"].as<string>();
     level = options["level"].as<int>();
+    scan_pid = options["pid"].as<PageID>();
 }
 
 bool runCompare (string a, string b)
@@ -249,7 +250,7 @@ void LogArchiveScanner::run()
                     runBegin,
                     runEnd,
                     fstats.level,
-                    0, // first PID
+                    scan_pid, // first PID
                     0, // last PID
                     0,            // file offset
                     directory
@@ -285,6 +286,7 @@ MergeScanner::MergeScanner(const po::variables_map& options)
 {
     archdir = options["logdir"].as<string>();
     level = options["level"].as<int>();
+    scan_pid = options["pid"].as<PageID>();
 }
 
 void MergeScanner::run()
@@ -299,7 +301,7 @@ void MergeScanner::run()
     ArchiveIndex* directory = new ArchiveIndex(opt);
     ArchiveScanner logScan(directory);
 
-    auto merger = logScan.open(0, 0, lsn_t::null);
+    auto merger = logScan.open(scan_pid, 0, lsn_t::null);
 
     logrec_t* lr;
 
