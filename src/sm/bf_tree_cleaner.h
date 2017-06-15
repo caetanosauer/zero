@@ -72,7 +72,7 @@ protected:
     virtual void do_work ();
 
     /** Return predicate function object that implements given policy */
-    policy_predicate_t get_policy_predicate();
+    policy_predicate_t get_policy_predicate(cleaner_policy p);
 
     bool ignore_min_write_now() const
     {

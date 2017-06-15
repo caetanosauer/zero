@@ -264,7 +264,7 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
     return true;
 }
 
-policy_predicate_t bf_tree_cleaner::get_policy_predicate()
+policy_predicate_t bf_tree_cleaner::get_policy_predicate(cleaner_policy p)
 {
     // A less-than function makes pop_heap return the highest value, and a
     // greater-than function the lowest. Because the heap's top element should
@@ -274,7 +274,7 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate()
     // comparison function should be used, e.g., in a "highest" policy, an
     // incoming element enters the heap if it is greater than the heap's
     // lowest.
-    switch (policy) {
+    switch (p) {
         case cleaner_policy::highest_refcount:
             return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
             {
@@ -285,7 +285,15 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate()
             {
                 return a.ref_count < b.ref_count;
             };
-        case cleaner_policy::oldest_lsn: default: // mixed also falls here
+        case cleaner_policy::mixed:
+            // mixed policy = oldest_lsn 3/4 of the time, hihgest_refcount 1/4 of the time
+            if (get_rounds_completed() % 4 == 0) {
+                return get_policy_predicate(cleaner_policy::highest_refcount);
+            }
+            else {
+                return get_policy_predicate(cleaner_policy::oldest_lsn);
+            }
+        case cleaner_policy::oldest_lsn: default:
             return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
             {
                 return a.rec_lsn < b.rec_lsn;
@@ -299,15 +307,9 @@ void bf_tree_cleaner::collect_candidates()
     candidates.clear();
 
     // Comparator to be used by the heap
-    auto heap_cmp = get_policy_predicate();
+    auto heap_cmp = get_policy_predicate(policy);
 
     bf_idx block_cnt = _bufferpool->_block_cnt;
-
-    // mixed policy = ignore null clean LSNs every 2 rounds
-    // bool ignore_empty_clean_lsn = false;
-    // if (policy == cleaner_policy::mixed) {
-    //     ignore_empty_clean_lsn = get_rounds_completed() % 4 != 0;
-    // }
 
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
         auto& cb = _bufferpool->get_cb(idx);
@@ -318,12 +320,6 @@ void bf_tree_cleaner::collect_candidates()
             cb.unpin();
             continue;
         }
-
-        // CS TODO: update or remove mixed policy
-        // if (cb.get_clean_lsn() == lsn_t::null && ignore_empty_clean_lsn) {
-        //     cb.unpin();
-        //     continue;
-        // }
 
         // add new element to the back of vector
         candidates.emplace_back(idx, cb);
