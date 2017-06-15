@@ -677,8 +677,9 @@ void restart_thread_t::notify_archived_lsn(lsn_t lsn)
      * the per-page log chain traversal done in the SprIterator object.
      */
 
-    w_assert1(no_db_mode);
-    chkpt.set_redo_low_water_mark(lsn);
+    if (no_db_mode) {
+        chkpt.set_redo_low_water_mark(lsn);
+    }
 }
 
 PageID restart_thread_t::get_dirty_page_count() const

@@ -240,7 +240,10 @@ void fixable_page_h::setup_for_restore(generic_page* pp)
     _mode = LATCH_EX;
 
     _pp = pp;
-    check_page_tags(_pp);
+    // Restore can read trash from backup file, which is not an error
+    // if it is about to replay a page-image logrec, but in that case,
+    // this assertion will fail.
+    // check_page_tags(_pp);
 }
 
 

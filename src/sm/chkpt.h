@@ -84,7 +84,7 @@ struct buf_tab_entry_t {
     bool is_dirty() const { return page_lsn >= clean_lsn; }
 
     void mark_dirty(lsn_t page, lsn_t rec) {
-        w_assert1(!rec.is_null());
+        // w_assert1(!rec.is_null());
         if (page > page_lsn) { page_lsn = page; }
         if (rec >= clean_lsn && rec < rec_lsn) { rec_lsn = rec; }
     }
