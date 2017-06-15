@@ -747,6 +747,51 @@ void bf_tree_m::fuzzy_checkpoint(chkpt_t& chkpt) const
     }
 }
 
+void bf_tree_m::prefetch_pages(PageID first, unsigned count)
+{
+    std::vector<generic_page*> frames;
+    frames.reserve(count);
+
+    // First grab enough free frames to read into
+    for (unsigned i = 0; i < count; i++) {
+        bf_idx idx;
+        while (true) {
+            W_COERCE(_grab_free_block(idx));
+            auto& cb = get_cb(idx);
+            w_rc_t check_rc = cb.latch().latch_acquire(LATCH_EX,
+                    timeout_t::WAIT_IMMEDIATE);
+            if (check_rc.is_error()) { _add_free_block(idx); }
+            else { break; }
+        }
+        frames[i] = get_page(idx);
+        // ::memset(frames[i], 0, sizeof(generic_page));
+        // frames[i]->pid = first + i;
+    }
+
+    // Then read into them using iovec
+    smlevel_0::vol->read_vector(first, count, frames, is_media_failure());
+
+    // Finally, add the frames to the hash table if not already there and
+    // initialize the control blocks
+    for (unsigned i = 0; i < count; i++) {
+        PageID pid = first + i;
+        auto& cb = *get_cb(frames[i]);
+        auto idx = get_idx(&cb);
+
+        constexpr bf_idx parent_idx = 0;
+        bool registered = _hashtable->insert_if_not_exists(pid,
+                bf_idx_pair(idx, parent_idx));
+
+        if (registered) {
+            cb.init(pid, frames[i]->lsn);
+            cb.set_check_recovery(true);
+        }
+        else { _add_free_block(idx); }
+
+        cb.latch().latch_release();
+    }
+}
+
 bool bf_tree_m::_is_frame_latched(generic_page* frame, latch_mode_t mode)
 {
     bf_idx idx = frame - _buffer;

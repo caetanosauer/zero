@@ -196,6 +196,8 @@ void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize, bool virg
     GenericPageIterator pbegin {first_pid, segmentSize, virgin_pages};
     GenericPageIterator pend;
 
+    smlevel_0::bf->prefetch_pages(first_pid, segmentSize);
+
     // CS TODO: pass backupLSN rather than lsn_t::null
 #ifdef USE_MMAP
     static thread_local ArchiveScan archive_scan{smlevel_0::logArchiver->getIndex()};

@@ -430,6 +430,23 @@ rc_t vol_t::read_page(PageID pnum, generic_page* const buf)
     return read_many_pages(pnum, buf, 1);
 }
 
+void vol_t::read_vector(PageID first_pid, unsigned count,
+        std::vector<generic_page*>& frames, bool from_backup)
+{
+    std::vector<struct iovec> iov;
+    iov.reserve(count);
+
+    for (unsigned i = 0; i < count; i++) {
+        iov[i].iov_base = frames[i];
+        iov[i].iov_len = sizeof(generic_page);
+    }
+
+    size_t offset = size_t(first_pid) * sizeof(generic_page);
+    auto fd = from_backup ? _backup_fd : _fd;
+    int read_count = preadv(fd, &iov[0], count, offset);
+    CHECK_ERRNO(read_count);
+}
+
 /*********************************************************************
  *
  *  vol_t::read_many_pages(first_page, buf, cnt)

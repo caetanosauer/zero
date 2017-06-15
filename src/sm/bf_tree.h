@@ -173,6 +173,9 @@ public:
     /** returns the current latch mode of the page. */
     latch_mode_t latch_mode(const generic_page* p);
 
+    /** Prefetches pages into free frames using iovec */
+    void prefetch_pages(PageID first, unsigned count);
+
     /**
      * upgrade SH-latch on the given page to EX-latch.
      * This method is always conditional, immediately returning if there is a conflicting latch.

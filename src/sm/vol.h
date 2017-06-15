@@ -55,6 +55,9 @@ public:
 
     rc_t read_page(PageID page, generic_page* const buf);
 
+    void read_vector(PageID first_pid, unsigned count,
+            std::vector<generic_page*>& pages, bool from_backup);
+
     rc_t                read_many_pages(
         PageID             first_page,
         generic_page* const buf,        //caller must align this buffer
