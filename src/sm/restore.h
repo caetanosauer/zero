@@ -522,7 +522,7 @@ private:
 struct LogReplayer
 {
     template <class LogScan, class PageIter>
-    static void replay(LogScan logs, PageIter pagesBegin, PageIter pagesEnd);
+    static void replay(LogScan logs, PageIter& pagesBegin, PageIter pagesEnd);
 };
 
 struct SegmentRestorer

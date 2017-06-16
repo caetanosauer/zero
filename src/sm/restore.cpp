@@ -215,7 +215,7 @@ void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize, bool virg
 }
 
 template <class LogScan, class PageIter>
-void LogReplayer::replay(LogScan logs, PageIter pagesBegin, PageIter pagesEnd)
+void LogReplayer::replay(LogScan logs, PageIter& pagesBegin, PageIter pagesEnd)
 {
     fixable_page_h fixable;
     auto page = pagesBegin;
@@ -229,22 +229,30 @@ void LogReplayer::replay(LogScan logs, PageIter pagesBegin, PageIter pagesEnd)
         auto pid = lr->pid();
         w_assert0(pid > prev_pid || (pid == prev_pid && lr->lsn() > prev_lsn));
 
-        while (page != pagesEnd && (*page)->pid < pid) {
+        while (page != pagesEnd && page.current_pid() < pid) {
             ++page;
         }
         if (page == pagesEnd) { return; }
 
         auto p = *page;
 
-        fixable.setup_for_restore(p);
+        if (!fixable.is_fixed() || fixable.pid() != pid) {
+            // Set PID and null LSN manually on virgin pages
+            if (p->pid != pid) {
+                p->pid = pid;
+                p->lsn = lsn_t::null;
+            }
+            fixable.setup_for_restore(p);
+        }
 
         if (lr->lsn() > fixable.get_page_lsn()) {
             w_assert0(lr->page_prev_lsn() == lsn_t::null ||
-                    lr->page_prev_lsn() == p->lsn);
+                    lr->page_prev_lsn() == p->lsn || lr->has_page_img(pid));
 
             lr->redo(&fixable);
         }
 
+        w_assert0(p->pid == pid);
         prev_pid = pid;
         prev_lsn = lr->lsn();
 
