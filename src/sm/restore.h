@@ -451,9 +451,9 @@ class RestoreCoordinator
 {
 public:
 
-    RestoreCoordinator(size_t segSize, size_t segCount, RestoreFunctor f)
+    RestoreCoordinator(size_t segSize, size_t segCount, RestoreFunctor f, bool virgin_pages)
         : _segmentSize{segSize}, _bitmap{new RestoreBitmap {segCount}},
-        _restoreFunctor{f}
+        _restoreFunctor{f}, _virgin_pages{virgin_pages}
     {
     }
 
@@ -494,6 +494,7 @@ private:
     std::unordered_map<unsigned, Ticket> _waiting_table;
     std::unique_ptr<RestoreBitmap> _bitmap;
     RestoreFunctor _restoreFunctor;
+    bool _virgin_pages;
 
     Ticket getWaitingTicket(unsigned segment)
     {
@@ -508,7 +509,7 @@ private:
 
     void doRestore(unsigned segment, Ticket ticket)
     {
-        _restoreFunctor(segment, _segmentSize);
+        _restoreFunctor(segment, _segmentSize, _virgin_pages);
 
         _bitmap->mark_replayed(segment);
         ticket->notify_all();
@@ -526,7 +527,7 @@ struct LogReplayer
 
 struct SegmentRestorer
 {
-    static void bf_restore(unsigned segment, size_t segmentSize);
+    static void bf_restore(unsigned segment, size_t segmentSize, bool virgin_pages);
 };
 
 inline unsigned RestoreMgr::getSegmentForPid(const PageID& pid)

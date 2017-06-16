@@ -306,6 +306,12 @@ public:
 
     void fuzzy_checkpoint(chkpt_t& chkpt) const;
 
+    void set_media_failure();
+
+    bool is_media_failure() { return _media_failure_pid > 0; }
+    bool is_media_failure(PageID pid) { return _media_failure_pid > 0 &&
+        pid < _media_failure_pid; }
+
     /**
      * Tries to unswizzle the given child page from the parent page.  If, for
      * some reason, unswizzling was impossible or troublesome, gives up and
@@ -468,6 +474,8 @@ private:
     bool                 _maintain_emlsn;
 
     bool _write_elision;
+
+    std::atomic<PageID> _media_failure_pid;
 
     bool _cleaner_decoupled;
 

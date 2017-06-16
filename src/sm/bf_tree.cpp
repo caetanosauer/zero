@@ -115,6 +115,8 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     _log_fetches = options.get_bool_option("sm_log_page_fetches", false);
 
+    _media_failure_pid = 0;
+
     // Warm-up options
     // Warm-up hit ratio must be an int between 0 and 100
     auto warmup_hr = options.get_int_option("sm_bf_warmup_hit_ratio", 100);
@@ -397,11 +399,12 @@ void bf_tree_m::_add_free_block(bf_idx idx)
 void bf_tree_m::post_init()
 {
     if (_no_db_mode && _batch_warmup) {
+        constexpr bool virgin_pages = true;
         auto vol_pages = smlevel_0::vol->num_used_pages();
         auto segcount = vol_pages  / _batch_segment_size
             + (vol_pages % _batch_segment_size ? 1 : 0);
         _restore_coord = std::make_shared<RestoreCoord>
-            (_batch_segment_size, segcount, SegmentRestorer::bf_restore);
+            (_batch_segment_size, segcount, SegmentRestorer::bf_restore, virgin_pages);
     }
 
     if(_cleaner_decoupled) {
@@ -441,6 +444,18 @@ void bf_tree_m::recover_if_needed(bf_tree_cb_t& cb, generic_page* page, bool onl
     if (_log_fetches) {
         Logger::log_sys<fetch_page_log>(pid, page->lsn, page->store);
     }
+}
+
+void bf_tree_m::set_media_failure()
+{
+    constexpr bool virgin_pages = false;
+    auto vol_pages = smlevel_0::vol->num_used_pages();
+    auto segcount = vol_pages  / _batch_segment_size
+        + (vol_pages % _batch_segment_size ? 1 : 0);
+    _restore_coord = std::make_shared<RestoreCoord>
+        (_batch_segment_size, segcount, SegmentRestorer::bf_restore, virgin_pages);
+
+    _media_failure_pid = vol_pages;
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////
@@ -498,14 +513,16 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
     // Wait for log replay before attempting to fix anything
     //->  nodb mode only!
-    bool used_batch_warmup = false;
-    if (!virgin_page && _batch_warmup && !_warmup_done) {
+    bool used_restore = false;
+    if (do_recovery && !virgin_page && _restore_coord &&
+            (pid < _media_failure_pid || !_warmup_done))
+    {
         // copy into local variable to avoid race condition with setting member to null
         timer.reset();
         auto restore = _restore_coord;
         if (restore) {
             restore->fetch(pid);
-            used_batch_warmup = true;
+            used_restore = true;
         }
         ADD_TSTAT(bf_batch_wait_time, timer.time_us());
     }
@@ -570,7 +587,13 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                     emlsn = parent_h.get_emlsn_general(recordid);
                 }
 
-                rc_t read_rc = smlevel_0::vol->read_page(pid, page);
+                rc_t read_rc;
+                if (pid < _media_failure_pid) {
+                    read_rc = smlevel_0::vol->read_backup(pid, 1, page);
+                }
+                else {
+                    read_rc = smlevel_0::vol->read_page(pid, page);
+                }
                 if (read_rc.is_error())
                 {
                     _hashtable->remove(pid);
@@ -641,7 +664,8 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
 
         auto& cb = get_cb(idx);
         if (do_recovery) {
-            const bool only_if_dirty = !_no_db_mode || used_batch_warmup;
+            const bool only_if_dirty = (!_no_db_mode || used_restore) &&
+                pid >= _media_failure_pid;
             if (virgin_page) { cb.set_check_recovery(false); }
             else { recover_if_needed(cb, page, only_if_dirty); }
         }

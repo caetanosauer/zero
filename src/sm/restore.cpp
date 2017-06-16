@@ -190,22 +190,28 @@ bool RestoreScheduler::next(PageID& next, unsigned thread_id, bool peek)
     return true;
 }
 
-void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize)
+void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize, bool virgin_pages)
 {
     PageID first_pid = segment * segmentSize;
-    GenericPageIterator pbegin {first_pid, segmentSize, true /*virgin*/};
+    GenericPageIterator pbegin {first_pid, segmentSize, virgin_pages};
     GenericPageIterator pend;
 
-    // CS TODO use mmap and new ArchiveScan
+    // CS TODO: pass backupLSN rather than lsn_t::null
+#ifdef USE_MMAP
+    static thread_local ArchiveScan archive_scan{smlevel_0::logArchiver->getIndex()};
+    archive_scan.open(first_pid, 0, lsn_t::null);
+    auto logiter = &archive_scan;
+#else
     ArchiveScanner logScan {smlevel_0::logArchiver->getIndex().get()};
     auto logiter = logScan.open(first_pid, 0, lsn_t::null);
+#endif
 
     if (logiter) {
         LogReplayer::replay(logiter, pbegin, pend);
     }
 
     // CS TODO:  use boolean template parameter to tell whether to log or not
-    // Logger::log_sys<restore_segment_log>(segment);
+    Logger::log_sys<restore_segment_log>(segment);
 }
 
 template <class LogScan, class PageIter>

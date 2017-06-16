@@ -101,9 +101,13 @@ bool page_evictioner_base::evict_one(bf_idx victim)
         Logger::log_sys<evict_page_log>(cb._pid, was_dirty);
     }
 
-    if (_bufferpool->is_no_db_mode()) {
-        smlevel_0::recovery->add_dirty_page(cb._pid, cb.get_page_lsn());
-        w_assert0(cb.get_page_lsn() != lsn_t::null);
+    if (_bufferpool->is_no_db_mode() || _bufferpool->is_media_failure(cb._pid)) {
+        // During media failure, unallocated pages (i.e., containing garbage
+        // data) might be fixed into this frame. We recognize that by a null
+        // page LSN
+        if (cb.get_page_lsn() != lsn_t::null) {
+            smlevel_0::recovery->add_dirty_page(cb._pid, cb.get_page_lsn());
+        }
     }
 
     // remove it from hashtable.
