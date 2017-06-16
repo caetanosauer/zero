@@ -60,9 +60,6 @@ void page_cleaner_base::mark_pages_clean(size_t from, size_t to)
 
         if (!cb.pin()) { continue; }
 
-        // PID can change with write elision
-        w_assert1(_write_elision || cb._pid == _workspace[i].pid);
-
         if (cb._pid == _workspace[i].pid) {
             w_assert1(cb.is_in_use());
             cb.notify_write();

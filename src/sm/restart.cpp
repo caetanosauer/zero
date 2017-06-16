@@ -662,7 +662,6 @@ void restart_thread_t::add_dirty_page(PageID pid, lsn_t lsn)
 {
     spinlock_write_critical_section cs(&chkpt_mutex);
 
-    w_assert1(no_db_mode);
     chkpt.mark_page_dirty(pid, lsn, lsn);
 }
 
