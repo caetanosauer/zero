@@ -127,9 +127,10 @@ void vol_t::build_caches(bool truncate, chkpt_t* chkpt_info)
     // (unless in nodb mode, where restore_segment log records are generated
     // during buffer pool warmup)
     if (!_no_db_mode && chkpt_info && chkpt_info->ongoing_restore) {
+        // CS TODO: must initialize RestoreCoordinator in bf_tree_m
         mark_failed(false, true, chkpt_info->restore_page_cnt);
-        _restore_mgr->markRestoredFromList(chkpt_info->restore_tab);
-        _restore_mgr->start();
+        // _restore_mgr->markRestoredFromList(chkpt_info->restore_tab);
+        // _restore_mgr->start();
     }
 }
 
@@ -163,13 +164,13 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo, PageID lastUsedPid)
 {
     spinlock_write_critical_section cs(&_mutex);
 
-    if (_failed) {
-        // failure-upon-failure -- just destroy current stat so we can start restore anew
-        _restore_mgr->shutdown();
-        delete _restore_mgr;
-        _restore_mgr = nullptr;
-        _failed = false;
-    }
+//     if (_failed) {
+//         // failure-upon-failure -- just destroy current stat so we can start restore anew
+//         _restore_mgr->shutdown();
+//         delete _restore_mgr;
+//         _restore_mgr = nullptr;
+//         _failed = false;
+//     }
 
     bool useBackup = _backups.size() > 0;
 
@@ -195,14 +196,14 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo, PageID lastUsedPid)
                 without a running log archiver");
     }
 
-    if (lastUsedPid == 0) {
-        lastUsedPid = num_used_pages();
-    }
+//     if (lastUsedPid == 0) {
+//         lastUsedPid = num_used_pages();
+//     }
 
-    _restore_mgr = new RestoreMgr(ss_m::get_options(),
-            ss_m::logArchiver->getIndex().get(), this, lastUsedPid, useBackup);
+//     _restore_mgr = new RestoreMgr(ss_m::get_options(),
+//             ss_m::logArchiver->getIndex().get(), this, lastUsedPid, useBackup);
 
-    _failed = true;
+//     _failed = true;
 
     lsn_t failureLSN = lsn_t::null;
     if (!redo) {
@@ -210,8 +211,8 @@ rc_t vol_t::mark_failed(bool /*evict*/, bool redo, PageID lastUsedPid)
         failureLSN = Logger::log_sys<restore_begin_log>(lastUsedPid);
     }
 
-    _restore_mgr->setFailureLSN(failureLSN);
-    if (!redo) { _restore_mgr->start(); }
+    // _restore_mgr->setFailureLSN(failureLSN);
+    // if (!redo) { _restore_mgr->start(); }
 
     return RCOK;
 }

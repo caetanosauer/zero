@@ -64,9 +64,11 @@ public:
     {
         ::sleep(delay);
 
-        vol_t* vol = smlevel_0::vol;
-        w_assert0(vol);
-        vol->mark_failed();
+//         vol_t* vol = smlevel_0::vol;
+//         w_assert0(vol);
+//         vol->mark_failed();
+        smlevel_0::vol->mark_failed();
+        smlevel_0::bf->set_media_failure();
 
         // disable eager archiving
         smlevel_0::logArchiver->setEager(false);
