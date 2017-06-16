@@ -19,11 +19,13 @@ int fixable_page_h::force_Q_fixing = 0;  // <<<>>>
 
 void check_page_tags(generic_page* s)
 {
-    w_assert1(s->tag != t_alloc_p  || (s->pid % alloc_cache_t::extent_size == 0));
-    w_assert1(s->tag != t_stnode_p || s->pid == stnode_page::stpid);
-    w_assert1(s->tag != t_btree_p  || (s->pid != stnode_page::stpid &&
-                (s->pid % alloc_cache_t::extent_size > 0)));
-    w_assert1(s->tag == t_alloc_p || s->tag == t_stnode_p || s->tag == t_btree_p);
+    // CS: these fail during restore, which might fix pages with garbage content
+    // from the backup before replaying a page-image format log record
+    // w_assert1(s->tag != t_alloc_p  || (s->pid % alloc_cache_t::extent_size == 0));
+    // w_assert1(s->tag != t_stnode_p || s->pid == stnode_page::stpid);
+    // w_assert1(s->tag != t_btree_p  || (s->pid != stnode_page::stpid &&
+    //             (s->pid % alloc_cache_t::extent_size > 0)));
+    // w_assert1(s->tag == t_alloc_p || s->tag == t_stnode_p || s->tag == t_btree_p);
 }
 
 void fixable_page_h::unfix(bool evict)
