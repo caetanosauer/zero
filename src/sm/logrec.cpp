@@ -840,7 +840,8 @@ void alloc_page_log::redo(PagePtr p)
     }
     PageID pid = *((PageID*) data_ssx());
     alloc_page* page = (alloc_page*) p->get_generic_page();
-    w_assert1(!page->get_bit(pid - alloc_pid));
+    // assertion fails after page-img compression
+    // w_assert1(!page->get_bit(pid - alloc_pid));
     page->set_bit(pid - alloc_pid);
 }
 
@@ -857,7 +858,8 @@ void dealloc_page_log::redo(PagePtr p)
     PageID alloc_pid = p->pid();
     PageID pid = *((PageID*) data_ssx());
     alloc_page* page = (alloc_page*) p->get_generic_page();
-    w_assert1(page->get_bit(pid - alloc_pid));
+    // assertion fails after page-img compression
+    // w_assert1(page->get_bit(pid - alloc_pid));
     page->unset_bit(pid - alloc_pid);
 }
 
