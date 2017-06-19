@@ -347,25 +347,25 @@ public:
         delete[] states;
     }
 
-    size_t getSize() { return _size; }
+    size_t get_size() { return _size; }
 
 
-    bool is_unrestored(unsigned i)
+    bool is_unrestored(unsigned i) const
     {
         return states[i] == State::UNRESTORED;
     }
 
-    bool is_restoring(unsigned i)
+    bool is_restoring(unsigned i) const
     {
         return states[i] == State::RESTORING;
     }
 
-    bool is_replayed(unsigned i)
+    bool is_replayed(unsigned i) const
     {
         return states[i] >= State::REPLAYED;
     }
 
-    bool is_restored(unsigned i)
+    bool is_restored(unsigned i) const
     {
         return states[i] == State::RESTORED;
     }
@@ -388,6 +388,15 @@ public:
         states[i] = State::RESTORED;
     }
 
+    unsigned get_first_unrestored() const
+    {
+        for (unsigned i = 0; i < _size; i++) {
+            if (states[i] == State::UNRESTORED) { return i; }
+        }
+        return _size;
+    }
+
+    // TODO: implement these to checkpoint bitmap state
     // void serialize(char* buf, size_t from, size_t to);
     // void deserialize(char* buf, size_t from, size_t to);
 
@@ -462,7 +471,7 @@ public:
         using namespace std::chrono_literals;
 
         auto segment = pid / _segmentSize;
-        if (segment >= _bitmap->getSize() || _bitmap->is_replayed(segment)) {
+        if (segment >= _bitmap->get_size() || _bitmap->is_replayed(segment)) {
             return;
         }
 
@@ -550,7 +559,7 @@ inline bool RestoreMgr::isRestored(const PageID& pid)
     }
 
     unsigned seg = getSegmentForPid(pid);
-    if (seg >= bitmap->getSize()) {
+    if (seg >= bitmap->get_size()) {
         return true;
     }
 
