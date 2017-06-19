@@ -9,6 +9,8 @@ void DBScan::setupOptions()
     opt.add_options()
         ("dbfile,d", po::value<string>(&dbfile)->required(),
             "Path to DB file")
+        ("pid", po::value<PageID>(&req_pid)->default_value(0),
+            "Read only this PID")
     ;
     options.add(opt);
 }
@@ -50,17 +52,23 @@ void DBScan::run()
 
     vector<generic_page, memalign_allocator<generic_page>> buffer(BUFSIZE);
 
-    PageID pid = 0;
-    PageID lastPID = vol->get_last_allocated_pid();
+    if (req_pid == 0) {
+        PageID pid = 0;
+        PageID lastPID = vol->get_last_allocated_pid();
 
-    while (pid <= lastPID) {
-        size_t count = BUFSIZE;
-        if (pid + count > lastPID) { count = lastPID - pid + 1; }
-        W_COERCE(vol->read_many_pages(pid, &buffer[0], count));
+        while (pid <= lastPID) {
+            size_t count = BUFSIZE;
+            if (pid + count > lastPID) { count = lastPID - pid + 1; }
+            W_COERCE(vol->read_many_pages(pid, &buffer[0], count));
 
-        for (size_t i = 0; i < count; i++) {
-            handlePage(pid++, buffer[i], vol);
+            for (size_t i = 0; i < count; i++) {
+                handlePage(pid++, buffer[i], vol);
+            }
         }
+    }
+    else {
+        W_COERCE(vol->read_many_pages(req_pid, &buffer[0], 1));
+        handlePage(req_pid, buffer[0], vol);
     }
 
     vol->shutdown();

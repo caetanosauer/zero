@@ -12,6 +12,7 @@ protected:
     virtual void handlePage(PageID pid, const generic_page& page, vol_t* vol);
 private:
     string dbfile;
+    PageID req_pid;
 };
 
 #endif
