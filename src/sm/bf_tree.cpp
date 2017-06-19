@@ -288,6 +288,16 @@ std::shared_ptr<page_cleaner_base> bf_tree_m::get_cleaner()
 
 ///////////////////////////////////   Initialization and Release END ///////////////////////////////////
 
+bf_idx bf_tree_m::lookup_parent(PageID pid) const
+{
+    bf_idx idx = 0;
+    bf_idx_pair p;
+    if (_hashtable->lookup(pid, p)) {
+        idx = p.second;
+    }
+    return idx;
+}
+
 bf_idx bf_tree_m::lookup(PageID pid) const
 {
     bf_idx idx = 0;
@@ -615,12 +625,10 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             // When a page is first fetched from storage, we always check
             // if recovery is needed (we might not recover it right now,
             // because do_recovery might be false, i.e., due to bulk fetch
-            // with GenericPageIterator).
+            // with GenericPageIterator or when prefetching pages).
             cb.set_check_recovery(true);
 
             w_assert1(_is_active_idx(idx));
-
-            // STEP 6) Fix successful -- pin page and downgrade latch
             w_assert1(cb.latch().is_mine());
             DBG(<< "Fixed page " << pid << " (miss) to frame " << idx);
         }

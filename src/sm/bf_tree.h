@@ -201,7 +201,9 @@ public:
      */
     bool is_dirty(const bf_idx idx) const;
 
+    // useful for debugging
     bf_idx lookup(PageID pid) const;
+    bf_idx lookup_parent(PageID pid) const;
 
     /**
      * Returns true if the page's _used flag is on

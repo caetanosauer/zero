@@ -175,6 +175,13 @@ void fixable_page_h::reset_log_volume()
     smlevel_0::bf->reset_log_volume(_pp);
 }
 
+bool fixable_page_h::has_check_recovery()
+{
+    w_assert1(_pp);
+    auto cb = smlevel_0::bf->get_cb(_pp);
+    return cb->_check_recovery;
+}
+
 bool fixable_page_h::is_to_be_deleted() {
     return (_pp->page_flags&t_to_be_deleted) != 0;
 }
