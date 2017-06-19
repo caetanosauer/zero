@@ -78,6 +78,7 @@ struct bf_tree_cb_t {
         _pin_cnt = 0;
         _pid = pid;
         _swizzled = false;
+        _check_recovery = false;
         _ref_count = 0;
         _ref_count_ex = 0;
         _page_lsn = page_lsn;

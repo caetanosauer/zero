@@ -205,6 +205,8 @@ bf_tree_m::bf_tree_m(const sm_options& options)
         } else { /* even */
             cb._latch_offset = sizeof(bf_tree_cb_t); // place the latch after the control block
         }
+
+        cb.clear_latch();
     }
 
     // initially, all blocks are free
