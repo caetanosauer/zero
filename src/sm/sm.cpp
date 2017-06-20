@@ -362,7 +362,6 @@ ss_m::_destruct_once()
         }
         else { recovery->stop(); }
     }
-    vol->finish_restore();
 
     // remove all transactions, aborting them in case of clean shutdown
     xct_t::cleanup(shutdown_clean);

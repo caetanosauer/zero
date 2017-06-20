@@ -17,7 +17,6 @@
 #include "sm_options.h"
 
 #include "alloc_cache.h"
-#include "restore.h"
 #include "logarchiver.h"
 #include "restart.h"
 #include "xct_logger.h"
@@ -54,8 +53,7 @@ vol_t::vol_t(const sm_options& options)
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
                _alloc_cache(NULL), _stnode_cache(NULL),
-               _failed(false),
-               _restore_mgr(NULL), _backup_fd(-1),
+               _backup_fd(-1),
                _current_backup_lsn(lsn_t::null), _backup_write_fd(-1),
                _log_page_reads(false), _prioritize_archive(true)
 {
@@ -98,9 +96,6 @@ vol_t::~vol_t()
 
     w_assert1(_fd == -1);
     w_assert1(_backup_fd == -1);
-    if (_restore_mgr) {
-        delete _restore_mgr;
-    }
 }
 
 void vol_t::sync()
@@ -155,100 +150,6 @@ lsn_t vol_t::get_backup_lsn()
     return _current_backup_lsn;
 }
 
-rc_t vol_t::mark_failed(bool /*evict*/, bool redo, PageID lastUsedPid)
-{
-    spinlock_write_critical_section cs(&_mutex);
-
-//     if (_failed) {
-//         // failure-upon-failure -- just destroy current stat so we can start restore anew
-//         _restore_mgr->shutdown();
-//         delete _restore_mgr;
-//         _restore_mgr = nullptr;
-//         _failed = false;
-//     }
-
-    bool useBackup = _backups.size() > 0;
-
-    /*
-     * The order of operations in this method is crucial. We may only set
-     * failed after the restore manager is created, otherwise read/write
-     * operations will find a null restore manager and thus will not be able to
-     * wait for restore. Generating a failure LSN must occur after we've set
-     * the failed flag, because we must guarantee that no read or write
-     * occurred after the failure LSN (restore_begin log record).  Finally, the
-     * restore manager may only be forked once the failure LSN has been set,
-     * lsn_t::null, which is why we cannot pass the failureLSN in the
-     * constructor.
-     */
-
-    // open backup file -- may already be open due to new backup being taken
-    if (useBackup && _backup_fd < 0) {
-        open_backup();
-    }
-
-    if (!ss_m::logArchiver) {
-        throw runtime_error("Cannot simulate restore with mark_failed \
-                without a running log archiver");
-    }
-
-//     if (lastUsedPid == 0) {
-//         lastUsedPid = num_used_pages();
-//     }
-
-//     _restore_mgr = new RestoreMgr(ss_m::get_options(),
-//             ss_m::logArchiver->getIndex().get(), this, lastUsedPid, useBackup);
-
-//     _failed = true;
-
-    lsn_t failureLSN = lsn_t::null;
-    if (!redo) {
-        // Create and insert logrec manually to get its LSN
-        failureLSN = Logger::log_sys<restore_begin_log>(lastUsedPid);
-    }
-
-    // _restore_mgr->setFailureLSN(failureLSN);
-    // if (!redo) { _restore_mgr->start(); }
-
-    return RCOK;
-}
-
-bool vol_t::check_restore_finished()
-{
-    // with a read latch, check if finished -- most likely no
-    {
-        spinlock_read_critical_section cs(&_mutex);
-        if (!_failed) { return true; }
-        if (!_restore_mgr) { return true; }
-        if (!_restore_mgr->all_pages_restored()) { return false; }
-    }
-    // restore finished -- update status with write latch
-    {
-        spinlock_write_critical_section cs(&_mutex);
-        // check again for race
-        if (!_failed) { return true; }
-
-        // close restore manager
-        if (_restore_mgr->try_shutdown()) {
-            // join should be immediate, since thread is not running
-            delete _restore_mgr;
-            _restore_mgr = NULL;
-
-            // close backup file
-            if (_backup_fd > 0) {
-                auto ret = close(_backup_fd);
-                CHECK_ERRNO(ret);
-                _backup_fd = -1;
-                _current_backup_lsn = lsn_t::null;
-            }
-
-            _failed = false;
-            return true;
-        }
-    }
-
-    return false;
-}
-
 unsigned vol_t::num_backups() const
 {
     spinlock_read_critical_section cs(&_mutex);
@@ -297,20 +198,6 @@ void vol_t::shutdown()
     _fd = -1;
 }
 
-void vol_t::finish_restore()
-{
-    if (_failed) {
-        _restore_mgr->shutdown();
-        if (_backup_fd > 0) {
-            auto ret = close(_backup_fd);
-            CHECK_ERRNO(ret);
-            _backup_fd = -1;
-            _current_backup_lsn = lsn_t::null;
-        }
-        _failed = false;
-    }
-}
-
 void vol_t::close_backup()
 {
     if (_backup_fd > 0) {
@@ -343,22 +230,6 @@ rc_t vol_t::deallocate_page(const PageID& pid)
 size_t vol_t::num_used_pages() const
 {
     return _alloc_cache->get_last_allocated_pid() + 1;
-}
-
-size_t vol_t::get_num_to_restore_pages() const
-{
-    if (!_restore_mgr) {
-        return _alloc_cache->get_last_allocated_pid();
-    }
-    return _restore_mgr->getLastUsedPid();
-}
-
-size_t vol_t::get_num_restored_pages() const
-{
-    if (!_restore_mgr) {
-        return _alloc_cache->get_last_allocated_pid();
-    }
-    return _restore_mgr->getNumRestoredPages();
 }
 
 rc_t vol_t::create_store(PageID& root_pid, StoreID& snum)
@@ -460,74 +331,10 @@ void vol_t::read_vector(PageID first_pid, unsigned count,
  *  of the volume.
  *
  *********************************************************************/
-rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt,
-        bool ignoreRestore)
+rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt)
 {
     DBG(<< "Page read: from " << first_page << " to " << first_page + cnt);
     ADD_TSTAT(vol_reads, cnt);
-
-
-    /*
-     * CS: If volume is marked as failed, we must invoke restore manager and
-     * wait until the requested page is restored. If we succeed in placing a
-     * copy request, the page contents will be copied into &page, eliminating
-     * the need for the actual read from the restored device.
-     *
-     * Note that we read from the same file descriptor after a failure. This is
-     * because we currently just simulate device failures. To support real
-     * media recovery, the code needs to detect I/O errors and remount the
-     * volume into a new file descriptor for the replacement device. The logic
-     * for restore, however, would remain the same.
-     */
-
-    while (_failed) { // unsafe read at first -- latch acquired to verify it below
-        if(ignoreRestore) {
-            // volume is failed, but we don't want to restore
-            return RC(eVOLFAILED);
-        }
-
-        {
-            // Pin avoids restore mgr being destructed while we access it.
-            // If it returns false, then restore manager was terminated,
-            // which implies that restore process is done and we can safely
-            // read the volume
-            spinlock_read_critical_section cs(&_mutex);
-            if (!_failed) { break; }
-            if (!_restore_mgr->pin()) { break; }
-        }
-
-        // volume is failed, but we want restore to take place
-        int i = 0;
-        bool success = false;
-        while(i < cnt) {
-            if (!_restore_mgr->isRestored(first_page + i)) {
-                DBG(<< "Page read triggering restore of " << first_page + i);
-                bool reqSucceeded = false;
-                if(cnt == 1) {
-                    reqSucceeded = _restore_mgr->requestRestore(first_page + i, buf);
-                }
-                else {
-                    reqSucceeded = _restore_mgr->requestRestore(first_page + i, NULL);
-                }
-                success = _restore_mgr->waitUntilRestored(first_page + i);
-                if (!success) { break; }
-                w_assert1(_restore_mgr->isRestored(first_page));
-                if (reqSucceeded) {
-                    // page is loaded in buffer pool already
-                    w_assert1(buf->pid == first_page + i);
-                    if (_log_page_reads) {
-                        Logger::log_sys<page_read_log>(first_page + i, 1);
-                    }
-                    _restore_mgr->unpin();
-                    return RCOK;
-                }
-            }
-            i++;
-        }
-        _restore_mgr->unpin();
-        if (success) { break; }
-        else { check_restore_finished(); }
-    }
 
     w_assert1(cnt > 0);
     size_t offset = size_t(first_page) * sizeof(generic_page);
@@ -583,6 +390,9 @@ rc_t vol_t::read_backup(PageID first, size_t count, void* buf)
 
 rc_t vol_t::take_backup(string path, bool flushArchive)
 {
+    // CS TODO -- use new RestoreCoordinator!
+    return RC(eNOTIMPLEMENTED);
+
     // Open old backup file, if available
     bool useBackup = false;
     {
@@ -598,12 +408,7 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
         CHECK_ERRNO(fd);
         _backup_write_fd = fd;
 
-        useBackup = _backups.size() > 0;
-
-        if (useBackup && _backup_fd < 0) {
-            // no ongoing restore -- we must open old backup ourselves
-            open_backup();
-        }
+        useBackup = open_backup();
     }
 
     // No need to hold latch here -- mutual exclusion is guaranteed because
@@ -613,20 +418,21 @@ rc_t vol_t::take_backup(string path, bool flushArchive)
     lsn_t backupLSN = ss_m::logArchiver->getIndex()->getLastLSN();
     DBG1(<< "Taking backup until LSN " << backupLSN);
 
-    // Instantiate special restore manager for taking backup
-    RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getIndex().get(),
-            this, useBackup, true /* takeBackup */);
+    // CS TODO -- use new RestoreCoordinator!
+    // // Instantiate special restore manager for taking backup
+    // RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getIndex().get(),
+    //         this, useBackup, true /* takeBackup */);
 
-    restore.setInstant(false);
-    if (flushArchive) {
-        lsn_t currLSN = smlevel_0::log->durable_lsn();
-        restore.setFailureLSN(currLSN);
-        DBGTHRD(<< "Taking sharp backup until " << currLSN);
-        backupLSN = currLSN;
-    }
+    // restore.setInstant(false);
+    // if (flushArchive) {
+    //     lsn_t currLSN = smlevel_0::log->durable_lsn();
+    //     restore.setFailureLSN(currLSN);
+    //     DBGTHRD(<< "Taking sharp backup until " << currLSN);
+    //     backupLSN = currLSN;
+    // }
 
-    restore.start();
-    restore.shutdown();
+    // restore.start();
+    // restore.shutdown();
     // TODO -- do we have to catch errors from restore thread?
 
     // Write volume header and metadata to new backup
@@ -673,57 +479,11 @@ rc_t vol_t::write_backup(PageID first, size_t count, void* buf)
  *  of the volume.
  *
  *********************************************************************/
-rc_t vol_t::write_many_pages(PageID first_page, const generic_page* const buf, int cnt,
-        bool ignoreRestore)
+rc_t vol_t::write_many_pages(PageID first_page, const generic_page* const buf, int cnt)
 {
     if (_readonly) {
         // Write elision!
         return RCOK;
-    }
-
-    /** CS: If volume has failed, writes are suspended until the area being
-     * written to is fully restored. This is required to avoid newer versions
-     * of a page (which are written from the buffer pool with this method call)
-     * being overwritten by older restored versions. This situation could lead
-     * to lost updates.
-     *
-     * During restore, the cleaner should ignore the failed volume, meaning
-     * that its dirty pages should remain in the buffer pool. A better design
-     * would be to either perform "attepmted" writes, i.e., returning some kind
-     * of "not succeeded" message in this method; or integrate the cleaner with
-     * the restore manager. Since we don't expect high transaction trhoughput
-     * during restore (unless we have dozens of mounted, working volumes) and
-     * typical workloads maintain a low dirty page ratio, this is not a concern
-     * for now.
-     */
-    // For small buffer pools, the sytem can get stuck because of eviction waiting
-    // for restore waiting for eviction.
-    //
-    // while (is_failed() && !ignoreRestore) {
-    //     w_assert1(_restore_mgr);
-
-    //     { // pin avoids restore mgr being destructed while we access it
-    //         spinlock_read_critical_section cs(&_mutex);
-    //         if (!_restore_mgr->pin()) { break; }
-    //     }
-
-    //     // For each segment involved in this bulk write, request and wait for
-    //     // it to be restored. The order is irrelevant, since we have to wait
-    //     // for all segments anyway.
-    //     int i = 0;
-    //     while (i < cnt) {
-    //         _restore_mgr->requestRestore(pnum + i);
-    //         _restore_mgr->waitUntilRestored(pnum + i);
-    //         i += _restore_mgr->getSegmentSize();
-    //     }
-
-    //     _restore_mgr->unpin();
-    //     check_restore_finished();
-    //     break;
-    // }
-
-    if (_failed && !ignoreRestore) {
-        check_restore_finished();
     }
 
     w_assert1(cnt > 0);

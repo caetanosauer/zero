@@ -13,7 +13,6 @@
 
 class alloc_cache_t;
 class stnode_cache_t;
-class RestoreMgr;
 class sm_options;
 class chkpt_t;
 
@@ -23,17 +22,12 @@ public:
     vol_t(const sm_options&);
     virtual ~vol_t();
 
-    void finish_restore();
     void shutdown();
 
     size_t      num_used_pages() const;
 
-    size_t  get_num_restored_pages() const;
-    size_t  get_num_to_restore_pages() const;
-
     alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}
     stnode_cache_t*          get_stnode_cache() {return _stnode_cache;}
-
 
     /**
      *
@@ -46,8 +40,7 @@ public:
     rc_t                write_many_pages(
         PageID             first_page,
         const generic_page* buf,        //caller must align this buffer
-        int                 cnt,
-        bool ignoreRestore = false);
+        int                 cnt);
 
     rc_t write_page(PageID page, generic_page* buf) {
         return write_many_pages(page, buf, 1);
@@ -61,8 +54,7 @@ public:
     rc_t                read_many_pages(
         PageID             first_page,
         generic_page* const buf,        //caller must align this buffer
-        int                 cnt,
-        bool ignoreRestore = false);
+        int                 cnt);
 
     rc_t read_backup(PageID first, size_t count, void* buf);
     rc_t write_backup(PageID first, size_t count, void* buf);
@@ -106,10 +98,6 @@ public:
 
     rc_t            create_store(PageID&, StoreID&);
 
-    /** Mark device as failed and kick off Restore */
-    rc_t            mark_failed(bool evict = false, bool redo = false,
-            PageID lastUsedPID = 0);
-
     lsn_t get_backup_lsn();
 
     /** Turn on write elision (i.e., ignore all writes from now on) */
@@ -122,15 +110,7 @@ public:
     /** Take a backup on the given file path. */
     rc_t take_backup(string path, bool forceArchive = false);
 
-    bool is_failed() const
-    {
-        spinlock_read_critical_section cs(&_mutex);
-        return _failed;
-    }
-
     unsigned num_backups() const;
-
-    bool check_restore_finished();
 
     /** Return largest PID allocated for this volume yet **/
     PageID get_last_allocated_pid() const;
@@ -154,9 +134,6 @@ private:
     alloc_cache_t*   _alloc_cache;
     stnode_cache_t*  _stnode_cache;
 
-    /** Set to simulate a failed device for Restore **/
-    bool             _failed;
-
     /** Writes are ignored and old page versions are kept.  This means that
      * clean status on buffer pool is invalid, and thus single-page recovery is
      * required when reading page back.  Due to a current bug on the page
@@ -166,9 +143,6 @@ private:
     bool             _readonly;
 
     bool _no_db_mode;
-
-    /** Restore Manager is activated when volume has failed */
-    RestoreMgr*      _restore_mgr;
 
     /** Paths to backup files, added with add_backup() */
     std::vector<string> _backups;

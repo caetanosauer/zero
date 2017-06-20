@@ -779,20 +779,6 @@ bool ShoreEnv::has_log_analysis_finished()
     return hasFinished;
 }
 
-size_t ShoreEnv::get_total_pages_to_restore()
-{
-  vol_t* vol = ss_m::vol;
-  w_assert0(vol);
-  return vol->get_num_to_restore_pages();
-}
-
-size_t ShoreEnv::get_num_restored_pages()
-{
-  vol_t* vol = ss_m::vol;
-  w_assert0(vol);
-  return vol->get_num_restored_pages();
-}
-
 void ShoreEnv::wait_for_warmup()
 {
     while (true) {

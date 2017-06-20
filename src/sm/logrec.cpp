@@ -792,14 +792,6 @@ template <class PagePtr>
 void restore_end_log::redo(PagePtr)
 {
     return; // CS TODO: disabled for now
-
-    vol_t* volume = smlevel_0::vol;
-    // volume must be mounted and failed
-    w_assert0(volume && volume->is_failed());
-
-    // CS TODO: fix this
-    // bool finished = volume->check_restore_finished(true /* redo */);
-    // w_assert0(finished);
 }
 
 void restore_segment_log::construct(uint32_t segment)
