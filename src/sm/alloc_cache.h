@@ -59,7 +59,7 @@ public:
 
     lsn_t get_page_lsn(PageID pid);
 
-    static const size_t extent_size;
+    static constexpr size_t extent_size = alloc_page::bits_held;
 
     static bool is_alloc_pid(PageID pid) { return pid % extent_size == 0; }
 

@@ -41,8 +41,8 @@ public:
      * redundant, as it refers to the alloc page itself. It is always set to
      * one.
      */
-    static const int bitmapsize = sizeof(generic_page) / 2;
-    static const int bits_held = bitmapsize * 8;
+    static constexpr int bitmapsize = sizeof(generic_page) / 2;
+    static constexpr int bits_held = bitmapsize * 8;
     uint8_t bitmap[bitmapsize];
 
     // Fill second half of the page with char array (unused part). This is

@@ -10,8 +10,6 @@
 #include "smthread.h"
 #include "xct_logger.h"
 
-const size_t alloc_cache_t::extent_size = alloc_page::bits_held;
-
 alloc_cache_t::alloc_cache_t(stnode_cache_t& stcache, bool virgin, bool clustered)
     : stcache(stcache)
 {
