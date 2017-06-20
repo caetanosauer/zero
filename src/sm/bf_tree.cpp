@@ -503,7 +503,6 @@ void bf_tree_m::unset_media_failure()
 {
     _media_failure_pid = 0;
     _restore_coord = nullptr;
-    _background_restorer->stop();
     _background_restorer = nullptr;
     Logger::log_sys<restore_end_log>();
     smlevel_0::vol->close_backup();
