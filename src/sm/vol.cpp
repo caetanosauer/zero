@@ -349,7 +349,7 @@ rc_t vol_t::read_many_pages(PageID first_page, generic_page* const buf, int cnt)
     return RCOK;
 }
 
-rc_t vol_t::read_backup(PageID first, size_t count, void* buf)
+void vol_t::read_backup(PageID first, size_t count, void* buf)
 {
     if (_backup_fd < 0) {
         W_FATAL_MSG(eINTERNAL,
@@ -357,9 +357,7 @@ rc_t vol_t::read_backup(PageID first, size_t count, void* buf)
     }
 
     memset(buf, 0, sizeof(generic_page) * count);
-    if (first >= _backup_pages) {
-        return RCOK;
-    }
+    if (first >= _backup_pages) { return; }
 
     // adjust count to avoid short I/O
     if (first + count > _backup_pages) {
@@ -376,16 +374,6 @@ rc_t vol_t::read_backup(PageID first, size_t count, void* buf)
         // Actual short I/O only happens if we are not reading past last page
         w_assert0(first + count <= num_used_pages());
     }
-
-    // Here, unlike in read_page, virgin pages don't have to be zeroed, because
-    // backups guarantee that the checksum matches for all valid (non-virgin)
-    // pages. Thus a virgin page is actually *defined* as one for which the
-    // checksum does not match. If the page is actually corrupted, then the
-    // REDO logic will detect it, because the first log records replayed on
-    // virgin pages must incur a format and allocation. If it tries to replay
-    // any other kind of log record, then the page is corrupted.
-
-    return RCOK;
 }
 
 rc_t vol_t::take_backup(string path, bool flushArchive)

@@ -804,8 +804,8 @@ rc_t bf_tree_m::_read_page(PageID pid, bf_tree_cb_t& cb, bool from_backup)
     w_assert1(cb.latch().is_mine());
     auto page = get_page(&cb);
 
-    rc_t rc;
-    if (from_backup) { rc = smlevel_0::vol->read_backup(pid, 1, page); }
+    rc_t rc = RCOK;
+    if (from_backup) { smlevel_0::vol->read_backup(pid, 1, page); }
     else { rc = smlevel_0::vol->read_page(pid, page); }
     if (rc.is_error()) {
         _hashtable->remove(pid);

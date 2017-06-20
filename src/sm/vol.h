@@ -56,7 +56,7 @@ public:
         generic_page* const buf,        //caller must align this buffer
         int                 cnt);
 
-    rc_t read_backup(PageID first, size_t count, void* buf);
+    void read_backup(PageID first, size_t count, void* buf);
     rc_t write_backup(PageID first, size_t count, void* buf);
 
     /** Open backup file descriptor for restore or taking new backup */

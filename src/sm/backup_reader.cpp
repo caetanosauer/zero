@@ -46,7 +46,7 @@ char* BackupOnDemandReader::fix(unsigned segment, unsigned thread_id)
     // CS: TODO call getPidForSegment
     PageID offset = PageID(segment * segmentSize);
     char* buf = buffer + (thread_id * segmentSize * sizeof(generic_page));
-    W_COERCE(volume->read_backup(offset, segmentSize, buf));
+    volume->read_backup(offset, segmentSize, buf);
 
     // W_IFDEBUG1(fixedSegment = segment);
 
@@ -295,7 +295,7 @@ void BackupPrefetcher::run()
         }
 
         INC_TSTAT(restore_backup_reads);
-        W_COERCE(volume->read_backup(firstPage, segmentSize, readSlot));
+        volume->read_backup(firstPage, segmentSize, readSlot);
 
         {
             // Re-acquire mutex to mark slot as read, i.e., unfixed
