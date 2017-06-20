@@ -727,7 +727,7 @@ void add_backup_log::construct(const string& path, lsn_t backupLSN)
     set_size(sizeof(lsn_t) + path.length());
 }
 
-void evict_page_log::construct(PageID pid, bool was_dirty)
+void evict_page_log::construct(PageID pid, bool was_dirty, lsn_t page_lsn)
 {
     char* data = data_ssx();
     *(reinterpret_cast<PageID*>(data)) = pid;
@@ -735,6 +735,9 @@ void evict_page_log::construct(PageID pid, bool was_dirty)
 
     *(reinterpret_cast<bool*>(data)) = was_dirty;
     data += sizeof(bool);
+
+    *(reinterpret_cast<lsn_t*>(data)) = page_lsn;
+    data += sizeof(lsn_t);
 
     set_size(sizeof(data - data_ssx()));
 }
@@ -966,7 +969,9 @@ operator<<(ostream& o, logrec_t& l)
             {
                 PageID pid = *(reinterpret_cast<PageID*>(l.data_ssx()));
                 bool was_dirty = *(reinterpret_cast<bool*>(l.data_ssx() + sizeof(PageID)));
-                o << " pid: " << pid << (was_dirty ? " dirty" : " clean");
+                lsn_t page_lsn = *(reinterpret_cast<lsn_t*>(l.data_ssx() + sizeof(PageID) + sizeof(bool)));
+                o << " pid: " << pid << (was_dirty ? " dirty" : " clean") << " page_lsn: "
+                    << page_lsn;
                 break;
             }
         case logrec_t::t_fetch_page:

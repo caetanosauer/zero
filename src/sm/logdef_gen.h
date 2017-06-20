@@ -64,7 +64,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
     struct evict_page_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_evict_page;
-        void construct (PageID pid, bool was_dirty);
+        void construct (PageID pid, bool was_dirty, lsn_t page_lsn);
     };
 
     struct fetch_page_log : public logrec_t {

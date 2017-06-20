@@ -86,6 +86,8 @@ bool page_evictioner_base::evict_one(bf_idx victim)
         return false;
     }
 
+    lsn_t page_lsn = cb.get_page_lsn();
+
     // We're passed the point of no return: eviction must happen no mather what
 
     // Check if page needs to be flushed
@@ -98,7 +100,7 @@ bool page_evictioner_base::evict_one(bf_idx victim)
     w_assert1(cb.latch().is_mine());
 
     if (_log_evictions) {
-        Logger::log_sys<evict_page_log>(cb._pid, was_dirty);
+        Logger::log_sys<evict_page_log>(cb._pid, was_dirty, page_lsn);
     }
 
     if (_bufferpool->is_no_db_mode() || _bufferpool->is_media_failure(cb._pid)) {
