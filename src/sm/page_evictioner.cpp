@@ -86,7 +86,21 @@ bool page_evictioner_base::evict_one(bf_idx victim)
         return false;
     }
 
+    // When media failure is detected, all pages currently in buffer pool should be
+    // considered dirty. Since that's tricky to do without quiescing the system,
+    // we just detect those frames here and add to the dirty page table, so that
+    // single-page recovery takes care of bringing them to correct state after
+    // restore.
+    // bool media_failure = _bufferpool->is_media_failure() && !cb._check_recovery;
     lsn_t page_lsn = cb.get_page_lsn();
+    bool media_failure = _bufferpool->is_media_failure(cb._pid);
+    if (_bufferpool->is_no_db_mode() || cb.is_dirty() || media_failure) {
+        // CS TODO: apparently page LSN can be null for unallocated pages
+        // (i.e., "holes" in extents)
+        if (!page_lsn.is_null()) {
+            smlevel_0::recovery->add_dirty_page(cb._pid, page_lsn);
+        }
+    }
 
     // We're passed the point of no return: eviction must happen no mather what
 
@@ -101,15 +115,6 @@ bool page_evictioner_base::evict_one(bf_idx victim)
 
     if (_log_evictions) {
         Logger::log_sys<evict_page_log>(cb._pid, was_dirty, page_lsn);
-    }
-
-    if (_bufferpool->is_no_db_mode() || _bufferpool->is_media_failure(cb._pid)) {
-        // During media failure, unallocated pages (i.e., containing garbage
-        // data) might be fixed into this frame. We recognize that by a null
-        // page LSN
-        if (cb.get_page_lsn() != lsn_t::null) {
-            smlevel_0::recovery->add_dirty_page(cb._pid, cb.get_page_lsn());
-        }
     }
 
     // remove it from hashtable.
@@ -246,6 +251,8 @@ bf_idx page_evictioner_base::pick_victim()
                 || !cb._used
                 // ... pinned frames, i.e., someone required it not be evicted
                 || cb._pin_cnt != 0
+                // ... frames prefetched by restore but not yet restored
+                || cb.is_pinned_for_restore()
         )
         {
             cb.latch().latch_release();

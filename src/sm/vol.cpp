@@ -122,20 +122,13 @@ void vol_t::build_caches(bool truncate, chkpt_t* chkpt_info)
         sx_add_backup(chkpt_info->bkp_path, chkpt_info->bkp_lsn, true);
         ERROUT(<< "Added backup: " << chkpt_info->bkp_path);
     }
-
-    // kick out pre-failure restore
-    // (unless in nodb mode, where restore_segment log records are generated
-    // during buffer pool warmup)
-    if (!_no_db_mode && chkpt_info && chkpt_info->ongoing_restore) {
-        // CS TODO: must initialize RestoreCoordinator in bf_tree_m
-        mark_failed(false, true, chkpt_info->restore_page_cnt);
-        // _restore_mgr->markRestoredFromList(chkpt_info->restore_tab);
-        // _restore_mgr->start();
-    }
 }
 
-void vol_t::open_backup()
+bool vol_t::open_backup()
 {
+    bool useBackup = _backups.size() > 0;
+    if (!useBackup || _backup_fd >= 0) { return false; }
+
     // mutex held by caller -- no concurrent backup being added
     string backupFile = _backups.back();
     // Using direct I/O
@@ -152,6 +145,8 @@ void vol_t::open_backup()
     CHECK_ERRNO(ret);
     _backup_pages = (stat.st_size / sizeof(generic_page));
     w_assert0(stat.st_size % sizeof(generic_page) == 0);
+
+    return true;
 }
 
 lsn_t vol_t::get_backup_lsn()
@@ -316,6 +311,16 @@ void vol_t::finish_restore()
     }
 }
 
+void vol_t::close_backup()
+{
+    if (_backup_fd > 0) {
+        auto ret = close(_backup_fd);
+        CHECK_ERRNO(ret);
+        _backup_fd = -1;
+        _current_backup_lsn = lsn_t::null;
+    }
+}
+
 rc_t vol_t::alloc_a_page(PageID& shpid, StoreID stid)
 {
     if (!_cluster_stores) { stid = 0; }
@@ -442,7 +447,7 @@ void vol_t::read_vector(PageID first_pid, unsigned count,
     }
 
     size_t offset = size_t(first_pid) * sizeof(generic_page);
-    auto fd = from_backup ? _backup_fd : _fd;
+    auto fd = (from_backup && first_pid < _backup_pages) ? _backup_fd : _fd;
     int read_count = preadv(fd, &iov[0], count, offset);
     CHECK_ERRNO(read_count);
 }

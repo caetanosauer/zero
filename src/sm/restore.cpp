@@ -196,7 +196,11 @@ void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize, bool virg
     GenericPageIterator pbegin {first_pid, segmentSize, virgin_pages};
     GenericPageIterator pend;
 
-    smlevel_0::bf->prefetch_pages(first_pid, segmentSize);
+    if (smlevel_0::bf->is_media_failure(first_pid)) {
+        auto count = std::min(static_cast<PageID>(segmentSize),
+                smlevel_0::bf->get_media_failure_pid() - first_pid);
+        smlevel_0::bf->prefetch_pages(first_pid, count);
+    }
 
     // CS TODO: pass backupLSN rather than lsn_t::null
 #ifdef USE_MMAP
@@ -227,6 +231,8 @@ void LogReplayer::replay(LogScan logs, PageIter& pagesBegin, PageIter pagesEnd)
     PageID prev_pid = 0;
     unsigned replayed = 0;
 
+    w_assert1(page != pagesEnd);
+
     while (logs->next(lr)) {
         auto pid = lr->pid();
         w_assert0(pid > prev_pid || (pid == prev_pid && lr->lsn() > prev_lsn));
@@ -234,20 +240,43 @@ void LogReplayer::replay(LogScan logs, PageIter& pagesBegin, PageIter pagesEnd)
         while (page != pagesEnd && page.current_pid() < pid) {
             ++page;
         }
-        if (page == pagesEnd) { return; }
+        if (page == pagesEnd) { break; }
+
+        if (page.current_pid() > pid) {
+            /*
+             * This icky situation occurs because of how our restore mechanism
+             * interacts with page coupling (see comments in
+             * GenericPageIterator::fix_current).  It can only happen if the
+             * parent page has been fixed with a hit in SH mode (with latch
+             * coupling) and the fix  of the child is a miss which incurs
+             * restoration of its segment, which happens to be the same segment
+             * of the parent.  In that case, we are not able to fix the parent
+             * page for restore, but because it is already fixed, it does not
+             * require any recovery (i.e., it already is in its most recent
+             * consistent state). Thus, we just skip to the next page here.
+             */
+            continue;
+        }
 
         auto p = *page;
 
-        if (!fixable.is_fixed() || fixable.pid() != pid) {
-            // Set PID and null LSN manually on virgin pages
-            if (p->pid != pid) {
-                p->pid = pid;
-                p->lsn = lsn_t::null;
-            }
-            fixable.setup_for_restore(p);
+        fixable.setup_for_restore(p);
+        if (p->pid != pid) {
+            // Needed if we read garbage (see comment below)
+            // CS TODO: this is basically only required to replay a btree_split correctly
+            p->pid = pid;
+            w_assert0(lr->has_page_img(pid) && fixable.is_pinned_for_restore());
         }
 
-        if (lr->lsn() > fixable.get_page_lsn()) {
+        /*
+         * Comparing LSNs alone is not enough, because we may prefetch garbage
+         * pages from the backup, in which case fixable.lsn() might be greater
+         * than lr->lsn() even if the page needs recovery. That's why we also
+         * check if the check_recovery flag is set in the buffer pool; this
+         * flag is always set when a page is fetched by the page iterator or
+         * by a prefetch call.
+         */
+        if (lr->lsn() > fixable.lsn() || (lr->has_page_img(pid) && fixable.is_pinned_for_restore())) {
             w_assert0(lr->page_prev_lsn() == lsn_t::null ||
                     lr->page_prev_lsn() == p->lsn || lr->has_page_img(pid));
 
@@ -255,6 +284,7 @@ void LogReplayer::replay(LogScan logs, PageIter& pagesBegin, PageIter pagesEnd)
         }
 
         w_assert0(p->pid == pid);
+        w_assert0(p->lsn != lsn_t::null);
         prev_pid = pid;
         prev_lsn = lr->lsn();
 

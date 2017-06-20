@@ -244,7 +244,12 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
 void bf_tree_m::shutdown()
 {
-    // evictioner calls cleaner, so it must be destroyed before!
+    // Order in which threads are destroyed is very important!
+    if (_background_restorer) {
+        _background_restorer->stop();
+        _background_restorer = nullptr;
+    }
+
     if(_async_eviction) {
         _evictioner->stop();
         _evictioner = nullptr;
@@ -412,11 +417,12 @@ void bf_tree_m::post_init()
 {
     if (_no_db_mode && _batch_warmup) {
         constexpr bool virgin_pages = true;
+    constexpr bool start_locked = false;
         auto vol_pages = smlevel_0::vol->num_used_pages();
         auto segcount = vol_pages  / _batch_segment_size
             + (vol_pages % _batch_segment_size ? 1 : 0);
-        _restore_coord = std::make_shared<RestoreCoord>
-            (_batch_segment_size, segcount, SegmentRestorer::bf_restore, virgin_pages);
+        _restore_coord = std::make_shared<RestoreCoord> (_batch_segment_size,
+                segcount, SegmentRestorer::bf_restore, virgin_pages, start_locked);
     }
 
     if(_cleaner_decoupled) {
@@ -435,21 +441,23 @@ void bf_tree_m::recover_if_needed(bf_tree_cb_t& cb, generic_page* page, bool onl
     if (!cb._check_recovery || !smlevel_0::recovery) { return; }
 
     w_assert1(cb.latch().is_mine());
+    w_assert1(cb.get_page_lsn() == page->lsn);
 
-    // CB should be correctly initialized with page ID
     auto pid = cb._pid;
-    page->pid = pid;
-
     auto expected_lsn = smlevel_0::recovery->get_dirty_page_emlsn(pid);
     if (!only_if_dirty || (!expected_lsn.is_null() && page->lsn < expected_lsn)) {
         btree_page_h p;
         p.fix_nonbufferpool_page(page);
         constexpr bool use_archive = true;
+        // CS TODO: this is required to replay a btree_split correctly
+        page->pid = pid;
         _localSprIter.open(pid, page->lsn, expected_lsn, use_archive);
         _localSprIter.apply(p);
         w_assert0(page->lsn >= expected_lsn);
     }
 
+    w_assert0(page->pid == pid);
+    w_assert0(cb._pid == pid);
     w_assert0(page->lsn > lsn_t::null);
     cb.set_check_recovery(false);
 
@@ -460,14 +468,45 @@ void bf_tree_m::recover_if_needed(bf_tree_cb_t& cb, generic_page* page, bool onl
 
 void bf_tree_m::set_media_failure()
 {
-    constexpr bool virgin_pages = false;
+    w_assert0(smlevel_0::logArchiver);
+
     auto vol_pages = smlevel_0::vol->num_used_pages();
+
+    constexpr bool virgin_pages = false;
+    constexpr bool start_locked = true;
     auto segcount = vol_pages  / _batch_segment_size
         + (vol_pages % _batch_segment_size ? 1 : 0);
-    _restore_coord = std::make_shared<RestoreCoord>
-        (_batch_segment_size, segcount, SegmentRestorer::bf_restore, virgin_pages);
+    _restore_coord = std::make_shared<RestoreCoord> (_batch_segment_size,
+            segcount, SegmentRestorer::bf_restore, virgin_pages, start_locked);
+
+    smlevel_0::vol->open_backup();
 
     _media_failure_pid = vol_pages;
+
+    // Make sure log is archived until failureLSN
+    lsn_t failureLSN = Logger::log_sys<restore_begin_log>(vol_pages);
+    ERROUT(<< "Media failure injected! Waiting for log archiver to reach LSN "
+            << failureLSN);
+    stopwatch_t timer;
+    smlevel_0::logArchiver->archiveUntilLSN(failureLSN);
+    ERROUT(<< "Failure LSN reached in " << timer.time() << " seconds");
+
+    _restore_coord->start();
+
+    _background_restorer = std::make_shared<BgRestorer>
+        (_restore_coord, [this] { unset_media_failure(); });
+    _background_restorer->fork();
+    _background_restorer->wakeup();
+}
+
+void bf_tree_m::unset_media_failure()
+{
+    _media_failure_pid = 0;
+    _restore_coord = nullptr;
+    _background_restorer->stop();
+    _background_restorer = nullptr;
+    Logger::log_sys<restore_end_log>();
+    smlevel_0::vol->close_backup();
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////
@@ -524,17 +563,16 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
     }
 
     // Wait for log replay before attempting to fix anything
-    //->  nodb mode only!
-    bool used_restore = false;
-    if (do_recovery && !virgin_page && _restore_coord &&
-            (pid < _media_failure_pid || !_warmup_done))
+    //->  nodb mode only! (for instant restore see below)
+    bool nodb_used_restore = false;
+    if (_no_db_mode && do_recovery && !virgin_page && _restore_coord && !_warmup_done)
     {
         // copy into local variable to avoid race condition with setting member to null
         timer.reset();
         auto restore = _restore_coord;
         if (restore) {
             restore->fetch(pid);
-            used_restore = true;
+            nodb_used_restore = true;
         }
         ADD_TSTAT(bf_batch_wait_time, timer.time_us());
     }
@@ -553,10 +591,29 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             }
         }
 
+        // The result of calling this function determines if we'll behave
+        // in normal mode or in failure mode below, and it does that in an
+        // atomic way, i.e., we can't switch from one mode to another in
+        // the middle of a fix. Note that we can operate in normal mode
+        // even if a failure occurred and we missed it here, because vol_t
+        // still operates normally even during the failure (remember, we
+        // just simulate a media failure)
+        bool media_failure = is_media_failure(pid);
+
         if (idx == 0)
         {
             if (only_if_hit) {
                 return RC(stINUSE);
+            }
+
+            // Wait for instant restore to restore this segment
+            if (do_recovery && !virgin_page && media_failure)
+            {
+                // copy into local variable to avoid race condition with setting member to null
+                timer.reset();
+                auto restore = _restore_coord;
+                if (restore) { restore->fetch(pid); }
+                ADD_TSTAT(bf_batch_wait_time, timer.time_us());
             }
 
             // STEP 1) Grab a free frame to read into
@@ -599,21 +656,10 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                     emlsn = parent_h.get_emlsn_general(recordid);
                 }
 
-                rc_t read_rc;
-                if (pid < _media_failure_pid) {
-                    read_rc = smlevel_0::vol->read_backup(pid, 1, page);
-                }
-                else {
-                    read_rc = smlevel_0::vol->read_page(pid, page);
-                }
-                if (read_rc.is_error())
-                {
-                    _hashtable->remove(pid);
-                    cb.latch().latch_release();
-                    _add_free_block(idx);
-                    return read_rc;
-                }
+                bool from_backup = media_failure && !do_recovery;
+                W_DO(_read_page(pid, cb, from_backup));
                 cb.init(pid, page->lsn);
+                if (from_backup) { cb.pin_for_restore(); }
             }
             else {
                 // initialize contents of virgin page
@@ -640,6 +686,16 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             // Page index is registered in hash table
             bf_tree_cb_t &cb = get_cb(idx);
 
+            // Wait for instant restore to restore this segment
+            if (do_recovery && cb.is_pinned_for_restore() && media_failure)
+            {
+                // copy into local variable to avoid race condition with setting member to null
+                timer.reset();
+                auto restore = _restore_coord;
+                if (restore) { restore->fetch(pid); }
+                ADD_TSTAT(bf_batch_wait_time, timer.time_us());
+            }
+
             // Page is registered in hash table and it is not an in_doubt page,
             // meaning the actual page is in buffer pool already
 
@@ -647,7 +703,13 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             W_DO(cb.latch().latch_acquire(temp_mode, conditional ?
                         timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
 
-            if (!cb.is_in_use() || cb._pid != pid) {
+            // This can happen with instant restore
+            bool check_recovery_changed = cb._check_recovery && temp_mode == LATCH_SH;
+            bool wait_for_restore = cb.is_pinned_for_restore() && do_recovery;
+
+            if (!cb.is_in_use() || cb._pid != pid || check_recovery_changed
+                    || wait_for_restore)
+            {
                 // Page was evicted between hash table probe and latching
                 DBG(<< "Page evicted right before latching. Retrying.");
                 cb.latch().latch_release();
@@ -663,6 +725,8 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             page = &(_buffer[idx]);
 
             w_assert1(cb.latch().held_by_me());
+            w_assert1(!do_recovery || !cb.is_pinned_for_restore());
+            w_assert1(!cb._check_recovery || cb.latch().is_mine());
             DBG(<< "Fixed page " << pid << " (hit) to frame " << idx);
         }
 
@@ -673,9 +737,12 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
         check_warmup_done();
 
         auto& cb = get_cb(idx);
+        // w_assert1(cb._pid == pid);
+        // w_assert1(page->pid == pid);
+        // w_assert1(page->lsn == cb.get_page_lsn());
+
         if (do_recovery) {
-            const bool only_if_dirty = (!_no_db_mode || used_restore) &&
-                pid >= _media_failure_pid;
+            const bool only_if_dirty = !nodb_used_restore;
             if (virgin_page) { cb.set_check_recovery(false); }
             else { recover_if_needed(cb, page, only_if_dirty); }
         }
@@ -732,6 +799,22 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
     }
 }
 
+rc_t bf_tree_m::_read_page(PageID pid, bf_tree_cb_t& cb, bool from_backup)
+{
+    w_assert1(cb.latch().is_mine());
+    auto page = get_page(&cb);
+
+    rc_t rc;
+    if (from_backup) { rc = smlevel_0::vol->read_backup(pid, 1, page); }
+    else { rc = smlevel_0::vol->read_page(pid, page); }
+    if (rc.is_error()) {
+        _hashtable->remove(pid);
+        cb.latch().latch_release();
+        _add_free_block(get_idx(&cb));
+    }
+    return rc;
+}
+
 void bf_tree_m::fuzzy_checkpoint(chkpt_t& chkpt) const
 {
     if (_no_db_mode) { return; }
@@ -774,12 +857,12 @@ void bf_tree_m::prefetch_pages(PageID first, unsigned count)
             else { break; }
         }
         frames[i] = get_page(idx);
-        // ::memset(frames[i], 0, sizeof(generic_page));
-        // frames[i]->pid = first + i;
     }
 
+    bool media_failure = is_media_failure();
+
     // Then read into them using iovec
-    smlevel_0::vol->read_vector(first, count, frames, is_media_failure());
+    smlevel_0::vol->read_vector(first, count, frames, media_failure);
 
     // Finally, add the frames to the hash table if not already there and
     // initialize the control blocks
@@ -794,7 +877,9 @@ void bf_tree_m::prefetch_pages(PageID first, unsigned count)
 
         if (registered) {
             cb.init(pid, frames[i]->lsn);
-            cb.set_check_recovery(true);
+            // cb.set_check_recovery(true);
+
+            if (media_failure) { cb.pin_for_restore(); }
         }
         else { _add_free_block(idx); }
 
@@ -1237,7 +1322,7 @@ w_rc_t bf_tree_m::fix_root (generic_page*& page, StoreID store,
     w_assert1(_is_valid_idx(idx));
     w_assert1(_is_active_idx(idx));
     w_assert1(get_cb(idx)._used);
-    w_assert1(!get_cb(idx)._check_recovery);
+    // w_assert1(!get_cb(idx)._check_recovery); // assertion fails with instant restore!
     w_assert1(get_cb(idx)._pin_cnt >= 0);
     w_assert1(get_cb(idx).latch().held_by_me());
 
@@ -1321,7 +1406,7 @@ void bf_tree_m::set_page_lsn(generic_page* p, lsn_t lsn)
     bf_tree_cb_t& cb = get_cb(idx);
     w_assert1(cb.latch().is_mine());
     w_assert1(cb.latch().mode() == LATCH_EX);
-    w_assert1(cb.get_page_lsn() <= lsn);
+    w_assert1(cb.is_pinned_for_restore() || cb.get_page_lsn() <= lsn);
     cb.set_page_lsn(lsn);
 }
 

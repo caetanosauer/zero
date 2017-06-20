@@ -315,7 +315,9 @@ public:
     void fuzzy_checkpoint(chkpt_t& chkpt) const;
 
     void set_media_failure();
+    void unset_media_failure();
 
+    PageID get_media_failure_pid() { return _media_failure_pid; }
     bool is_media_failure() { return _media_failure_pid > 0; }
     bool is_media_failure(PageID pid) { return _media_failure_pid > 0 &&
         pid < _media_failure_pid; }
@@ -386,6 +388,9 @@ private:
 
     /// returns true iff idx is in the valid range.  for assertion.
     bool   _is_valid_idx (bf_idx idx) const;
+
+    /// Called by fix to read a page from the database (or the backup)
+    rc_t _read_page(PageID pid, bf_tree_cb_t& cb, bool from_backup = false);
 
     /**
      * returns true if idx is in the valid range and also the block is used.  for assertion.
@@ -505,6 +510,9 @@ private:
     using RestoreCoord = RestoreCoordinator<
         std::function<decltype(SegmentRestorer::bf_restore)>>;
     std::shared_ptr<RestoreCoord> _restore_coord;
+
+    using BgRestorer = BackgroundRestorer<RestoreCoord, std::function<void(void)>>;
+    std::shared_ptr<BgRestorer> _background_restorer;
 };
 
 /**
@@ -566,20 +574,26 @@ class GenericPageIterator
 public:
     generic_page* operator*()
     {
-        if (!_current || _current_pid >= _first + _count) { return nullptr; }
+        if (!_current || _current_pid >= end_pid()) { return nullptr; }
         return _current;
     }
 
+    /*
+     * WARNING: this operator may skip a PID (e.g., jump from 42 to 44) if
+     * fix_current() returns false! I couldn't find a quick, elegant way to
+     * work around this problem yet.
+     */
     GenericPageIterator& operator++()
     {
-        if (!_current) { return *this; }
-
         unfix_current();
 
-        _current_pid++;
-        if (_current_pid >= _first + _count) { return *this; }
+        bool success = false;
+        while (!success) {
+            _current_pid++;
+            if (_current_pid >= end_pid()) { return *this; }
+            success = fix_current();
+        }
 
-        fix_current();
         return *this;
     }
 
@@ -596,8 +610,8 @@ public:
         fix_depth(0)
     {
         if (count > 0) {
-            _current_pid = _first;
-            fix_current();
+            _current_pid = _first - 1;
+            operator++();
         }
     }
 
@@ -606,8 +620,8 @@ public:
         _virgin(other._virgin), _current(nullptr), fix_depth(0)
     {
         if (_count > 0) {
-            _current_pid = _first;
-            fix_current();
+            _current_pid = _first - 1;
+            operator++();
         }
     }
 
@@ -646,6 +660,9 @@ public:
 
     PageID current_pid() const { return _current_pid; }
 
+    PageID begin_pid() const { return _first; }
+    PageID end_pid() const { return _first + _count; }
+
 private:
     PageID _first;
     PageID _count;
@@ -656,21 +673,40 @@ private:
 
     int fix_depth;
 
-    void fix_current()
+    bool fix_current()
     {
         w_assert1(fix_depth == 0);
-        constexpr bool conditional = false;
+        constexpr bool conditional = true;
         constexpr bool do_recovery = false;
         constexpr bool only_if_hit = false;
-        W_COERCE(smlevel_0::bf->fix(nullptr, _current, _current_pid, LATCH_EX,
-                conditional, _virgin, only_if_hit, do_recovery));
+        auto rc = smlevel_0::bf->fix(nullptr, _current, _current_pid, LATCH_EX,
+                conditional, _virgin, only_if_hit, do_recovery);
+
+        /*
+         * The latch is already held, either by this thread (in SH mode, which
+         * results in stINUSE to avoid deadlock) or by another thread. In that
+         * case, we assume that if the frame is latched, the thread that holds
+         * that latch already made sure that the page is consistent, and thus
+         * log replay is not required.
+         */
+        if (rc.err_num() == stINUSE || rc.err_num() == stTIMEOUT) {
+            ERROUT(<< "failed to fix " << _current_pid);
+            _current = nullptr;
+            return false;
+        }
+        W_COERCE(rc);
+
         fix_depth++;
+
+        return true;
     }
 
     void unfix_current()
     {
         if (_current) {
             w_assert1(fix_depth == 1);
+            smlevel_0::bf->unpin_for_restore(_current);
+            smlevel_0::bf->set_check_recovery(_current, true);
             smlevel_0::bf->unfix(_current);
             _current = nullptr;
             fix_depth--;

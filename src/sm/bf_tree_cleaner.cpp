@@ -220,11 +220,14 @@ bool bf_tree_cleaner::latch_and_copy(PageID pid, bf_idx idx, size_t wpos)
 
     fixable_page_h page;
     page.fix_nonbufferpool_page(const_cast<generic_page*>(&page_buffer[idx]));
-    if (page.pid() != pid || !cb.is_in_use()) {
+    if (cb.is_pinned_for_restore() || page.pid() != pid || !cb.is_in_use()) {
         // New page was loaded in the frame -- skip it
         cb.latch().latch_release();
         return false;
     }
+
+    // Pages can be cleaned with the check_recovery flag as long as their
+    // expected LSN is registered in the dirty page table by the evictioner
 
     // CS TODO: get rid of this buggy and ugly deletion mechanism
     if (page.is_to_be_deleted()) {
@@ -316,7 +319,9 @@ void bf_tree_cleaner::collect_candidates()
         if (!cb.pin()) { continue; }
 
         // If page is not dirty or not in use, no need to flush
-        if (!cb.is_dirty() || !cb._used || cb.get_rec_lsn().is_null()) {
+        if (!cb.is_dirty() || !cb._used || cb.get_rec_lsn().is_null() ||
+                cb.is_pinned_for_restore())
+        {
             cb.unpin();
             continue;
         }

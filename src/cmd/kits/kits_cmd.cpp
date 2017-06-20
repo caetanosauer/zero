@@ -64,10 +64,6 @@ public:
     {
         ::sleep(delay);
 
-//         vol_t* vol = smlevel_0::vol;
-//         w_assert0(vol);
-//         vol->mark_failed();
-        smlevel_0::vol->mark_failed();
         smlevel_0::bf->set_media_failure();
 
         // disable eager archiving
@@ -417,13 +413,10 @@ void KitsCommand::doWork()
             lintel::atomic_thread_fence(lintel::memory_order_consume);
         }
 
-        vol_t* vol = smlevel_0::vol;
-        w_assert0(vol);
-
         // Now wait for device to be restored -- check every 1 second
-        while (vol->is_failed()) {
+        while (smlevel_0::bf->is_media_failure()) {
             sleep(1);
-            vol->check_restore_finished();
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
 

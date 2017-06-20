@@ -67,6 +67,10 @@ public:
     rc_t read_backup(PageID first, size_t count, void* buf);
     rc_t write_backup(PageID first, size_t count, void* buf);
 
+    /** Open backup file descriptor for restore or taking new backup */
+    bool open_backup();
+    void close_backup();
+
     /** Add a backup file to be used for restore */
     rc_t sx_add_backup(const string& path, lsn_t backupLSN, bool redo = false);
 
@@ -194,9 +198,6 @@ private:
 
     /** Whether to cluster pages of the same store in extents */
     bool _cluster_stores;
-
-    /** Open backup file descriptor for retore or taking new backup */
-    void open_backup();
 
 };
 

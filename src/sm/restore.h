@@ -3,7 +3,7 @@
 #ifndef RESTORE_H
 #define RESTORE_H
 
-#include "thread_wrapper.h"
+#include "worker_thread.h"
 #include "sm_base.h"
 #include "logarchive_scanner.h"
 
@@ -460,10 +460,14 @@ class RestoreCoordinator
 {
 public:
 
-    RestoreCoordinator(size_t segSize, size_t segCount, RestoreFunctor f, bool virgin_pages)
+    RestoreCoordinator(size_t segSize, size_t segCount, RestoreFunctor f,
+            bool virgin_pages, bool start_locked)
         : _segmentSize{segSize}, _bitmap{new RestoreBitmap {segCount}},
-        _restoreFunctor{f}, _virgin_pages{virgin_pages}
+        _restoreFunctor{f}, _virgin_pages{virgin_pages}, _start_locked(start_locked)
     {
+        if (_start_locked) {
+            _mutex.lock();
+        }
     }
 
     void fetch(PageID pid)
@@ -494,6 +498,47 @@ public:
         }
     }
 
+    bool tryBackgroundRestore(bool& done)
+    {
+        done = false;
+
+        // If no restore requests are pending, restore the first
+        // not-yet-restored segment.
+        if (!_waiting_table.empty()) { return false; }
+
+        std::unique_lock<std::mutex> lck {_mutex};
+        auto segment = _bitmap->get_first_unrestored();
+
+        if (segment == _bitmap->get_size()) {
+            // All segments restored
+            done = true;
+            return false;
+        }
+
+        auto ticket = getWaitingTicket(segment);
+
+        if (_bitmap->attempt_restore(segment)) {
+            lck.unlock();
+            doRestore(segment, ticket);
+            return true;
+        }
+
+        return false;
+    }
+
+    bool isPidRestored(PageID pid) const
+    {
+        auto segment = pid / _segmentSize;
+        return segment >= _bitmap->get_size() || _bitmap->is_replayed(segment);
+    }
+
+    void start()
+    {
+        if (_start_locked) {
+            _mutex.unlock();
+        }
+    }
+
 private:
     using Ticket = std::shared_ptr<std::condition_variable>;
 
@@ -503,7 +548,9 @@ private:
     std::unordered_map<unsigned, Ticket> _waiting_table;
     std::unique_ptr<RestoreBitmap> _bitmap;
     RestoreFunctor _restoreFunctor;
-    bool _virgin_pages;
+    const bool _virgin_pages;
+    // This is used to make threads wait for log archiver reach a certain LSN
+    const bool _start_locked;
 
     Ticket getWaitingTicket(unsigned segment)
     {
@@ -537,6 +584,44 @@ struct LogReplayer
 struct SegmentRestorer
 {
     static void bf_restore(unsigned segment, size_t segmentSize, bool virgin_pages);
+};
+
+/** Thread that restores untouched segments in the background with low priority */
+template <class Coordinator, class OnDoneCallback>
+class BackgroundRestorer : public worker_thread_t
+{
+public:
+    BackgroundRestorer(std::shared_ptr<Coordinator> coord, OnDoneCallback callback)
+        : _coord(coord), _notify_done(callback)
+    {
+    }
+
+    virtual void do_work()
+    {
+        constexpr int sleep_time = 5;
+        bool done = false;
+        bool restored_last = false;
+
+        while (true) {
+            if (!restored_last) {
+                std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
+            }
+            restored_last = _coord->tryBackgroundRestore(done);
+
+            if (done) {
+                _notify_done();
+                break;
+            }
+
+            if (should_exit()) { break; }
+        }
+
+        quit();
+    }
+
+private:
+    std::shared_ptr<Coordinator> _coord;
+    OnDoneCallback _notify_done;
 };
 
 inline unsigned RestoreMgr::getSegmentForPid(const PageID& pid)
