@@ -843,7 +843,7 @@ void bf_tree_m::fuzzy_checkpoint(chkpt_t& chkpt) const
 void bf_tree_m::prefetch_pages(PageID first, unsigned count)
 {
     std::vector<generic_page*> frames;
-    frames.reserve(count);
+    frames.resize(count);
 
     // First grab enough free frames to read into
     for (unsigned i = 0; i < count; i++) {

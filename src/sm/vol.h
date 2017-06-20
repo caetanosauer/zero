@@ -11,6 +11,7 @@
 #include <list>
 #include <stdlib.h>
 
+class backup_alloc_cache_t;
 class alloc_cache_t;
 class stnode_cache_t;
 class sm_options;
@@ -151,7 +152,7 @@ private:
     /** Currently opened backup (during restore only) */
     int _backup_fd;
     lsn_t _current_backup_lsn;
-    size_t _backup_pages;
+    unique_ptr<backup_alloc_cache_t> _backup_alloc_cache;
 
     /** Backup being currently taken */
     int _backup_write_fd;

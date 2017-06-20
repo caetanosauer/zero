@@ -17,6 +17,7 @@
 #include "sm_options.h"
 
 #include "alloc_cache.h"
+#include "backup_alloc_cache.h"
 #include "logarchiver.h"
 #include "restart.h"
 #include "xct_logger.h"
@@ -138,8 +139,10 @@ bool vol_t::open_backup()
     struct stat stat;
     auto ret = ::fstat(fd, &stat);
     CHECK_ERRNO(ret);
-    _backup_pages = (stat.st_size / sizeof(generic_page));
+    auto backup_pages = (stat.st_size / sizeof(generic_page));
     w_assert0(stat.st_size % sizeof(generic_page) == 0);
+
+    _backup_alloc_cache = std::make_unique<backup_alloc_cache_t>(backup_pages);
 
     return true;
 }
@@ -309,18 +312,38 @@ rc_t vol_t::read_page(PageID pnum, generic_page* const buf)
 void vol_t::read_vector(PageID first_pid, unsigned count,
         std::vector<generic_page*>& frames, bool from_backup)
 {
-    std::vector<struct iovec> iov;
-    iov.reserve(count);
+    w_assert1(frames.size() >= count);
 
+    // Backup reads must guarantee that unallocated pages are zeroed out
+    // (see comment in read_backup)
+    auto backup_pages = _backup_alloc_cache->get_end_pid();
+    if (from_backup && first_pid >= backup_pages) {
+        for (size_t i = 0; i < count; i++) {
+            memset(frames[i], 0, sizeof(generic_page));
+        }
+        return;
+    }
+
+    std::vector<struct iovec> iov;
+    iov.resize(count);
     for (unsigned i = 0; i < count; i++) {
         iov[i].iov_base = frames[i];
         iov[i].iov_len = sizeof(generic_page);
     }
 
     size_t offset = size_t(first_pid) * sizeof(generic_page);
-    auto fd = (from_backup && first_pid < _backup_pages) ? _backup_fd : _fd;
+    auto fd = from_backup ? _backup_fd : _fd;
     int read_count = preadv(fd, &iov[0], count, offset);
     CHECK_ERRNO(read_count);
+
+    if (from_backup) {
+        w_assert0(_backup_alloc_cache);
+        for (size_t i = 0; i < count; i++) {
+            if (!_backup_alloc_cache->is_allocated(first_pid + i)) {
+                memset(frames[i], 0, sizeof(generic_page));
+            }
+        }
+    }
 }
 
 /*********************************************************************
@@ -355,24 +378,40 @@ void vol_t::read_backup(PageID first, size_t count, void* buf)
         W_FATAL_MSG(eINTERNAL,
                 << "Cannot read from backup because it is not active");
     }
+    w_assert0(_backup_alloc_cache);
 
-    memset(buf, 0, sizeof(generic_page) * count);
-    if (first >= _backup_pages) { return; }
+    // Backup reads must guarantee that unallocated pages are zeroed out,
+    // otherwise restore will not work (I tried to make it work, but it was
+    // just too complicated -- this is much easier)
+    auto backup_pages = _backup_alloc_cache->get_end_pid();
+    if (first >= backup_pages) {
+        memset(buf, 0, sizeof(generic_page) * count);
+        return;
+    }
 
     // adjust count to avoid short I/O
-    if (first + count > _backup_pages) {
-        count = _backup_pages - first;
+    auto actual_count = count;
+    if (first + count > backup_pages) {
+        actual_count = backup_pages - first;
     }
 
     size_t offset = size_t(first) * sizeof(generic_page);
-    int read_count = pread(_backup_fd, (char *) buf, count * sizeof(generic_page), offset);
+    size_t bytes = actual_count * sizeof(generic_page);
+    int read_count = pread(_backup_fd, buf, bytes, offset);
     CHECK_ERRNO(read_count);
 
     // Short I/O is still possible because backup is only taken until last used
     // page, i.e., the file may be smaller than the total quota.
-    if (read_count < (int) count) {
+    if (read_count < (int) actual_count) {
         // Actual short I/O only happens if we are not reading past last page
         w_assert0(first + count <= num_used_pages());
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        if (!_backup_alloc_cache->is_allocated(first + i)) {
+            void* addr = &(reinterpret_cast<generic_page*>(buf)[i]);
+            memset(addr, 0, sizeof(generic_page));
+        }
     }
 }
 
