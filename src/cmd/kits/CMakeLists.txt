@@ -52,8 +52,4 @@ set(kits_SRCS
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/shore.conf
         ${CMAKE_CURRENT_BINARY_DIR}/../shore.conf COPYONLY)
 
-add_subdirectory(experiments)
-
 add_library (kits ${kits_SRCS})
-
-target_link_libraries(kits experiments)
