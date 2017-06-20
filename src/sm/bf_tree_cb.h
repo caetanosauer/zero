@@ -78,6 +78,7 @@ struct bf_tree_cb_t {
         _pin_cnt = 0;
         _pid = pid;
         _swizzled = false;
+        _pinned_for_restore = false;
         _check_recovery = false;
         _ref_count = 0;
         _ref_count_ex = 0;
@@ -122,7 +123,12 @@ struct bf_tree_cb_t {
     /// Reference count incremented only by X-latching
     uint16_t _ref_count_ex; // +2 -> 12
 
-    uint16_t _fill14; // +2 -> 14
+    uint8_t _fill13; // +1 -> 13
+
+    std::atomic<bool> _pinned_for_restore; // +1 -> 14
+    void pin_for_restore() { _pinned_for_restore = true; }
+    void unpin_for_restore() { _pinned_for_restore = false; }
+    bool is_pinned_for_restore() { return _pinned_for_restore; }
 
     /// true if this block is actually used
     std::atomic<bool> _used;          // +1  -> 15

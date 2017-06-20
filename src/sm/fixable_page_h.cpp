@@ -255,9 +255,12 @@ void fixable_page_h::setup_for_restore(generic_page* pp)
     // check_page_tags(_pp);
 }
 
-
-
-
+bool fixable_page_h::is_pinned_for_restore()
+{
+    if (!_pp) { return false; }
+    auto cb = smlevel_0::bf->get_cb(_pp);
+    return cb->is_pinned_for_restore();
+}
 
 // <<<>>>
 

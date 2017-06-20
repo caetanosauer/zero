@@ -223,6 +223,9 @@ public:
      */
     void set_check_recovery(generic_page*, bool);
 
+    void pin_for_restore(generic_page*);
+    void unpin_for_restore(generic_page*);
+
     /**
      * Gets the value of the log volume counter in the control block.
      */

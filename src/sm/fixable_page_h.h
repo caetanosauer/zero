@@ -219,6 +219,8 @@ public:
      */
      void setup_for_restore(generic_page* pp);
 
+     bool is_pinned_for_restore();
+
 protected:
     friend class borrowed_btree_page_h;
 

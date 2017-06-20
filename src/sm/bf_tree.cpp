@@ -1339,6 +1339,16 @@ void bf_tree_m::set_check_recovery(generic_page* p, bool chk)
     return get_cb(idx).set_check_recovery(chk);
 }
 
+void bf_tree_m::pin_for_restore(generic_page* p)
+{
+    get_cb(p)->pin_for_restore();
+}
+
+void bf_tree_m::unpin_for_restore(generic_page* p)
+{
+    get_cb(p)->unpin_for_restore();
+}
+
 uint32_t bf_tree_m::get_log_volume(generic_page* p)
 {
     uint32_t idx = p - _buffer;
