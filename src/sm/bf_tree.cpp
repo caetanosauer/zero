@@ -690,31 +690,27 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
             bf_tree_cb_t &cb = get_cb(idx);
 
             // Wait for instant restore to restore this segment
-            if (do_recovery && cb.is_pinned_for_restore() && media_failure)
+            if (do_recovery && cb.is_pinned_for_restore())
             {
-                // copy into local variable to avoid race condition with setting member to null
                 timer.reset();
                 auto restore = _restore_coord;
                 if (restore) { restore->fetch(pid); }
                 ADD_TSTAT(bf_batch_wait_time, timer.time_us());
             }
 
-            // Page is registered in hash table and it is not an in_doubt page,
-            // meaning the actual page is in buffer pool already
-
+            // Grab latch in the mode requested by user (or in EX if we might
+            // have to recover this page)
             latch_mode_t temp_mode = cb._check_recovery ? LATCH_EX : mode;
             W_DO(cb.latch().latch_acquire(temp_mode, conditional ?
                         timeout_t::WAIT_IMMEDIATE : timeout_t::WAIT_FOREVER));
 
-            // This can happen with instant restore
+            // Checks below must be performed again, because CB state may have changed
+            // while we were waiting for the latch
             bool check_recovery_changed = cb._check_recovery && temp_mode == LATCH_SH;
             bool wait_for_restore = cb.is_pinned_for_restore() && do_recovery;
-
-            if (!cb.is_in_use() || cb._pid != pid || check_recovery_changed
-                    || wait_for_restore)
+            bool page_was_evicted = !cb.is_in_use() || cb._pid != pid;
+            if (page_was_evicted || check_recovery_changed || wait_for_restore)
             {
-                // Page was evicted between hash table probe and latching
-                DBG(<< "Page evicted right before latching. Retrying.");
                 cb.latch().latch_release();
                 continue;
             }

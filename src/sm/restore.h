@@ -171,7 +171,7 @@ public:
         auto segment = _bitmap->get_first_unrestored();
 
         if (segment == _bitmap->get_size()) {
-            // All segments restored
+            // All segments in either "restoring" or "restored" state
             done = true;
             return false;
         }
@@ -193,11 +193,14 @@ public:
         return segment >= _bitmap->get_size() || _bitmap->is_restored(segment);
     }
 
+    bool allDone() const
+    {
+        return _bitmap->get_first_restoring() >= _bitmap->get_size();
+    }
+
     void start()
     {
-        if (_start_locked) {
-            _mutex.unlock();
-        }
+        if (_start_locked) { _mutex.unlock(); }
     }
 
 private:
@@ -259,23 +262,26 @@ public:
 
     virtual void do_work()
     {
-        constexpr int sleep_time = 5;
-        bool done = false;
+        bool no_segments_left = false;
         bool restored_last = false;
 
+        auto do_sleep = [] {
+            constexpr int sleep_time = 5;
+            std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
+        };
+
         while (true) {
-            if (!restored_last) {
-                std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
-            }
-            restored_last = _coord->tryBackgroundRestore(done);
+            if (!restored_last) { do_sleep(); }
+            restored_last = _coord->tryBackgroundRestore(no_segments_left);
 
-            if (done) {
-                _notify_done();
-                break;
-            }
-
-            if (should_exit()) { break; }
+            if (no_segments_left || should_exit()) { break; }
         }
+
+        while (!should_exit() && no_segments_left && !_coord->allDone()) {
+            do_sleep();
+        }
+
+        if (_coord->allDone()) { _notify_done(); }
 
         _coord = nullptr;
         quit();
