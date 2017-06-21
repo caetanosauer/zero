@@ -34,8 +34,7 @@ public:
     enum class State {
         UNRESTORED = 0,
         RESTORING = 1,
-        REPLAYED = 2,
-        RESTORED = 3
+        RESTORED = 2
     };
 
     RestoreBitmap(size_t size)
@@ -65,11 +64,6 @@ public:
         return states[i] == State::RESTORING;
     }
 
-    bool is_replayed(unsigned i) const
-    {
-        return states[i] >= State::REPLAYED;
-    }
-
     bool is_restored(unsigned i) const
     {
         return states[i] == State::RESTORED;
@@ -81,15 +75,9 @@ public:
         return states[i].compare_exchange_strong(expected, State::RESTORING);
     }
 
-    void mark_replayed(unsigned i)
-    {
-        w_assert1(states[i] == State::RESTORING);
-        states[i] = State::REPLAYED;
-    }
-
     void mark_restored(unsigned i)
     {
-        // w_assert1(states[i] == State::REPLAYED);
+        w_assert1(states[i] == State::RESTORING);
         states[i] = State::RESTORED;
     }
 
@@ -97,6 +85,14 @@ public:
     {
         for (unsigned i = 0; i < _size; i++) {
             if (states[i] == State::UNRESTORED) { return i; }
+        }
+        return _size;
+    }
+
+    unsigned get_first_restoring() const
+    {
+        for (unsigned i = 0; i < _size; i++) {
+            if (states[i] == State::RESTORING) { return i; }
         }
         return _size;
     }
@@ -140,14 +136,14 @@ public:
         using namespace std::chrono_literals;
 
         auto segment = pid / _segmentSize;
-        if (segment >= _bitmap->get_size() || _bitmap->is_replayed(segment)) {
+        if (segment >= _bitmap->get_size() || _bitmap->is_restored(segment)) {
             return;
         }
 
         std::unique_lock<std::mutex> lck {_mutex};
 
         // check again in critical section
-        if (_bitmap->is_replayed(segment)) { return; }
+        if (_bitmap->is_restored(segment)) { return; }
 
         // Segment not restored yet: we must attempt to restore it ourselves or
         // wait on a ticket if it's already being restored
@@ -158,7 +154,7 @@ public:
             doRestore(segment, ticket);
         }
         else {
-            auto pred = [this, segment] { return _bitmap->is_replayed(segment); };
+            auto pred = [this, segment] { return _bitmap->is_restored(segment); };
             while (!pred()) { ticket->wait_for(lck, 1ms, pred); }
         }
     }
@@ -194,7 +190,7 @@ public:
     bool isPidRestored(PageID pid) const
     {
         auto segment = pid / _segmentSize;
-        return segment >= _bitmap->get_size() || _bitmap->is_replayed(segment);
+        return segment >= _bitmap->get_size() || _bitmap->is_restored(segment);
     }
 
     void start()
@@ -232,7 +228,7 @@ private:
     {
         _restoreFunctor(segment, _segmentSize, _virgin_pages);
 
-        _bitmap->mark_replayed(segment);
+        _bitmap->mark_restored(segment);
         ticket->notify_all();
 
         std::unique_lock<std::mutex> lck {_mutex};
