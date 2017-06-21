@@ -208,6 +208,7 @@ void vol_t::close_backup()
         CHECK_ERRNO(ret);
         _backup_fd = -1;
         _current_backup_lsn = lsn_t::null;
+        _backup_alloc_cache = nullptr;
     }
 }
 
