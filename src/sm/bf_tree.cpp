@@ -502,10 +502,14 @@ void bf_tree_m::set_media_failure()
 void bf_tree_m::unset_media_failure()
 {
     _media_failure_pid = 0;
+    // Background restorer cannot be destroyed here because it is the caller
+    // of this method via a callback. For now, well just let it linger as a
+    // "zombie" thread
+    // _background_restorer = nullptr;
     _restore_coord = nullptr;
-    _background_restorer = nullptr;
     Logger::log_sys<restore_end_log>();
     smlevel_0::vol->close_backup();
+    ERROUT(<< "Restore done!");
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////

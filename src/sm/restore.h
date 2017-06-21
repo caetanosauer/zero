@@ -616,6 +616,7 @@ public:
             if (should_exit()) { break; }
         }
 
+        _coord = nullptr;
         quit();
     }
 
