@@ -44,7 +44,6 @@ protected:
     bf_tree_m*                  _bufferpool;
     bool                        _swizzling_enabled;
     bool                        _maintain_emlsn;
-    bool                        _flush_dirty;
     bool                        _log_evictions;
     bool                        _random_pick;
     bool                        _use_clock;
@@ -58,6 +57,9 @@ protected:
 
     // Cleaner is waken up every this many eviction attempts
     unsigned _wakeup_cleaner_attempts;
+
+    // Dirty pages are flushed after this many eviction attempts
+    unsigned _clean_only_attempts;
 
 private:
     /**

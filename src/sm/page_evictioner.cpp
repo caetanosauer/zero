@@ -16,19 +16,23 @@ page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_optio
 {
     _swizzling_enabled = options.get_bool_option("sm_bufferpool_swizzle", false);
     _maintain_emlsn = options.get_bool_option("sm_bf_maintain_emlsn", false);
-    _flush_dirty = options.get_bool_option("sm_evict_dirty_pages", false);
     _random_pick = options.get_bool_option("sm_evict_random", false);
     _use_clock = options.get_bool_option("sm_evict_use_clock", false);
     _log_evictions = options.get_bool_option("sm_log_page_evictions", false);
+    _wakeup_cleaner_attempts = options.get_int_option("sm_evict_wakeup_cleaner_attempts", 0);
+    _clean_only_attempts = options.get_int_option("sm_evict_clean_only_attempts", 0);
+
+    if (options.get_bool_option("sm_evict_dirty_pages", false)) {
+        // this option overrides clean_only_attempts
+        _clean_only_attempts = 1;
+    }
 
     if (_use_clock) { _clock_ref_bits.resize(_bufferpool->get_block_cnt(), false); }
 
     _current_frame = 0;
 
-    // CS: Warning! Magical arbitrary constants without any empirical decision support below!
     constexpr unsigned max_rounds = 1000;
     _max_attempts = max_rounds * _bufferpool->get_block_cnt();
-    _wakeup_cleaner_attempts = 42;
 }
 
 page_evictioner_base::~page_evictioner_base()
@@ -105,12 +109,8 @@ bool page_evictioner_base::evict_one(bf_idx victim)
     // We're passed the point of no return: eviction must happen no mather what
 
     // Check if page needs to be flushed
-    bool was_dirty = false;
-    if (_flush_dirty && cb.is_dirty()) {
-        // is_dirty acquires SH latch, which must succeed since we already hold EX
-        flush_dirty_page(cb);
-        was_dirty = true;
-    }
+    bool was_dirty = cb.is_dirty();
+    if (was_dirty) { flush_dirty_page(cb); }
     w_assert1(cb.latch().is_mine());
 
     if (_log_evictions) {
@@ -163,8 +163,7 @@ void page_evictioner_base::ref(bf_idx idx)
 
 bf_idx page_evictioner_base::pick_victim()
 {
-    bool ignore_dirty = _flush_dirty ||
-        _bufferpool->is_no_db_mode() || _bufferpool->_write_elision;
+    bool ignore_dirty = _bufferpool->is_no_db_mode();
 
      auto next_idx = [this]
      {
@@ -187,8 +186,13 @@ bf_idx page_evictioner_base::pick_victim()
         if (attempts >= _max_attempts) {
             W_FATAL_MSG(fcINTERNAL, << "Eviction got stuck!");
         }
-        else if (!ignore_dirty && attempts % _wakeup_cleaner_attempts == 0) {
+        else if (_wakeup_cleaner_attempts > 0 && attempts % _wakeup_cleaner_attempts == 0)
+        {
             _bufferpool->wakeup_cleaner();
+        }
+        else if (_clean_only_attempts > 0 && attempts >= _clean_only_attempts)
+        {
+            ignore_dirty = true;
         }
 
         auto& cb = _bufferpool->get_cb(idx);
@@ -238,13 +242,13 @@ bf_idx page_evictioner_base::pick_victim()
                 p.tag() == t_stnode_p
                 // ... B-tree inner (non-leaf) pages
                 // (requires unswizzling, which is not supported)
-                || (p.tag() == t_btree_p && !p.is_leaf())
+                // || (p.tag() == t_btree_p && !p.is_leaf())
                 // ... B-tree root pages
                 // (note, single-node B-tree is both root and leaf)
                 || (p.tag() == t_btree_p && p.pid() == p.root())
                 // ... B-tree pages that have a foster child
                 // (requires unswizzling, which is not supported)
-                || (p.tag() == t_btree_p && p.get_foster() != 0)
+                // || (p.tag() == t_btree_p && p.get_foster() != 0)
                 // ... dirty pages, unless we're told to ignore them
                 || (!ignore_dirty && cb.is_dirty())
                 // ... unused frames, which don't hold a valid page

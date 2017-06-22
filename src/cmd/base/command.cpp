@@ -289,6 +289,10 @@ void Command::setupSMOptions(po::options_description& options)
         "Perform eviction in a dedicated thread, while fixing threads wait")
     ("sm_eviction_interval", po::value<int>(),
             "Interval for async eviction thread (in msec)")
+    ("sm_wakeup_cleaner_attempts", po::value<int>(),
+            "How many failed eviction attempts until cleaner is woken up (0 = never)")
+    ("sm_clean_only_attempts", po::value<int>(),
+            "How many failed eviction attempts until dity frames are picked as victims (0 = never)")
     ("sm_log_page_evictions", po::value<bool>(),
         "Generate evict_page log records for every page evicted from the buffer pool")
     ("sm_log_page_fetches", po::value<bool>(),
