@@ -67,7 +67,7 @@ public:
         smlevel_0::bf->set_media_failure();
 
         // disable eager archiving
-        smlevel_0::logArchiver->setEager(false);
+        // smlevel_0::logArchiver->setEager(false);
 
         *flag = true;
         lintel::atomic_thread_fence(lintel::memory_order_release);
