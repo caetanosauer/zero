@@ -287,6 +287,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Maintain clock bits on buffer frames and only evict if clock bit is zero")
     ("sm_async_eviction", po::value<bool>(),
         "Perform eviction in a dedicated thread, while fixing threads wait")
+    ("sm_eviction_interval", po::value<int>(),
+            "Interval for async eviction thread (in msec)")
     ("sm_log_page_evictions", po::value<bool>(),
         "Generate evict_page log records for every page evicted from the buffer pool")
     ("sm_log_page_fetches", po::value<bool>(),

@@ -10,7 +10,7 @@
 
 page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_options& options)
     :
-    worker_thread_t(options.get_int_option("sm_evictioner_interval_millisec", 1000)),
+    worker_thread_t(options.get_int_option("sm_eviction_interval", 100)),
     _bufferpool(bufferpool),
     _rnd_distr(1, _bufferpool->get_block_cnt() - 1)
 {
