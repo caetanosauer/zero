@@ -137,7 +137,7 @@ public:
      * To use this method, you need to include bf_tree_inline.h.
      */
     w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, PageID pid,
-                          latch_mode_t mode, bool conditional, bool virgin_page,
+                          latch_mode_t mode, bool conditional = false, bool virgin_page = false,
                           bool only_if_hit = false, bool do_recovery = true,
                           lsn_t emlsn = lsn_t::null);
 

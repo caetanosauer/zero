@@ -26,6 +26,7 @@ private:
 
     std::vector<PageID> segments;
     bool _write_elision;
+    bool _use_page_img_logrec;
     size_t _segment_size;
     lsn_t _last_lsn;
 };

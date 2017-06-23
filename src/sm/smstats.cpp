@@ -63,6 +63,7 @@ const char* get_stat_name(sm_stat_id s)
         case sm_stat_id::cleaner_time_cpu: return "cleaner_time_cpu";
         case sm_stat_id::cleaner_time_io: return "cleaner_time_io";
         case sm_stat_id::cleaner_time_copy: return "cleaner_time_copy";
+        case sm_stat_id::cleaner_single_page_read: return "cleaner_single_page_read";
         case sm_stat_id::bf_already_evicted: return "bf_already_evicted";
         case sm_stat_id::bf_eviction_attempts: return "bf_eviction_attempts";
         case sm_stat_id::bf_dirty_page_cleaned: return "bf_dirty_page_cleaned";
@@ -297,6 +298,7 @@ const char* get_stat_expl(sm_stat_id s)
         case sm_stat_id::cleaner_time_cpu: return "Time spent manipulating cleaner candidate lists";
         case sm_stat_id::cleaner_time_io: return "Time spent flushing the cleaner workspace";
         case sm_stat_id::cleaner_time_copy: return "Time spent latching and copy page images into workspace";
+        case sm_stat_id::cleaner_single_page_read: return "number of single-page reads performed by decoupled cleaner";
         case sm_stat_id::bf_already_evicted: return "Could not find page to copy for flushing (evicted)";
         case sm_stat_id::bf_eviction_attempts: return "Total number of frames inspected for eviction";
         case sm_stat_id::bf_dirty_page_cleaned: return "Found page already cleaned (hot)";

@@ -150,6 +150,7 @@ enum class sm_stat_id : size_t
     cleaner_time_cpu,
     cleaner_time_io,
     cleaner_time_copy,
+    cleaner_single_page_read,
     bf_already_evicted,
     bf_eviction_attempts,
     bf_dirty_page_cleaned,

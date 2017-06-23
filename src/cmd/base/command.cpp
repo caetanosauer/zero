@@ -265,6 +265,8 @@ void Command::setupSMOptions(po::options_description& options)
         "Only consider warmup hit ratio once this minimum number of fixes has been performed")
     ("sm_cleaner_decoupled", po::value<bool>(),
         "Enable/Disable decoupled cleaner")
+    ("sm_cleaner_use_page_img_logrec", po::value<bool>(),
+        "Decoupled cleaner tries to exploit page-image log records to avoid database reads")
     ("sm_cleaner_interval", po::value<int>(),
         "Cleaner sleep interval in ms")
     ("sm_cleaner_workspace_size", po::value<int>(),

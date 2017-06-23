@@ -13,6 +13,7 @@ page_cleaner_decoupled::page_cleaner_decoupled(const sm_options& options)
     // CS TODO: clean_lsn must be recovered from checkpoint
     _clean_lsn = smlevel_0::log->durable_lsn();
     _write_elision = options.get_bool_option("sm_write_elision", false);
+    _use_page_img_logrec = options.get_bool_option("sm_cleaner_use_page_img_logrec", false);
     _segment_size = options.get_int_option("sm_batch_segment_size", 64);
 
     if (_workspace_size % _segment_size != 0) {
@@ -53,9 +54,18 @@ void page_cleaner_decoupled::do_work()
     size_t w_index = 0;
     fixable_page_h fixable;
     logrec_t* lr;
+    PageID lrpid;
+
+    auto read_single_page = [&] {
+        generic_page* vol_page;
+        W_COERCE(smlevel_0::bf->fix_nonroot(vol_page, nullptr, curr_pid, LATCH_SH));
+        memcpy(page, vol_page, sizeof(generic_page));
+        smlevel_0::bf->unfix(vol_page);
+        INC_TSTAT(cleaner_single_page_read);
+    };
 
     while (merger->next(lr)) {
-        PageID lrpid = lr->pid();
+        lrpid = lr->pid();
 
         if (!page || lrpid - segment_pid >= _segment_size) {
             // Time to read a new segment
@@ -67,21 +77,28 @@ void page_cleaner_decoupled::do_work()
             segment_pid = (lrpid / _segment_size) * _segment_size;
             segments.push_back(segment_pid);
 
-            W_COERCE(smlevel_0::vol->read_many_pages
-                    (segment_pid, &(_workspace[w_index]), _segment_size));
             page = &_workspace[w_index];
-            w_index += _segment_size;
-
             curr_pid = segment_pid;
-            page->pid = curr_pid;
+            if (!_use_page_img_logrec) {
+                W_COERCE(smlevel_0::vol->read_many_pages(segment_pid, page, _segment_size));
+            }
+            else if (lrpid == segment_pid && !lr->has_page_img(lrpid)) {
+                read_single_page();
+            }
+
+            w_index += _segment_size;
+            page->pid = segment_pid;
         }
 
-        if (lrpid > curr_pid) {
+        while (lrpid > curr_pid) {
             // move to next page
             w_assert1(page);
-            page += lrpid - curr_pid;
-            page->pid = lrpid;
-            curr_pid = lrpid;
+            page++;
+            curr_pid++;
+            if (_use_page_img_logrec && !lr->has_page_img(curr_pid)) {
+                read_single_page();
+            }
+            page->pid = curr_pid;
         }
 
         if(page->lsn >= lr->lsn()) { continue; }
@@ -115,6 +132,7 @@ void page_cleaner_decoupled::flush_segments()
            size_t flush_size = (adjacent+1) * _segment_size;
            W_COERCE(smlevel_0::vol->write_many_pages(segments[i-adjacent],
                        &_workspace[w_index], flush_size));
+           ADD_TSTAT(cleaned_pages, flush_size);
            w_index += flush_size;
            adjacent = 0;
        }
