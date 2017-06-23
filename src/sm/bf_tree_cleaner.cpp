@@ -98,7 +98,7 @@ void bf_tree_cleaner::flush_workspace_no_clusters(size_t count)
     w_assert1(count <= _workspace_size);
 
     for (size_t i = 0; i < count; i++) {
-        write_pages(i, 1);
+        write_pages(i, i+1);
     }
 
     smlevel_0::vol->sync();

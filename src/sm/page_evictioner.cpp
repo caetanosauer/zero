@@ -139,6 +139,9 @@ bool page_evictioner_base::evict_one(bf_idx victim)
 
 void page_evictioner_base::flush_dirty_page(const bf_tree_cb_t& cb)
 {
+    // WAL rule
+    W_COERCE(smlevel_0::log->flush(cb.get_page_lsn()));
+
     // Straight-forward write -- no need to do it asynchronously or worry about
     // any race conditions. We hold EX latch and the entry hasn't been removed
     // from the buffer-pool hash table yet. Any thread attempting to fix the
