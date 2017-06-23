@@ -11,14 +11,23 @@
 
 class page_cleaner_decoupled : public page_cleaner_base{
 public:
-    page_cleaner_decoupled(bf_tree_m* _bufferpool, const sm_options& _options);
+    page_cleaner_decoupled(const sm_options& _options);
     virtual ~page_cleaner_decoupled();
+
+    virtual void notify_archived_lsn(lsn_t);
 
 protected:
     virtual void do_work();
 
 private:
-    void fill_cb_indexes();
+
+    void update_cb_clean(size_t from, size_t to);
+    void flush_segments();
+
+    std::vector<PageID> segments;
+    bool _write_elision;
+    size_t _segment_size;
+    lsn_t _last_lsn;
 };
 
 #endif // PAGE_CLEANER_H

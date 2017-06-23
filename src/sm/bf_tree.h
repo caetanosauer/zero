@@ -322,6 +322,9 @@ public:
     bool is_media_failure(PageID pid) { return _media_failure_pid > 0 &&
         pid < _media_failure_pid; }
 
+    // Used for decoupled cleaning
+    void notify_archived_lsn(lsn_t);
+
     /**
      * Tries to unswizzle the given child page from the parent page.  If, for
      * some reason, unswizzling was impossible or troublesome, gives up and

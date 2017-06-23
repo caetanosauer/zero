@@ -212,6 +212,18 @@ struct bf_tree_cb_t {
         latch().latch_release();
     }
 
+    /// This is used by the decoupled (a.k.a log-based) cleaner
+    // CS TODO: I never tested restart with decoupled cleaner!
+    void notify_write_logbased(lsn_t archived_lsn)
+    {
+        auto rc = latch().latch_acquire(LATCH_SH, timeout_t::WAIT_IMMEDIATE);
+        if (rc.is_error()) { return; }
+
+        _rec_lsn = archived_lsn;
+        _persisted_lsn = archived_lsn;
+        latch().latch_release();
+    }
+
     /// Log volume generated on this page (for page_img logrec compression, see xct_logger.h)
     uint32_t _log_volume;        // +4 -> 60
     uint16_t get_log_volume() const { return _log_volume; }

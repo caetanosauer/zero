@@ -7,92 +7,165 @@
 #include "xct_logger.h"
 #include "logarchive_scanner.h"
 
-page_cleaner_decoupled::page_cleaner_decoupled(
-        bf_tree_m* _bufferpool, const sm_options& _options)
-    : page_cleaner_base(_bufferpool, _options)
+page_cleaner_decoupled::page_cleaner_decoupled(const sm_options& options)
+    : page_cleaner_base(options)
 {
     // CS TODO: clean_lsn must be recovered from checkpoint
     _clean_lsn = smlevel_0::log->durable_lsn();
+    _write_elision = options.get_bool_option("sm_write_elision", false);
+    _segment_size = options.get_int_option("sm_batch_segment_size", 64);
+
+    if (_workspace_size % _segment_size != 0) {
+        _workspace_size -= _workspace_size % _segment_size;
+    }
+    w_assert0(_workspace_size >= _segment_size);
 }
 
 page_cleaner_decoupled::~page_cleaner_decoupled()
 {
 }
 
-void page_cleaner_decoupled::do_work()
+void page_cleaner_decoupled::notify_archived_lsn(lsn_t)
 {
-    lsn_t last_lsn = smlevel_0::logArchiver->getIndex()->getLastLSN();
-    if(last_lsn <= _clean_lsn) {
-        ERROUT(<< "Nothing archived to clean.");
-        return;
-    }
-
-    ERROUT(<< "Cleaner thread activated from " << _clean_lsn);
-
-    ArchiveScanner logScan(smlevel_0::logArchiver->getIndex().get());
-    auto merger = logScan.open(0, 0, _clean_lsn);
-
-    generic_page* page = nullptr;
-    PageID currentPid = 0, firstPid = 0;
-    logrec_t* lr;
-    while (merger && merger->next(lr)) {
-        if (!lr->is_redo()) {
-            continue;
-        }
-
-        PageID lrpid = lr->pid();
-        if (!page || lrpid - firstPid >= _workspace_size) {
-            // first iteration of the loop or time to read new buffer
-            if (page) {
-                fill_cb_indexes();
-                flush_workspace(0, _workspace_size);
-                Logger::log_sys<page_write_log>(firstPid, last_lsn, _workspace_size);
-            }
-            currentPid = lrpid;
-            firstPid = (lrpid / _workspace_size) * _workspace_size;
-            W_COERCE(smlevel_0::vol->read_many_pages(firstPid, &(_workspace[0]), _workspace_size));
-            page = &_workspace[lrpid - firstPid];
-        }
-
-        if (lrpid > currentPid) {
-            // move to next page
-            w_assert1(page);
-            page->checksum = page->calculate_checksum();
-            page += lrpid - currentPid;
-            currentPid = lrpid;
-        }
-
-        if(page->lsn >= lr->lsn()) {
-            DBGOUT(<<"Not replaying log record " << lr->lsn()
-                    << ". Page " << page->pid << " is up-to-date.");
-            continue;
-        }
-
-        // CS TODO setting the pid is required to redo a split on the new foster child
-        page->pid = lrpid;
-        fixable_page_h fixable;
-        fixable.setup_for_restore(page);
-        lr->redo(&fixable);
-
-        DBGOUT(<<"Replayed log record " << lr->lsn_ck() << " for page " << page->pid);
-    }
-
-    if(page && currentPid - firstPid > 0) {
-        page->checksum = page->calculate_checksum();
-        fill_cb_indexes();
-        flush_workspace(0, _workspace_size);
-        Logger::log_sys<page_write_log>(firstPid, last_lsn, _workspace_size);
-    }
-
-    DBGTHRD(<< "Cleaner thread deactivating. Cleaned until " << _clean_lsn);
-    _clean_lsn = last_lsn;
+    wakeup();
 }
 
-void page_cleaner_decoupled::fill_cb_indexes()
+void page_cleaner_decoupled::do_work()
 {
-    for(size_t i = 0; i < _workspace_size; i++)
-    {
+    auto arch_index = smlevel_0::logArchiver->getIndex();
+    _last_lsn = arch_index->getLastLSN();
+    if(_last_lsn <= _clean_lsn) { return; }
+
+    ERROUT(<< "Decoupled cleaner thread activated from " << _clean_lsn
+            << " to " << _last_lsn);
+#ifdef MMAP
+    static thread_local ArchiveScan archive_scan{archIndex};
+    archive_scan.open(0, 0, _clean_lsn);
+    auto merger = &archive_scan;
+#else
+    ArchiveScanner logScan(smlevel_0::logArchiver->getIndex().get());
+    auto merger = logScan.open(0, 0, _clean_lsn);
+#endif
+
+    segments.clear();
+    generic_page* page = nullptr;
+    PageID curr_pid = 0, segment_pid = 0;
+    size_t w_index = 0;
+    fixable_page_h fixable;
+    logrec_t* lr;
+
+    while (merger->next(lr)) {
+        PageID lrpid = lr->pid();
+
+        if (!page || lrpid - segment_pid >= _segment_size) {
+            // Time to read a new segment
+            if (page && w_index == _workspace_size) {
+                // And also time to write current workspace
+                flush_segments();
+                w_index = 0;
+            }
+            segment_pid = (lrpid / _segment_size) * _segment_size;
+            segments.push_back(segment_pid);
+
+            W_COERCE(smlevel_0::vol->read_many_pages
+                    (segment_pid, &(_workspace[w_index]), _segment_size));
+            page = &_workspace[w_index];
+            w_index += _segment_size;
+
+            curr_pid = segment_pid;
+            page->pid = curr_pid;
+        }
+
+        if (lrpid > curr_pid) {
+            // move to next page
+            w_assert1(page);
+            page += lrpid - curr_pid;
+            page->pid = lrpid;
+            curr_pid = lrpid;
+        }
+
+        if(page->lsn >= lr->lsn()) { continue; }
+
+        w_assert0(lr->page_prev_lsn() == lsn_t::null ||
+                lr->page_prev_lsn() == page->lsn || lr->has_page_img(lrpid));
+
+        fixable.setup_for_restore(page);
+        lr->redo(&fixable);
+    }
+
+    if(!segments.empty()) { flush_segments(); }
+
+    DBGTHRD(<< "Cleaner thread deactivating. Cleaned until " << _clean_lsn);
+    _clean_lsn = _last_lsn;
+}
+
+void page_cleaner_decoupled::flush_segments()
+{
+    if (segments.empty()) { return; }
+
+    size_t w_index = 0;
+    size_t adjacent = 0;
+    for (size_t i = 0; i < segments.size(); i++) {
+       if (i < segments.size() - 1 &&
+               segments[i+1] == segments[i] + _segment_size)
+       {
+           adjacent++;
+       }
+       else {
+           size_t flush_size = (adjacent+1) * _segment_size;
+           W_COERCE(smlevel_0::vol->write_many_pages(segments[i-adjacent],
+                       &_workspace[w_index], flush_size));
+           w_index += flush_size;
+           adjacent = 0;
+       }
+    }
+
+    if (!_write_elision) {
+        smlevel_0::vol->sync();
+        // mark clean
+    }
+
+    w_index = 0;
+    adjacent = 0;
+    for (size_t i = 0; i < segments.size(); i++) {
+       if (i < segments.size() - 1 &&
+               segments[i+1] == segments[i] + _segment_size)
+       {
+           adjacent++;
+       }
+       else {
+           size_t flush_size = (adjacent+1) * _segment_size;
+           Logger::log_sys<page_write_log>(segments[i-adjacent], _last_lsn,
+                   flush_size);
+           if (!_write_elision) {
+               update_cb_clean(w_index, w_index + flush_size);
+           }
+           w_index += flush_size;
+           adjacent = 0;
+       }
+    }
+
+    segments.clear();
+}
+
+void page_cleaner_decoupled::update_cb_clean(size_t from, size_t to)
+{
+    for (size_t i = from; i < to; ++i) {
         bf_idx idx = _bufferpool->lookup(_workspace[i].pid);
-        _workspace_cb_indexes[i] = idx;
+
+        if (idx == 0) { continue; }
+
+        bf_tree_cb_t &cb = _bufferpool->get_cb(idx);
+        if (!cb.pin()) { continue; }
+
+        if (cb._pid == _workspace[i].pid) {
+            w_assert1(cb.is_in_use());
+            cb.notify_write_logbased(_last_lsn);
+
+            // CS TODO: should do this only if policy == highest_refcount
+            cb.reset_ref_count_ex();
+        }
+
+        cb.unpin();
     }
 }

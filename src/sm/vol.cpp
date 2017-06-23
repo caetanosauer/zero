@@ -521,9 +521,10 @@ rc_t vol_t::write_many_pages(PageID first_page, const generic_page* const buf, i
     if(_apply_fake_disk_latency) start = gethrtime();
 
 #if W_DEBUG_LEVEL>0
-    for (int i = 0; i < cnt; i++) {
-        w_assert1(buf[i].pid == first_page + i);
-    }
+    // Doesnt work for decoupled cleaner
+    // for (int i = 0; i < cnt; i++) {
+    //     w_assert1(buf[i].pid == first_page + i);
+    // }
 #endif
 
     // do the actual write now

@@ -15,11 +15,12 @@ class generic_page;
 
 class page_cleaner_base : public worker_thread_t {
 public:
-    page_cleaner_base(bf_tree_m* bufferpool, const sm_options& _options);
+    page_cleaner_base(const sm_options& _options);
     virtual ~page_cleaner_base();
 
+    virtual void notify_archived_lsn(lsn_t) {}
+
 protected:
-    void flush_workspace(size_t from, size_t to);
     void write_pages(size_t from, size_t to);
     void mark_pages_clean(size_t from, size_t to);
 

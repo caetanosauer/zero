@@ -17,8 +17,8 @@
 #include "xct.h"
 #include <vector>
 
-bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& options)
-    : page_cleaner_base(bufferpool, options)
+bf_tree_cleaner::bf_tree_cleaner(const sm_options& options)
+    : page_cleaner_base(options)
 {
     num_candidates = options.get_int_option("sm_cleaner_num_candidates", 0);
     min_write_size = options.get_int_option("sm_cleaner_min_write_size", 1);

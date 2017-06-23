@@ -427,11 +427,10 @@ void bf_tree_m::post_init()
 
     if(_cleaner_decoupled) {
         w_assert0(smlevel_0::logArchiver);
-        _cleaner = std::make_shared<page_cleaner_decoupled>(this,
-                ss_m::get_options());
+        _cleaner = std::make_shared<page_cleaner_decoupled>(ss_m::get_options());
     }
     else{
-        _cleaner = std::make_shared<bf_tree_cleaner>(this, ss_m::get_options());
+        _cleaner = std::make_shared<bf_tree_cleaner>(ss_m::get_options());
     }
     _cleaner->fork();
 }
@@ -510,6 +509,13 @@ void bf_tree_m::unset_media_failure()
     Logger::log_sys<restore_end_log>();
     smlevel_0::vol->close_backup();
     ERROUT(<< "Restore done!");
+}
+
+void bf_tree_m::notify_archived_lsn(lsn_t archived_lsn)
+{
+    if (_cleaner) {
+        _cleaner->notify_archived_lsn(archived_lsn);
+    }
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////

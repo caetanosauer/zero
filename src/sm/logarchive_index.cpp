@@ -15,6 +15,7 @@
 #include "stopwatch.h"
 #include "worker_thread.h"
 #include "restart.h"
+#include "bf_tree.h"
 
 class RunRecycler : public worker_thread_t
 {
@@ -322,9 +323,14 @@ rc_t ArchiveIndex::closeCurrentRun(lsn_t runEndLSN, unsigned level, PageID maxPI
             lastFinished[level]++;
         }
 
-        // This is used for nodb mode only
-        if (smlevel_0::recovery && level == 1) {
-            smlevel_0::recovery->notify_archived_lsn(runEndLSN);
+        // Notify other services that depend on archived LSN
+        if (level == 1) {
+            if (smlevel_0::recovery) {
+                smlevel_0::recovery->notify_archived_lsn(runEndLSN);
+            }
+            if (smlevel_0::bf) {
+                smlevel_0::bf->notify_archived_lsn(runEndLSN);
+            }
         }
     }
 

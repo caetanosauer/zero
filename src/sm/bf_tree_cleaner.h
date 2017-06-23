@@ -54,20 +54,7 @@ using policy_predicate_t =
 class bf_tree_cleaner : public page_cleaner_base
 {
 public:
-    /**
-     * Constructs this object. This merely allocates arrays and objects.
-     * The real start-up is done in start_cleaners() because a constructor can't return error codes.
-     * @param cleaner_threads count of worker threads. has to be at least 1. If you want to disable
-     * all cleaners at first, use the following parameter.
-     * @param initially_wakeup_workers whether to start cleaner threads as soon as possible.
-     * Even if this is false, you can start cleaners later by calling wakeup_cleaners().
-     */
-    bf_tree_cleaner(bf_tree_m* bufferpool, const sm_options& _options);
-
-    /**
-     * Destructs this object. This merely de-allocates arrays and objects.
-     * Use request_stop_cleaners() or kill_cleaners() to stop cleaner threads.
-     */
+    bf_tree_cleaner(const sm_options& _options);
     ~bf_tree_cleaner();
 
 protected:
