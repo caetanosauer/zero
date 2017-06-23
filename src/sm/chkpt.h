@@ -71,6 +71,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <unordered_map>
 #include <algorithm>
 #include <limits>
+#include <fstream>
 
 struct buf_tab_entry_t {
     lsn_t rec_lsn;              // initial dirty lsn
@@ -253,6 +254,10 @@ private:
 
     bool _use_log_archive;
     bool _log_based;
+    bool _print_propstats;
+    size_t _dirty_page_count;
+
+    std::ofstream _propstats_ofs;
 };
 
 /*<std-footer incl-file-exclusion='CHKPT_H'>  -- do not edit anything below this line -- */

@@ -40,6 +40,9 @@ public:
         out() << "# dirty_pages redo_length page_writes xct_end updates pages_static" << endl;
     }
 
+    // CS TODO
+    static constexpr bool track_rec_lsn = false;
+
     bool is_static_store(StoreID store)
     {
         /*
@@ -66,16 +69,18 @@ public:
 
     void process_page_write(PageID pid, lsn_t clean_lsn, StoreID store)
     {
-        // Delete updates with lsn < clean_lsn
-        auto& vec = page_lsns[pid];
-        size_t i = 0;
-        while (i < vec.size()) {
-            if (vec[i] >= clean_lsn) { break; }
-            i++;
-        }
+        if (track_rec_lsn) {
+            // Delete updates with lsn < clean_lsn
+            auto& vec = page_lsns[pid];
+            size_t i = 0;
+            while (i < vec.size()) {
+                if (vec[i] >= clean_lsn) { break; }
+                i++;
+            }
 
-        if (i > 0) {
-            vec.erase(vec.begin(), vec.begin() + i);
+            if (i > 0) {
+                vec.erase(vec.begin(), vec.begin() + i);
+            }
         }
 
         chkpt.mark_page_clean(pid, clean_lsn);
@@ -83,12 +88,15 @@ public:
 
     void mark_dirty(PageID pid, lsn_t lsn, StoreID store)
     {
-        chkpt.mark_page_dirty(pid, lsn, lsn);
-        auto& vec = page_lsns[pid];
-        vec.push_back(lsn);
+        if (track_rec_lsn) {
+            auto& vec = page_lsns[pid];
+            vec.push_back(lsn);
+        }
+
         if (is_static_store(store)) {
             static_pids.insert(pid);
         }
+        chkpt.mark_page_dirty(pid, lsn, lsn);
     }
 
     virtual void invoke(logrec_t& r)
@@ -138,9 +146,9 @@ public:
             PageID pid = *(reinterpret_cast<PageID*>(r.data_ssx()));
             bool was_dirty = *(reinterpret_cast<bool*>(r.data_ssx() + sizeof(PageID)));
             if (!was_dirty) {
-                page_lsns[pid].clear();
+                chkpt.buf_tab.erase(pid);
+                if (track_rec_lsn) { page_lsns[pid].clear(); }
             }
-            chkpt.buf_tab.erase(pid);
         }
         else if (r.type() == logrec_t::t_xct_end) {
             commits++;
@@ -150,10 +158,12 @@ public:
     void dumpStats(lsn_t lsn)
     {
         lsn_t min_rec_lsn = lsn_t::max;
-        for (auto e : page_lsns) {
-            if (e.second.size() > 0) {
-                lsn_t rec = e.second[0];
-                if (rec < min_rec_lsn) { min_rec_lsn = rec; }
+        if (track_rec_lsn) {
+            for (auto e : page_lsns) {
+                if (e.second.size() > 0) {
+                    lsn_t rec = e.second[0];
+                    if (rec < min_rec_lsn) { min_rec_lsn = rec; }
+                }
             }
         }
         if (min_rec_lsn == lsn_t::max) { min_rec_lsn = lsn_t::null; }
@@ -167,7 +177,7 @@ public:
             size_t rest = lsn.lo() + psize - min_rec_lsn.lo();
             redo_length = psize * (lsn.hi() - min_rec_lsn.hi()) + rest;
         }
-        ERROUT(<< "min_rec_lsn: " << min_rec_lsn);
+        // ERROUT(<< "min_rec_lsn: " << min_rec_lsn);
 
         size_t dirty_page_count = 0;
         size_t pages_static = 0;
@@ -175,9 +185,9 @@ public:
             if (e.second.is_dirty()) {
                 dirty_page_count++;
             }
-                if (static_pids.count(e.first) > 0) {
-                    pages_static++;
-                }
+            if (static_pids.count(e.first) > 0) {
+                pages_static++;
+            }
         }
 
         out() << "" << dirty_page_count

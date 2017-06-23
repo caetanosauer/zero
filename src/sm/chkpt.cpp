@@ -188,10 +188,15 @@ chkpt_m::chkpt_m(const sm_options& options, chkpt_t* chkpt_info)
     if (_last_end_lsn.is_null()) { _last_end_lsn = lsn_t(1, 0); }
     _use_log_archive = options.get_bool_option("sm_chkpt_use_log_archive", false);
     _log_based = options.get_bool_option("sm_chkpt_log_based", false);
+    _print_propstats = options.get_bool_option("sm_chkpt_print_propstats", false);
 
     // _use_log_archive mandatory with nodb mode
     if (options.get_bool_option("sm_no_db", false)) {
         _use_log_archive = true;
+    }
+
+    if (_print_propstats) {
+        _propstats_ofs.open("propstats_chkpt.txt", std::ofstream::out | std::ofstream::trunc);
     }
 
     fork();
@@ -201,11 +206,30 @@ void chkpt_m::do_work()
 {
     take();
     ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
+
+    if (_print_propstats) {
+        auto psize = smlevel_0::log->get_storage()->get_partition_size();
+        auto lsn = _last_end_lsn;
+        size_t redo_length = 0;
+        if (_min_rec_lsn.hi() == lsn.hi()) {
+            redo_length = lsn.lo() - _min_rec_lsn.lo();
+        }
+        else if (_min_rec_lsn != lsn_t::null) {
+            w_assert0(lsn > _min_rec_lsn);
+            size_t rest = lsn.lo() + psize - _min_rec_lsn.lo();
+            redo_length = psize * (lsn.hi() - _min_rec_lsn.hi()) + rest;
+        }
+        _propstats_ofs << _dirty_page_count << '\t' << redo_length << std::endl;
+    }
 }
 
 chkpt_m::~chkpt_m()
 {
     stop();
+
+    if (_print_propstats) {
+        _propstats_ofs.close();
+    }
 }
 
 /*********************************************************************
@@ -595,6 +619,7 @@ void chkpt_m::take(chkpt_t* chkpt)
     // Insert chkpt_begin log record.
     lsn_t begin_lsn = Logger::log_sys<chkpt_begin_log>();
     W_COERCE(ss_m::log->flush(begin_lsn));
+    w_assert0(!begin_lsn.is_null());
 
     lsn_t archived_lsn = lsn_t::null;
     if (_use_log_archive) {
@@ -639,6 +664,7 @@ void chkpt_m::take(chkpt_t* chkpt)
     }
     _min_xct_lsn = chkpt->get_min_xct_lsn();
     _last_end_lsn = chkpt->get_last_scan_start();
+    _dirty_page_count = chkpt->buf_tab.size();
 }
 
 void chkpt_t::serialize_binary(ofstream& ofs)
