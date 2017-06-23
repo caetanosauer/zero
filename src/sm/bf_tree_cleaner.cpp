@@ -277,6 +277,8 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate(cleaner_policy p)
     // comparison function should be used, e.g., in a "highest" policy, an
     // incoming element enters the heap if it is greater than the heap's
     // lowest.
+    // IN SUMMARY: greater-than --> highest
+    //             lower-than --> lowest
     switch (p) {
         case cleaner_policy::highest_refcount:
             return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
@@ -288,10 +290,28 @@ policy_predicate_t bf_tree_cleaner::get_policy_predicate(cleaner_policy p)
             {
                 return a.ref_count < b.ref_count;
             };
+        case cleaner_policy::lru:
+            return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
+            {
+                return a.page_lsn < b.page_lsn;
+            };
+        case cleaner_policy::highest_density:
+            return [this] (const cleaner_cb_info& a, const cleaner_cb_info& b)
+            {
+                lsndata_t a_window = a.page_lsn.data() - a.rec_lsn.data();
+                if (a_window == 0) { a_window = std::numeric_limits<lsndata_t>::max(); }
+                auto a_density = (a.ref_count / a_window);
+
+                lsndata_t b_window = b.page_lsn.data() - b.rec_lsn.data();
+                if (b_window == 0) { b_window = std::numeric_limits<lsndata_t>::max(); }
+                auto b_density = (b.ref_count / b_window);
+
+                return a_density > b_density;
+            };
         case cleaner_policy::mixed:
-            // mixed policy = oldest_lsn 3/4 of the time, hihgest_refcount 1/4 of the time
-            if (get_rounds_completed() % 4 == 0) {
-                return get_policy_predicate(cleaner_policy::highest_refcount);
+            // mixed policy = LRU half of the time, oldest_lsn the other half
+            if (get_rounds_completed() % 2 == 0) {
+                return get_policy_predicate(cleaner_policy::lru);
             }
             else {
                 return get_policy_predicate(cleaner_policy::oldest_lsn);

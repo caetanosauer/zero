@@ -20,6 +20,8 @@ enum class cleaner_policy {
     lowest_refcount,
     oldest_lsn,
     mixed,
+    highest_density,
+    lru,
     no_policy
 };
 
@@ -113,7 +115,10 @@ inline cleaner_policy make_cleaner_policy(string s)
     if (s == "lowest_refcount") { return cleaner_policy::lowest_refcount; }
     if (s == "oldest_lsn") { return cleaner_policy::oldest_lsn; }
     if (s == "mixed") { return cleaner_policy::mixed; }
-    return cleaner_policy::oldest_lsn;
+    if (s == "highest_density") { return cleaner_policy::highest_density; }
+    if (s == "lru") { return cleaner_policy::lru; }
+    if (s == "no_policy") { return cleaner_policy::no_policy; }
+    w_assert0(false);
 }
 
 #endif // BF_TREE_CLEANER_H
