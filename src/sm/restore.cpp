@@ -87,21 +87,10 @@ void LogReplayer::replay(LogScan logs, PageIter& pagesBegin, PageIter pagesEnd)
 
         fixable.setup_for_restore(p);
         if (p->pid != pid) {
-            // Needed if we read garbage (see comment below)
-            // CS TODO: this is basically only required to replay a btree_split correctly
             p->pid = pid;
-            w_assert0(lr->has_page_img(pid) && fixable.is_pinned_for_restore());
         }
 
-        /*
-         * Comparing LSNs alone is not enough, because we may prefetch garbage
-         * pages from the backup, in which case fixable.lsn() might be greater
-         * than lr->lsn() even if the page needs recovery. That's why we also
-         * check if the check_recovery flag is set in the buffer pool; this
-         * flag is always set when a page is fetched by the page iterator or
-         * by a prefetch call.
-         */
-        if (lr->lsn() > fixable.lsn() || (lr->has_page_img(pid) && fixable.is_pinned_for_restore())) {
+        if (lr->lsn() > fixable.lsn()) {
             w_assert0(lr->page_prev_lsn() == lsn_t::null ||
                     lr->page_prev_lsn() == p->lsn || lr->has_page_img(pid));
 
