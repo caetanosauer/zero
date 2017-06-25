@@ -24,7 +24,7 @@ bf_tree_cleaner::bf_tree_cleaner(const sm_options& options)
     min_write_size = options.get_int_option("sm_cleaner_min_write_size", 1);
     min_write_ignore_freq = options.get_int_option("sm_cleaner_min_write_ignore_freq", 0);
 
-    string pstr = options.get_string_option("sm_cleaner_policy", "");
+    string pstr = options.get_string_option("sm_cleaner_policy", "oldest_lsn");
     policy = make_cleaner_policy(pstr);
 
     if (num_candidates == 0) {
