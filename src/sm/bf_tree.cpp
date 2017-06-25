@@ -226,18 +226,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     _cleaner_decoupled = options.get_bool_option("sm_cleaner_decoupled", false);
 
-    std::string s = options.get_string_option("sm_evict_policy", "latched");
-    if(s == "gclock") {
-        _evictioner = std::make_shared<page_evictioner_gclock>(this, options);
-    }
-    else if(s == "latched") {
-        _evictioner = std::make_shared<page_evictioner_base>(this, options);
-    }
-    else {
-        std::cerr << "Invalid buffer policy." << std::endl;
-        W_FATAL(eCRASH);
-    }
-
+    _evictioner = std::make_shared<page_evictioner_base>(this, options);
     _async_eviction = options.get_bool_option("sm_async_eviction", false);
     if (_async_eviction) { _evictioner->fork(); }
 }
