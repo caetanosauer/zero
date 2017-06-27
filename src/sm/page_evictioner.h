@@ -43,6 +43,8 @@ protected:
     /** the buffer pool this cleaner deals with. */
     bf_tree_m*                  _bufferpool;
     bool                        _swizzling_enabled;
+    bool                        _write_elision;
+    bool                        _no_db_mode;
     bool                        _maintain_emlsn;
     bool                        _log_evictions;
     bool                        _random_pick;

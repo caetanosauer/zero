@@ -21,6 +21,8 @@ page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_optio
     _log_evictions = options.get_bool_option("sm_log_page_evictions", false);
     _wakeup_cleaner_attempts = options.get_int_option("sm_evict_wakeup_cleaner_attempts", 0);
     _clean_only_attempts = options.get_int_option("sm_evict_clean_only_attempts", 0);
+    _write_elision = options.get_bool_option("sm_write_elision", false);
+    _no_db_mode = options.get_bool_option("sm_no_db", false);
 
     if (options.get_bool_option("sm_evict_dirty_pages", false)) {
         // this option overrides clean_only_attempts
@@ -98,7 +100,7 @@ bool page_evictioner_base::evict_one(bf_idx victim)
     // bool media_failure = _bufferpool->is_media_failure() && !cb._check_recovery;
     lsn_t page_lsn = cb.get_page_lsn();
     bool media_failure = _bufferpool->is_media_failure(cb._pid);
-    if (_bufferpool->is_no_db_mode() || cb.is_dirty() || media_failure) {
+    if (_no_db_mode || _write_elision || cb.is_dirty() || media_failure) {
         // CS TODO: apparently page LSN can be null for unallocated pages
         // (i.e., "holes" in extents)
         if (!page_lsn.is_null()) {
@@ -110,7 +112,7 @@ bool page_evictioner_base::evict_one(bf_idx victim)
 
     // Check if page needs to be flushed
     bool was_dirty = cb.is_dirty();
-    if (was_dirty) { flush_dirty_page(cb); }
+    if (was_dirty && !_write_elision) { flush_dirty_page(cb); }
     w_assert1(cb.latch().is_mine());
 
     if (_log_evictions) {
@@ -166,7 +168,7 @@ void page_evictioner_base::ref(bf_idx idx)
 
 bf_idx page_evictioner_base::pick_victim()
 {
-    bool ignore_dirty = _bufferpool->is_no_db_mode();
+    bool ignore_dirty = _write_elision || _no_db_mode;
 
      auto next_idx = [this]
      {

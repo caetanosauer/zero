@@ -95,6 +95,13 @@ void page_cleaner_decoupled::do_work()
 
     if(!segments.empty()) { flush_segments(); }
 
+    // cleans up dirty page table and updates rec_lsn
+    if (_write_elision) {
+        // smlevel_0::vol->sync();
+        w_assert0(smlevel_0::recovery);
+        smlevel_0::recovery->notify_cleaned_lsn(_last_lsn);
+    }
+
     DBGTHRD(<< "Cleaner thread deactivating. Cleaned until " << _clean_lsn);
     _clean_lsn = _last_lsn;
 }

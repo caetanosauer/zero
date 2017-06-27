@@ -191,7 +191,9 @@ chkpt_m::chkpt_m(const sm_options& options, chkpt_t* chkpt_info)
     _print_propstats = options.get_bool_option("sm_chkpt_print_propstats", false);
 
     // _use_log_archive mandatory with nodb mode
-    if (options.get_bool_option("sm_no_db", false)) {
+    bool no_db_mode = options.get_bool_option("sm_no_db", false);
+    bool write_elision = options.get_bool_option("sm_write_elision", false);
+    if (no_db_mode || write_elision) {
         _use_log_archive = true;
     }
 
