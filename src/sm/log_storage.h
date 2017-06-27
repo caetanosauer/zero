@@ -100,6 +100,8 @@ public:
 
     off_t get_partition_size() const { return _partition_size; }
 
+    size_t get_byte_distance(lsn_t a, lsn_t b) const;
+
     string make_log_name(partition_number_t pnum) const;
     fs::path make_log_path(partition_number_t pnum) const;
     fs::path make_chkpt_path(lsn_t lsn) const;

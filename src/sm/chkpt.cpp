@@ -210,17 +210,8 @@ void chkpt_m::do_work()
     ss_m::log->get_storage()->wakeup_recycler(true /* chkpt_only */);
 
     if (_print_propstats) {
-        auto psize = smlevel_0::log->get_storage()->get_partition_size();
-        auto lsn = _last_end_lsn;
-        size_t redo_length = 0;
-        if (_min_rec_lsn.hi() == lsn.hi()) {
-            redo_length = lsn.lo() - _min_rec_lsn.lo();
-        }
-        else if (_min_rec_lsn != lsn_t::null) {
-            w_assert0(lsn > _min_rec_lsn);
-            size_t rest = lsn.lo() + psize - _min_rec_lsn.lo();
-            redo_length = psize * (lsn.hi() - _min_rec_lsn.hi()) + rest;
-        }
+        auto redo_length = smlevel_0::log->get_storage()->get_byte_distance(
+                _min_rec_lsn, _last_end_lsn);
         _propstats_ofs << _dirty_page_count << '\t' << redo_length << std::endl;
     }
 }

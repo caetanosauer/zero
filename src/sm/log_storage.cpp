@@ -549,3 +549,18 @@ void log_storage::try_delete(partition_number_t pnum)
                 max_partitions or partition_size.");
     }
 }
+
+size_t log_storage::get_byte_distance(lsn_t a, lsn_t b) const
+{
+    if (a.is_null()) { a = lsn_t(1,0); }
+    if (b.is_null()) { b = lsn_t(1,0); }
+    if (a > b) { std::swap(a,b); }
+
+    if (a.hi() == b.hi()) {
+        return b.lo() - a.lo();
+    }
+    else {
+        size_t rest = b.lo() + (_partition_size - a.lo());
+        return _partition_size * (b.hi() - a.hi() - 1) + rest;
+    }
+}
