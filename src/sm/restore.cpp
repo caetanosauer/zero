@@ -112,4 +112,9 @@ void LogReplayer::replay(LogScan logs, PageIter& pagesBegin, PageIter pagesEnd)
         ADD_TSTAT(restore_log_volume, lr->length());
         replayed++;
     }
+
+    while (page != pagesEnd) {
+        // make sure every page is unpinned
+        ++page;
+    }
 }
