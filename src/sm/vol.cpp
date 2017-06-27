@@ -315,6 +315,8 @@ void vol_t::read_vector(PageID first_pid, unsigned count,
 {
     w_assert1(frames.size() >= count);
 
+    w_assert0(count <= IOV_MAX);
+
     // Backup reads must guarantee that unallocated pages are zeroed out
     // (see comment in read_backup)
     auto backup_pages = _backup_alloc_cache->get_end_pid();
@@ -325,7 +327,7 @@ void vol_t::read_vector(PageID first_pid, unsigned count,
         return;
     }
 
-    std::vector<struct iovec> iov;
+    static thread_local std::vector<struct iovec> iov;
     iov.resize(count);
     for (unsigned i = 0; i < count; i++) {
         iov[i].iov_base = frames[i];
