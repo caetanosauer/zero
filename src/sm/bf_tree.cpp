@@ -494,10 +494,10 @@ void bf_tree_m::unset_media_failure()
     // of this method via a callback. For now, well just let it linger as a
     // "zombie" thread
     // _background_restorer = nullptr;
-    _restore_coord = nullptr;
     Logger::log_sys<restore_end_log>();
     smlevel_0::vol->close_backup();
     ERROUT(<< "Restore done!");
+    _restore_coord = nullptr;
 }
 
 void bf_tree_m::notify_archived_lsn(lsn_t archived_lsn)
@@ -664,6 +664,16 @@ w_rc_t bf_tree_m::fix(generic_page* parent, generic_page*& page,
                 cb.init(pid, lsn_t::null);
                 ::memset(page, 0, sizeof(generic_page));
                 page->pid = pid;
+
+                // Only way I could think of to destroy background restorer
+                static std::atomic<bool> i_shall_destroy {false};
+                if (!is_media_failure() && !_restore_coord && _background_restorer) {
+                    bool expected = false;
+                    if (i_shall_destroy.compare_exchange_strong(expected, true)) {
+                        _background_restorer->join();
+                        _background_restorer = nullptr;
+                    }
+                }
             }
 
             // When a page is first fetched from storage, we always check
