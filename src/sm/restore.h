@@ -122,20 +122,27 @@ class RestoreCoordinator
 public:
 
     RestoreCoordinator(size_t segSize, size_t segCount, RestoreFunctor f,
-            bool virgin_pages, bool start_locked)
-        : _segmentSize{segSize}, _bitmap{new RestoreBitmap {segCount}},
-        _restoreFunctor{f}, _virgin_pages{virgin_pages}, _start_locked(start_locked)
+            bool virgin_pages, bool start_locked = false)
+        : _segment_size{segSize}, _bitmap{new RestoreBitmap {segCount}},
+        _restoreFunctor{f}, _virgin_pages{virgin_pages}, _start_locked(start_locked),
+        _begin_lsn(lsn_t::null), _end_lsn(lsn_t::null)
     {
         if (_start_locked) {
             _mutex.lock();
         }
     }
 
+    void set_lsns(lsn_t begin, lsn_t end)
+    {
+        _begin_lsn = begin;
+        _end_lsn = end;
+    }
+
     void fetch(PageID pid)
     {
         using namespace std::chrono_literals;
 
-        auto segment = pid / _segmentSize;
+        auto segment = pid / _segment_size;
         if (segment >= _bitmap->get_size() || _bitmap->is_restored(segment)) {
             return;
         }
@@ -151,11 +158,12 @@ public:
 
         if (_bitmap->attempt_restore(segment)) {
             lck.unlock();
-            doRestore(segment, ticket);
+            doRestore(segment, segment+1, ticket);
         }
         else {
+            constexpr auto sleep_time = 10ms;
             auto pred = [this, segment] { return _bitmap->is_restored(segment); };
-            while (!pred()) { ticket->wait_for(lck, 1ms, pred); }
+            while (!pred()) { ticket->wait_for(lck, sleep_time, pred); }
         }
     }
 
@@ -168,19 +176,36 @@ public:
         if (!_waiting_table.empty()) { return false; }
 
         std::unique_lock<std::mutex> lck {_mutex};
-        auto segment = _bitmap->get_first_unrestored();
+        auto segment_begin = _bitmap->get_first_unrestored();
 
-        if (segment == _bitmap->get_size()) {
+        if (segment_begin == _bitmap->get_size()) {
             // All segments in either "restoring" or "restored" state
             done = true;
             return false;
         }
 
-        auto ticket = getWaitingTicket(segment);
+        // Try to restore multiple segments with a single call
+        size_t restore_size = 0;
+        unsigned segment_end = segment_begin;
+        while (true) {
+            if (!_bitmap->is_unrestored(segment_end)) { break; }
 
-        if (_bitmap->attempt_restore(segment)) {
+            getWaitingTicket(segment_end);
+            if (_bitmap->attempt_restore(segment_end)) {
+                segment_end++;
+                restore_size += _segment_size;
+            }
+            else { break; }
+
+            if (restore_size > MaxRestorePages - _segment_size) { break; }
+        }
+
+        if (segment_end > segment_begin) {
             lck.unlock();
-            doRestore(segment, ticket);
+            // ticket is ignored here -- threads just wait for timeout
+            ERROUT(<< "background restore: " << segment_begin << " - " <<
+                    segment_end);
+            doRestore(segment_begin, segment_end, nullptr);
             return true;
         }
 
@@ -189,7 +214,7 @@ public:
 
     bool isPidRestored(PageID pid) const
     {
-        auto segment = pid / _segmentSize;
+        auto segment = pid / _segment_size;
         return segment >= _bitmap->get_size() || _bitmap->is_restored(segment);
     }
 
@@ -206,7 +231,7 @@ public:
 private:
     using Ticket = std::shared_ptr<std::condition_variable>;
 
-    const size_t _segmentSize;
+    const size_t _segment_size;
 
     std::mutex _mutex;
     std::unordered_map<unsigned, Ticket> _waiting_table;
@@ -215,27 +240,42 @@ private:
     const bool _virgin_pages;
     // This is used to make threads wait for log archiver reach a certain LSN
     const bool _start_locked;
+    lsn_t _begin_lsn;
+    lsn_t _end_lsn;
+
+    // Not customizable for now (should be at most IOV_MAX, which is 1024)
+    static constexpr size_t MaxRestorePages = 1024;
 
     Ticket getWaitingTicket(unsigned segment)
     {
+        // caller must hold mutex
         auto it = _waiting_table.find(segment);
         if (it == _waiting_table.end()) {
             auto ticket = make_shared<std::condition_variable>();
             _waiting_table[segment] = ticket;
+            w_assert0(_bitmap->is_unrestored(segment));
             return ticket;
         }
         else { return it->second; }
     }
 
-    void doRestore(unsigned segment, Ticket ticket)
+    void doRestore(unsigned segment_begin, unsigned segment_end, Ticket ticket)
     {
-        _restoreFunctor(segment, _segmentSize, _virgin_pages);
+        _restoreFunctor(segment_begin, segment_end, _segment_size,
+                _virgin_pages, _begin_lsn, _end_lsn);
 
-        _bitmap->mark_restored(segment);
-        ticket->notify_all();
+        for (auto s = segment_begin; s < segment_end; s++) {
+            _bitmap->mark_restored(s);
+        }
+
+        // If multiple segments given, no notify is sent -- rely on timeout
+        if (ticket) { ticket->notify_all(); }
 
         std::unique_lock<std::mutex> lck {_mutex};
-        _waiting_table.erase(segment);
+        for (auto s = segment_begin; s < segment_end; s++) {
+            bool erased = _waiting_table.erase(s);
+            w_assert0(erased);
+        }
     }
 };
 
@@ -247,7 +287,8 @@ struct LogReplayer
 
 struct SegmentRestorer
 {
-    static void bf_restore(unsigned segment, size_t segmentSize, bool virgin_pages);
+    static void bf_restore(unsigned segment_begin, unsigned segment_end,
+            size_t segment_size, bool virgin_pages, lsn_t begin_lsn, lsn_t end_lsn);
 };
 
 /** Thread that restores untouched segments in the background with low priority */
@@ -262,12 +303,14 @@ public:
 
     virtual void do_work()
     {
+        using namespace std::chrono_literals;
+
         bool no_segments_left = false;
         bool restored_last = false;
 
         auto do_sleep = [] {
-            constexpr int sleep_time = 5;
-            std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
+            constexpr auto sleep_time = 100ms;
+            std::this_thread::sleep_for(sleep_time);
         };
 
         while (true) {

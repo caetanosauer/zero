@@ -15,34 +15,41 @@
 
 #include "stopwatch.h"
 
-void SegmentRestorer::bf_restore(unsigned segment, size_t segmentSize, bool virgin_pages)
+void SegmentRestorer::bf_restore(unsigned segment_begin, unsigned segment_end,
+        size_t segment_size, bool virgin_pages, lsn_t begin_lsn, lsn_t end_lsn)
 {
-    PageID first_pid = segment * segmentSize;
-    GenericPageIterator pbegin {first_pid, segmentSize, virgin_pages};
-    GenericPageIterator pend;
-
+    PageID first_pid = segment_begin * segment_size;
+    PageID total_pages = (segment_end - segment_begin) * segment_size;
     if (smlevel_0::bf->is_media_failure(first_pid)) {
-        auto count = std::min(static_cast<PageID>(segmentSize),
+        auto count = std::min(total_pages,
                 smlevel_0::bf->get_media_failure_pid() - first_pid);
         smlevel_0::bf->prefetch_pages(first_pid, count);
     }
 
-    // CS TODO: pass backupLSN rather than lsn_t::null
+    for (unsigned s = segment_begin; s < segment_end; s++) {
+        first_pid = s * segment_size;
+        GenericPageIterator pbegin {first_pid, segment_size, virgin_pages};
+        GenericPageIterator pend;
+
+        // CS TODO: pass backupLSN rather than lsn_t::null
 #ifdef USE_MMAP
-    static thread_local ArchiveScan archive_scan{smlevel_0::logArchiver->getIndex()};
-    archive_scan.open(first_pid, 0, lsn_t::null);
-    auto logiter = &archive_scan;
+        // CS TODO there seems to be a weird memory leak in ArchiveScan
+        static thread_local ArchiveScan archive_scan{smlevel_0::logArchiver->getIndex()};
+        // ArchiveScan archive_scan{smlevel_0::logArchiver->getIndex()};
+        archive_scan.open(first_pid, 0, begin_lsn, end_lsn);
+        auto logiter = &archive_scan;
 #else
-    ArchiveScanner logScan {smlevel_0::logArchiver->getIndex().get()};
-    auto logiter = logScan.open(first_pid, 0, lsn_t::null);
+        ArchiveScanner logScan {smlevel_0::logArchiver->getIndex().get()};
+        auto logiter = logScan.open(first_pid, 0, lsn_t::null);
 #endif
 
-    if (logiter) {
-        LogReplayer::replay(logiter, pbegin, pend);
-    }
+        if (logiter) {
+            LogReplayer::replay(logiter, pbegin, pend);
+        }
 
-    // CS TODO:  use boolean template parameter to tell whether to log or not
-    Logger::log_sys<restore_segment_log>(segment);
+        // CS TODO:  use boolean template parameter to tell whether to log or not
+        Logger::log_sys<restore_segment_log>(s);
+    }
 }
 
 template <class LogScan, class PageIter>

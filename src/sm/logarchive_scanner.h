@@ -40,7 +40,8 @@ public:
     ArchiveScan(std::shared_ptr<ArchiveIndex>);
     ~ArchiveScan();
 
-    void open(PageID startPID, PageID endPID, lsn_t startLSN);
+    void open(PageID startPID, PageID endPID, lsn_t startLSN,
+            lsn_t endLSN = lsn_t::null);
     bool next(logrec_t*&);
     bool finished();
 

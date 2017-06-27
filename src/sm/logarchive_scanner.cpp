@@ -26,13 +26,13 @@ ArchiveScan::ArchiveScan(std::shared_ptr<ArchiveIndex> archIndex)
     clear();
 }
 
-void ArchiveScan::open(PageID startPID, PageID endPID, lsn_t startLSN)
+void ArchiveScan::open(PageID startPID, PageID endPID, lsn_t startLSN, lsn_t endLSN)
 {
     w_assert0(archIndex);
     clear();
     auto& inputs = _mergeInputVector;
 
-    archIndex->probe(inputs, startPID, endPID, startLSN);
+    archIndex->probe(inputs, startPID, endPID, startLSN, endLSN);
 
     singlePage = (endPID == startPID+1);
 

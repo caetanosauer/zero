@@ -406,12 +406,11 @@ void bf_tree_m::post_init()
 {
     if (_no_db_mode && _batch_warmup) {
         constexpr bool virgin_pages = true;
-    constexpr bool start_locked = false;
         auto vol_pages = smlevel_0::vol->num_used_pages();
         auto segcount = vol_pages  / _batch_segment_size
             + (vol_pages % _batch_segment_size ? 1 : 0);
         _restore_coord = std::make_shared<RestoreCoord> (_batch_segment_size,
-                segcount, SegmentRestorer::bf_restore, virgin_pages, start_locked);
+                segcount, SegmentRestorer::bf_restore, virgin_pages);
     }
 
     if(_cleaner_decoupled) {
@@ -468,17 +467,19 @@ void bf_tree_m::set_media_failure()
             segcount, SegmentRestorer::bf_restore, virgin_pages, start_locked);
 
     smlevel_0::vol->open_backup();
+    lsn_t backup_lsn = smlevel_0::vol->get_backup_lsn();
 
     _media_failure_pid = vol_pages;
 
     // Make sure log is archived until failureLSN
-    lsn_t failureLSN = Logger::log_sys<restore_begin_log>(vol_pages);
+    lsn_t failure_lsn = Logger::log_sys<restore_begin_log>(vol_pages);
     ERROUT(<< "Media failure injected! Waiting for log archiver to reach LSN "
-            << failureLSN);
+            << failure_lsn);
     stopwatch_t timer;
-    smlevel_0::logArchiver->archiveUntilLSN(failureLSN);
+    smlevel_0::logArchiver->archiveUntilLSN(failure_lsn);
     ERROUT(<< "Failure LSN reached in " << timer.time() << " seconds");
 
+    _restore_coord->set_lsns(backup_lsn, failure_lsn);
     _restore_coord->start();
 
     _background_restorer = std::make_shared<BgRestorer>
