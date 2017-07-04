@@ -88,16 +88,6 @@ public:
     ArchiveIndex(const sm_options& options);
     virtual ~ArchiveIndex();
 
-    struct ProbeResult {
-        PageID pidBegin;
-        PageID pidEnd;
-        lsn_t runBegin;
-        lsn_t runEnd;
-        unsigned level;
-        size_t offset;
-        size_t runIndex;
-    };
-
     struct BlockEntry {
         size_t offset;
         PageID pid;
@@ -159,8 +149,6 @@ public:
 
     rc_t finishRun(lsn_t first, lsn_t last, PageID maxPID,
             int fd, off_t offset, unsigned level);
-    void probe(std::vector<ProbeResult>& probes,
-            PageID startPID, PageID endPID, lsn_t startLSN);
 
     template <class Input>
     void probe(std::vector<Input>&, PageID, PageID, lsn_t startLSN,
@@ -206,7 +194,6 @@ private:
 
     void appendNewRun(unsigned level);
     size_t findRun(lsn_t lsn, unsigned level);
-    bool probeInRun(ProbeResult&);
     // binary search
     size_t findEntry(RunInfo* run, PageID pid,
             int from = -1, int to = -1);
