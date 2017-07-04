@@ -8,6 +8,7 @@
 #include "basics.h"
 #include "lsn.h"
 #include "w_heap.h"
+#include "logarchive_index.h"
 
 class ArchiveIndex;
 class LogScanner;
@@ -45,6 +46,9 @@ public:
     bool next(logrec_t*&);
     bool finished();
 
+    template <class Iter>
+    void openForMerge(Iter begin, Iter end);
+
     void dumpHeap();
 
 private:
@@ -61,6 +65,39 @@ private:
 
     void clear();
 };
+
+bool mergeInputCmpGt(const MergeInput& a, const MergeInput& b);
+
+template <class Iter>
+void ArchiveScan::openForMerge(Iter begin, Iter end)
+{
+    w_assert0(archIndex);
+    clear();
+    auto& inputs = _mergeInputVector;
+
+    for (Iter it = begin; it != end; it++) {
+        MergeInput input;
+        auto runid = *it;
+        input.pos = 0;
+        input.runFile = archIndex->openForScan(*it);
+        inputs.push_back(input);
+    }
+
+    heapBegin = inputs.begin();
+    auto it = inputs.rbegin();
+    while (it != inputs.rend())
+    {
+        constexpr PageID startPID = 0;
+        if (it->open(startPID)) { it++; }
+        else {
+            std::advance(it, 1);
+            inputs.erase(it.base());
+        }
+    }
+
+    heapEnd = inputs.end();
+    std::make_heap(heapBegin, heapEnd, mergeInputCmpGt);
+}
 
 /** \brief Provides scans over the log archive for restore operations.
  *

@@ -68,7 +68,7 @@ LogArchiver::LogArchiver(const sm_options& options)
 
     merger = nullptr;
     if (options.get_bool_option("sm_archiver_merging", false)) {
-        merger = new MergerDaemon(options, index.get());
+        merger = new MergerDaemon(options, index);
         merger->fork();
         merger->wakeup();
     }
@@ -674,7 +674,7 @@ void LogArchiver::archiveUntilLSN(lsn_t lsn)
 }
 
 MergerDaemon::MergerDaemon(const sm_options& options,
-        ArchiveIndex* in, ArchiveIndex* out)
+        std::shared_ptr<ArchiveIndex> in, std::shared_ptr<ArchiveIndex> out)
     :
     // CS TODO: interval should come from merge policy
     worker_thread_t(0),
@@ -738,31 +738,20 @@ rc_t MergerDaemon::doMerge(unsigned level, unsigned fanin)
     }
 
     {
-        ArchiveScanner::RunMerger merger;
+        ArchiveScan scan {outdir};
+        scan.openForMerge(begin, end);
         // CS TODO: outdir may not have the same runs in the merged level,
         // which will screw up the assignment of endLSN boundaries. Here,
         // we should check that and, if needed, create an empty run from the
         // boundaries of level in indir.
-        BlockAssembly blkAssemb(outdir, level+1, _compression);
+        BlockAssembly blkAssemb(outdir.get(), level+1, _compression);
         outdir->openNewRun(level+1);
 
-        DBGOUT1(<< "doMerge");
-        list<RunId>::const_iterator iter = begin;
-        while (iter != end) {
-            DBGOUT1(<< "Merging " << iter->beginLSN << "-" << iter->endLSN);
-            ArchiveScanner::RunScanner* runScanner =
-                new ArchiveScanner::RunScanner(
-                        iter->beginLSN, iter->endLSN, iter->level, 0, 0, 0 /* offset */, indir);
-
-            merger.addInput(runScanner);
-            iter++;
-        }
-
         constexpr int runNumber = 0;
-        if (merger.heapSize() > 0) {
+        if (!scan.finished()) {
             logrec_t* lr;
             blkAssemb.start(runNumber);
-            while (merger.next(lr)) {
+            while (scan.next(lr)) {
                 if (!blkAssemb.add(lr)) {
                     blkAssemb.finish();
                     blkAssemb.start(runNumber);

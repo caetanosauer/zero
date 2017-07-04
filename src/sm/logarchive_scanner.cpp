@@ -4,7 +4,6 @@
 
 #include "stopwatch.h"
 #include "smthread.h"
-#include "logarchive_index.h"
 #include "log_consumer.h" // for LogScanner
 
 // CS TODO: Aligning with the Linux standard FS block size

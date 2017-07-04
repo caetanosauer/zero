@@ -38,14 +38,9 @@ void page_cleaner_decoupled::do_work()
 
     ERROUT(<< "Decoupled cleaner thread activated from " << _clean_lsn
             << " to " << _last_lsn);
-#ifdef MMAP
-    static thread_local ArchiveScan archive_scan{archIndex};
+    static thread_local ArchiveScan archive_scan{arch_index};
     archive_scan.open(0, 0, _clean_lsn);
     auto merger = &archive_scan;
-#else
-    ArchiveScanner logScan(smlevel_0::logArchiver->getIndex().get());
-    auto merger = logScan.open(0, 0, _clean_lsn);
-#endif
 
     segments.clear();
     generic_page* page = nullptr;

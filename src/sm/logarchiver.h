@@ -120,7 +120,8 @@ class ArchiverHeap {
 class MergerDaemon : public worker_thread_t {
 public:
     MergerDaemon(const sm_options&,
-            ArchiveIndex* in, ArchiveIndex* out = nullptr);
+        std::shared_ptr<ArchiveIndex> in,
+        std::shared_ptr<ArchiveIndex> ou = nullptr);
 
     virtual ~MergerDaemon() {}
 
@@ -129,8 +130,8 @@ public:
     rc_t doMerge(unsigned level, unsigned fanin);
 
 private:
-    ArchiveIndex* indir;
-    ArchiveIndex* outdir;
+    std::shared_ptr<ArchiveIndex> indir;
+    std::shared_ptr<ArchiveIndex> outdir;
     unsigned _fanin;
     bool _compression;
 };

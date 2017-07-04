@@ -213,7 +213,7 @@ void LogArchiveScanner::run()
     sm_options opt;
     opt.set_string_option("sm_archdir", archdir);
     // opt.set_int_option("sm_archiver_block_size", blockSize);
-    ArchiveIndex* directory = new ArchiveIndex(opt);
+    auto directory = std::make_shared<ArchiveIndex>(opt);
 
     std::vector<std::string> runFiles;
 
@@ -245,22 +245,21 @@ void LogArchiveScanner::run()
             openFileCallback(runFiles[i].c_str());
         }
 
-        ArchiveScanner::RunScanner* rs =
-            new ArchiveScanner::RunScanner(
-                    runBegin,
-                    runEnd,
-                    fstats.level,
+        ArchiveScan scan {directory};
+        scan.open(
                     scan_pid, // first PID
                     0, // last PID
-                    0,            // file offset
-                    directory
+                    runBegin,
+                    runEnd
+                    // CS TODO: level not supported yet
+                    // fstats.level
             );
 
         lsn_t prevLSN = lsn_t::null;
         PageID prevPid = 0;
 
         logrec_t* lr;
-        while (rs->next(lr)) {
+        while (scan.next(lr)) {
             w_assert0(lr->pid() >= prevPid);
             w_assert0(lr->has_page_img(lr->pid()) ||
                     lr->pid() != prevPid ||
@@ -274,8 +273,6 @@ void LogArchiveScanner::run()
             prevLSN = lr->lsn_ck();
             prevPid = lr->pid();
         };
-
-        delete rs;
     }
 
     BaseScanner::finalize();
@@ -298,17 +295,16 @@ void MergeScanner::run()
     // opt.set_int_option("sm_archiver_block_size", blockSize);
     // opt.set_int_option("sm_archiver_bucket_size", bucketSize);
 
-    ArchiveIndex* directory = new ArchiveIndex(opt);
-    ArchiveScanner logScan(directory);
-
-    auto merger = logScan.open(scan_pid, 0, lsn_t::null);
+    auto directory = std::make_shared<ArchiveIndex>(opt);
+    ArchiveScan scan {directory};
+    scan.open(scan_pid, 0, lsn_t::null);
 
     logrec_t* lr;
 
     lsn_t prevLSN = lsn_t::null;
     PageID prevPid = 0;
 
-    while (merger && merger->next(lr)) {
+    while (scan.next(lr)) {
         w_assert0(lr->pid() >= prevPid);
         w_assert0(lr->has_page_img(lr->pid()) ||
                 lr->pid() != prevPid ||

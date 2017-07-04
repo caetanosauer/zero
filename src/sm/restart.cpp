@@ -496,9 +496,7 @@ void grow_buffer(char*& buffer, size_t& buffer_capacity, size_t pos, logrec_t** 
 
 SprIterator::SprIterator()
     : buffer_capacity{1 << 18 /* 256KB */}
-#ifdef USE_MMAP
     , archive_scan{smlevel_0::logArchiver ? smlevel_0::logArchiver->getIndex() : nullptr}
-#endif
 {
     // Allocate initial buffer -- expand later if needed
     buffer = new char[buffer_capacity];
@@ -589,12 +587,7 @@ void SprIterator::open(PageID pid, lsn_t firstLSN, lsn_t lastLSN, bool prioritiz
         // What we have to do now is fetch the log records between current_lsn and
         // nxt (both exclusive intervals) from the log archive and add them into
         // the buffer as well.
-#ifdef USE_MMAP
         archive_scan.open(pid, pid+1, firstLSN);
-#else
-        archive_scan.reset(new ArchiveScanner{ss_m::logArchiver->getIndex()});
-        merger = archive_scan->open(pid, pid+1, firstLSN);
-#endif
     }
 
     lr_iter = lr_offsets.crbegin();

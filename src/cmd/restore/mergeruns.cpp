@@ -39,9 +39,9 @@ void MergeRuns::run()
     opt.set_int_option("sm_archiver_block_size", BLOCK_SIZE);
     opt.set_int_option("sm_archiver_bucket_size", bucketSize);
     opt.set_int_option("sm_page_img_compression", 16384);
-    ArchiveIndex* in = new ArchiveIndex(opt);
+    auto in = std::make_shared<ArchiveIndex>(opt);
 
-    ArchiveIndex* out = in;
+    auto out = in;
     if (!outdir.empty() && outdir != indir) {
         // if directory does not exist, create it
         fs::path fspath(outdir);
@@ -55,7 +55,7 @@ void MergeRuns::run()
         }
 
         opt.set_string_option("sm_archdir", outdir);
-        out = new ArchiveIndex(opt);
+        out = std::make_shared<ArchiveIndex>(opt);
     }
 
     MergerDaemon merge(opt, in, out);

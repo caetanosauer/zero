@@ -31,17 +31,11 @@ void SegmentRestorer::bf_restore(unsigned segment_begin, unsigned segment_end,
         GenericPageIterator pbegin {first_pid, segment_size, virgin_pages};
         GenericPageIterator pend;
 
-        // CS TODO: pass backupLSN rather than lsn_t::null
-#ifdef USE_MMAP
         // CS TODO there seems to be a weird memory leak in ArchiveScan
         static thread_local ArchiveScan archive_scan{smlevel_0::logArchiver->getIndex()};
         // ArchiveScan archive_scan{smlevel_0::logArchiver->getIndex()};
         archive_scan.open(first_pid, 0, begin_lsn, end_lsn);
         auto logiter = &archive_scan;
-#else
-        ArchiveScanner logScan {smlevel_0::logArchiver->getIndex().get()};
-        auto logiter = logScan.open(first_pid, 0, lsn_t::null);
-#endif
 
         if (logiter) {
             LogReplayer::replay(logiter, pbegin, pend);
