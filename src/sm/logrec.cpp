@@ -625,23 +625,6 @@ void logrec_t::remove_info_for_pid(PageID pid)
 
 /*********************************************************************
  *
- *  xct_end_log
- *  xct_abort_log
- *
- *  Status Log to mark the end of transaction and space recovery.
- *
- *********************************************************************/
-void xct_end_log::construct()
-{
-}
-
-// We use a different log record type here only for debugging purposes
-void xct_abort_log::construct()
-{
-}
-
-/*********************************************************************
- *
  *  comment_log
  *
  *  For debugging
@@ -668,28 +651,6 @@ void compensate_log::construct(const lsn_t& rec_lsn)
 }
 
 
-/*********************************************************************
- *
- *  skip_log partition
- *
- *  Filler log record -- for skipping to end of log partition
- *
- *********************************************************************/
-void skip_log::construct()
-{
-}
-
-/*********************************************************************
- *
- *  chkpt_begin_log
- *
- *  Status Log to mark start of fussy checkpoint.
- *
- *********************************************************************/
-void chkpt_begin_log::construct()
-{
-}
-
 struct update_emlsn_t {
     lsn_t                   _child_lsn;
     general_recordid_t      _child_slot;
@@ -713,76 +674,10 @@ void update_emlsn_log::redo(PagePtr page) {
 }
 
 
-void xct_latency_dump_log::construct(unsigned long nsec)
-{
-    serialize_log_fields(this, nsec);
-}
-
-void add_backup_log::construct(const string& path, lsn_t backupLSN)
-{
-    serialize_log_fields(this, backupLSN, path);
-}
-
-void evict_page_log::construct(PageID pid, bool was_dirty, lsn_t page_lsn)
-{
-    serialize_log_fields(this, pid, was_dirty, page_lsn);
-    // char* data = data_ssx();
-    // *(reinterpret_cast<PageID*>(data)) = pid;
-    // data += sizeof(PageID);
-
-    // *(reinterpret_cast<bool*>(data)) = was_dirty;
-    // data += sizeof(bool);
-
-    // *(reinterpret_cast<lsn_t*>(data)) = page_lsn;
-    // data += sizeof(lsn_t);
-
-    // set_size(sizeof(data - data_ssx()));
-}
-
-void fetch_page_log::construct(PageID pid, lsn_t page_lsn, StoreID store)
-{
-    serialize_log_fields(this, pid, page_lsn, store);
-}
-
-void undo_done_log::construct()
-{
-}
-
-void redo_done_log::construct()
-{
-}
-
-void loganalysis_end_log::construct()
-{
-}
-
-void loganalysis_begin_log::construct()
-{
-}
-
-void restore_begin_log::construct(PageID page_cnt)
-{
-    serialize_log_fields(this, page_cnt);
-}
-
-void restore_end_log::construct()
-{
-#ifdef TIMED_LOG_RECORDS
-    unsigned long tstamp = sysevent_timer::timestamp();
-    memcpy(_data, &tstamp, sizeof(unsigned long));
-    set_size(sizeof(unsigned long));
-#endif
-}
-
 template <class PagePtr>
 void restore_end_log::redo(PagePtr)
 {
     return; // CS TODO: disabled for now
-}
-
-void restore_segment_log::construct(uint32_t segment)
-{
-    serialize_log_fields(this, segment);
 }
 
 template <class PagePtr>
@@ -853,29 +748,6 @@ void page_img_format_log::redo(PagePtr page) {
     page_img_format_t<PagePtr>* dp = (page_img_format_t<PagePtr>*) _data;
     dp->apply(page);
 }
-
-void tick_sec_log::construct()
-{
-}
-
-void tick_msec_log::construct()
-{
-}
-
-void benchmark_start_log::construct()
-{
-}
-
-void page_read_log::construct(PageID pid, uint32_t count)
-{
-    serialize_log_fields(this, pid, count);
-}
-
-void page_write_log::construct(PageID pid, lsn_t lsn, uint32_t count)
-{
-    serialize_log_fields(this, pid, lsn, count);
-}
-
 
 
 /*********************************************************************

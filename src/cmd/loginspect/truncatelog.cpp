@@ -40,13 +40,13 @@ void TruncateLog::run()
 
     logrec_t* logrec = (logrec_t*) (buffer + pos);
     logrec->init_header(chkpt_begin_log::TYPE);
-    reinterpret_cast<chkpt_begin_log*>(logrec)->construct();
+    // reinterpret_cast<chkpt_begin_log*>(logrec)->construct();
     logrec->set_lsn_ck(lsn_t(partition, 0));
     pos += logrec->length();
 
     logrec = (logrec_t*) (buffer + pos);
     logrec->init_header(skip_log::TYPE);
-    reinterpret_cast<skip_log*>(logrec)->construct();
+    // reinterpret_cast<skip_log*>(logrec)->construct();
     logrec->set_lsn_ck(lsn_t(partition, pos));
     pos += logrec->length();
 

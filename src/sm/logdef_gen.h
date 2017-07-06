@@ -68,42 +68,34 @@ void deserialize_log_fields(logrec_t* lr, T&... fields)
 
     struct skip_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_skip;
-    void construct ();
     };
 
     struct chkpt_begin_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_chkpt_begin;
-    void construct ();
     };
 
     struct add_backup_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_add_backup;
-    void construct (const string& path, lsn_t backupLSN);
     };
 
     struct evict_page_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_evict_page;
-        void construct (PageID pid, bool was_dirty, lsn_t page_lsn);
     };
 
     struct fetch_page_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_fetch_page;
-        void construct (PageID pid, lsn_t page_lsn, StoreID store);
     };
 
     struct xct_abort_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_xct_abort;
-    void construct ();
     };
 
     struct xct_end_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_xct_end;
-    void construct ();
     };
 
     struct xct_latency_dump_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_xct_latency_dump;
-    void construct (unsigned long nsec);
     };
 
     struct alloc_page_log : public logrec_t {
@@ -159,45 +151,36 @@ void deserialize_log_fields(logrec_t* lr, T&... fields)
 
     struct loganalysis_begin_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_loganalysis_begin;
-    void construct ();
     };
 
     struct loganalysis_end_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_loganalysis_end;
-    void construct ();
     };
 
     struct redo_done_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_redo_done;
-    void construct ();
     };
 
     struct undo_done_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_undo_done;
-    void construct ();
     };
 
     struct restore_begin_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_restore_begin;
-    void construct (PageID page_cnt);
     };
 
     struct restore_segment_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_restore_segment;
-    void construct (uint32_t segment);
     template <class Ptr> void redo(Ptr);
     };
 
     struct restore_end_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_restore_end;
-    void construct ();
     template <class Ptr> void redo(Ptr);
     };
 
     struct warmup_done_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_warmup_done;
-        void construct ()
-        {}
     };
 
     struct page_img_format_log : public logrec_t {
@@ -286,27 +269,22 @@ void deserialize_log_fields(logrec_t* lr, T&... fields)
 
     struct tick_sec_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_tick_sec;
-        void construct();
     };
 
     struct tick_msec_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_tick_msec;
-        void construct();
     };
 
     struct benchmark_start_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_benchmark_start;
-        void construct();
     };
 
     struct page_write_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_page_write;
-        void construct(PageID pid, lsn_t lsn, uint32_t count = 1);
     };
 
     struct page_read_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_page_read;
-        void construct(PageID pid, uint32_t count);
     };
 
 #endif

@@ -28,7 +28,7 @@ public:
         new (logrec) Logrec;
         logrec->init_header(Logrec::TYPE);
         logrec->init_xct_info();
-        reinterpret_cast<Logrec*>(logrec)->construct(args...);
+        serialize_log_fields(logrec, args...);
         w_assert1(logrec->valid_header());
 
         // REDO log records always pertain to a page and must therefore use log_p
@@ -183,7 +183,7 @@ public:
         new (logrec) Logrec;
         logrec->init_header(Logrec::TYPE);
         logrec->init_xct_info();
-        reinterpret_cast<Logrec*>(logrec)->construct(args...);
+        serialize_log_fields(logrec, args...);
         w_assert1(logrec->valid_header());
         w_assert1(logrec_t::get_logrec_cat(Logrec::TYPE) == logrec_t::t_system);
 
