@@ -64,7 +64,7 @@ void sm_tls_allocator::release(xct_t::xct_core* p, size_t)
 // If we run into btree shrinking activity, we'll bump up the
 // fudge factor, b/c to undo a lot of btree removes (incremental
 // tree removes) takes about 4X the logging...
-extern double logfudge_factors[logrec_t::t_max_logrec]; // in logstub.cpp
+extern double logfudge_factors[t_max_logrec]; // in logstub.cpp
 #define UNDO_FUDGE_FACTOR(t, nbytes) int((logfudge_factors[t])*(nbytes))
 
 #ifdef W_TRACE
@@ -183,7 +183,7 @@ inline bool   xct_t::should_consume_rollback_resv(int t) const
         _rolling_back || _core->_xct_aborting
         // compensate is a special case:
         // consume rollback space
-        || t == logrec_t::t_compensate ;
+        || t == t_compensate ;
  }
 
 struct lock_info_ptr {

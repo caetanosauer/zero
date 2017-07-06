@@ -405,7 +405,7 @@ void logrec_t::redo()
     redo<btree_page_h*>(nullptr);
 }
 
-static __thread logrec_t::kind_t undoing_context = logrec_t::t_max_logrec; // for accounting TODO REMOVE
+static __thread kind_t undoing_context = t_max_logrec; // for accounting TODO REMOVE
 
 
 /*********************************************************************
@@ -421,7 +421,7 @@ template <class PagePtr>
 void logrec_t::undo(PagePtr page)
 {
     w_assert0(!is_single_sys_xct()); // UNDO shouldn't be called for single-log sys xct
-    undoing_context = logrec_t::kind_t(header._type);
+    undoing_context = kind_t(header._type);
     DBG( << "Undo  log rec: " << *this
         << " size: " << header._len  << " xid_prevlsn: " << xid_prev());
 
@@ -573,7 +573,7 @@ void logrec_t::undo(PagePtr page)
 
     xct()->compensate_undo(xid_prev());
 
-    undoing_context = logrec_t::t_max_logrec;
+    undoing_context = t_max_logrec;
 }
 
 /*********************************************************************
@@ -781,19 +781,19 @@ operator<<(ostream& o, logrec_t& l)
     }
 
     switch(l.type()) {
-        case logrec_t::t_comment :
+        case t_comment :
             {
                 o << " " << (const char *)l._data;
                 break;
             }
-        case logrec_t::t_update_emlsn:
+        case t_update_emlsn:
             {
                 update_emlsn_t* pev = (update_emlsn_t*) l._data;
                 o << " slot: " << pev->_child_slot << " emlsn: "
                     << pev->_child_lsn;
                 break;
             }
-        case logrec_t::t_evict_page:
+        case t_evict_page:
             {
                 PageID pid;
                 bool was_dirty;
@@ -803,7 +803,7 @@ operator<<(ostream& o, logrec_t& l)
                     << page_lsn;
                 break;
             }
-        case logrec_t::t_fetch_page:
+        case t_fetch_page:
             {
                 PageID pid;
                 lsn_t plsn;
@@ -812,15 +812,15 @@ operator<<(ostream& o, logrec_t& l)
                 o << " pid: " << pid << " page_lsn: " << plsn << " store: " << store;
                 break;
             }
-        case logrec_t::t_alloc_page:
-        case logrec_t::t_dealloc_page:
+        case t_alloc_page:
+        case t_dealloc_page:
             {
                 PageID pid;
                 deserialize_log_fields(&l, pid);
                 o << " page: " << pid;
                 break;
             }
-        case logrec_t::t_create_store:
+        case t_create_store:
             {
                 StoreID stid;
                 PageID root_pid;
@@ -829,7 +829,7 @@ operator<<(ostream& o, logrec_t& l)
                 o << " root_pid: " << root_pid;
                 break;
             }
-        case logrec_t::t_page_read:
+        case t_page_read:
             {
                 PageID pid;
                 uint32_t count;
@@ -838,7 +838,7 @@ operator<<(ostream& o, logrec_t& l)
                 o << " pids: " << pid << "-" << end;
                 break;
             }
-        case logrec_t::t_page_write:
+        case t_page_write:
             {
                 PageID pid;
                 lsn_t clean_lsn;
@@ -848,14 +848,14 @@ operator<<(ostream& o, logrec_t& l)
                 o << " pids: " << pid << "-" << end << " clean_lsn: " << clean_lsn;
                 break;
             }
-        case logrec_t::t_restore_segment:
+        case t_restore_segment:
             {
                 uint32_t segment;
                 deserialize_log_fields(&l, segment);
                 o << " segment: " << segment;
                 break;
             }
-        case logrec_t::t_append_extent:
+        case t_append_extent:
             {
                 extent_id_t ext;
                 StoreID snum;
@@ -946,7 +946,7 @@ public:
 static logrec_accounting_impl_t dummy;
 void logrec_accounting_impl_t::reinit()
 {
-    for(int i=0; i < logrec_t::t_max_logrec; i++) {
+    for(int i=0; i < t_max_logrec; i++) {
         bytes_written_fwd[i] =
         bytes_written_bwd[i] =
         bytes_written_bwd_cxt[i] =
@@ -973,7 +973,7 @@ void logrec_accounting_impl_t::account_end(bool fwd)
     // Set the context to end so we can account for all
     // overhead related to that.
     if(!fwd) {
-        undoing_context = logrec_t::t_xct_end;
+        undoing_context = t_xct_end;
     }
 }
 void logrec_accounting_impl_t::account(logrec_t &l, bool fwd)
@@ -982,16 +982,16 @@ void logrec_accounting_impl_t::account(logrec_t &l, bool fwd)
     int      t = l.type();
     int      tcxt = l.type();
     if(fwd) {
-        w_assert0((undoing_context == logrec_t::t_max_logrec)
-               || (undoing_context == logrec_t::t_xct_end));
+        w_assert0((undoing_context == t_max_logrec)
+               || (undoing_context == t_xct_end));
     } else {
-        if(undoing_context != logrec_t::t_max_logrec) {
+        if(undoing_context != t_max_logrec) {
             tcxt = undoing_context;
         } else {
             // else it's something like a compensate  or xct_end
             // and we'll chalk it up to t_xct_abort, which
             // is not undoable.
-            tcxt = logrec_t::t_xct_abort;
+            tcxt = t_xct_abort;
         }
     }
     if(fwd) {
@@ -1025,7 +1025,7 @@ void logrec_accounting_t::print_account_and_clear()
 void logrec_accounting_impl_t::print_account_and_clear()
 {
     uint64_t anyb=0;
-    for(int i=0; i < logrec_t::t_max_logrec; i++) {
+    for(int i=0; i < t_max_logrec; i++) {
         anyb += insertions_bwd[i];
     }
     if(!anyb) {
@@ -1054,7 +1054,7 @@ void logrec_accounting_impl_t::print_account_and_clear()
     fprintf(stdout, "%s", out);
     uint64_t btf=0, btb=0, btc=0;
     uint64_t itf=0, itb=0, itc=0;
-    for(int i=0; i < logrec_t::t_max_logrec; i++) {
+    for(int i=0; i < t_max_logrec; i++) {
         btf += bytes_written_fwd[i];
         btb += bytes_written_bwd[i];
         btc += bytes_written_bwd_cxt[i];

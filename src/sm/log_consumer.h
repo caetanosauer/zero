@@ -54,7 +54,7 @@ public:
         return blockSize;
     }
 
-    void setIgnore(logrec_t::kind_t type) {
+    void setIgnore(kind_t type) {
         ignore.set(type);
     }
 
@@ -62,11 +62,11 @@ public:
         ignore.set();
     }
 
-    void unsetIgnore(logrec_t::kind_t type) {
+    void unsetIgnore(kind_t type) {
         ignore.reset(type);
     }
 
-    bool isIgnored(logrec_t::kind_t type) {
+    bool isIgnored(kind_t type) {
         return ignore[type];
     }
 
@@ -76,7 +76,7 @@ private:
     size_t toSkip;
     const size_t blockSize;
     char* truncBuf;
-    bitset<logrec_t::t_max_logrec> ignore;
+    bitset<t_max_logrec> ignore;
 };
 
 /** \brief Object to control execution of background threads.

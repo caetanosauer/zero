@@ -57,61 +57,61 @@ void deserialize_log_fields(logrec_t* lr, T&... fields)
 }
 
     struct comment_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_comment;
+        static constexpr kind_t TYPE = t_comment;
     void construct (const char* msg);
     };
 
     struct compensate_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_compensate;
+        static constexpr kind_t TYPE = t_compensate;
     void construct (const lsn_t& rec_lsn);
     };
 
     struct skip_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_skip;
+        static constexpr kind_t TYPE = t_skip;
     };
 
     struct chkpt_begin_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_chkpt_begin;
+        static constexpr kind_t TYPE = t_chkpt_begin;
     };
 
     struct add_backup_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_add_backup;
+        static constexpr kind_t TYPE = t_add_backup;
     };
 
     struct evict_page_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_evict_page;
+        static constexpr kind_t TYPE = t_evict_page;
     };
 
     struct fetch_page_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_fetch_page;
+        static constexpr kind_t TYPE = t_fetch_page;
     };
 
     struct xct_abort_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_xct_abort;
+        static constexpr kind_t TYPE = t_xct_abort;
     };
 
     struct xct_end_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_xct_end;
+        static constexpr kind_t TYPE = t_xct_end;
     };
 
     struct xct_latency_dump_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_xct_latency_dump;
+        static constexpr kind_t TYPE = t_xct_latency_dump;
     };
 
     struct alloc_page_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_alloc_page;
+        static constexpr kind_t TYPE = t_alloc_page;
     template <class Ptr> void construct (Ptr, PageID pid);
     template <class Ptr> void redo(Ptr);
     };
 
     struct dealloc_page_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_dealloc_page;
+        static constexpr kind_t TYPE = t_dealloc_page;
     template <class Ptr> void construct (Ptr, PageID pid);
     template <class Ptr> void redo(Ptr);
     };
 
     struct stnode_format_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_stnode_format;
+        static constexpr kind_t TYPE = t_stnode_format;
         template <class Ptr> void construct (Ptr)
         {
         }
@@ -125,7 +125,7 @@ void deserialize_log_fields(logrec_t* lr, T&... fields)
     };
 
     struct alloc_format_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_alloc_format;
+        static constexpr kind_t TYPE = t_alloc_format;
         template <class Ptr> void construct (Ptr)
         {
         }
@@ -137,154 +137,154 @@ void deserialize_log_fields(logrec_t* lr, T&... fields)
     };
 
     struct create_store_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_create_store;
+        static constexpr kind_t TYPE = t_create_store;
     template <class PagePtr>
     void construct (PagePtr page, PageID root_pid, StoreID snum);
     template <class Ptr> void redo(Ptr);
     };
 
     struct append_extent_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_append_extent;
+        static constexpr kind_t TYPE = t_append_extent;
     template <class Ptr> void construct (Ptr, StoreID, extent_id_t ext);
     template <class Ptr> void redo(Ptr);
     };
 
     struct loganalysis_begin_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_loganalysis_begin;
+        static constexpr kind_t TYPE = t_loganalysis_begin;
     };
 
     struct loganalysis_end_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_loganalysis_end;
+        static constexpr kind_t TYPE = t_loganalysis_end;
     };
 
     struct redo_done_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_redo_done;
+        static constexpr kind_t TYPE = t_redo_done;
     };
 
     struct undo_done_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_undo_done;
+        static constexpr kind_t TYPE = t_undo_done;
     };
 
     struct restore_begin_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_restore_begin;
+        static constexpr kind_t TYPE = t_restore_begin;
     };
 
     struct restore_segment_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_restore_segment;
+        static constexpr kind_t TYPE = t_restore_segment;
     template <class Ptr> void redo(Ptr);
     };
 
     struct restore_end_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_restore_end;
+        static constexpr kind_t TYPE = t_restore_end;
     template <class Ptr> void redo(Ptr);
     };
 
     struct warmup_done_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_warmup_done;
+        static constexpr kind_t TYPE = t_warmup_done;
     };
 
     struct page_img_format_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_page_img_format;
+        static constexpr kind_t TYPE = t_page_img_format;
     template <class PagePtr> void construct (const PagePtr page);
     template <class Ptr> void redo(Ptr);
     template <class Ptr> void undo(Ptr);
     };
 
     struct update_emlsn_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_update_emlsn;
+        static constexpr kind_t TYPE = t_update_emlsn;
     template <class PagePtr> void construct (const PagePtr page, general_recordid_t child_slot, lsn_t child_lsn);
     template <class Ptr> void redo(Ptr);
     };
 
     struct btree_norec_alloc_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_norec_alloc;
+        static constexpr kind_t TYPE = t_btree_norec_alloc;
     template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, PageID new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high);
     template <class Ptr> void redo(Ptr);
     };
 
     struct btree_insert_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_insert;
+        static constexpr kind_t TYPE = t_btree_insert;
     template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& key, const cvec_t& el, const bool sys_txn);
     template <class Ptr> void redo(Ptr);
     template <class Ptr> void undo(Ptr);
     };
 
     struct btree_insert_nonghost_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_insert_nonghost;
+        static constexpr kind_t TYPE = t_btree_insert_nonghost;
     template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& key, const cvec_t& el, const bool sys_txn);
     template <class Ptr> void redo(Ptr);
     template <class Ptr> void undo(Ptr);
     };
 
     struct btree_update_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_update;
+        static constexpr kind_t TYPE = t_btree_update;
     template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& key, const char* old_el, int old_elen, const cvec_t& new_el);
     template <class Ptr> void redo(Ptr);
     template <class Ptr> void undo(Ptr);
     };
 
     struct btree_overwrite_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_overwrite;
+        static constexpr kind_t TYPE = t_btree_overwrite;
     template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& key, const char* old_el, const char* new_el, size_t offset, size_t elen);
     template <class Ptr> void redo(Ptr);
     template <class Ptr> void undo(Ptr);
     };
 
     struct btree_ghost_mark_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_ghost_mark;
+        static constexpr kind_t TYPE = t_btree_ghost_mark;
     template <class PagePtr> void construct (const PagePtr page, const vector<slotid_t>& slots, const bool sys_txn);
     template <class Ptr> void redo(Ptr);
     template <class Ptr> void undo(Ptr);
     };
 
     struct btree_ghost_reclaim_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_ghost_reclaim;
+        static constexpr kind_t TYPE = t_btree_ghost_reclaim;
     template <class PagePtr> void construct (const PagePtr page, const vector<slotid_t>& slots);
     template <class Ptr> void redo(Ptr);
     };
 
     struct btree_ghost_reserve_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_ghost_reserve;
+        static constexpr kind_t TYPE = t_btree_ghost_reserve;
     template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& key, int element_length);
     template <class Ptr> void redo(Ptr);
     };
 
     struct btree_foster_adopt_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_foster_adopt;
+        static constexpr kind_t TYPE = t_btree_foster_adopt;
     template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, PageID new_child_pid, lsn_t child_emlsn, const w_keystr_t& new_child_key);
     template <class Ptr> void redo(Ptr);
     };
 
     struct btree_split_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_split;
+        static constexpr kind_t TYPE = t_btree_split;
     template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, uint16_t move_count, const w_keystr_t& new_high_fence, const w_keystr_t& new_chain);
     template <class Ptr> void redo(Ptr);
     };
 
     struct btree_compress_page_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_btree_compress_page;
+        static constexpr kind_t TYPE = t_btree_compress_page;
     template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& low, const w_keystr_t& high, const w_keystr_t& chain);
     template <class Ptr> void redo(Ptr);
     };
 
     struct tick_sec_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_tick_sec;
+        static constexpr kind_t TYPE = t_tick_sec;
     };
 
     struct tick_msec_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_tick_msec;
+        static constexpr kind_t TYPE = t_tick_msec;
     };
 
     struct benchmark_start_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_benchmark_start;
+        static constexpr kind_t TYPE = t_benchmark_start;
     };
 
     struct page_write_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_page_write;
+        static constexpr kind_t TYPE = t_page_write;
     };
 
     struct page_read_log : public logrec_t {
-        static constexpr kind_t TYPE = logrec_t::t_page_read;
+        static constexpr kind_t TYPE = t_page_read;
     };
 
 #endif

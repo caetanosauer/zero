@@ -253,18 +253,18 @@ LogConsumer::~LogConsumer()
 void LogConsumer::initLogScanner(LogScanner* logScanner)
 {
     // CS TODO use flags to filter -- there's gotta be a better way than this
-    logScanner->setIgnore(logrec_t::t_comment);
-    logScanner->setIgnore(logrec_t::t_compensate);
-    logScanner->setIgnore(logrec_t::t_chkpt_begin);
-    logScanner->setIgnore(logrec_t::t_xct_abort);
-    logScanner->setIgnore(logrec_t::t_xct_end);
-    logScanner->setIgnore(logrec_t::t_restore_begin);
-    logScanner->setIgnore(logrec_t::t_restore_segment);
-    logScanner->setIgnore(logrec_t::t_restore_end);
-    logScanner->setIgnore(logrec_t::t_tick_sec);
-    logScanner->setIgnore(logrec_t::t_tick_msec);
-    logScanner->setIgnore(logrec_t::t_page_read);
-    logScanner->setIgnore(logrec_t::t_page_write);
+    logScanner->setIgnore(t_comment);
+    logScanner->setIgnore(t_compensate);
+    logScanner->setIgnore(t_chkpt_begin);
+    logScanner->setIgnore(t_xct_abort);
+    logScanner->setIgnore(t_xct_end);
+    logScanner->setIgnore(t_restore_begin);
+    logScanner->setIgnore(t_restore_segment);
+    logScanner->setIgnore(t_restore_end);
+    logScanner->setIgnore(t_tick_sec);
+    logScanner->setIgnore(t_tick_msec);
+    logScanner->setIgnore(t_page_read);
+    logScanner->setIgnore(t_page_write);
 }
 
 void LogConsumer::shutdown()
@@ -361,12 +361,12 @@ bool LogConsumer::next(logrec_t*& lr)
     w_assert1(nextLSN <= endLSN);
     w_assert1(!scanned || lr->lsn_ck() + lr->length() == nextLSN);
 
-    if (!scanned || (lrLength > 0 && lr->type() == logrec_t::t_skip)) {
+    if (!scanned || (lrLength > 0 && lr->type() == t_skip)) {
         /*
          * nextLogrec returning false with nextLSN != endLSN means that we are
          * suppose to read another block and call the method again.
          */
-        if (scanned && lr->type() == logrec_t::t_skip) {
+        if (scanned && lr->type() == t_skip) {
             // Try again if reached skip -- next block should be from next file
             nextLSN = lsn_t(nextLSN.hi() + 1, 0);
             pos = 0;

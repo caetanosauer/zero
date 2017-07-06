@@ -261,12 +261,12 @@ void chkpt_t::scan_log(lsn_t scan_start, lsn_t archived_lsn)
     while (scan.next(lr) && lsn > scan_stop)
     {
         lsn = lr->lsn();
-        if (lr->is_skip() || lr->type() == logrec_t::t_comment) {
+        if (lr->is_skip() || lr->type() == t_comment) {
             continue;
         }
 
         // when taking chkpts, scan_start will be a just-generated begin_chkpt -- ignore it
-        if (lr->lsn() == scan_start && lr->type() == logrec_t::t_chkpt_begin) {
+        if (lr->lsn() == scan_start && lr->type() == t_chkpt_begin) {
             continue;
         }
 
@@ -314,7 +314,7 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
 
     switch (r.type())
     {
-        case logrec_t::t_chkpt_begin:
+        case t_chkpt_begin:
             {
                 fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn);
                 if (fs::exists(fpath)) {
@@ -326,12 +326,12 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
             }
 
             break;
-        case logrec_t::t_xct_end:
-        case logrec_t::t_xct_abort:
+        case t_xct_end:
+        case t_xct_abort:
             xct->mark_ended();
             break;
 
-        case logrec_t::t_page_write:
+        case t_page_write:
             {
                 PageID pid;
                 lsn_t clean_lsn;
@@ -347,7 +347,7 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
             }
             break;
 
-        case logrec_t::t_add_backup:
+        case t_add_backup:
             {
                 lsn_t backupLSN;
                 string dev;
@@ -355,7 +355,7 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
                 add_backup(dev, backupLSN);
             }
             break;
-        case logrec_t::t_restore_begin:
+        case t_restore_begin:
             if (!ignore_restore) {
                 ongoing_restore = true;
                 deserialize_log_fields(&r, restore_page_cnt);
@@ -363,14 +363,14 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
                 // ignore the first failure
                 ignore_restore = true;
             }
-        case logrec_t::t_restore_end:
+        case t_restore_end:
             {
                 // in backward scan, this tells us that there was a restore
                 // going on, but it is finished, so we can ignore it
                 ignore_restore = true;
             }
             break;
-        case logrec_t::t_restore_segment:
+        case t_restore_segment:
             if (!ignore_restore) {
                 uint32_t segment;
                 deserialize_log_fields(&r, segment);
@@ -490,8 +490,8 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
 
     switch (r.type())
     {
-        case logrec_t::t_btree_insert:
-        case logrec_t::t_btree_insert_nonghost:
+        case t_btree_insert:
+        case t_btree_insert_nonghost:
             {
                 btree_insert_t* dp = (btree_insert_t*) r.data();
 
@@ -505,7 +505,7 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
                 xct.add_lock(mode, lid.hash());
             }
             break;
-        case logrec_t::t_btree_update:
+        case t_btree_update:
             {
                 btree_update_t* dp = (btree_update_t*) r.data();
 
@@ -519,7 +519,7 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
                 xct.add_lock(mode, lid.hash());
             }
             break;
-        case logrec_t::t_btree_overwrite:
+        case t_btree_overwrite:
             {
                 btree_overwrite_t* dp = (btree_overwrite_t*) r.data();
 
@@ -533,7 +533,7 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
                 xct.add_lock(mode, lid.hash());
             }
             break;
-        case logrec_t::t_btree_ghost_mark:
+        case t_btree_ghost_mark:
             {
                 btree_ghost_t<btree_page_h*>* dp = (btree_ghost_t<btree_page_h*>*) r.data();
                 for (size_t i = 0; i < dp->cnt; ++i) {
@@ -547,7 +547,7 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
                 }
             }
             break;
-        case logrec_t::t_btree_ghost_reserve:
+        case t_btree_ghost_reserve:
             {
                 btree_ghost_reserve_t* dp = (btree_ghost_reserve_t*) r.data();
 
@@ -562,7 +562,7 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
             }
             break;
         default:
-            w_assert0(r.type() == logrec_t::t_page_img_format);
+            w_assert0(r.type() == t_page_img_format);
             break;
     }
 

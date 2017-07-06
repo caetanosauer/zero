@@ -24,10 +24,10 @@ RestoreTraceHandler::RestoreTraceHandler()
 
 void RestoreTraceHandler::invoke(logrec_t& r)
 {
-    if (r.type() == logrec_t::t_tick_sec || r.type() == logrec_t::t_tick_msec) {
+    if (r.type() == t_tick_sec || r.type() == t_tick_msec) {
         currentTick++;
     }
-    else if (r.type() == logrec_t::t_restore_segment) {
+    else if (r.type() == t_restore_segment) {
         uint32_t segment = *((uint32_t*) r.data_ssx());
         std::cout << currentTick << " " << segment << std::endl;
     }

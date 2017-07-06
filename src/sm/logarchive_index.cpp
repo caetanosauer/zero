@@ -171,7 +171,7 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
         }
     }
 
-    SKIP_LOGREC.init_header(logrec_t::t_skip);
+    SKIP_LOGREC.init_header(t_skip);
     // SKIP_LOGREC.construct();
 
     unsigned replFactor = options.get_int_option("sm_archiver_replication_factor", 0);

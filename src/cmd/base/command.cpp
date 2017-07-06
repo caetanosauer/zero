@@ -397,7 +397,7 @@ void Command::helpOption()
 size_t LogScannerCommand::BLOCK_SIZE = 1024 * 1024;
 
 BaseScanner* LogScannerCommand::getScanner(
-        bitset<logrec_t::t_max_logrec>* filter)
+        bitset<t_max_logrec>* filter)
 {
     BaseScanner* s;
     if (isArchive) {

@@ -34,7 +34,7 @@ void BaseScanner::initialize()
 }
 
 BlockScanner::BlockScanner(const po::variables_map& options,
-        bitset<logrec_t::t_max_logrec>* filter)
+        bitset<t_max_logrec>* filter)
     : BaseScanner(options), pnum(-1)
 {
     logdir = options["logdir"].as<string>().c_str();
@@ -46,13 +46,13 @@ BlockScanner::BlockScanner(const po::variables_map& options,
 
     if (filter) {
         logScanner->ignoreAll();
-        for (int i = 0; i < logrec_t::t_max_logrec; i++) {
+        for (int i = 0; i < t_max_logrec; i++) {
             if (filter->test(i)) {
-                logScanner->unsetIgnore((logrec_t::kind_t) i);
+                logScanner->unsetIgnore((kind_t) i);
             }
         }
         // skip cannot be ignored because it tells us when file ends
-        logScanner->unsetIgnore(logrec_t::t_skip);
+        logScanner->unsetIgnore(t_skip);
     }
 }
 
@@ -156,7 +156,7 @@ void BlockScanner::run()
             bpos = 0;
             while (logScanner->nextLogrec(currentBlock, bpos, lr)) {
                 handle(lr);
-                if (lr->type() == logrec_t::t_skip) {
+                if (lr->type() == t_skip) {
                     fpos = fend;
                     break;
                 }

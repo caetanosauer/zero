@@ -202,9 +202,9 @@ public:
     }
 
     template <class PagePtr>
-    static bool _should_apply_img_compression(logrec_t::kind_t type, PagePtr page)
+    static bool _should_apply_img_compression(kind_t type, PagePtr page)
     {
-        if (type == logrec_t::t_page_img_format) { return false; }
+        if (type == t_page_img_format) { return false; }
 
         auto comp = ss_m::log->get_page_img_compression();
         if (comp == 0) { return false; }

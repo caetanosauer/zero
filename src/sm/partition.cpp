@@ -506,7 +506,7 @@ rc_t partition_t::scan_for_size(bool must_be_skip)
             if (bytesRead != sizeof(baseLogHeader)) { return RC(stSHORTIO); }
 
             if (h.is_valid()) {
-                if (must_be_skip && h._type != logrec_t::t_skip) {
+                if (must_be_skip && h._type != t_skip) {
                     W_FATAL_MSG(eINTERNAL,
                             << "Found last log record in partition " << _num
                             << " but it is not a skip");

@@ -17,17 +17,17 @@ void XctLatency::setupOptions()
 
 void XctLatency::run()
 {
-    logrec_t::kind_t begin = logrec_t::t_max_logrec;
-    logrec_t::kind_t end = logrec_t::t_max_logrec;
+    kind_t begin = t_max_logrec;
+    kind_t end = t_max_logrec;
 
-    for (int i = 0; i < logrec_t::t_max_logrec; i++) {
-        if (beginType == string(logrec_t::get_type_str((logrec_t::kind_t) i)))
+    for (int i = 0; i < t_max_logrec; i++) {
+        if (beginType == string(logrec_t::get_type_str((kind_t) i)))
         {
-            begin = (logrec_t::kind_t) i;
+            begin = (kind_t) i;
         }
-        if (endType == string(logrec_t::get_type_str((logrec_t::kind_t) i)))
+        if (endType == string(logrec_t::get_type_str((kind_t) i)))
         {
-            end = (logrec_t::kind_t) i;
+            end = (kind_t) i;
         }
     }
 
@@ -40,14 +40,14 @@ void XctLatency::run()
     delete s;
 }
 
-LatencyHandler::LatencyHandler(int interval, logrec_t::kind_t begin,
-        logrec_t::kind_t end)
+LatencyHandler::LatencyHandler(int interval, kind_t begin,
+        kind_t end)
     : interval(interval), currentTick(0), begin(begin), end(end),
     seenBegin(false), accum_latency(0), count(0)
 {
     assert(interval > 0);
 
-    if (begin == logrec_t::t_max_logrec) {
+    if (begin == t_max_logrec) {
         seenBegin = true;
     }
 
@@ -70,14 +70,14 @@ void LatencyHandler::invoke(logrec_t& r)
         return;
     }
 
-    if (r.type() == logrec_t::t_tick_sec || r.type() == logrec_t::t_tick_msec) {
+    if (r.type() == t_tick_sec || r.type() == t_tick_msec) {
         currentTick++;
         if (currentTick == interval) {
             currentTick = 0;
             dump();
         }
     }
-    else if (r.type() == logrec_t::t_xct_latency_dump) {
+    else if (r.type() == t_xct_latency_dump) {
         unsigned long latency;
         deserialize_log_fields(&r, latency);
         accum_latency += latency;

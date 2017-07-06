@@ -127,6 +127,61 @@ struct xidChainLogHeader
     /* 32+8 = 40 */
 };
 
+enum kind_t {
+    t_comment = 0,
+    t_compensate = 1,
+    t_skip = 2,
+    t_chkpt_begin = 3,
+    // t_chkpt_bf_tab = 4,
+    // t_chkpt_xct_tab = 5,
+    // t_chkpt_xct_lock = 6,
+    t_warmup_done = 7,
+    t_alloc_format = 8,
+    t_evict_page = 9,
+    t_add_backup = 10,
+    t_xct_abort = 11,
+    t_fetch_page = 12,
+    t_xct_end = 13,
+    // t_xct_end_group = 14,
+    t_xct_latency_dump = 15,
+    t_alloc_page = 16,
+    t_dealloc_page = 17,
+    t_create_store = 18,
+    t_append_extent = 19,
+    t_loganalysis_begin = 20,
+    t_loganalysis_end = 21,
+    t_redo_done = 22,
+    t_undo_done = 23,
+    t_restore_begin = 24,
+    t_restore_segment = 25,
+    t_restore_end = 26,
+    // t_page_set_to_be_deleted = 27,
+    t_stnode_format = 27,
+    t_page_img_format = 28,
+    t_update_emlsn = 29,
+    t_btree_norec_alloc = 30,
+    t_btree_insert = 31,
+    t_btree_insert_nonghost = 32,
+    t_btree_update = 33,
+    t_btree_overwrite = 34,
+    t_btree_ghost_mark = 35,
+    t_btree_ghost_reclaim = 36,
+    t_btree_ghost_reserve = 37,
+    t_btree_foster_adopt = 38,
+    // t_btree_foster_merge = 39,
+    // t_btree_foster_rebalance = 40,
+    // t_btree_foster_rebalance_norec = 41,
+    // t_btree_foster_deadopt = 42,
+    t_btree_split = 43,
+    t_btree_compress_page = 44,
+    t_tick_sec = 45,
+    t_tick_msec = 46,
+    t_benchmark_start = 47,
+    t_page_write = 48,
+    t_page_read = 49,
+    t_max_logrec = 50
+};
+
 /**
  * \brief Represents a transactional log record.
  * \ingroup SSMLOG
@@ -147,61 +202,6 @@ public:
     friend class XctLogger;
     friend class sysevent;
     friend class baseLogHeader;
-
-    enum kind_t {
-	t_comment = 0,
-	t_compensate = 1,
-	t_skip = 2,
-	t_chkpt_begin = 3,
-	// t_chkpt_bf_tab = 4,
-	// t_chkpt_xct_tab = 5,
-	// t_chkpt_xct_lock = 6,
-        t_warmup_done = 7,
-        t_alloc_format = 8,
-        t_evict_page = 9,
-	t_add_backup = 10,
-	t_xct_abort = 11,
-        t_fetch_page = 12,
-	t_xct_end = 13,
-	// t_xct_end_group = 14,
-	t_xct_latency_dump = 15,
-	t_alloc_page = 16,
-	t_dealloc_page = 17,
-	t_create_store = 18,
-	t_append_extent = 19,
-	t_loganalysis_begin = 20,
-	t_loganalysis_end = 21,
-	t_redo_done = 22,
-	t_undo_done = 23,
-	t_restore_begin = 24,
-	t_restore_segment = 25,
-	t_restore_end = 26,
-	// t_page_set_to_be_deleted = 27,
-        t_stnode_format = 27,
-	t_page_img_format = 28,
-	t_update_emlsn = 29,
-	t_btree_norec_alloc = 30,
-	t_btree_insert = 31,
-	t_btree_insert_nonghost = 32,
-	t_btree_update = 33,
-	t_btree_overwrite = 34,
-	t_btree_ghost_mark = 35,
-	t_btree_ghost_reclaim = 36,
-	t_btree_ghost_reserve = 37,
-	t_btree_foster_adopt = 38,
-	// t_btree_foster_merge = 39,
-	// t_btree_foster_rebalance = 40,
-	// t_btree_foster_rebalance_norec = 41,
-	// t_btree_foster_deadopt = 42,
-	t_btree_split = 43,
-	t_btree_compress_page = 44,
-	t_tick_sec = 45,
-	t_tick_msec = 46,
-	t_benchmark_start = 47,
-	t_page_write = 48,
-	t_page_read = 49,
-	t_max_logrec = 50
-    };
 
     bool             is_page_update() const;
     bool             is_redo() const;
@@ -327,11 +327,11 @@ public:
     {
         return
         // CS TODO: I think the condition for norec_alloc should be == and not !=
-            (type() == logrec_t::t_btree_norec_alloc && page_id != pid())
-            || (type() == logrec_t::t_btree_split && page_id == pid())
-            || (type() == logrec_t::t_page_img_format)
-            || (type() == logrec_t::t_stnode_format)
-            || (type() == logrec_t::t_alloc_format)
+            (type() == t_btree_norec_alloc && page_id != pid())
+            || (type() == t_btree_split && page_id == pid())
+            || (type() == t_page_img_format)
+            || (type() == t_stnode_format)
+            || (type() == t_alloc_format)
             ;
     }
 
@@ -412,7 +412,7 @@ public:
 inline bool baseLogHeader::is_valid() const
 {
     return (_len >= sizeof(baseLogHeader)
-            && _type < logrec_t::t_max_logrec
+            && _type < t_max_logrec
             && _len <= sizeof(logrec_t));
 }
 
@@ -573,7 +573,7 @@ logrec_t::set_xid_prev(const lsn_t &lsn)
     xidInfo._xid_prv = lsn;
 }
 
-inline logrec_t::kind_t
+inline kind_t
 logrec_t::type() const
 {
     return (kind_t) header._type;
@@ -582,7 +582,7 @@ logrec_t::type() const
 inline u_char
 logrec_t::cat() const
 {
-    return get_logrec_cat(static_cast<logrec_t::kind_t>(header._type));
+    return get_logrec_cat(static_cast<kind_t>(header._type));
 }
 
 inline void
