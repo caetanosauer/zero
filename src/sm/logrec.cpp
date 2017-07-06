@@ -715,46 +715,33 @@ void update_emlsn_log::redo(PagePtr page) {
 
 void xct_latency_dump_log::construct(unsigned long nsec)
 {
-    *((unsigned long*) _data) = nsec;
-    set_size(sizeof(unsigned long));
+    serialize_log_fields(this, nsec);
 }
 
 void add_backup_log::construct(const string& path, lsn_t backupLSN)
 {
-    *((lsn_t*) data_ssx()) = backupLSN;
-    w_assert0(path.length() < smlevel_0::max_devname);
-    memcpy(data_ssx() + sizeof(lsn_t), path.c_str(), path.length() + 1);
-    set_size(sizeof(lsn_t) + path.length());
+    serialize_log_fields(this, backupLSN, path);
 }
 
 void evict_page_log::construct(PageID pid, bool was_dirty, lsn_t page_lsn)
 {
-    char* data = data_ssx();
-    *(reinterpret_cast<PageID*>(data)) = pid;
-    data += sizeof(PageID);
+    serialize_log_fields(this, pid, was_dirty, page_lsn);
+    // char* data = data_ssx();
+    // *(reinterpret_cast<PageID*>(data)) = pid;
+    // data += sizeof(PageID);
 
-    *(reinterpret_cast<bool*>(data)) = was_dirty;
-    data += sizeof(bool);
+    // *(reinterpret_cast<bool*>(data)) = was_dirty;
+    // data += sizeof(bool);
 
-    *(reinterpret_cast<lsn_t*>(data)) = page_lsn;
-    data += sizeof(lsn_t);
+    // *(reinterpret_cast<lsn_t*>(data)) = page_lsn;
+    // data += sizeof(lsn_t);
 
-    set_size(sizeof(data - data_ssx()));
+    // set_size(sizeof(data - data_ssx()));
 }
 
 void fetch_page_log::construct(PageID pid, lsn_t page_lsn, StoreID store)
 {
-    char* data = data_ssx();
-    *(reinterpret_cast<PageID*>(data)) = pid;
-    data += sizeof(PageID);
-
-    *(reinterpret_cast<lsn_t*>(data)) = page_lsn;
-    data += sizeof(lsn_t);
-
-    *(reinterpret_cast<StoreID*>(data)) = store;
-    data += sizeof(StoreID);
-
-    set_size(sizeof(data - data_ssx()));
+    serialize_log_fields(this, pid, page_lsn, store);
 }
 
 void undo_done_log::construct()
@@ -775,8 +762,7 @@ void loganalysis_begin_log::construct()
 
 void restore_begin_log::construct(PageID page_cnt)
 {
-    memcpy(data_ssx(), &page_cnt, sizeof(PageID));
-    set_size(sizeof(PageID));
+    serialize_log_fields(this, page_cnt);
 }
 
 void restore_end_log::construct()
@@ -796,18 +782,7 @@ void restore_end_log::redo(PagePtr)
 
 void restore_segment_log::construct(uint32_t segment)
 {
-    char* pos = data_ssx();
-
-    memcpy(pos, &segment, sizeof(uint32_t));
-    pos += sizeof(uint32_t);
-
-#ifdef TIMED_LOG_RECORDS
-    unsigned long tstamp = sysevent_timer::timestamp();
-    memcpy(pos, &tstamp, sizeof(unsigned long));
-    pos += sizeof(unsigned long);
-#endif
-
-    set_size(pos - data_ssx());
+    serialize_log_fields(this, segment);
 }
 
 template <class PagePtr>
@@ -819,8 +794,7 @@ void restore_segment_log::redo(PagePtr)
 template <class PagePtr>
 void alloc_page_log::construct(PagePtr, PageID pid)
 {
-    memcpy(data_ssx(), &pid, sizeof(PageID));
-    set_size(sizeof(PageID));
+    serialize_log_fields(this, pid);
 }
 
 template <class PagePtr>
@@ -833,7 +807,10 @@ void alloc_page_log::redo(PagePtr p)
         ::memset(p->get_generic_page(), 0, sizeof(generic_page));
         p->get_generic_page()->pid = alloc_pid;
     }
-    PageID pid = *((PageID*) data_ssx());
+
+    PageID pid;
+    deserialize_log_fields(this, pid);
+
     alloc_page* page = (alloc_page*) p->get_generic_page();
     // assertion fails after page-img compression
     // w_assert1(!page->get_bit(pid - alloc_pid));
@@ -843,15 +820,16 @@ void alloc_page_log::redo(PagePtr p)
 template <class PagePtr>
 void dealloc_page_log::construct(PagePtr, PageID pid)
 {
-    memcpy(data_ssx(), &pid, sizeof(PageID));
-    set_size(sizeof(PageID));
+    serialize_log_fields(this, pid);
 }
 
 template <class PagePtr>
 void dealloc_page_log::redo(PagePtr p)
 {
+    PageID pid;
+    deserialize_log_fields(this, pid);
+
     PageID alloc_pid = p->pid();
-    PageID pid = *((PageID*) data_ssx());
     alloc_page* page = (alloc_page*) p->get_generic_page();
     // assertion fails after page-img compression
     // w_assert1(page->get_bit(pid - alloc_pid));
@@ -890,26 +868,12 @@ void benchmark_start_log::construct()
 
 void page_read_log::construct(PageID pid, uint32_t count)
 {
-    memcpy(data(), &pid, sizeof(PageID));
-    memcpy(_data + sizeof(PageID), &count, sizeof(uint32_t));
-    set_size(sizeof(PageID) + sizeof(uint32_t));
+    serialize_log_fields(this, pid, count);
 }
 
 void page_write_log::construct(PageID pid, lsn_t lsn, uint32_t count)
 {
-    char* pos = _data;
-
-    memcpy(pos, &pid, sizeof(PageID));
-    pos += sizeof(PageID);
-
-    memcpy(pos, &lsn, sizeof(lsn_t));
-    pos += sizeof(lsn_t);
-
-    memcpy(pos, &count, sizeof(uint32_t));
-    pos += sizeof(uint32_t);
-
-
-    set_size(pos - _data);
+    serialize_log_fields(this, pid, lsn, count);
 }
 
 
@@ -959,78 +923,72 @@ operator<<(ostream& o, logrec_t& l)
             }
         case logrec_t::t_evict_page:
             {
-                PageID pid = *(reinterpret_cast<PageID*>(l.data_ssx()));
-                bool was_dirty = *(reinterpret_cast<bool*>(l.data_ssx() + sizeof(PageID)));
-                lsn_t page_lsn = *(reinterpret_cast<lsn_t*>(l.data_ssx() + sizeof(PageID) + sizeof(bool)));
+                PageID pid;
+                bool was_dirty;
+                lsn_t page_lsn;
+                deserialize_log_fields(&l, pid, was_dirty, page_lsn);
                 o << " pid: " << pid << (was_dirty ? " dirty" : " clean") << " page_lsn: "
                     << page_lsn;
                 break;
             }
         case logrec_t::t_fetch_page:
             {
-                char* pos = l.data_ssx();
-                PageID pid = *(reinterpret_cast<PageID*>(pos));
-                pos += sizeof(PageID);
-
-                lsn_t plsn = *(reinterpret_cast<lsn_t*>(pos));
-                pos += sizeof(lsn_t);
-
-                StoreID store = *(reinterpret_cast<StoreID*>(pos));
-                pos += sizeof(StoreID);
-
+                PageID pid;
+                lsn_t plsn;
+                StoreID store;
+                deserialize_log_fields(&l, pid, plsn, store);
                 o << " pid: " << pid << " page_lsn: " << plsn << " store: " << store;
                 break;
             }
         case logrec_t::t_alloc_page:
         case logrec_t::t_dealloc_page:
             {
-                o << " page: " << *((PageID*) (l.data_ssx()));
+                PageID pid;
+                deserialize_log_fields(&l, pid);
+                o << " page: " << pid;
                 break;
             }
         case logrec_t::t_create_store:
             {
-                o << " stid: " <<  *((StoreID*) l.data_ssx());
-                o << " root_pid: " << *((PageID*) (l.data_ssx() + sizeof(StoreID)));
+                StoreID stid;
+                PageID root_pid;
+                deserialize_log_fields(&l, stid, root_pid);
+                o << " stid: " <<  stid;
+                o << " root_pid: " << root_pid;
                 break;
             }
         case logrec_t::t_page_read:
             {
-                char* pos = (char*) l._data;
-
-                PageID pid = *((PageID*) pos);
-                pos += sizeof(PageID);
-
-                uint32_t count = *((uint32_t*) pos);
+                PageID pid;
+                uint32_t count;
                 PageID end = pid + count - 1;
-
+                deserialize_log_fields(&l, pid, count);
                 o << " pids: " << pid << "-" << end;
                 break;
             }
         case logrec_t::t_page_write:
             {
-                char* pos = (char*) l._data;
-
-                PageID pid = *((PageID*) pos);
-                pos += sizeof(PageID);
-
-                lsn_t clean_lsn = *((lsn_t*) pos);
-                pos += sizeof(lsn_t);
-
-                uint32_t count = *((uint32_t*) pos);
+                PageID pid;
+                lsn_t clean_lsn;
+                uint32_t count;
+                deserialize_log_fields(&l, pid, clean_lsn, count);
                 PageID end = pid + count - 1;
-
                 o << " pids: " << pid << "-" << end << " clean_lsn: " << clean_lsn;
                 break;
             }
         case logrec_t::t_restore_segment:
             {
-                o << " segment: " << *((uint32_t*) l.data_ssx());
+                uint32_t segment;
+                deserialize_log_fields(&l, segment);
+                o << " segment: " << segment;
                 break;
             }
         case logrec_t::t_append_extent:
             {
-                o << " extent: " << *((extent_id_t*) l.data_ssx());
-                o << " store: " << *((StoreID*) (l.data_ssx() + sizeof(extent_id_t)));
+                extent_id_t ext;
+                StoreID snum;
+                deserialize_log_fields(&l, ext, snum);
+                o << " extent: " << ext << " store: " << snum;
                 break;
             }
 
@@ -1057,16 +1015,15 @@ operator<<(ostream& o, logrec_t& l)
 template <class PagePtr>
 void create_store_log::construct(PagePtr page, PageID root_pid, StoreID snum)
 {
-    memcpy(data_ssx(), &snum, sizeof(StoreID));
-    memcpy(data_ssx() + sizeof(StoreID), &root_pid, sizeof(PageID));
-    set_size(sizeof(StoreID) + sizeof(PageID));
+    serialize_log_fields(this, snum, root_pid);
 }
 
 template <class PagePtr>
 void create_store_log::redo(PagePtr page)
 {
-    StoreID snum = *((StoreID*) data_ssx());
-    PageID root_pid = *((PageID*) (data_ssx() + sizeof(StoreID)));
+    StoreID snum;
+    PageID root_pid;
+    deserialize_log_fields(this, snum, root_pid);
 
     stnode_page* stpage = (stnode_page*) page->get_generic_page();
     if (stpage->pid != stnode_page::stpid) {
@@ -1079,22 +1036,15 @@ void create_store_log::redo(PagePtr page)
 template <class PagePtr>
 void append_extent_log::construct(PagePtr, StoreID snum, extent_id_t ext)
 {
-    char* data = data_ssx();
-
-    memcpy(data, &ext, sizeof(extent_id_t));
-    data += sizeof(extent_id_t);
-
-    memcpy(data, &snum, sizeof(StoreID));
-    data += sizeof(StoreID);
-
-    set_size(data - data_ssx());
+    serialize_log_fields(this, ext, snum);
 }
 
 template <class PagePtr>
 void append_extent_log::redo(PagePtr page)
 {
-    extent_id_t ext = *((extent_id_t*) data_ssx());
-    StoreID snum = *((StoreID*) (data_ssx() + sizeof(extent_id_t)));
+    extent_id_t ext;
+    StoreID snum;
+    deserialize_log_fields(this, ext, snum);
     auto spage = reinterpret_cast<stnode_page*>(page->get_generic_page());
     spage->set_last_extent(snum, ext);
 }

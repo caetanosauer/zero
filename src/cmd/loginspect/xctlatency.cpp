@@ -78,7 +78,8 @@ void LatencyHandler::invoke(logrec_t& r)
         }
     }
     else if (r.type() == logrec_t::t_xct_latency_dump) {
-        unsigned long latency = *((unsigned long*) r.data());
+        unsigned long latency;
+        deserialize_log_fields(&r, latency);
         accum_latency += latency;
         count++;
     }

@@ -36,6 +36,25 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "w_base.h"
 #include "w_okvl.h"
 #include "logrec.h"
+#include "encoding.h"
+
+template <typename... T>
+using LogEncoder = typename foster::VariadicEncoder<foster::InlineEncoder, T...>;
+
+template <typename... T>
+void serialize_log_fields(logrec_t* lr, const T&... fields)
+{
+    char* offset = lr->get_data_offset();
+    char* end = LogEncoder<T...>::encode(offset, fields...);
+    lr->set_size(end - offset);
+}
+
+template <typename... T>
+void deserialize_log_fields(logrec_t* lr, T&... fields)
+{
+    const char* offset = lr->get_data_offset();
+    LogEncoder<T...>::decode(offset, &fields...);
+}
 
     struct comment_log : public logrec_t {
         static constexpr kind_t TYPE = logrec_t::t_comment;

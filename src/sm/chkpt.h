@@ -169,7 +169,7 @@ public:
     void mark_page_clean(PageID pid, lsn_t lsn);
     xct_tab_entry_t& mark_xct_active(tid_t tid, lsn_t first, lsn_t last);
 
-    void add_backup(const char* path, lsn_t backupLSN);
+    void add_backup(const string& path, lsn_t backupLSN);
     void analyze_logrec(logrec_t&, xct_tab_entry_t* xct,
             lsn_t& scan_stop, lsn_t archived_lsn);
 

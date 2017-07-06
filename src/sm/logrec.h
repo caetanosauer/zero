@@ -309,6 +309,16 @@ public:
                             }
     void                 corrupt();
 
+    const char* get_data_offset() const
+    {
+        return data_ssx();
+    }
+
+    char* get_data_offset()
+    {
+        return data_ssx();
+    }
+
     void remove_info_for_pid(PageID pid);
 
     // Tells whether this log record restores a full page image, meaning

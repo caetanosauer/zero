@@ -333,19 +333,13 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
 
         case logrec_t::t_page_write:
             {
-                char* pos = r.data();
-
-                PageID pid = *((PageID*) pos);
-                pos += sizeof(PageID);
-
-                lsn_t clean_lsn = *((lsn_t*) pos);
-                pos += sizeof(lsn_t);
-
-                if (clean_lsn < archived_lsn) { break; }
-
-                uint32_t count = *((uint32_t*) pos);
+                PageID pid;
+                lsn_t clean_lsn;
+                uint32_t count;
+                deserialize_log_fields(&r, pid, clean_lsn, count);
                 PageID end = pid + count;
 
+                if (clean_lsn < archived_lsn) { break; }
                 while (pid < end) {
                     mark_page_clean(pid, clean_lsn);
                     pid++;
@@ -355,15 +349,16 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
 
         case logrec_t::t_add_backup:
             {
-                lsn_t backupLSN = *((lsn_t*) r.data_ssx());
-                const char* dev = (const char*)(r.data_ssx() + sizeof(lsn_t));
+                lsn_t backupLSN;
+                string dev;
+                deserialize_log_fields(&r, backupLSN, dev);
                 add_backup(dev, backupLSN);
             }
             break;
         case logrec_t::t_restore_begin:
             if (!ignore_restore) {
                 ongoing_restore = true;
-                restore_page_cnt = *((PageID*) r.data_ssx());
+                deserialize_log_fields(&r, restore_page_cnt);
                 // this might be a failure-upon-failure, in which case we want to
                 // ignore the first failure
                 ignore_restore = true;
@@ -377,7 +372,8 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
             break;
         case logrec_t::t_restore_segment:
             if (!ignore_restore) {
-                uint32_t segment = *((uint32_t*) r.data_ssx());
+                uint32_t segment;
+                deserialize_log_fields(&r, segment);
                 restore_tab.push_back(segment);
             }
             break;
@@ -418,7 +414,7 @@ xct_tab_entry_t& chkpt_t::mark_xct_active(tid_t tid, lsn_t first, lsn_t last)
     return entry;
 }
 
-void chkpt_t::add_backup(const char* path, lsn_t lsn)
+void chkpt_t::add_backup(const string& path, lsn_t lsn)
 {
     bkp_path = path;
     bkp_lsn = lsn;
@@ -707,7 +703,7 @@ void chkpt_t::serialize_binary(ofstream& ofs)
     ofs.write((char*)&bkp_path_size, sizeof(size_t));
     if (!bkp_path.empty()) {
         ofs.write((char*)&bkp_lsn, sizeof(lsn_t));
-        ofs.write((char*)&bkp_path, bkp_path.size());
+        ofs.write(bkp_path.c_str(), bkp_path.size());
     }
 }
 
