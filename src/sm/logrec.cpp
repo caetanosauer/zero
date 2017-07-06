@@ -389,9 +389,6 @@ void logrec_t::undo(PagePtr page)
 	case t_append_extent :
 		W_FATAL(eINTERNAL);
 		break;
-	case t_page_img_format :
-		((page_img_format_log *) this)->undo(page);
-		break;
 	case t_update_emlsn :
 		W_FATAL(eINTERNAL);
 		break;
@@ -464,7 +461,7 @@ void logrec_t::remove_info_for_pid(PageID pid)
     if (type() == t_btree_split) {
         size_t img_offset = reinterpret_cast<btree_bulk_delete_t*>(data_ssx())->size();
         char* img = data_ssx() + img_offset;
-        size_t img_size = reinterpret_cast<page_img_format_t<btree_page_h>*>(img)->size();
+        size_t img_size = reinterpret_cast<page_img_format_t*>(img)->size();
         char* end = reinterpret_cast<char*>(this) + length();
 
         if (pid == this->pid()) {
@@ -556,20 +553,15 @@ void dealloc_page_log::redo(PagePtr p)
 
 template <class PagePtr>
 void page_img_format_log::construct(const PagePtr page) {
-    set_size((new (_data) page_img_format_t<PagePtr>(page))->size());
+    set_size((new (_data) page_img_format_t
+                (page->get_generic_page()))->size());
 }
 
 template <class PagePtr>
-void page_img_format_log::undo(PagePtr) {
-    // we don't have to do anything for UNDO
-    // because this is a page creation!
-    // CS TODO: then why do we need an undo method????
-}
-template <class PagePtr>
 void page_img_format_log::redo(PagePtr page) {
     // REDO is simply applying the image
-    page_img_format_t<PagePtr>* dp = (page_img_format_t<PagePtr>*) _data;
-    dp->apply(page);
+    page_img_format_t* dp = reinterpret_cast<page_img_format_t*>(_data);
+    dp->apply(page->get_generic_page());
 }
 
 

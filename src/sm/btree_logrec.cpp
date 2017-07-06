@@ -425,8 +425,8 @@ void btree_split_log::construct(
         new (data_ssx()) btree_bulk_delete_t(parent_p->pid(),
                     child_p->pid(), move_count,
                     new_high_fence, new_chain);
-    page_img_format_t<PagePtr>* format = new (data_ssx() + bulk->size())
-        page_img_format_t<PagePtr>(child_p);
+    page_img_format_t* format = new (data_ssx() + bulk->size())
+        page_img_format_t(child_p->get_generic_page());
 
     // Logrec will have the child pid as main pid (i.e., destination page).
     // Parent pid is stored in btree_bulk_delete_t, which is a
@@ -438,12 +438,12 @@ template <class PagePtr>
 void btree_split_log::redo(PagePtr p)
 {
     btree_bulk_delete_t* bulk = (btree_bulk_delete_t*) data_ssx();
-    page_img_format_t<PagePtr>* format = (page_img_format_t<PagePtr>*)
+    page_img_format_t* format = (page_img_format_t*)
         (data_ssx() + bulk->size());
 
     if (p->pid() == bulk->new_foster_child) {
         // redoing the foster child
-        format->apply(p);
+        format->apply(p->get_generic_page());
     }
     else {
         // redoing the foster parent

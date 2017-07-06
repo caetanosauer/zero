@@ -34,7 +34,7 @@ void alloc_page::set_bits(uint32_t from, uint32_t to)
     }
 }
 
-uint32_t alloc_page::get_last_set_bit()
+uint32_t alloc_page::get_last_set_bit() const
 {
     uint32_t res = 0;
     for (uint32_t i = 0; i < bits_held; i++) {

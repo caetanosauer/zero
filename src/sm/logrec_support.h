@@ -15,7 +15,6 @@
  * We can assume totally defragmented page image because this is page creation.
  * We don't need UNDO (again, this is page creation!), REDO is just two memcpy().
  */
-template<class PagePtr>
 struct page_img_format_t {
     size_t      beginning_bytes;
     size_t      ending_bytes;
@@ -23,7 +22,7 @@ struct page_img_format_t {
 
     int size()        { return 2 * sizeof(size_t) + beginning_bytes + ending_bytes; }
 
-    page_img_format_t (const PagePtr p)
+    page_img_format_t (const generic_page* p)
     {
         /*
          * The mid-section of a btree page is usually not used, since head
@@ -37,20 +36,20 @@ struct page_img_format_t {
          */
 
         size_t unused_length;
-        char* unused;
-        switch (p->tag()) {
+        const char* unused;
+        switch (p->tag) {
             case t_alloc_p: {
-                auto page = reinterpret_cast<alloc_page*>(p->get_generic_page());
+                auto page = reinterpret_cast<const alloc_page*>(p);
                 unused = page->unused_part(unused_length);
                 break;
             }
             case t_stnode_p: {
-                auto page = reinterpret_cast<stnode_page*>(p->get_generic_page());
+                auto page = reinterpret_cast<const stnode_page*>(p);
                 unused = page->unused_part(unused_length);
                 break;
             }
             case t_btree_p: {
-                auto page = reinterpret_cast<btree_page*>(p->get_generic_page());
+                auto page = reinterpret_cast<const btree_page*>(p);
                 unused = page->unused_part(unused_length);
                 break;
             }
@@ -58,7 +57,7 @@ struct page_img_format_t {
                 W_FATAL(eNOTIMPLEMENTED);
         }
 
-        const char *pp_bin = (const char *) p->get_generic_page();
+        const char *pp_bin = reinterpret_cast<const char *>(p);
         beginning_bytes = unused - pp_bin;
         ending_bytes    = sizeof(generic_page) - (beginning_bytes + unused_length);
 
@@ -68,11 +67,11 @@ struct page_img_format_t {
         w_assert1(beginning_bytes + ending_bytes <= sizeof(generic_page));
     }
 
-    void apply(PagePtr page)
+    void apply(generic_page* page)
     {
         // w_assert1(beginning_bytes >= btree_page::hdr_sz);
         w_assert1(beginning_bytes + ending_bytes <= sizeof(generic_page));
-        char *pp_bin = (char *) page->get_generic_page();
+        char *pp_bin = reinterpret_cast<char *>(page);
         ::memcpy (pp_bin, data, beginning_bytes);
         ::memcpy (pp_bin + sizeof(generic_page) - ending_bytes,
                 data + beginning_bytes, ending_bytes);

@@ -483,9 +483,10 @@ void btree_page_data::compact() {
 }
 
 
-char* btree_page_data::unused_part(size_t& length) {
-    char* start_gap = (char*)&head[nitems];
-    char* after_gap = (char*)&body[first_used_body];
+const char* btree_page_data::unused_part(size_t& length) const
+{
+    const char* start_gap = reinterpret_cast<const char*>(&head[nitems]);
+    const char* after_gap = reinterpret_cast<const char*>(&body[first_used_body]);
     length = after_gap - start_gap;
     return start_gap;
 }

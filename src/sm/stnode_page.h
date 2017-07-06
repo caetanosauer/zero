@@ -97,7 +97,7 @@ public:
     }
 
     // Used to generate page_img_format log records.
-    char* unused_part(size_t& length)
+    const char* unused_part(size_t& length) const
     {
         size_t first_unused = 0;
         for (size_t i = 1; i < stnode_page::max; ++i) {
@@ -107,8 +107,8 @@ public:
             }
         }
         std::cout << "first unused store: " << first_unused << std::endl;
-        char* unused = reinterpret_cast<char*>(&(stnode[first_unused]));
-        char* page_begin = reinterpret_cast<char*>(this);
+        const char* unused = reinterpret_cast<const char*>(&(stnode[first_unused]));
+        const char* page_begin = reinterpret_cast<const char*>(this);
         length = (page_begin + sizeof(stnode_page)) - unused;
         return unused;
     }

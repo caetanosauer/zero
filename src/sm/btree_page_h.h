@@ -168,7 +168,7 @@ class btree_page_h : public fixable_page_h {
     template <class T> friend class btree_ghost_t;
     friend class btree_ghost_mark_log;
     friend class btree_ghost_reclaim_log;
-    template <class T> friend class page_img_format_t;
+    friend class page_img_format_t;
     friend class btree_split_log;
 
     btree_page* page() const { return reinterpret_cast<btree_page*>(_pp); }

@@ -51,24 +51,26 @@ public:
     // currently not used.
     char _fill[sizeof(generic_page)/2 - sizeof(generic_page_header)];
 
-    uint32_t byte_place(uint32_t index) { return index >> 3; }
-    uint32_t bit_place (uint32_t index) { return index & 0x7; }
-    uint32_t bit_mask  (uint32_t index) { return 1 << bit_place(index); }
+    static uint32_t byte_place(uint32_t index) { return index >> 3; }
+    static uint32_t bit_place (uint32_t index) { return index & 0x7; }
+    static uint32_t bit_mask  (uint32_t index) { return 1 << bit_place(index); }
 
-    bool get_bit(uint32_t index) { return (bitmap[byte_place(index)]&bit_mask(index)) != 0; }
+    bool get_bit(uint32_t index) const
+    { return (bitmap[byte_place(index)]&bit_mask(index)) != 0; }
+
     void unset_bit(uint32_t index) { bitmap[byte_place(index)] &= ~bit_mask(index); }
     void set_bit(uint32_t index) { bitmap[byte_place(index)] |=  bit_mask(index); }
 
-    uint32_t get_last_set_bit();
+    uint32_t get_last_set_bit() const;
     void set_bits(uint32_t from, uint32_t to);
     void format_empty();
 
     // Used to generate page_img_format log records
-    char* unused_part(size_t& length)
+    const char* unused_part(size_t& length) const
     {
         auto first_unset_byte = byte_place(get_last_set_bit()) + 1;
-        char* pos = reinterpret_cast<char*>(&bitmap[first_unset_byte]);
-        length = sizeof(alloc_page) - (pos - reinterpret_cast<char*>(this));
+        const char* pos = reinterpret_cast<const char*>(&bitmap[first_unset_byte]);
+        length = sizeof(alloc_page) - (pos - reinterpret_cast<const char*>(this));
         w_assert1(length >= sizeof(_fill));
         return pos;
     }

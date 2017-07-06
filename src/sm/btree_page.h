@@ -309,7 +309,7 @@ protected:
      * compact() first when doing this to maximize the bytes that may
      * be ignored.  (See page_img_format_t for a use of this.)
      */
-    char*         unused_part(size_t& length);
+    const char*         unused_part(size_t& length) const;
 
     /**
      * the maximum possible item overhead beyond a item's
@@ -513,7 +513,7 @@ class test_volume_t;
  */
 class btree_page : public btree_page_data {
     friend class btree_page_h;
-    template <class T> friend class page_img_format_t; // for unused_part()
+    friend class page_img_format_t; // for unused_part()
     friend class btree_split_log;
 
 
