@@ -5,25 +5,6 @@
 #include "btree_page.h"
 #include "alloc_page.h"
 #include "stnode_page.h"
-#include "encoding.h"
-
-template <typename... T>
-using LogEncoder = typename foster::VariadicEncoder<foster::InlineEncoder, T...>;
-
-template <typename... T>
-void serialize_log_fields(logrec_t* lr, const T&... fields)
-{
-    char* offset = lr->get_data_offset();
-    char* end = LogEncoder<T...>::encode(offset, fields...);
-    lr->set_size(end - offset);
-}
-
-template <typename... T>
-void deserialize_log_fields(logrec_t* lr, T&... fields)
-{
-    const char* offset = lr->get_data_offset();
-    LogEncoder<T...>::decode(offset, &fields...);
-}
 
 /**
  * This is a special way of logging the creation of a new page.

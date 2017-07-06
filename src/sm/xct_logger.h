@@ -7,6 +7,7 @@
 #include "logdef_gen.h"
 #include "log_core.h"
 #include "logrec_support.h"
+#include "logrec_serialize.h"
 
 class XctLogger
 {
@@ -28,14 +29,7 @@ public:
         logrec->init_header(LR);
         logrec->init_xct_info();
 
-        // CS TODO fix compensation
-        if (LR == compensate_log) {
-            logrec->set_clr(args...);
-        }
-        else {
-            serialize_log_fields(logrec, args...);
-        }
-
+        LogrecSerializer<LR>::serialize(nullptr, logrec, args...);
         w_assert1(logrec->valid_header());
 
 
@@ -87,11 +81,8 @@ public:
         logrec->init_header(LR);
         logrec->init_xct_info();
         logrec->init_page_info(p);
-        serialize_log_fields(logrec, args...);
-        if (LR == page_img_format_log) {
-            // CS TODO
-            new (logrec->data()) page_img_format_t(p->get_generic_page());
-        }
+
+        LogrecSerializer<LR>::serialize(p, logrec, args...);
         w_assert1(logrec->valid_header());
 
         if (p->tag() != t_btree_p || p->root() == p->pid()) {
@@ -252,7 +243,7 @@ public:
 
         logrec->init_header(LR);
         logrec->init_xct_info();
-        serialize_log_fields(logrec, args...);
+        LogrecSerializer<LR>::serialize(nullptr, logrec, args...);
         w_assert1(logrec->valid_header());
         w_assert1(logrec_t::get_logrec_cat(LR) == logrec_t::t_system);
 

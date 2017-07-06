@@ -1,6 +1,6 @@
 #include "xctlatency.h"
 
-#include "logrec_support.h"
+#include "logrec_serialize.h"
 
 void XctLatency::setupOptions()
 {

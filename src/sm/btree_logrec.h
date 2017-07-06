@@ -149,7 +149,7 @@ struct btree_ghost_t {
 
         for (size_t i = 0; i < slots.size(); ++i) {
             size_t len;
-            w_assert3(p->is_leaf()); // ghost exists only in leaf
+            // w_assert3(p->is_leaf()); // ghost exists only in leaf
             const char* key = p->_leaf_key_noprefix(slots[i], len);
             offsets[i] = (current - slot_data);
             // *reinterpret_cast<uint16_t*>(current) = len; this causes Bus Error on solaris! so, instead:
