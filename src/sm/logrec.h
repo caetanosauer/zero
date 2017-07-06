@@ -136,7 +136,7 @@ enum kind_t {
     // t_chkpt_xct_tab = 5,
     // t_chkpt_xct_lock = 6,
     warmup_done_log = 7,
-    t_alloc_format = 8,
+    alloc_format_log = 8,
     evict_page_log = 9,
     add_backup_log = 10,
     xct_abort_log = 11,
@@ -144,10 +144,10 @@ enum kind_t {
     xct_end_log = 13,
     // t_xct_end_group = 14,
     xct_latency_dump_log = 15,
-    t_alloc_page = 16,
-    t_dealloc_page = 17,
-    t_create_store = 18,
-    t_append_extent = 19,
+    alloc_page_log = 16,
+    dealloc_page_log = 17,
+    create_store_log = 18,
+    append_extent_log = 19,
     loganalysis_begin_log = 20,
     loganalysis_end_log = 21,
     redo_done_log = 22,
@@ -156,9 +156,9 @@ enum kind_t {
     restore_segment_log = 25,
     restore_end_log = 26,
     // t_page_set_to_be_deleted = 27,
-    t_stnode_format = 27,
-    t_page_img_format = 28,
-    t_update_emlsn = 29,
+    stnode_format_log = 27,
+    page_img_format_log = 28,
+    update_emlsn_log = 29,
     t_btree_norec_alloc = 30,
     t_btree_insert = 31,
     t_btree_insert_nonghost = 32,
@@ -344,9 +344,9 @@ public:
         // CS TODO: I think the condition for norec_alloc should be == and not !=
             (type() == t_btree_norec_alloc && page_id != pid())
             || (type() == t_btree_split && page_id == pid())
-            || (type() == t_page_img_format)
-            || (type() == t_stnode_format)
-            || (type() == t_alloc_format)
+            || (type() == page_img_format_log)
+            || (type() == stnode_format_log)
+            || (type() == alloc_format_log)
             ;
     }
 
@@ -705,14 +705,14 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 	case xct_abort_log : return t_logical;
 	case xct_end_log : return t_logical;
 
-	case t_alloc_page : return t_redo|t_single_sys_xct;
-	case t_stnode_format : return t_redo|t_single_sys_xct;
-	case t_alloc_format : return t_redo|t_single_sys_xct;
-	case t_dealloc_page : return t_redo|t_single_sys_xct;
-	case t_create_store : return t_redo|t_single_sys_xct;
-	case t_append_extent : return t_redo|t_single_sys_xct;
-	case t_page_img_format : return t_redo | t_undo;
-	case t_update_emlsn : return t_redo|t_single_sys_xct;
+	case alloc_page_log : return t_redo|t_single_sys_xct;
+	case stnode_format_log : return t_redo|t_single_sys_xct;
+	case alloc_format_log : return t_redo|t_single_sys_xct;
+	case dealloc_page_log : return t_redo|t_single_sys_xct;
+	case create_store_log : return t_redo|t_single_sys_xct;
+	case append_extent_log : return t_redo|t_single_sys_xct;
+	case page_img_format_log : return t_redo;
+	case update_emlsn_log : return t_redo|t_single_sys_xct;
 	case t_btree_norec_alloc : return t_redo|t_multi|t_single_sys_xct;
 	case t_btree_insert : return t_redo|t_undo|t_logical;
 	case t_btree_insert_nonghost : return t_redo|t_undo|t_logical;

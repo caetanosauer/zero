@@ -562,7 +562,7 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
             }
             break;
         default:
-            w_assert0(r.type() == t_page_img_format);
+            w_assert0(r.type() == page_img_format_log);
             break;
     }
 

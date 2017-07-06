@@ -1,5 +1,7 @@
 #include "xctlatency.h"
 
+#include "logrec_support.h"
+
 void XctLatency::setupOptions()
 {
     LogScannerCommand::setupOptions();

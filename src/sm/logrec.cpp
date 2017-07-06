@@ -17,6 +17,7 @@
 #include "vol.h"
 #include "restore.h"
 #include <sstream>
+#include "logrec_handler.h"
 #include "logrec_support.h"
 #include "btree_page_h.h"
 #include "btree_logrec.h"
@@ -124,17 +125,17 @@ logrec_t::get_type_str(kind_t type)
 		return "xct_end";
 	case xct_latency_dump_log :
 		return "xct_latency_dump";
-	case t_alloc_page :
+	case alloc_page_log :
 		return "alloc_page";
-	case t_dealloc_page :
+	case dealloc_page_log :
 		return "dealloc_page";
-	case t_create_store :
+	case create_store_log :
 		return "create_store";
-	case t_alloc_format :
+	case alloc_format_log :
 		return "alloc_format";
-	case t_stnode_format :
+	case stnode_format_log :
 		return "stnode_format";
-	case t_append_extent :
+	case append_extent_log :
 		return "append_extent";
 	case loganalysis_begin_log :
 		return "loganalysis_begin";
@@ -152,9 +153,9 @@ logrec_t::get_type_str(kind_t type)
 		return "restore_end";
 	case warmup_done_log :
 		return "warmup_done";
-	case t_page_img_format :
+	case page_img_format_log :
 		return "page_img_format";
-	case t_update_emlsn :
+	case update_emlsn_log :
 		return "update_emlsn";
 	case t_btree_norec_alloc :
 		return "btree_norec_alloc";
@@ -265,29 +266,29 @@ void logrec_t::redo(PagePtr page)
         << " size: " << header._len << " xid_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xid_prev()) );
 
     switch (header._type)  {
-	case t_alloc_page :
-		((alloc_page_log *) this)->redo(page);
+	case alloc_page_log :
+                LogrecHandler<alloc_page_log, PagePtr>::redo(this, page);
 		break;
-	case t_dealloc_page :
-		((dealloc_page_log *) this)->redo(page);
+	case dealloc_page_log :
+                LogrecHandler<dealloc_page_log, PagePtr>::redo(this, page);
 		break;
-	case t_alloc_format :
-		((alloc_format_log *) this)->redo(page);
+	case alloc_format_log :
+                LogrecHandler<alloc_format_log, PagePtr>::redo(this, page);
 		break;
-	case t_stnode_format :
-		((stnode_format_log *) this)->redo(page);
+	case stnode_format_log :
+                LogrecHandler<stnode_format_log, PagePtr>::redo(this, page);
 		break;
-	case t_create_store :
-		((create_store_log *) this)->redo(page);
+	case create_store_log :
+                LogrecHandler<create_store_log, PagePtr>::redo(this, page);
 		break;
-	case t_append_extent :
-		((append_extent_log *) this)->redo(page);
+	case append_extent_log :
+                LogrecHandler<append_extent_log, PagePtr>::redo(this, page);
 		break;
-	case t_page_img_format :
-		((page_img_format_log *) this)->redo(page);
+	case page_img_format_log :
+                LogrecHandler<page_img_format_log, PagePtr>::redo(this, page);
 		break;
-	case t_update_emlsn :
-		((update_emlsn_log *) this)->redo(page);
+	case update_emlsn_log :
+                LogrecHandler<update_emlsn_log, PagePtr>::redo(this, page);
 		break;
 	case t_btree_norec_alloc :
 		((btree_norec_alloc_log *) this)->redo(page);
@@ -371,27 +372,6 @@ void logrec_t::undo(PagePtr page)
     // The actual UNDO implementation in Btree_impl.cpp
 
     switch (header._type) {
-	case t_alloc_page :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_dealloc_page :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_alloc_format :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_stnode_format :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_create_store :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_append_extent :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_update_emlsn :
-		W_FATAL(eINTERNAL);
-		break;
 	case t_btree_norec_alloc :
 		W_FATAL(eINTERNAL);
 		break;
@@ -483,87 +463,6 @@ void logrec_t::remove_info_for_pid(PageID pid)
 }
 
 
-struct update_emlsn_t {
-    lsn_t                   _child_lsn;
-    general_recordid_t      _child_slot;
-    update_emlsn_t(const lsn_t &child_lsn, general_recordid_t child_slot)
-        : _child_lsn (child_lsn), _child_slot(child_slot) {}
-};
-
-template <class PagePtr>
-void update_emlsn_log::construct (const PagePtr /*p*/,
-                                general_recordid_t child_slot, lsn_t child_lsn)
-{
-    new (data_ssx()) update_emlsn_t(child_lsn, child_slot);
-    set_size(sizeof(update_emlsn_t));
-}
-
-template <class PagePtr>
-void update_emlsn_log::redo(PagePtr page) {
-    borrowed_btree_page_h bp(page);
-    update_emlsn_t *dp = (update_emlsn_t*) data_ssx();
-    bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
-}
-
-
-template <class PagePtr>
-void alloc_page_log::construct(PagePtr, PageID pid)
-{
-    serialize_log_fields(this, pid);
-}
-
-template <class PagePtr>
-void alloc_page_log::redo(PagePtr p)
-{
-    PageID alloc_pid = pid();
-    // CS TODO: little hack to fix bug quickly for my experiments
-    // Proper fix is to introduce a alloc_page_format log record
-    if (alloc_pid != p->pid()) {
-        ::memset(p->get_generic_page(), 0, sizeof(generic_page));
-        p->get_generic_page()->pid = alloc_pid;
-    }
-
-    PageID pid;
-    deserialize_log_fields(this, pid);
-
-    alloc_page* page = (alloc_page*) p->get_generic_page();
-    // assertion fails after page-img compression
-    // w_assert1(!page->get_bit(pid - alloc_pid));
-    page->set_bit(pid - alloc_pid);
-}
-
-template <class PagePtr>
-void dealloc_page_log::construct(PagePtr, PageID pid)
-{
-    serialize_log_fields(this, pid);
-}
-
-template <class PagePtr>
-void dealloc_page_log::redo(PagePtr p)
-{
-    PageID pid;
-    deserialize_log_fields(this, pid);
-
-    PageID alloc_pid = p->pid();
-    alloc_page* page = (alloc_page*) p->get_generic_page();
-    // assertion fails after page-img compression
-    // w_assert1(page->get_bit(pid - alloc_pid));
-    page->unset_bit(pid - alloc_pid);
-}
-
-template <class PagePtr>
-void page_img_format_log::construct(const PagePtr page) {
-    set_size((new (_data) page_img_format_t
-                (page->get_generic_page()))->size());
-}
-
-template <class PagePtr>
-void page_img_format_log::redo(PagePtr page) {
-    // REDO is simply applying the image
-    page_img_format_t* dp = reinterpret_cast<page_img_format_t*>(_data);
-    dp->apply(page->get_generic_page());
-}
-
 
 /*********************************************************************
  *
@@ -601,11 +500,12 @@ operator<<(ostream& o, logrec_t& l)
                 o << " " << (const char *)l._data;
                 break;
             }
-        case t_update_emlsn:
+        case update_emlsn_log:
             {
-                update_emlsn_t* pev = (update_emlsn_t*) l._data;
-                o << " slot: " << pev->_child_slot << " emlsn: "
-                    << pev->_child_lsn;
+                general_recordid_t slot;
+                lsn_t lsn;
+                deserialize_log_fields(&l, slot, lsn);
+                o << " slot: " << slot << " emlsn: " << lsn;
                 break;
             }
         case evict_page_log:
@@ -627,15 +527,15 @@ operator<<(ostream& o, logrec_t& l)
                 o << " pid: " << pid << " page_lsn: " << plsn << " store: " << store;
                 break;
             }
-        case t_alloc_page:
-        case t_dealloc_page:
+        case alloc_page_log:
+        case dealloc_page_log:
             {
                 PageID pid;
                 deserialize_log_fields(&l, pid);
                 o << " page: " << pid;
                 break;
             }
-        case t_create_store:
+        case create_store_log:
             {
                 StoreID stid;
                 PageID root_pid;
@@ -670,7 +570,7 @@ operator<<(ostream& o, logrec_t& l)
                 o << " segment: " << segment;
                 break;
             }
-        case t_append_extent:
+        case append_extent_log:
             {
                 extent_id_t ext;
                 StoreID snum;
@@ -697,43 +597,6 @@ operator<<(ostream& o, logrec_t& l)
 
     o.flags(f);
     return o;
-}
-
-template <class PagePtr>
-void create_store_log::construct(PagePtr page, PageID root_pid, StoreID snum)
-{
-    serialize_log_fields(this, snum, root_pid);
-}
-
-template <class PagePtr>
-void create_store_log::redo(PagePtr page)
-{
-    StoreID snum;
-    PageID root_pid;
-    deserialize_log_fields(this, snum, root_pid);
-
-    stnode_page* stpage = (stnode_page*) page->get_generic_page();
-    if (stpage->pid != stnode_page::stpid) {
-        stpage->pid = stnode_page::stpid;
-    }
-    stpage->set_root(snum, root_pid);
-    stpage->set_last_extent(snum, 0);
-}
-
-template <class PagePtr>
-void append_extent_log::construct(PagePtr, StoreID snum, extent_id_t ext)
-{
-    serialize_log_fields(this, ext, snum);
-}
-
-template <class PagePtr>
-void append_extent_log::redo(PagePtr page)
-{
-    extent_id_t ext;
-    StoreID snum;
-    deserialize_log_fields(this, ext, snum);
-    auto spage = reinterpret_cast<stnode_page*>(page->get_generic_page());
-    spage->set_last_extent(snum, ext);
 }
 
 #if LOGREC_ACCOUNTING
@@ -925,15 +788,3 @@ __thread double            logrec_accounting_impl_t::ratio_bf_cxt   [t_max_logre
 template void logrec_t::template redo<btree_page_h*>(btree_page_h*);
 template void logrec_t::template redo<fixable_page_h*>(fixable_page_h*);
 template void logrec_t::template undo<fixable_page_h*>(fixable_page_h*);
-
-template void update_emlsn_log::template construct<btree_page_h*>(btree_page_h* p,
-                                general_recordid_t child_slot, lsn_t child_lsn);
-
-template void page_img_format_log::template construct<fixable_page_h*>(fixable_page_h*);
-template void page_img_format_log::template construct<btree_page_h*>(btree_page_h*);
-
-template void create_store_log::template construct<fixable_page_h*>(fixable_page_h*, PageID, StoreID);
-template void append_extent_log::template construct<fixable_page_h*>(fixable_page_h*, StoreID, extent_id_t);
-
-template void alloc_page_log::template construct<fixable_page_h*>(fixable_page_h*, PageID);
-template void dealloc_page_log::template construct<fixable_page_h*>(fixable_page_h*, PageID);

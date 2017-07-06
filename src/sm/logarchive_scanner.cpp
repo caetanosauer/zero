@@ -43,7 +43,7 @@ void ArchiveScan::open(PageID startPID, PageID endPID, lsn_t startLSN, lsn_t end
         if (it->open(startPID)) {
             auto lr = it->logrec();
             it++;
-            if (singlePage && lr->type() == t_page_img_format) {
+            if (singlePage && lr->type() == page_img_format_log) {
                 // Any entries beyond it (including it are ignored)
                 heapBegin = it.base();
                 ADD_TSTAT(la_img_trimmed, heapBegin - inputs.begin());

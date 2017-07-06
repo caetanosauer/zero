@@ -236,7 +236,7 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
 
     // log as one record
     if (log_it) {
-        Logger::log_p<page_img_format_log>(this);
+        Logger::log_p_new<page_img_format_log>(this);
     }
 
     // This is the only place where a page format log record is being generated,

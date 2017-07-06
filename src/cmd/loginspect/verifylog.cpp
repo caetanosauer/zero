@@ -88,7 +88,7 @@ void VerifyHandler::checkAlloc(logrec_t& r)
 {
     auto lsn = r.lsn();
     PageID pid = *((PageID*) (r.data_ssx()));
-    if (r.type() == t_alloc_page) {
+    if (r.type() == alloc_page_log) {
         if (allocatedPages.find(pid) != allocatedPages.end()) {
             std::cout << "on " << lsn
                 << " alloc_page of pid " << pid
@@ -97,7 +97,7 @@ void VerifyHandler::checkAlloc(logrec_t& r)
         }
         allocatedPages.insert(pid);
     }
-    else if (r.type() == t_dealloc_page) {
+    else if (r.type() == dealloc_page_log) {
         if (allocatedPages.find(pid) == allocatedPages.end()) {
             std::cout << "on " << lsn
                 << " dealloc_page of pid " << pid
