@@ -123,8 +123,8 @@ void LogAnalysisHandler::invoke(logrec_t& r)
         }
     }
 
-    if (r.type() == t_xct_end ||
-            r.type() == t_xct_abort)
+    if (r.type() == xct_end_log ||
+            r.type() == xct_abort_log)
     {
         activeTAs.erase(r.tid());
         xctCount++;
@@ -137,7 +137,7 @@ void LogAnalysisHandler::invoke(logrec_t& r)
         }
     }
 
-    if (r.type() == t_page_write) {
+    if (r.type() == page_write_log) {
         PageID pid = *((PageID*) r.data());
         uint32_t count = *((uint32_t*) (r.data() + sizeof(PageID)));
         PageID end = pid + count;

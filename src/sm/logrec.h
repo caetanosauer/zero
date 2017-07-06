@@ -128,33 +128,33 @@ struct xidChainLogHeader
 };
 
 enum kind_t {
-    t_comment = 0,
-    t_compensate = 1,
-    t_skip = 2,
-    t_chkpt_begin = 3,
+    comment_log = 0,
+    compensate_log = 1,
+    skip_log = 2,
+    chkpt_begin_log = 3,
     // t_chkpt_bf_tab = 4,
     // t_chkpt_xct_tab = 5,
     // t_chkpt_xct_lock = 6,
-    t_warmup_done = 7,
+    warmup_done_log = 7,
     t_alloc_format = 8,
-    t_evict_page = 9,
-    t_add_backup = 10,
-    t_xct_abort = 11,
-    t_fetch_page = 12,
-    t_xct_end = 13,
+    evict_page_log = 9,
+    add_backup_log = 10,
+    xct_abort_log = 11,
+    fetch_page_log = 12,
+    xct_end_log = 13,
     // t_xct_end_group = 14,
-    t_xct_latency_dump = 15,
+    xct_latency_dump_log = 15,
     t_alloc_page = 16,
     t_dealloc_page = 17,
     t_create_store = 18,
     t_append_extent = 19,
-    t_loganalysis_begin = 20,
-    t_loganalysis_end = 21,
-    t_redo_done = 22,
-    t_undo_done = 23,
-    t_restore_begin = 24,
-    t_restore_segment = 25,
-    t_restore_end = 26,
+    loganalysis_begin_log = 20,
+    loganalysis_end_log = 21,
+    redo_done_log = 22,
+    undo_done_log = 23,
+    restore_begin_log = 24,
+    restore_segment_log = 25,
+    restore_end_log = 26,
     // t_page_set_to_be_deleted = 27,
     t_stnode_format = 27,
     t_page_img_format = 28,
@@ -174,11 +174,11 @@ enum kind_t {
     // t_btree_foster_deadopt = 42,
     t_btree_split = 43,
     t_btree_compress_page = 44,
-    t_tick_sec = 45,
-    t_tick_msec = 46,
-    t_benchmark_start = 47,
-    t_page_write = 48,
-    t_page_read = 49,
+    tick_sec_log = 45,
+    tick_msec_log = 46,
+    benchmark_start_log = 47,
+    page_write_log = 48,
+    page_read_log = 49,
     t_max_logrec = 50
 };
 
@@ -278,7 +278,6 @@ public:
     void                 set_xid_prev(const lsn_t &lsn);
     void                 set_undo_nxt(const lsn_t &lsn);
     void                 set_tid(tid_t tid);
-    void                 set_clr(const lsn_t& c);
     void                 set_root_page();
     void                 set_pid(const PageID& p);
     kind_t               type() const;
@@ -308,6 +307,22 @@ public:
                                 where = lsn_ck;
                             }
     void                 corrupt();
+
+    // Hack to support compensation with generic loggers
+    // (see xct_logger.h)
+    void set_clr() {}
+
+    void set_clr(const lsn_t& c)
+    {
+        w_assert0(!is_single_sys_xct()); // CLR shouldn't be output in this case
+        header._flags |= t_cpsn;
+
+        // To shrink log records,
+        // we've taken out _undo_nxt and
+        // overloaded _prev.
+        // _undo_nxt = c;
+        xidInfo._xid_prv = c; // and _xid_prv is data area if is_single_sys_xct
+    }
 
     const char* get_data_offset() const
     {
@@ -586,19 +601,6 @@ logrec_t::cat() const
 }
 
 inline void
-logrec_t::set_clr(const lsn_t& c)
-{
-    w_assert0(!is_single_sys_xct()); // CLR shouldn't be output in this case
-    header._flags |= t_cpsn;
-
-    // To shrink log records,
-    // we've taken out _undo_nxt and
-    // overloaded _prev.
-    // _undo_nxt = c;
-    xidInfo._xid_prv = c; // and _xid_prv is data area if is_single_sys_xct
-}
-
-inline void
 logrec_t::set_root_page()
 {
     header._flags |= t_root_page;
@@ -624,7 +626,7 @@ inline bool logrec_t::is_multi_page() const {
 inline bool
 logrec_t::is_skip() const
 {
-    return type() == t_skip;
+    return type() == skip_log;
 }
 
 inline bool
@@ -678,30 +680,30 @@ inline const multi_page_log_t* logrec_t::data_ssx_multi() const {
 constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 {
     switch (type) {
-	case t_comment : return t_system;
-	case t_tick_sec : return t_system;
-	case t_tick_msec : return t_system;
-	case t_benchmark_start : return t_system;
-	case t_page_write : return t_system;
-	case t_page_read : return t_system;
-	case t_skip : return t_system;
-	case t_chkpt_begin : return t_system;
-	case t_loganalysis_begin : return t_system;
-	case t_loganalysis_end : return t_system;
-	case t_redo_done : return t_system;
-	case t_undo_done : return t_system;
-        case t_warmup_done: return t_system;
-	case t_restore_begin : return t_system;
-	case t_restore_segment : return t_system;
-	case t_restore_end : return t_system;
-	case t_xct_latency_dump : return t_system;
-	case t_add_backup : return t_system;
-	case t_evict_page : return t_system;
-	case t_fetch_page : return t_system;
+	case comment_log : return t_system;
+	case tick_sec_log : return t_system;
+	case tick_msec_log : return t_system;
+	case benchmark_start_log : return t_system;
+	case page_write_log : return t_system;
+	case page_read_log : return t_system;
+	case skip_log : return t_system;
+	case chkpt_begin_log : return t_system;
+	case loganalysis_begin_log : return t_system;
+	case loganalysis_end_log : return t_system;
+	case redo_done_log : return t_system;
+	case undo_done_log : return t_system;
+        case warmup_done_log: return t_system;
+	case restore_begin_log : return t_system;
+	case restore_segment_log : return t_system;
+	case restore_end_log : return t_system;
+	case xct_latency_dump_log : return t_system;
+	case add_backup_log : return t_system;
+	case evict_page_log : return t_system;
+	case fetch_page_log : return t_system;
 
-	case t_compensate : return t_logical;
-	case t_xct_abort : return t_logical;
-	case t_xct_end : return t_logical;
+	case compensate_log : return t_logical;
+	case xct_abort_log : return t_logical;
+	case xct_end_log : return t_logical;
 
 	case t_alloc_page : return t_redo|t_single_sys_xct;
 	case t_stnode_format : return t_redo|t_single_sys_xct;

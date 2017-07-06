@@ -75,7 +75,7 @@ void ArchStats::run()
 void ArchStatsScanner::invoke(logrec_t& r)
 {
     auto pid = r.pid();
-    if ((pid != currentPID || !started) && r.type() != t_skip)
+    if ((pid != currentPID || !started) && r.type() != skip_log)
     {
         started = true;
         std::cout << "pid " << pid

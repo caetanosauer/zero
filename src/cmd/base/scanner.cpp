@@ -52,7 +52,7 @@ BlockScanner::BlockScanner(const po::variables_map& options,
             }
         }
         // skip cannot be ignored because it tells us when file ends
-        logScanner->unsetIgnore(t_skip);
+        logScanner->unsetIgnore(skip_log);
     }
 }
 
@@ -156,7 +156,7 @@ void BlockScanner::run()
             bpos = 0;
             while (logScanner->nextLogrec(currentBlock, bpos, lr)) {
                 handle(lr);
-                if (lr->type() == t_skip) {
+                if (lr->type() == skip_log) {
                     fpos = fend;
                     break;
                 }

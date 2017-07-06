@@ -261,12 +261,12 @@ void chkpt_t::scan_log(lsn_t scan_start, lsn_t archived_lsn)
     while (scan.next(lr) && lsn > scan_stop)
     {
         lsn = lr->lsn();
-        if (lr->is_skip() || lr->type() == t_comment) {
+        if (lr->is_skip() || lr->type() == comment_log) {
             continue;
         }
 
         // when taking chkpts, scan_start will be a just-generated begin_chkpt -- ignore it
-        if (lr->lsn() == scan_start && lr->type() == t_chkpt_begin) {
+        if (lr->lsn() == scan_start && lr->type() == chkpt_begin_log) {
             continue;
         }
 
@@ -314,7 +314,7 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
 
     switch (r.type())
     {
-        case t_chkpt_begin:
+        case chkpt_begin_log:
             {
                 fs::path fpath = smlevel_0::log->get_storage()->make_chkpt_path(lsn);
                 if (fs::exists(fpath)) {
@@ -326,12 +326,12 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
             }
 
             break;
-        case t_xct_end:
-        case t_xct_abort:
+        case xct_end_log:
+        case xct_abort_log:
             xct->mark_ended();
             break;
 
-        case t_page_write:
+        case page_write_log:
             {
                 PageID pid;
                 lsn_t clean_lsn;
@@ -347,7 +347,7 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
             }
             break;
 
-        case t_add_backup:
+        case add_backup_log:
             {
                 lsn_t backupLSN;
                 string dev;
@@ -355,7 +355,7 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
                 add_backup(dev, backupLSN);
             }
             break;
-        case t_restore_begin:
+        case restore_begin_log:
             if (!ignore_restore) {
                 ongoing_restore = true;
                 deserialize_log_fields(&r, restore_page_cnt);
@@ -363,14 +363,14 @@ void chkpt_t::analyze_logrec(logrec_t& r, xct_tab_entry_t* xct, lsn_t& scan_stop
                 // ignore the first failure
                 ignore_restore = true;
             }
-        case t_restore_end:
+        case restore_end_log:
             {
                 // in backward scan, this tells us that there was a restore
                 // going on, but it is finished, so we can ignore it
                 ignore_restore = true;
             }
             break;
-        case t_restore_segment:
+        case restore_segment_log:
             if (!ignore_restore) {
                 uint32_t segment;
                 deserialize_log_fields(&r, segment);

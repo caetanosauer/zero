@@ -183,7 +183,7 @@ inline bool   xct_t::should_consume_rollback_resv(int t) const
         _rolling_back || _core->_xct_aborting
         // compensate is a special case:
         // consume rollback space
-        || t == t_compensate ;
+        || t == compensate_log ;
  }
 
 struct lock_info_ptr {

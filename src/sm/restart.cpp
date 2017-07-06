@@ -456,7 +456,7 @@ void restart_thread_t::dump_page_lsn_chain(std::ostream &o, const PageID &pid, c
     lsn_t           lsn;
     // Scan all log entries until EMLSN
     while (scan.xct_next(lsn, buf) && buf.lsn_ck() <= max_lsn) {
-        if (buf.type() == t_chkpt_begin) {
+        if (buf.type() == chkpt_begin_log) {
             o << "  CHECKPT: " << buf << std::endl;
             continue;
         }

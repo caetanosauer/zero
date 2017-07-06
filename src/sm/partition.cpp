@@ -189,7 +189,7 @@ rc_t partition_t::flush(
     } // end sync log
 
     { // Copy a skip record to the end of the buffer.
-        skip_log* s = _owner->get_skip_log();
+        logrec_t* s = _owner->get_skip_log();
         s->set_lsn_ck(lsn+size);
 
         // Hopefully the OS is smart enough to coalesce the writes
@@ -506,7 +506,7 @@ rc_t partition_t::scan_for_size(bool must_be_skip)
             if (bytesRead != sizeof(baseLogHeader)) { return RC(stSHORTIO); }
 
             if (h.is_valid()) {
-                if (must_be_skip && h._type != t_skip) {
+                if (must_be_skip && h._type != skip_log) {
                     W_FATAL_MSG(eINTERNAL,
                             << "Found last log record in partition " << _num
                             << " but it is not a skip");

@@ -70,14 +70,14 @@ void LatencyHandler::invoke(logrec_t& r)
         return;
     }
 
-    if (r.type() == t_tick_sec || r.type() == t_tick_msec) {
+    if (r.type() == tick_sec_log || r.type() == tick_msec_log) {
         currentTick++;
         if (currentTick == interval) {
             currentTick = 0;
             dump();
         }
     }
-    else if (r.type() == t_xct_latency_dump) {
+    else if (r.type() == xct_latency_dump_log) {
         unsigned long latency;
         deserialize_log_fields(&r, latency);
         accum_latency += latency;

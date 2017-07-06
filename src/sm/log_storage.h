@@ -96,7 +96,7 @@ public:
     void list_partitions(std::vector<partition_number_t>& vec) const;
 
     // used by partition_t
-    skip_log*       get_skip_log()  { return _skip_log; }
+    logrec_t*       get_skip_log()  { return _skip_log; }
 
     off_t get_partition_size() const { return _partition_size; }
 
@@ -122,7 +122,7 @@ private:
 
     vector<lsn_t> _checkpoints;
 
-    skip_log* _skip_log;
+    logrec_t* _skip_log;
 
     unsigned _max_partitions;
     bool _delete_old_partitions;

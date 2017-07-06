@@ -56,8 +56,8 @@ void AggLog::run()
     AggregateHandler h(filter, interval, begin, end);
 
     // filter must not ignore tick log records
-    filter.set(t_tick_sec);
-    filter.set(t_tick_msec);
+    filter.set(tick_sec_log);
+    filter.set(tick_msec_log);
 
     // filter must not ignore begin and end marks
     if (begin != t_max_logrec) { filter.set(begin); }
@@ -119,7 +119,7 @@ void AggregateHandler::invoke(logrec_t& r)
         return;
     }
 
-    if (r.type() == t_tick_sec || r.type() == t_tick_msec) {
+    if (r.type() == tick_sec_log || r.type() == tick_msec_log) {
         currentTick++;
         if (currentTick == interval) {
             currentTick = 0;

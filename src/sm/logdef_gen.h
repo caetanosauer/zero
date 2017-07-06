@@ -56,48 +56,6 @@ void deserialize_log_fields(logrec_t* lr, T&... fields)
     LogEncoder<T...>::decode(offset, &fields...);
 }
 
-    struct comment_log : public logrec_t {
-        static constexpr kind_t TYPE = t_comment;
-    void construct (const char* msg);
-    };
-
-    struct compensate_log : public logrec_t {
-        static constexpr kind_t TYPE = t_compensate;
-    void construct (const lsn_t& rec_lsn);
-    };
-
-    struct skip_log : public logrec_t {
-        static constexpr kind_t TYPE = t_skip;
-    };
-
-    struct chkpt_begin_log : public logrec_t {
-        static constexpr kind_t TYPE = t_chkpt_begin;
-    };
-
-    struct add_backup_log : public logrec_t {
-        static constexpr kind_t TYPE = t_add_backup;
-    };
-
-    struct evict_page_log : public logrec_t {
-        static constexpr kind_t TYPE = t_evict_page;
-    };
-
-    struct fetch_page_log : public logrec_t {
-        static constexpr kind_t TYPE = t_fetch_page;
-    };
-
-    struct xct_abort_log : public logrec_t {
-        static constexpr kind_t TYPE = t_xct_abort;
-    };
-
-    struct xct_end_log : public logrec_t {
-        static constexpr kind_t TYPE = t_xct_end;
-    };
-
-    struct xct_latency_dump_log : public logrec_t {
-        static constexpr kind_t TYPE = t_xct_latency_dump;
-    };
-
     struct alloc_page_log : public logrec_t {
         static constexpr kind_t TYPE = t_alloc_page;
     template <class Ptr> void construct (Ptr, PageID pid);
@@ -147,40 +105,6 @@ void deserialize_log_fields(logrec_t* lr, T&... fields)
         static constexpr kind_t TYPE = t_append_extent;
     template <class Ptr> void construct (Ptr, StoreID, extent_id_t ext);
     template <class Ptr> void redo(Ptr);
-    };
-
-    struct loganalysis_begin_log : public logrec_t {
-        static constexpr kind_t TYPE = t_loganalysis_begin;
-    };
-
-    struct loganalysis_end_log : public logrec_t {
-        static constexpr kind_t TYPE = t_loganalysis_end;
-    };
-
-    struct redo_done_log : public logrec_t {
-        static constexpr kind_t TYPE = t_redo_done;
-    };
-
-    struct undo_done_log : public logrec_t {
-        static constexpr kind_t TYPE = t_undo_done;
-    };
-
-    struct restore_begin_log : public logrec_t {
-        static constexpr kind_t TYPE = t_restore_begin;
-    };
-
-    struct restore_segment_log : public logrec_t {
-        static constexpr kind_t TYPE = t_restore_segment;
-    template <class Ptr> void redo(Ptr);
-    };
-
-    struct restore_end_log : public logrec_t {
-        static constexpr kind_t TYPE = t_restore_end;
-    template <class Ptr> void redo(Ptr);
-    };
-
-    struct warmup_done_log : public logrec_t {
-        static constexpr kind_t TYPE = t_warmup_done;
     };
 
     struct page_img_format_log : public logrec_t {
@@ -265,26 +189,6 @@ void deserialize_log_fields(logrec_t* lr, T&... fields)
         static constexpr kind_t TYPE = t_btree_compress_page;
     template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& low, const w_keystr_t& high, const w_keystr_t& chain);
     template <class Ptr> void redo(Ptr);
-    };
-
-    struct tick_sec_log : public logrec_t {
-        static constexpr kind_t TYPE = t_tick_sec;
-    };
-
-    struct tick_msec_log : public logrec_t {
-        static constexpr kind_t TYPE = t_tick_msec;
-    };
-
-    struct benchmark_start_log : public logrec_t {
-        static constexpr kind_t TYPE = t_benchmark_start;
-    };
-
-    struct page_write_log : public logrec_t {
-        static constexpr kind_t TYPE = t_page_write;
-    };
-
-    struct page_read_log : public logrec_t {
-        static constexpr kind_t TYPE = t_page_read;
     };
 
 #endif

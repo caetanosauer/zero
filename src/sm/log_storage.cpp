@@ -72,8 +72,8 @@ public:
 log_storage::log_storage(const sm_options& options)
 {
     // CS TODO: log record refactoring
-    _skip_log = new skip_log;
-    _skip_log->init_header(t_skip);
+    _skip_log = new logrec_t;
+    _skip_log->init_header(skip_log);
     // _skip_log->construct();
 
     std::string logdir = options.get_string_option("sm_logdir", "log");

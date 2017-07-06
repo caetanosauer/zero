@@ -48,7 +48,7 @@ const size_t IO_ALIGN = 512;
 // CS TODO
 const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
 
-skip_log SKIP_LOGREC;
+logrec_t SKIP_LOGREC;
 
 // TODO proper exception mechanism
 #define CHECK_ERRNO(n) \
@@ -171,7 +171,7 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
         }
     }
 
-    SKIP_LOGREC.init_header(t_skip);
+    SKIP_LOGREC.init_header(skip_log);
     // SKIP_LOGREC.construct();
 
     unsigned replFactor = options.get_int_option("sm_archiver_replication_factor", 0);

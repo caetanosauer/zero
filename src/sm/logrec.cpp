@@ -104,25 +104,25 @@ const char*
 logrec_t::get_type_str(kind_t type)
 {
     switch (type)  {
-	case t_comment :
+	case comment_log :
 		return "comment";
-	case t_compensate :
+	case compensate_log :
 		return "compensate";
-	case t_skip :
+	case skip_log :
 		return "skip";
-	case t_chkpt_begin :
+	case chkpt_begin_log :
 		return "chkpt_begin";
-	case t_add_backup :
+	case add_backup_log :
 		return "add_backup";
-	case t_evict_page :
+	case evict_page_log :
 		return "evict_page";
-	case t_fetch_page :
+	case fetch_page_log :
 		return "fetch_page";
-	case t_xct_abort :
+	case xct_abort_log :
 		return "xct_abort";
-	case t_xct_end :
+	case xct_end_log :
 		return "xct_end";
-	case t_xct_latency_dump :
+	case xct_latency_dump_log :
 		return "xct_latency_dump";
 	case t_alloc_page :
 		return "alloc_page";
@@ -136,21 +136,21 @@ logrec_t::get_type_str(kind_t type)
 		return "stnode_format";
 	case t_append_extent :
 		return "append_extent";
-	case t_loganalysis_begin :
+	case loganalysis_begin_log :
 		return "loganalysis_begin";
-	case t_loganalysis_end :
+	case loganalysis_end_log :
 		return "loganalysis_end";
-	case t_redo_done :
+	case redo_done_log :
 		return "redo_done";
-	case t_undo_done :
+	case undo_done_log :
 		return "undo_done";
-	case t_restore_begin :
+	case restore_begin_log :
 		return "restore_begin";
-	case t_restore_segment :
+	case restore_segment_log :
 		return "restore_segment";
-	case t_restore_end :
+	case restore_end_log :
 		return "restore_end";
-	case t_warmup_done :
+	case warmup_done_log :
 		return "warmup_done";
 	case t_page_img_format :
 		return "page_img_format";
@@ -178,15 +178,15 @@ logrec_t::get_type_str(kind_t type)
 		return "btree_split";
 	case t_btree_compress_page :
 		return "btree_compress_page";
-	case t_tick_sec :
+	case tick_sec_log :
 		return "tick_sec";
-	case t_tick_msec :
+	case tick_msec_log :
 		return "tick_msec";
-	case t_benchmark_start :
+	case benchmark_start_log :
 		return "benchmark_start";
-	case t_page_write :
+	case page_write_log :
 		return "page_write";
-	case t_page_read :
+	case page_read_log :
 		return "page_read";
     default:
       return "UNKNOWN";
@@ -265,36 +265,6 @@ void logrec_t::redo(PagePtr page)
         << " size: " << header._len << " xid_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xid_prev()) );
 
     switch (header._type)  {
-	case t_comment :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_compensate :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_skip :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_chkpt_begin :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_add_backup :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_fetch_page :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_evict_page :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_xct_abort :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_xct_end :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_xct_latency_dump :
-		W_FATAL(eINTERNAL);
-		break;
 	case t_alloc_page :
 		((alloc_page_log *) this)->redo(page);
 		break;
@@ -312,30 +282,6 @@ void logrec_t::redo(PagePtr page)
 		break;
 	case t_append_extent :
 		((append_extent_log *) this)->redo(page);
-		break;
-	case t_loganalysis_begin :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_loganalysis_end :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_redo_done :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_undo_done :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_restore_begin :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_restore_segment :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_warmup_done :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_restore_end :
-		((restore_end_log *) this)->redo(page);
 		break;
 	case t_page_img_format :
 		((page_img_format_log *) this)->redo(page);
@@ -375,21 +321,6 @@ void logrec_t::redo(PagePtr page)
 		break;
 	case t_btree_compress_page :
 		((btree_compress_page_log *) this)->redo(page);
-		break;
-	case t_tick_sec :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_tick_msec :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_benchmark_start :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_page_write :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_page_read :
-		W_FATAL(eINTERNAL);
 		break;
 	default :
 		W_FATAL(eINTERNAL);
@@ -440,36 +371,6 @@ void logrec_t::undo(PagePtr page)
     // The actual UNDO implementation in Btree_impl.cpp
 
     switch (header._type) {
-	case t_comment :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_compensate :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_skip :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_chkpt_begin :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_add_backup :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_fetch_page :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_evict_page :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_xct_abort :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_xct_end :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_xct_latency_dump :
-		W_FATAL(eINTERNAL);
-		break;
 	case t_alloc_page :
 		W_FATAL(eINTERNAL);
 		break;
@@ -486,30 +387,6 @@ void logrec_t::undo(PagePtr page)
 		W_FATAL(eINTERNAL);
 		break;
 	case t_append_extent :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_loganalysis_begin :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_loganalysis_end :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_redo_done :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_undo_done :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_restore_begin :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_restore_segment :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_warmup_done :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_restore_end :
 		W_FATAL(eINTERNAL);
 		break;
 	case t_page_img_format :
@@ -549,21 +426,6 @@ void logrec_t::undo(PagePtr page)
 		W_FATAL(eINTERNAL);
 		break;
 	case t_btree_compress_page :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_tick_sec :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_tick_msec :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_benchmark_start :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_page_write :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_page_read :
 		W_FATAL(eINTERNAL);
 		break;
 	default :
@@ -623,33 +485,6 @@ void logrec_t::remove_info_for_pid(PageID pid)
     w_assert1(valid_header());
 }
 
-/*********************************************************************
- *
- *  comment_log
- *
- *  For debugging
- *
- *********************************************************************/
-void comment_log::construct(const char *msg)
-{
-    w_assert1(strlen(msg) < max_data_sz);
-    memcpy(_data, msg, strlen(msg)+1);
-    set_size(strlen(msg)+1);
-}
-
-/*********************************************************************
- *
- *  compensate_log
- *
- *  Needed when compensation rec is written rather than piggybacked
- *  on another record
- *
- *********************************************************************/
-void compensate_log::construct(const lsn_t& rec_lsn)
-{
-    set_clr(rec_lsn);
-}
-
 
 struct update_emlsn_t {
     lsn_t                   _child_lsn;
@@ -673,18 +508,6 @@ void update_emlsn_log::redo(PagePtr page) {
     bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
 }
 
-
-template <class PagePtr>
-void restore_end_log::redo(PagePtr)
-{
-    return; // CS TODO: disabled for now
-}
-
-template <class PagePtr>
-void restore_segment_log::redo(PagePtr)
-{
-    // CS TODO: cleanup!
-}
 
 template <class PagePtr>
 void alloc_page_log::construct(PagePtr, PageID pid)
@@ -781,7 +604,7 @@ operator<<(ostream& o, logrec_t& l)
     }
 
     switch(l.type()) {
-        case t_comment :
+        case comment_log :
             {
                 o << " " << (const char *)l._data;
                 break;
@@ -793,7 +616,7 @@ operator<<(ostream& o, logrec_t& l)
                     << pev->_child_lsn;
                 break;
             }
-        case t_evict_page:
+        case evict_page_log:
             {
                 PageID pid;
                 bool was_dirty;
@@ -803,7 +626,7 @@ operator<<(ostream& o, logrec_t& l)
                     << page_lsn;
                 break;
             }
-        case t_fetch_page:
+        case fetch_page_log:
             {
                 PageID pid;
                 lsn_t plsn;
@@ -829,7 +652,7 @@ operator<<(ostream& o, logrec_t& l)
                 o << " root_pid: " << root_pid;
                 break;
             }
-        case t_page_read:
+        case page_read_log:
             {
                 PageID pid;
                 uint32_t count;
@@ -838,7 +661,7 @@ operator<<(ostream& o, logrec_t& l)
                 o << " pids: " << pid << "-" << end;
                 break;
             }
-        case t_page_write:
+        case page_write_log:
             {
                 PageID pid;
                 lsn_t clean_lsn;
@@ -848,7 +671,7 @@ operator<<(ostream& o, logrec_t& l)
                 o << " pids: " << pid << "-" << end << " clean_lsn: " << clean_lsn;
                 break;
             }
-        case t_restore_segment:
+        case restore_segment_log:
             {
                 uint32_t segment;
                 deserialize_log_fields(&l, segment);

@@ -16,8 +16,7 @@ public:
      * script logdef.pl. Two overloads are required because of the cumbersome
      * way in which PageLSNs are managed in Zero (see xct_t::give_logbuf).
      */
-    // CS TODO we need a new page-lsn update mechanism!
-    template <class Logrec, class... Args>
+    template <kind_t LR, class... Args>
     static lsn_t log(const Args&... args)
     {
         xct_t* xd = smthread_t::xct();
@@ -25,11 +24,19 @@ public:
         if (!should_log)  { return lsn_t::null; }
 
         logrec_t* logrec = _get_logbuf(xd);
-        new (logrec) Logrec;
-        logrec->init_header(Logrec::TYPE);
+        logrec->init_header(LR);
         logrec->init_xct_info();
-        serialize_log_fields(logrec, args...);
+
+        // CS TODO fix compensation
+        if (LR == compensate_log) {
+            logrec->set_clr(args...);
+        }
+        else {
+            serialize_log_fields(logrec, args...);
+        }
+
         w_assert1(logrec->valid_header());
+
 
         // REDO log records always pertain to a page and must therefore use log_p
         w_assert1(!logrec->is_redo());
@@ -173,19 +180,18 @@ public:
      * The difference to the other logging methods is that no xct or page
      * is involved and the logrec buffer is obtained with the 'new' operator.
      */
-    template <class Logrec, class... Args>
+    template <kind_t LR, class... Args>
     static lsn_t log_sys(const Args&... args)
     {
         // this should use TLS allocator, so it's fast
         // (see macro DEFINE_SM_ALLOC in allocator.h and logrec.cpp)
         logrec_t* logrec = new logrec_t;
 
-        new (logrec) Logrec;
-        logrec->init_header(Logrec::TYPE);
+        logrec->init_header(LR);
         logrec->init_xct_info();
         serialize_log_fields(logrec, args...);
         w_assert1(logrec->valid_header());
-        w_assert1(logrec_t::get_logrec_cat(Logrec::TYPE) == logrec_t::t_system);
+        w_assert1(logrec_t::get_logrec_cat(LR) == logrec_t::t_system);
 
         lsn_t lsn;
         W_COERCE(ss_m::log->insert(*logrec, &lsn));

@@ -230,7 +230,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
             logrec_t* rp = (logrec_t*) (_fetch_buffers[i] + ll.lo());
             w_assert1(rp->valid_header(ll));
 
-            if (rp->type() == t_skip)
+            if (rp->type() == skip_log)
             {
                 if (forward) {
                     ll = lsn_t(ll.hi() + 1, 0);
@@ -289,7 +289,7 @@ log_core::fetch(lsn_t& ll, void* buf, lsn_t* nxt, const bool forward)
     w_assert1(rp->valid_header(ll));
 
     // handle skip log record
-    if (rp->type() == t_skip)
+    if (rp->type() == skip_log)
     {
         p->release_read();
         if (forward) {

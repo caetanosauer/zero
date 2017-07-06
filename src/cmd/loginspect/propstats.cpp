@@ -102,7 +102,7 @@ public:
     virtual void invoke(logrec_t& r)
     {
         // Dump stats on each tick log record
-        if (r.type() == t_tick_sec || r.type() == t_tick_msec) {
+        if (r.type() == tick_sec_log || r.type() == tick_msec_log) {
             dumpStats(r.lsn());
             return;
         }
@@ -123,7 +123,7 @@ public:
             }
             updates++;
         }
-        else if (r.type() == t_page_write) {
+        else if (r.type() == page_write_log) {
             char* pos = r.data();
 
             PageID pid = *((PageID*) pos);
@@ -142,7 +142,7 @@ public:
 
             page_writes += count;
         }
-        else if (r.type() == t_evict_page) {
+        else if (r.type() == evict_page_log) {
             PageID pid = *(reinterpret_cast<PageID*>(r.data_ssx()));
             bool was_dirty = *(reinterpret_cast<bool*>(r.data_ssx() + sizeof(PageID)));
             if (!was_dirty) {
@@ -150,7 +150,7 @@ public:
                 if (track_rec_lsn) { page_lsns[pid].clear(); }
             }
         }
-        else if (r.type() == t_xct_end) {
+        else if (r.type() == xct_end_log) {
             commits++;
         }
     }
@@ -217,7 +217,7 @@ public:
 
     virtual void invoke(logrec_t& r)
     {
-        if (r.type() == t_page_write) {
+        if (r.type() == page_write_log) {
             char* pos = r.data();
             pos += sizeof(PageID);
             pos += sizeof(lsn_t);
