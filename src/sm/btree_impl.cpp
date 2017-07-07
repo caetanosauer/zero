@@ -121,7 +121,7 @@ btree_impl::_ux_insert_core(
             W_DO(_ux_lock_range(store, leaf, key, -1, // search again because it might be split
                 LATCH_EX, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
-        Logger::log_p_new<btree_insert_nonghost_log>(&leaf,
+        Logger::log_p<btree_insert_nonghost_log>(&leaf,
                 leaf.btree_root(), key, el, false /*is_sys_txn*/);
 
         leaf.insert_nonghost(key, el);
@@ -288,7 +288,7 @@ rc_t btree_impl::_ux_reserve_ghost_core(btree_page_h &leaf, const w_keystr_t &ke
 
     w_assert1(leaf.check_space_for_insert_leaf(key.get_length_as_keystr()-leaf.get_prefix_length(), elem_len));
 
-    Logger::log_p_new<btree_ghost_reserve_log> (&leaf, key, elem_len);
+    Logger::log_p<btree_ghost_reserve_log> (&leaf, key, elem_len);
     leaf.reserve_ghost(key, elem_len);
     return RCOK;
 }
@@ -358,7 +358,7 @@ btree_impl::_ux_update_core(StoreID store, const w_keystr_t &key, const cvec_t &
         }
     }
 
-    Logger::log_p_new<btree_update_log> (&leaf,
+    Logger::log_p<btree_update_log> (&leaf,
             leaf.btree_root(), key, old_element, old_element_len, el);
 
     W_DO(leaf.replace_el_nolog(slot, el));
@@ -397,7 +397,7 @@ btree_impl::_ux_update_core_tail(StoreID store,
         }
     }
 
-    Logger::log_p_new<btree_update_log> (&leaf,
+    Logger::log_p<btree_update_log> (&leaf,
             leaf.btree_root(), key, old_element, old_element_len, el);
 
     W_DO(leaf.replace_el_nolog(slot, el));
@@ -460,7 +460,7 @@ rc_t btree_impl::_ux_overwrite_core(
         return RC(eRECWONTFIT);
     }
 
-    Logger::log_p_new<btree_overwrite_log> (&leaf,
+    Logger::log_p<btree_overwrite_log> (&leaf,
             leaf.btree_root(), key, old_element, el, offset, elen);
     leaf.overwrite_el_nolog(slot, offset, el, elen);
     return RCOK;
@@ -536,7 +536,7 @@ DBGOUT3( << "&&&& _ux_remove_core - not found");
         // log first
         vector<slotid_t> slots;
         slots.push_back(slot);
-        Logger::log_p_new<btree_ghost_mark_log> (&leaf, slots, false /*is_sys_txn*/);
+        Logger::log_p<btree_ghost_mark_log> (&leaf, slots, false /*is_sys_txn*/);
 
         // then mark it as ghost
         leaf.mark_ghost (slot);
@@ -589,7 +589,7 @@ btree_impl::_ux_undo_ghost_mark(StoreID store, const w_keystr_t &key)
 // TODO(Restart)...
 DBGOUT3( << "&&&& btree_impl::_ux_undo_ghost_mark - undo a remove, key: " << key);
 
-    Logger::log_p_new<btree_insert_nonghost_log>(&leaf, leaf.btree_root(),
+    Logger::log_p<btree_insert_nonghost_log>(&leaf, leaf.btree_root(),
             key, el, false /*is_sys_txn*/);
 
     leaf.unmark_ghost (slot);

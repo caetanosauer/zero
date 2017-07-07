@@ -1186,7 +1186,7 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
     sys_xct_section_t sxs (true); // this transaction will output only one log!
     W_DO(sxs.check_error_on_start());
     w_assert1(parent.is_latched());
-    Logger::log_p_new<update_emlsn_log>(&parent, child_slotid, child_emlsn);
+    Logger::log_p<update_emlsn_log>(&parent, child_slotid, child_emlsn);
     parent.set_emlsn_general(child_slotid, child_emlsn);
     W_DO (sxs.end_sys_xct (RCOK));
     return RCOK;

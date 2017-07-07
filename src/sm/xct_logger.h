@@ -56,7 +56,7 @@ public:
 
     // Temporary method used in transition to new logrec infrastructure
     template <kind_t LR, class PagePtr, class... Args>
-    static lsn_t log_p_new(PagePtr p, const Args&... args)
+    static lsn_t log_p(PagePtr p, const Args&... args)
     {
         xct_t* xd = smthread_t::xct();
         bool should_log = smlevel_0::log && smlevel_0::logging_enabled && xd;
@@ -65,7 +65,7 @@ public:
         if (_should_apply_img_compression(LR, p)) {
             // log this page image as an SX to keep it out of the xct undo chain
             sys_xct_section_t sx {false};
-            log_p_new<page_img_format_log>(p);
+            log_p<page_img_format_log>(p);
             sx.end_sys_xct(RCOK);
 
             // Keep track of additional space created by page images on log

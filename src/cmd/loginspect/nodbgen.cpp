@@ -20,7 +20,7 @@ void NoDBGen::setupOptions()
 void NoDBGen::handlePage(fixable_page_h& p)
 {
     sys_xct_section_t sx {false};
-    Logger::log_p_new<page_img_format_log>(&p);
+    Logger::log_p<page_img_format_log>(&p);
     sx.end_sys_xct(RCOK);
 }
 

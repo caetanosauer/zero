@@ -19,7 +19,7 @@ stnode_cache_t::stnode_cache_t(bool create)
         sys_xct_section_t ssx(true);
         auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
         spage->format_empty();
-        Logger::log_p_new<stnode_format_log>(&p);
+        Logger::log_p<stnode_format_log>(&p);
         W_COERCE(ssx.end_sys_xct(RCOK));
     }
 }
@@ -91,7 +91,7 @@ rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum) const
     spage->set_root(snum, root_pid);
     spage->set_last_extent(snum, 0);
 
-    Logger::log_p_new<create_store_log>(&p, root_pid, snum);
+    Logger::log_p<create_store_log>(&p, root_pid, snum);
     return RCOK;
 }
 
@@ -103,7 +103,7 @@ rc_t stnode_cache_t::sx_append_extent(StoreID snum, extent_id_t ext) const
     W_COERCE(p.fix_direct(stnode_page::stpid, LATCH_EX));
     auto spage = reinterpret_cast<stnode_page*>(p.get_generic_page());
     spage->set_last_extent(snum, ext);
-    Logger::log_p_new<append_extent_log>(&p, snum, ext);
+    Logger::log_p<append_extent_log>(&p, snum, ext);
 
     return ssx.end_sys_xct(RCOK);
 }
