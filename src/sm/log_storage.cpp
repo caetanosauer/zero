@@ -22,7 +22,6 @@
 #include "log_storage.h"
 #include "log_core.h"
 #include "latches.h"
-#include "logdef_gen.h"
 
 const string log_storage::log_prefix = "log.";
 const string log_storage::log_regex = "log\\.[1-9][0-9]*";

@@ -4,7 +4,6 @@
 #include "sm.h"
 #include "xct.h"
 #include "btree_page_h.h"
-#include "logdef_gen.h"
 #include "log_core.h"
 #include "logrec_support.h"
 #include "logrec_serialize.h"
@@ -114,7 +113,7 @@ public:
         return lsn;
     }
 
-    template <class Logrec, class PagePtr, class... Args>
+    template <kind_t LR, class PagePtr, class... Args>
     static lsn_t log_p(PagePtr p, PagePtr p2, const Args&... args)
     {
         xct_t* xd = smthread_t::xct();
@@ -122,11 +121,10 @@ public:
         if (!should_log)  { return lsn_t::null; }
 
         logrec_t* logrec = _get_logbuf(xd);
-        new (logrec) Logrec;
-        logrec->init_header(Logrec::TYPE);
+        logrec->init_header(LR);
         logrec->init_xct_info();
         logrec->init_page_info(p);
-        reinterpret_cast<Logrec*>(logrec)->construct(p, p2, args...);
+        LogrecSerializer<LR>::serialize(p, p2, logrec, args...);
         w_assert1(logrec->valid_header());
 
         if (p->tag() != t_btree_p || p->root() == p->pid()) {

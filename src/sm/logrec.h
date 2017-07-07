@@ -167,12 +167,12 @@ enum kind_t {
     btree_ghost_mark_log = 35,
     btree_ghost_reclaim_log = 36,
     btree_ghost_reserve_log = 37,
-    t_btree_foster_adopt = 38,
+    btree_foster_adopt_log = 38,
     // t_btree_foster_merge = 39,
     // t_btree_foster_rebalance = 40,
     // t_btree_foster_rebalance_norec = 41,
     // t_btree_foster_deadopt = 42,
-    t_btree_split = 43,
+    btree_split_log = 43,
     btree_compress_page_log = 44,
     tick_sec_log = 45,
     tick_msec_log = 46,
@@ -341,7 +341,7 @@ public:
     bool has_page_img(PageID page_id)
     {
         return
-            (type() == t_btree_split && page_id == pid())
+            (type() == btree_split_log && page_id == pid())
             || (type() == page_img_format_log)
             || (type() == stnode_format_log)
             || (type() == alloc_format_log)
@@ -718,8 +718,8 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 	case btree_ghost_mark_log : return t_redo|t_undo|t_logical;
 	case btree_ghost_reclaim_log : return t_redo|t_single_sys_xct;
 	case btree_ghost_reserve_log : return t_redo|t_single_sys_xct;
-	case t_btree_foster_adopt : return t_redo|t_multi|t_single_sys_xct;
-	case t_btree_split : return t_redo|t_multi|t_single_sys_xct;
+	case btree_foster_adopt_log : return t_redo|t_multi|t_single_sys_xct;
+	case btree_split_log : return t_redo|t_multi|t_single_sys_xct;
 	case btree_compress_page_log : return t_redo|t_single_sys_xct;
 
         default: return t_bad_cat;

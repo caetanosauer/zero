@@ -63,7 +63,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "sm_base.h"
 #include "log_storage.h"
-#include "logdef_gen.h"
 
 // files and stuff
 #include <sys/types.h>

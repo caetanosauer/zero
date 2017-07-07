@@ -17,7 +17,6 @@
 #include "vol.h"
 #include "restore.h"
 #include <sstream>
-#include "logdef_gen.h"
 #include "logrec_handler.h"
 #include "logrec_support.h"
 #include "btree_page_h.h"
@@ -171,9 +170,9 @@ logrec_t::get_type_str(kind_t type)
 		return "btree_ghost_reclaim";
 	case btree_ghost_reserve_log :
 		return "btree_ghost_reserve";
-	case t_btree_foster_adopt :
+	case btree_foster_adopt_log :
 		return "btree_foster_adopt";
-	case t_btree_split :
+	case btree_split_log :
 		return "btree_split";
 	case btree_compress_page_log :
 		return "btree_compress_page";
@@ -309,11 +308,11 @@ void logrec_t::redo(PagePtr page)
 	case btree_ghost_reserve_log :
                 LogrecHandler<btree_ghost_reserve_log, PagePtr>::redo(this, page);
 		break;
-	case t_btree_foster_adopt :
-		((btree_foster_adopt_log *) this)->redo(page);
+	case btree_foster_adopt_log :
+                LogrecHandler<btree_foster_adopt_log, PagePtr>::redo(this, page);
 		break;
-	case t_btree_split :
-		((btree_split_log *) this)->redo(page);
+	case btree_split_log :
+                LogrecHandler<btree_split_log, PagePtr>::redo(this, page);
 		break;
 	case btree_compress_page_log :
                 LogrecHandler<btree_compress_page_log, PagePtr>::redo(this, page);
@@ -415,7 +414,7 @@ void logrec_t::remove_info_for_pid(PageID pid)
     w_assert1(pid == this->pid() || pid == pid2());
     lsn_t lsn = lsn_ck();
 
-    if (type() == t_btree_split) {
+    if (type() == btree_split_log) {
         size_t img_offset = reinterpret_cast<btree_bulk_delete_t*>(data_ssx())->size();
         char* img = data_ssx() + img_offset;
         size_t img_size = reinterpret_cast<page_img_format_t*>(img)->size();
