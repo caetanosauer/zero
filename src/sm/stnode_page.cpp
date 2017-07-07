@@ -91,7 +91,7 @@ rc_t stnode_cache_t::sx_create_store(PageID root_pid, StoreID& snum) const
     spage->set_root(snum, root_pid);
     spage->set_last_extent(snum, 0);
 
-    Logger::log_p<create_store_log>(&p, root_pid, snum);
+    Logger::log_p<create_store_log>(&p, snum, root_pid);
     return RCOK;
 }
 

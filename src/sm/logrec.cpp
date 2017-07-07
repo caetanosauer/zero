@@ -550,7 +550,7 @@ operator<<(ostream& o, logrec_t& l)
             {
                 extent_id_t ext;
                 StoreID snum;
-                deserialize_log_fields(&l, ext, snum);
+                deserialize_log_fields(&l, snum, ext);
                 o << " extent: " << ext << " store: " << snum;
                 break;
             }

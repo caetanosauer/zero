@@ -121,7 +121,7 @@ struct LogrecHandler<append_extent_log, PagePtr>
     {
         extent_id_t ext;
         StoreID snum;
-        deserialize_log_fields(lr, ext, snum);
+        deserialize_log_fields(lr, snum, ext);
         auto spage = reinterpret_cast<stnode_page*>(page->get_generic_page());
         spage->set_last_extent(snum, ext);
     }

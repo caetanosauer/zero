@@ -45,7 +45,9 @@ struct LogrecSerializer<page_img_format_log>
     template <typename PagePtr, typename... T>
     static void serialize(PagePtr p, logrec_t* lr, const T&... fields)
     {
-        new (lr->data()) page_img_format_t(p->get_generic_page());
+        auto format =
+            new (lr->data()) page_img_format_t(p->get_generic_page());
+        lr->set_size(format->size());
     }
 };
 
