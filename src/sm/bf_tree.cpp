@@ -226,6 +226,8 @@ bf_tree_m::bf_tree_m(const sm_options& options)
 
     _cleaner_decoupled = options.get_bool_option("sm_cleaner_decoupled", false);
 
+    _instant_restore = options.get_bool_option("sm_restore_instant", true);
+
     _evictioner = std::make_shared<page_evictioner_base>(this, options);
     _async_eviction = options.get_bool_option("sm_async_eviction", false);
     if (_async_eviction) { _evictioner->fork(); }
@@ -464,7 +466,8 @@ void bf_tree_m::set_media_failure()
     auto segcount = vol_pages  / _batch_segment_size
         + (vol_pages % _batch_segment_size ? 1 : 0);
     _restore_coord = std::make_shared<RestoreCoord> (_batch_segment_size,
-            segcount, SegmentRestorer::bf_restore, virgin_pages, start_locked);
+            segcount, SegmentRestorer::bf_restore, virgin_pages,
+            _instant_restore, start_locked);
 
     smlevel_0::vol->open_backup();
     lsn_t backup_lsn = smlevel_0::vol->get_backup_lsn();

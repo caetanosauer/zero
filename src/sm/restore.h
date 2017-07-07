@@ -122,9 +122,10 @@ class RestoreCoordinator
 public:
 
     RestoreCoordinator(size_t segSize, size_t segCount, RestoreFunctor f,
-            bool virgin_pages, bool start_locked = false)
+            bool virgin_pages, bool on_demand = true, bool start_locked = false)
         : _segment_size{segSize}, _bitmap{new RestoreBitmap {segCount}},
-        _restoreFunctor{f}, _virgin_pages{virgin_pages}, _start_locked(start_locked),
+        _restoreFunctor{f}, _virgin_pages{virgin_pages}, _on_demand(on_demand),
+        _start_locked(start_locked),
         _begin_lsn(lsn_t::null), _end_lsn(lsn_t::null)
     {
         if (_start_locked) {
@@ -156,7 +157,7 @@ public:
         // wait on a ticket if it's already being restored
         auto ticket = getWaitingTicket(segment);
 
-        if (_bitmap->attempt_restore(segment)) {
+        if (_on_demand && _bitmap->attempt_restore(segment)) {
             lck.unlock();
             doRestore(segment, segment+1, ticket);
         }
@@ -173,7 +174,7 @@ public:
 
         // If no restore requests are pending, restore the first
         // not-yet-restored segment.
-        if (!_waiting_table.empty()) { return false; }
+        if (_on_demand && !_waiting_table.empty()) { return false; }
 
         std::unique_lock<std::mutex> lck {_mutex};
         auto segment_begin = _bitmap->get_first_unrestored();
@@ -238,6 +239,7 @@ private:
     std::unique_ptr<RestoreBitmap> _bitmap;
     RestoreFunctor _restoreFunctor;
     const bool _virgin_pages;
+    const bool _on_demand;
     // This is used to make threads wait for log archiver reach a certain LSN
     const bool _start_locked;
     lsn_t _begin_lsn;

@@ -495,6 +495,8 @@ private:
 
     bool _cleaner_decoupled;
 
+    bool _instant_restore;
+
     bool _no_db_mode;
 
     bool _batch_warmup;
