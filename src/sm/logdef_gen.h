@@ -37,12 +37,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "w_okvl.h"
 #include "logrec.h"
 
-    struct btree_norec_alloc_log : public logrec_t {
-        static constexpr kind_t TYPE = t_btree_norec_alloc;
-    template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, PageID new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high);
-    template <class Ptr> void redo(Ptr);
-    };
-
     struct btree_foster_adopt_log : public logrec_t {
         static constexpr kind_t TYPE = t_btree_foster_adopt;
     template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, PageID new_child_pid, lsn_t child_emlsn, const w_keystr_t& new_child_key);

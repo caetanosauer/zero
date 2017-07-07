@@ -383,32 +383,6 @@ public:
         smsize_t&                  elen
         );
 
-#ifdef DOXYGEN_HIDE
-///==========================================
-///   BEGIN: Split/Adopt functions. implemented in btree_impl_split.cpp
-///==========================================
-#endif // DOXYGEN_HIDE
-
-    /**
-     * \brief Creates a new empty page as a foster-child of the given page
-     * \details
-     * This is the primary way of allocating a new page in Zero.
-     * Whenever we need a new page, whether no-record-split or not, we allocate a
-     * new page with empty key ranges. This is done as one SSX.
-     * @param[in] page the new page belongs to this page as foster-child.
-     * @param[out] new_page_id Page ID of the new page.
-     */
-    static rc_t _sx_norec_alloc(btree_page_h &page, PageID &new_page_id);
-
-    /**
-     * this version assumes system transaction as the active transaction on current thread.
-     * @see _sx_norec_alloc()
-     * @param[out] new_page_id Page ID of the new page.
-     * @pre In SSX
-     * @pre In page is EX-latched
-     */
-    static rc_t _ux_norec_alloc_core(btree_page_h &page, PageID &new_page_id);
-
     /**
      * \brief Checks all direct children of parent and, if some child has foster,
      * pushes them up to parent, resolving foster status.

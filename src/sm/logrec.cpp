@@ -157,8 +157,6 @@ logrec_t::get_type_str(kind_t type)
 		return "page_img_format";
 	case update_emlsn_log :
 		return "update_emlsn";
-	case t_btree_norec_alloc :
-		return "btree_norec_alloc";
 	case btree_insert_log :
 		return "btree_insert";
 	case btree_insert_nonghost_log :
@@ -289,9 +287,6 @@ void logrec_t::redo(PagePtr page)
 		break;
 	case update_emlsn_log :
                 LogrecHandler<update_emlsn_log, PagePtr>::redo(this, page);
-		break;
-	case t_btree_norec_alloc :
-		((btree_norec_alloc_log *) this)->redo(page);
 		break;
 	case btree_insert_log :
                 LogrecHandler<btree_insert_log, PagePtr>::redo(this, page);

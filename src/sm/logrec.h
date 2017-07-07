@@ -159,7 +159,7 @@ enum kind_t {
     stnode_format_log = 27,
     page_img_format_log = 28,
     update_emlsn_log = 29,
-    t_btree_norec_alloc = 30,
+    // t_btree_norec_alloc = 30,
     btree_insert_log = 31,
     btree_insert_nonghost_log = 32,
     btree_update_log = 33,
@@ -341,9 +341,7 @@ public:
     bool has_page_img(PageID page_id)
     {
         return
-        // CS TODO: I think the condition for norec_alloc should be == and not !=
-            (type() == t_btree_norec_alloc && page_id != pid())
-            || (type() == t_btree_split && page_id == pid())
+            (type() == t_btree_split && page_id == pid())
             || (type() == page_img_format_log)
             || (type() == stnode_format_log)
             || (type() == alloc_format_log)
@@ -713,7 +711,6 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 	case append_extent_log : return t_redo|t_single_sys_xct;
 	case page_img_format_log : return t_redo;
 	case update_emlsn_log : return t_redo|t_single_sys_xct;
-	case t_btree_norec_alloc : return t_redo|t_multi|t_single_sys_xct;
 	case btree_insert_log : return t_redo|t_undo|t_logical;
 	case btree_insert_nonghost_log : return t_redo|t_undo|t_logical;
 	case btree_update_log : return t_redo|t_undo|t_logical;

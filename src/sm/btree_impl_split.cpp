@@ -23,68 +23,6 @@
 #include "vol.h"
 #include "xct_logger.h"
 
-rc_t btree_impl::_sx_norec_alloc(btree_page_h &page, PageID &new_page_id) {
-    sys_xct_section_t sxs(true);
-    W_DO(sxs.check_error_on_start());
-    rc_t ret = _ux_norec_alloc_core(page, new_page_id);
-    W_DO (sxs.end_sys_xct (ret));
-    return ret;
-}
-
-rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, PageID &new_page_id) {
-    // This is called only in REDO-only SSX, so no compensation logging. Just apply.
-    w_assert1 (xct()->is_single_log_sys_xct());
-    w_assert1 (page.latch_mode() == LATCH_EX);
-
-    W_DO(smlevel_0::vol->alloc_a_page(new_page_id, page.store()));
-    btree_page_h new_page;
-    w_rc_t rc;
-    rc = new_page.fix_nonroot(page, new_page_id, LATCH_EX, false, true);
-
-    if (rc.is_error()) {
-        // if failed for any reason, we release the allocated page.
-        W_DO(smlevel_0::vol ->deallocate_page(new_page_id));
-        return rc;
-    }
-
-    // The new page has an empty key range; parent's high to high.
-    w_keystr_t fence, chain_high;
-    page.copy_fence_high_key(fence);
-    bool was_right_most = (page.get_chain_fence_high_length() == 0);
-    page.copy_chain_fence_high_key(chain_high);
-    if (was_right_most) {
-        // this means there was no chain or the page was the right-most of it.
-        // (so its high=high of chain)
-        // upon the first foster split, we start setting the chain-high.
-        page.copy_fence_high_key(chain_high);
-    }
-
-#if W_DEBUG_LEVEL >= 3
-    lsn_t old_lsn = page.get_page_lsn();
-#endif //W_DEBUG_LEVEL
-
-    Logger::log_p<btree_norec_alloc_log>(&page, &new_page, new_page_id, fence, chain_high);
-    DBGOUT3(<< "btree_impl::_ux_norec_alloc_core, fence=" << fence << ", old-LSN="
-        << old_lsn << ", new-LSN=" << page.get_page_lsn() << ", PID=" << new_page_id);
-
-    // initialize as an empty child:
-    new_page.format_steal(page.get_page_lsn(), new_page_id, page.store(),
-                          page.root(), page.level(), 0, lsn_t::null,
-                          page.get_foster_opaqueptr(), page.get_foster_emlsn(),
-                          fence, fence, chain_high, false);
-    page.accept_empty_child(page.get_page_lsn(), new_page_id, false /*not from redo*/);
-
-    // in this operation, the log contains everything we need to recover without any
-    // write-order-dependency. So, no registration for WOD.
-    w_assert3(new_page.is_consistent(true, true));
-    w_assert1(new_page.is_fixed());
-    w_assert1(new_page.latch_mode() == LATCH_EX);
-
-    w_assert3(page.is_consistent(true, true));
-    w_assert1(page.is_fixed());
-    return RCOK;
-}
-
 rc_t btree_impl::_sx_split_foster(btree_page_h& page, PageID& new_page_id,
         const w_keystr_t& triggering_key)
 {
