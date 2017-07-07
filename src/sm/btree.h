@@ -133,7 +133,7 @@ public:
      */
     static rc_t            verify_volume(
         int hash_bits, verify_volume_result &result);
-protected:
+public:
     /*
      * for use by logrecs for undo
      */

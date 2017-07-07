@@ -43,53 +43,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     template <class Ptr> void redo(Ptr);
     };
 
-    struct btree_insert_log : public logrec_t {
-        static constexpr kind_t TYPE = t_btree_insert;
-    template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& key, const cvec_t& el, const bool sys_txn);
-    template <class Ptr> void redo(Ptr);
-    template <class Ptr> void undo(Ptr);
-    };
-
-    struct btree_insert_nonghost_log : public logrec_t {
-        static constexpr kind_t TYPE = t_btree_insert_nonghost;
-    template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& key, const cvec_t& el, const bool sys_txn);
-    template <class Ptr> void redo(Ptr);
-    template <class Ptr> void undo(Ptr);
-    };
-
-    struct btree_update_log : public logrec_t {
-        static constexpr kind_t TYPE = t_btree_update;
-    template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& key, const char* old_el, int old_elen, const cvec_t& new_el);
-    template <class Ptr> void redo(Ptr);
-    template <class Ptr> void undo(Ptr);
-    };
-
-    struct btree_overwrite_log : public logrec_t {
-        static constexpr kind_t TYPE = t_btree_overwrite;
-    template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& key, const char* old_el, const char* new_el, size_t offset, size_t elen);
-    template <class Ptr> void redo(Ptr);
-    template <class Ptr> void undo(Ptr);
-    };
-
-    struct btree_ghost_mark_log : public logrec_t {
-        static constexpr kind_t TYPE = t_btree_ghost_mark;
-    template <class PagePtr> void construct (const PagePtr page, const vector<slotid_t>& slots, const bool sys_txn);
-    template <class Ptr> void redo(Ptr);
-    template <class Ptr> void undo(Ptr);
-    };
-
-    struct btree_ghost_reclaim_log : public logrec_t {
-        static constexpr kind_t TYPE = t_btree_ghost_reclaim;
-    template <class PagePtr> void construct (const PagePtr page, const vector<slotid_t>& slots);
-    template <class Ptr> void redo(Ptr);
-    };
-
-    struct btree_ghost_reserve_log : public logrec_t {
-        static constexpr kind_t TYPE = t_btree_ghost_reserve;
-    template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& key, int element_length);
-    template <class Ptr> void redo(Ptr);
-    };
-
     struct btree_foster_adopt_log : public logrec_t {
         static constexpr kind_t TYPE = t_btree_foster_adopt;
     template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, PageID new_child_pid, lsn_t child_emlsn, const w_keystr_t& new_child_key);
@@ -99,12 +52,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     struct btree_split_log : public logrec_t {
         static constexpr kind_t TYPE = t_btree_split;
     template <class PagePtr> void construct (const PagePtr page, const PagePtr page2, uint16_t move_count, const w_keystr_t& new_high_fence, const w_keystr_t& new_chain);
-    template <class Ptr> void redo(Ptr);
-    };
-
-    struct btree_compress_page_log : public logrec_t {
-        static constexpr kind_t TYPE = t_btree_compress_page;
-    template <class PagePtr> void construct (const PagePtr page, const w_keystr_t& low, const w_keystr_t& high, const w_keystr_t& chain);
     template <class Ptr> void redo(Ptr);
     };
 

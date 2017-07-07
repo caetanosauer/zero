@@ -17,10 +17,10 @@
 #include "vol.h"
 #include "restore.h"
 #include <sstream>
+#include "logdef_gen.h"
 #include "logrec_handler.h"
 #include "logrec_support.h"
 #include "btree_page_h.h"
-#include "btree_logrec.h"
 
 #include <iomanip>
 typedef        ios::fmtflags        ios_fmtflags;
@@ -159,25 +159,25 @@ logrec_t::get_type_str(kind_t type)
 		return "update_emlsn";
 	case t_btree_norec_alloc :
 		return "btree_norec_alloc";
-	case t_btree_insert :
+	case btree_insert_log :
 		return "btree_insert";
-	case t_btree_insert_nonghost :
+	case btree_insert_nonghost_log :
 		return "btree_insert_nonghost";
-	case t_btree_update :
+	case btree_update_log :
 		return "btree_update";
-	case t_btree_overwrite :
+	case btree_overwrite_log :
 		return "btree_overwrite";
-	case t_btree_ghost_mark :
+	case btree_ghost_mark_log :
 		return "btree_ghost_mark";
-	case t_btree_ghost_reclaim :
+	case btree_ghost_reclaim_log :
 		return "btree_ghost_reclaim";
-	case t_btree_ghost_reserve :
+	case btree_ghost_reserve_log :
 		return "btree_ghost_reserve";
 	case t_btree_foster_adopt :
 		return "btree_foster_adopt";
 	case t_btree_split :
 		return "btree_split";
-	case t_btree_compress_page :
+	case btree_compress_page_log :
 		return "btree_compress_page";
 	case tick_sec_log :
 		return "tick_sec";
@@ -293,26 +293,26 @@ void logrec_t::redo(PagePtr page)
 	case t_btree_norec_alloc :
 		((btree_norec_alloc_log *) this)->redo(page);
 		break;
-	case t_btree_insert :
-		((btree_insert_log *) this)->redo(page);
+	case btree_insert_log :
+                LogrecHandler<btree_insert_log, PagePtr>::redo(this, page);
 		break;
-	case t_btree_insert_nonghost :
-		((btree_insert_nonghost_log *) this)->redo(page);
+	case btree_insert_nonghost_log :
+                LogrecHandler<btree_insert_nonghost_log, PagePtr>::redo(this, page);
 		break;
-	case t_btree_update :
-		((btree_update_log *) this)->redo(page);
+	case btree_update_log :
+                LogrecHandler<btree_update_log, PagePtr>::redo(this, page);
 		break;
-	case t_btree_overwrite :
-		((btree_overwrite_log *) this)->redo(page);
+	case btree_overwrite_log :
+                LogrecHandler<btree_overwrite_log, PagePtr>::redo(this, page);
 		break;
-	case t_btree_ghost_mark :
-		((btree_ghost_mark_log *) this)->redo(page);
+	case btree_ghost_mark_log :
+                LogrecHandler<btree_ghost_mark_log, PagePtr>::redo(this, page);
 		break;
-	case t_btree_ghost_reclaim :
-		((btree_ghost_reclaim_log *) this)->redo(page);
+	case btree_ghost_reclaim_log :
+                LogrecHandler<btree_ghost_reclaim_log, PagePtr>::redo(this, page);
 		break;
-	case t_btree_ghost_reserve :
-		((btree_ghost_reserve_log *) this)->redo(page);
+	case btree_ghost_reserve_log :
+                LogrecHandler<btree_ghost_reserve_log, PagePtr>::redo(this, page);
 		break;
 	case t_btree_foster_adopt :
 		((btree_foster_adopt_log *) this)->redo(page);
@@ -320,8 +320,8 @@ void logrec_t::redo(PagePtr page)
 	case t_btree_split :
 		((btree_split_log *) this)->redo(page);
 		break;
-	case t_btree_compress_page :
-		((btree_compress_page_log *) this)->redo(page);
+	case btree_compress_page_log :
+                LogrecHandler<btree_compress_page_log, PagePtr>::redo(this, page);
 		break;
 	default :
 		W_FATAL(eINTERNAL);
@@ -372,38 +372,20 @@ void logrec_t::undo(PagePtr page)
     // The actual UNDO implementation in Btree_impl.cpp
 
     switch (header._type) {
-	case t_btree_norec_alloc :
-		W_FATAL(eINTERNAL);
+	case btree_insert_log :
+                LogrecHandler<btree_insert_log, PagePtr>::undo(this);
 		break;
-	case t_btree_insert :
-		((btree_insert_log *) this)->undo(page);
+	case btree_insert_nonghost_log :
+                LogrecHandler<btree_insert_nonghost_log, PagePtr>::undo(this);
 		break;
-	case t_btree_insert_nonghost :
-		((btree_insert_nonghost_log *) this)->undo(page);
+	case btree_update_log :
+                LogrecHandler<btree_update_log, PagePtr>::undo(this);
 		break;
-	case t_btree_update :
-		((btree_update_log *) this)->undo(page);
+	case btree_overwrite_log :
+                LogrecHandler<btree_overwrite_log, PagePtr>::undo(this);
 		break;
-	case t_btree_overwrite :
-		((btree_overwrite_log *) this)->undo(page);
-		break;
-	case t_btree_ghost_mark :
-		((btree_ghost_mark_log *) this)->undo(page);
-		break;
-	case t_btree_ghost_reclaim :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_btree_ghost_reserve :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_btree_foster_adopt :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_btree_split :
-		W_FATAL(eINTERNAL);
-		break;
-	case t_btree_compress_page :
-		W_FATAL(eINTERNAL);
+	case btree_ghost_mark_log :
+                LogrecHandler<btree_ghost_mark_log, PagePtr>::undo(this);
 		break;
 	default :
 		W_FATAL(eINTERNAL);

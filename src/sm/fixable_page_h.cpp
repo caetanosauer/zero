@@ -7,7 +7,6 @@
 #define SM_SOURCE
 #include "sm_base.h"
 
-#include "btree_logrec.h"
 #include "restart.h"
 #include "logrec.h"
 #include "bf_tree.h"

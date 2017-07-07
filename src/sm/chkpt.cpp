@@ -67,7 +67,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "sm_base.h"
 #include "chkpt.h"
-#include "btree_logrec.h"       // Lock re-acquisition
 #include "bf_tree.h"
 #include "sm.h"
 #include "lock_raw.h"      // Lock information gathering
@@ -78,6 +77,7 @@ struct RawLock;            // Lock information gathering
 #include "worker_thread.h"
 #include "stopwatch.h"
 #include "logrec_support.h"
+#include "btree_impl.h"
 #include "xct_logger.h"
 
 class BackwardLogScanner
@@ -490,8 +490,8 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
 
     switch (r.type())
     {
-        case t_btree_insert:
-        case t_btree_insert_nonghost:
+        case btree_insert_log:
+        case btree_insert_nonghost_log:
             {
                 btree_insert_t* dp = (btree_insert_t*) r.data();
 
@@ -505,7 +505,7 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
                 xct.add_lock(mode, lid.hash());
             }
             break;
-        case t_btree_update:
+        case btree_update_log:
             {
                 btree_update_t* dp = (btree_update_t*) r.data();
 
@@ -519,7 +519,7 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
                 xct.add_lock(mode, lid.hash());
             }
             break;
-        case t_btree_overwrite:
+        case btree_overwrite_log:
             {
                 btree_overwrite_t* dp = (btree_overwrite_t*) r.data();
 
@@ -533,7 +533,7 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
                 xct.add_lock(mode, lid.hash());
             }
             break;
-        case t_btree_ghost_mark:
+        case btree_ghost_mark_log:
             {
                 btree_ghost_t<btree_page_h*>* dp = (btree_ghost_t<btree_page_h*>*) r.data();
                 for (size_t i = 0; i < dp->cnt; ++i) {
@@ -547,7 +547,7 @@ void chkpt_t::acquire_lock(xct_tab_entry_t& xct, logrec_t& r)
                 }
             }
             break;
-        case t_btree_ghost_reserve:
+        case btree_ghost_reserve_log:
             {
                 btree_ghost_reserve_t* dp = (btree_ghost_reserve_t*) r.data();
 

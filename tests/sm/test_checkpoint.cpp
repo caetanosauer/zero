@@ -4,8 +4,6 @@
 #include "bf_tree.h"
 #include "vol.h"
 #include "chkpt.h"
-#include "btree_logrec.h"
-// CS TODO make XctLogger return lsn and use it here
 #include "xct_logger.h"
 
 #include <vector>

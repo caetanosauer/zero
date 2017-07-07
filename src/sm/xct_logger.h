@@ -115,64 +115,6 @@ public:
     }
 
     template <class Logrec, class PagePtr, class... Args>
-    static lsn_t log_p(PagePtr p, const Args&... args)
-    {
-        xct_t* xd = smthread_t::xct();
-        bool should_log = smlevel_0::log && smlevel_0::logging_enabled && xd;
-        if (!should_log)  { return lsn_t::null; }
-
-        if (_should_apply_img_compression(Logrec::TYPE, p)) {
-            // log this page image as an SX to keep it out of the xct undo chain
-            sys_xct_section_t sx {false};
-            log_p_new<page_img_format_log>(p);
-            sx.end_sys_xct(RCOK);
-
-            // Keep track of additional space created by page images on log
-            auto extra_space = p->get_log_volume();
-            w_assert3(extra_space > 0);
-            ADD_TSTAT(log_img_format_bytes, extra_space);
-            p->reset_log_volume();
-        }
-
-        logrec_t* logrec = _get_logbuf(xd);
-
-        new (logrec) Logrec;
-        logrec->init_header(Logrec::TYPE);
-        logrec->init_xct_info();
-        logrec->init_page_info(p);
-        reinterpret_cast<Logrec*>(logrec)->construct(p, args...);
-        w_assert1(logrec->valid_header());
-
-        if (p->tag() != t_btree_p || p->root() == p->pid()) {
-            logrec->set_root_page();
-        }
-
-        // set page LSN chain
-        logrec->set_page_prev_lsn(p->get_page_lsn());
-
-        // If it's a log for piggy-backed SSX, we call log->insert without updating _last_log
-        // because this is a single log independent from other logs in outer transaction.
-        if (xd->is_piggy_backed_single_log_sys_xct()) {
-            w_assert1(logrec->is_single_sys_xct());
-            lsn_t lsn;
-            W_COERCE( ss_m::log->insert(*logrec, &lsn) );
-            w_assert1(lsn != lsn_t::null);
-            _update_page_lsns(p, lsn, logrec->length());
-            DBGOUT3(<< " SSX logged: " << logrec->type() << "\n new_lsn= " << lsn);
-            return lsn;
-        }
-
-
-        lsn_t lsn;
-        logrec->set_xid_prev(xd->tid(), xd->last_lsn());
-        W_COERCE(ss_m::log->insert(*logrec, &lsn));
-        W_COERCE(xd->update_last_logrec(logrec, lsn));
-        _update_page_lsns(p, lsn, logrec->length());
-
-        return lsn;
-    }
-
-    template <class Logrec, class PagePtr, class... Args>
     static lsn_t log_p(PagePtr p, PagePtr p2, const Args&... args)
     {
         xct_t* xd = smthread_t::xct();

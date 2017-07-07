@@ -160,20 +160,20 @@ enum kind_t {
     page_img_format_log = 28,
     update_emlsn_log = 29,
     t_btree_norec_alloc = 30,
-    t_btree_insert = 31,
-    t_btree_insert_nonghost = 32,
-    t_btree_update = 33,
-    t_btree_overwrite = 34,
-    t_btree_ghost_mark = 35,
-    t_btree_ghost_reclaim = 36,
-    t_btree_ghost_reserve = 37,
+    btree_insert_log = 31,
+    btree_insert_nonghost_log = 32,
+    btree_update_log = 33,
+    btree_overwrite_log = 34,
+    btree_ghost_mark_log = 35,
+    btree_ghost_reclaim_log = 36,
+    btree_ghost_reserve_log = 37,
     t_btree_foster_adopt = 38,
     // t_btree_foster_merge = 39,
     // t_btree_foster_rebalance = 40,
     // t_btree_foster_rebalance_norec = 41,
     // t_btree_foster_deadopt = 42,
     t_btree_split = 43,
-    t_btree_compress_page = 44,
+    btree_compress_page_log = 44,
     tick_sec_log = 45,
     tick_msec_log = 46,
     benchmark_start_log = 47,
@@ -714,16 +714,16 @@ constexpr u_char logrec_t::get_logrec_cat(kind_t type)
 	case page_img_format_log : return t_redo;
 	case update_emlsn_log : return t_redo|t_single_sys_xct;
 	case t_btree_norec_alloc : return t_redo|t_multi|t_single_sys_xct;
-	case t_btree_insert : return t_redo|t_undo|t_logical;
-	case t_btree_insert_nonghost : return t_redo|t_undo|t_logical;
-	case t_btree_update : return t_redo|t_undo|t_logical;
-	case t_btree_overwrite : return t_redo|t_undo|t_logical;
-	case t_btree_ghost_mark : return t_redo|t_undo|t_logical;
-	case t_btree_ghost_reclaim : return t_redo|t_single_sys_xct;
-	case t_btree_ghost_reserve : return t_redo|t_single_sys_xct;
+	case btree_insert_log : return t_redo|t_undo|t_logical;
+	case btree_insert_nonghost_log : return t_redo|t_undo|t_logical;
+	case btree_update_log : return t_redo|t_undo|t_logical;
+	case btree_overwrite_log : return t_redo|t_undo|t_logical;
+	case btree_ghost_mark_log : return t_redo|t_undo|t_logical;
+	case btree_ghost_reclaim_log : return t_redo|t_single_sys_xct;
+	case btree_ghost_reserve_log : return t_redo|t_single_sys_xct;
 	case t_btree_foster_adopt : return t_redo|t_multi|t_single_sys_xct;
 	case t_btree_split : return t_redo|t_multi|t_single_sys_xct;
-	case t_btree_compress_page : return t_redo|t_single_sys_xct;
+	case btree_compress_page_log : return t_redo|t_single_sys_xct;
 
         default: return t_bad_cat;
     }

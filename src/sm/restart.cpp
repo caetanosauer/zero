@@ -60,7 +60,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_base.h"
 #include "btree_impl.h"         // Lock re-acquisition
 #include "restart.h"
-#include "btree_logrec.h"       // Lock re-acquisition
 #include "sm.h"                 // Check system shutdown status
 #include "stopwatch.h"
 #include "xct_logger.h"
