@@ -317,19 +317,19 @@ rc_t ArchiveIndex::closeCurrentRun(lsn_t runEndLSN, unsigned level, PageID maxPI
         appendFd[level] = -1;
 
         // This step atomically "commits" the creation of the new run
-        {
+        if (!runEndLSN.is_null()) {
             spinlock_write_critical_section cs(&_open_file_mutex);
 
             lastFinished[level]++;
-        }
 
-        // Notify other services that depend on archived LSN
-        if (level == 1) {
-            if (smlevel_0::recovery) {
-                smlevel_0::recovery->notify_archived_lsn(runEndLSN);
-            }
-            if (smlevel_0::bf) {
-                smlevel_0::bf->notify_archived_lsn(runEndLSN);
+            // Notify other services that depend on archived LSN
+            if (level == 1) {
+                if (smlevel_0::recovery) {
+                    smlevel_0::recovery->notify_archived_lsn(runEndLSN);
+                }
+                if (smlevel_0::bf) {
+                    smlevel_0::bf->notify_archived_lsn(runEndLSN);
+                }
             }
         }
     }
