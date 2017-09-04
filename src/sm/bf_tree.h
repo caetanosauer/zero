@@ -695,10 +695,20 @@ private:
          * log replay is not required.
          */
         if (rc.err_num() == stINUSE || rc.err_num() == stTIMEOUT) {
-            ERROUT(<< "failed to fix " << _current_pid);
+            ERROUT(<< "Restore skipped fix of " << _current_pid);
             _current = nullptr;
             return false;
         }
+        // else if (rc.err_num() == stTIMEOUT) {
+        //     /*
+        //      * We have to try again, because other thread might grab the
+        //      * latch, see that the frame is pinned for restore and release
+        //      * if shortly afterwards. On the other hand, we can't acquire
+        //      * the latch unconditionally, because that can cause a deadlock,
+        //      * in which the latch ...
+        //      */
+        //     continue;
+        // }
         W_COERCE(rc);
 
         fix_depth++;

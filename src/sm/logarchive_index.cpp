@@ -171,6 +171,8 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
         }
     }
 
+    _files_to_be_closed = 0;
+
     SKIP_LOGREC.init_header(logrec_t::t_skip);
     SKIP_LOGREC.construct();
 
@@ -433,18 +435,32 @@ void ArchiveIndex::closeScan(const RunId& runid)
     w_assert1(it != _open_files.end());
 
     auto& count = it->second.refcount;
-    // count--;
+    count--;
 
+    /*
+     * Runs are not closed eagerly, as soon as the refcount reaches zero,
+     * beacause a recent run is likely to be opened again as soon as it is
+     * closed.  Thus, we only close runs after a certain open file limit has
+     * been reached (closing the oldest runs then).
+     */
     if (count == 0) {
+        _files_to_be_closed.push_back(runid);
+    }
+    closeRuns();
+}
+
+void ArchiveIndex::closeRuns()
+{
+    while (_files_to_be_closed > _close_files_threshold) {
 #ifdef USE_MMAP
-        // if (it->second.data) {
-        //     auto ret = munmap(it->second.data, it->second.length);
-        //     CHECK_ERRNO(ret);
-        // }
+        if (it->second.data) {
+            auto ret = munmap(it->second.data, it->second.length);
+            CHECK_ERRNO(ret);
+        }
 #endif
-        // auto ret = ::close(it->second.fd);
-        // CHECK_ERRNO(ret);
-        // _open_files.erase(it);
+        auto ret = ::close(it->second.fd);
+        CHECK_ERRNO(ret);
+        _open_files.erase(it);
     }
 }
 

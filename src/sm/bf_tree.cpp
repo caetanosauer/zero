@@ -434,7 +434,8 @@ void bf_tree_m::recover_if_needed(bf_tree_cb_t& cb, generic_page* page, bool onl
 
     auto pid = cb._pid;
     auto expected_lsn = smlevel_0::recovery->get_dirty_page_emlsn(pid);
-    if (!only_if_dirty || (!expected_lsn.is_null() && page->lsn < expected_lsn)) {
+    // if (!only_if_dirty || (!expected_lsn.is_null() && page->lsn < expected_lsn)) {
+    if (!only_if_dirty || !expected_lsn.is_null()) {
         btree_page_h p;
         p.fix_nonbufferpool_page(page);
         constexpr bool use_archive = true;

@@ -237,6 +237,10 @@ private:
     /// Cache for open files (for scans only)
     std::unordered_map<RunId, RunFile> _open_files;
     mutable srwlock_t _open_file_mutex;
+    std::list<RunId> _files_to_be_closed;
+    static constexpr int _close_files_threshold = 100;
+
+    void closeRuns();
 
     bool directIO;
 
