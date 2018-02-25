@@ -17,7 +17,7 @@ page_evictioner_base::page_evictioner_base(bf_tree_m* bufferpool, const sm_optio
     _swizzling_enabled = options.get_bool_option("sm_bufferpool_swizzle", false);
     _maintain_emlsn = options.get_bool_option("sm_bf_maintain_emlsn", false);
     _random_pick = options.get_bool_option("sm_evict_random", false);
-    _use_clock = options.get_bool_option("sm_evict_use_clock", false);
+    _use_clock = options.get_bool_option("sm_evict_use_clock", true);
     _log_evictions = options.get_bool_option("sm_log_page_evictions", false);
     _wakeup_cleaner_attempts = options.get_int_option("sm_evict_wakeup_cleaner_attempts", 0);
     _clean_only_attempts = options.get_int_option("sm_evict_clean_only_attempts", 0);
