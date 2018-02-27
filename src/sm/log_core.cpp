@@ -931,6 +931,7 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
     }
     DBGOUT3(<< " insert @ lsn: " << rec_lsn << " type " << rec.type() << " length " << rec.length() );
 
+    INC_TSTAT(log_inserts);
     ADD_TSTAT(log_bytes_generated,size);
     return RCOK;
 }
