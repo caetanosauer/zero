@@ -6,7 +6,7 @@
 
 page_cleaner_base::page_cleaner_base(const sm_options& _options)
     :
-    worker_thread_t(_options.get_int_option("sm_cleaner_interval", 500)), // 500ms default interval
+    worker_thread_t(_options.get_int_option("sm_cleaner_interval", -1)),
     _clean_lsn(lsn_t(1,0))
 {
     _bufferpool = smlevel_0::bf;

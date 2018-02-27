@@ -161,6 +161,7 @@ restart_thread_t::redo_log_pass()
 
     lsn_t dur_lsn = smlevel_0::log->durable_lsn();
     lsn_t redo_lsn = chkpt.get_min_rec_lsn();
+    if (redo_lsn.is_null()) { return; }
 
     // Open a forward scan of the recovery log, starting from the redo_lsn which
     // is the earliest lsn determined in the Log Analysis phase
