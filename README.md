@@ -12,6 +12,30 @@ The latest developments in Zero are focused on Instant Recovery, a novel family 
 
 For a list of publications based on the Zero storage manager, see below.
 
+# Project structure
+
+The Zero source code directory is divided into three major parts:
+- `src/common` Common utilities and infrastructure such as threads, latches, debug, etc.
+- `src/sm` The Zero storage manager, providing an ACID-compliant key-value store based on Foster B-trees
+- `src/cmd` Benchmarks (derived from [Shore-Kits](https://bitbucket.org/shoremt/shore-kits/src)) and utility programs packed in a tool called **zapps**
+
+The storage manager consists of the following main components:
+- The volume manager, which manages a file on which database pages are stored. Each page belongs to a *store* (i.e., a B-tree)
+  - Main files: `vol.cpp`, `alloc_cache.cpp`, `stnode_cache.cpp`
+- The buffer manager, which caches pages of a volume and keeps track of writes for transaction consistency
+  - Main files: `bf_tree.cpp`, `bf_tree_cleaner.cpp`, `chkpt.cpp`
+- The log manager, which manages a write-ahead log as well as its indexed log archive, used for some instant recovery techniques
+  - Main files: `log_*.cpp`, `logarchiver.cpp`
+- The Foster B-tree implementation
+  - Main files: `btree.cpp`, `btree_*.cpp`, `btcursor.cpp`
+- The transaction manager, which keeps track of active transactions and supports commit/abort functionality
+  - Main files: `xct.cpp`
+- The lock manager, which provides transaction isolation with orthogonal key-value locking
+  - Main files: `lock.cpp`, `lock_*.cpp`
+- The recovery manager, which provides ACID-compliant recovery from system and media failures with instant recovery
+  - Main files: `restart.cpp`, `restore.cpp`, `chkpt.cpp`, page-based REDO logic in `bf_tree.cpp`
+- The top-level SM interface: `sm.cpp`
+
 # Building
 
 ## Dependencies
@@ -60,10 +84,24 @@ make -j <number_of_cores> sm
 
 The `-j` flag enables compilation in parallel on multi-core CPUs. It is a standard feature of the Make building system. The `sm` target builds the static storage manager library, `libsm`.
 
+To use the benchmarks and utilities, compile the *zapps* binary with:
+
+```
+make -j <number_of_cores> zapps
+```
+
+The binary is stored in the `src/cmd` subfolder. As an example, a TPC-C benchmark can be loaded and executed for 60 seconds with:
+
+```
+src/cmd/zapps kits -b tpcc --load --duration 60
+```
+
+For reference on the commands supported and their arguments, see the source files `src/cmd/base/command.cpp` and `src/cmd/kits/kits_cmd.cpp`
+
 ## Testing
 
 ## Current status
-> As of February 2016, the test cases are not being maintained, so `make test` will likely produce compilation errors. We are working on stabilizing the source code and providing an official release with support for Instant Restart and Instant Restore soon. The Zapps tools described below were also incorporated into the Zero source tree, so that benchmarks and tools can be executed with a single code base. Please stay tuned for further updates.
+> Since February 2016, the test cases are not being maintained.
 
 Zero is designed to be used as a library for transactional applications. As such, there is no program to be executed after compilation. The generated storage manager library is `libsm.a`. However, the test suite can be ran with:
 
@@ -73,12 +111,14 @@ make test
 
 It uses the Google Test libraries, which are embedded in the source code.
 
-We are currently working on porting the [Shore-Kits](https://bitbucket.org/shoremt/shore-kits) project into Zero. It is a collection of standard database benchmarks implemented on top of Shore-MT. It provides an extensible framework for statically-defined relational tables and indexes. In this migration process, we also plan to integrate various [tools and experiments](http://bitbucket.org/caetanosauer/shore-experiments) used in previous publications. The resulting project will be an extensible collection of application-level tools and benchmarks known as [Zapps](http://github.com/caetanosauer/zapps). Stay tuned and watch the repository for updates.
-
 # Publications
 
 The following publications describe novel techniques which were implemented and evaluated on Zero:
 
+* Caetano Sauer: [Modern techniques for transaction-oriented database recovery](http://wwwlgis.informatik.uni-kl.de/cms/fileadmin/publications/2017/PhD_Thesis_Caetano_Sauer.pdf) -- My PhD thesis
+* Caetano Sauer, Goetz Graefe, Theo Härder [Instant restore after a media failure](https://arxiv.org/pdf/1702.08042.pdf). Link to an extended preprint version. Published on ADBIS 2017.
+* Caetano Sauer, Lucas Lersch, Theo Härder, Goetz Graefe [Update propagation strategies for high-performance OLTP](http://wwwlgis.informatik.uni-kl.de/cms/typo3/sysext/cms/tslib/media/fileicons/pdf.gif). ADBIS 2016 (best-paper award), LNCS 9809, pp. 152-165
+Springer-Verlag, August 2016 
 * Caetano Sauer, Goetz Graefe, Theo Härder: [Single-pass restore after a media failure](http://btw-2015.de/res/proceedings/Hauptband/Wiss/Sauer-Single-pass_restore_after_a.pdf). BTW 2015:217-236 [[Slides](http://btw-2015.de/res/slides/Sauer-Single-pass_restore_after_a_m_slides.pdf)]
 * Goetz Graefe, Hideaki Kimura: [Orthogonal key-value locking](http://btw-2015.de/res/proceedings/Hauptband/Wiss/Graefe-Orthogonal_key-value_locking.pdf). BTW 2015:237-256 [[Slides](http://btw-2015.de/res/slides/Graefe-Orthogonal_key-value_locking_slides.pdf)]
 * Goetz Graefe, Haris Volos, Hideaki Kimura, Harumi A. Kuno, Joseph Tucek, Mark Lillibridge, Alistair C. Veitch: [In-Memory Performance for Big Data](http://www.vldb.org/pvldb/vol8/p37-graefe.pdf). PVLDB 8(1):37-48 (2014)
