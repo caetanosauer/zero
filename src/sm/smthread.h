@@ -489,6 +489,7 @@ private:
             auto iter = _tcb_list.begin();
             while (iter != _tcb_list.end()) {
                 if (*iter == tcb_ptr()) {
+                    delete *iter;
                     iter = _tcb_list.erase(iter);
                 }
                 else { iter++; }
