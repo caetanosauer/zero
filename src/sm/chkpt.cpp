@@ -123,7 +123,7 @@ public:
                 || lsn + lr->length() == prev_lsn);
 
         prev_lsn = lsn;
-        return lr->lsn() > stop_lsn;
+        return lr->lsn() >= stop_lsn;
     }
 
     bool nextBlock()
@@ -247,6 +247,7 @@ void chkpt_t::scan_log(lsn_t scan_start, lsn_t archived_lsn)
     lsn_t scan_stop = lsn_t(1,0);
 
 #ifdef USE_MMAP
+    // CS TODO: using BackwardLogScanner for current experiments, but Fetch variant is preferred in the long run
     // BackwardFetchLogScanner scan {scan_start};
     constexpr size_t bufferSize = 8 * 1024 * 1024;
     BackwardLogScanner scan {bufferSize, scan_start, scan_stop};
