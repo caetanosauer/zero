@@ -21,21 +21,14 @@
    RESULTING FROM THE USE OF THIS SOFTWARE.
 */
 
-#include "thread.h"
-#include "util/exception.h"
+#include "kits_thread.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <fcntl.h>
 
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
-
 #include <unistd.h>
 
-
-#undef DISABLE_THREAD_POOL
 
 /* internal datatypes */
 
@@ -101,17 +94,12 @@ static thread_pool default_thread_pool(1<<30);
  ***********************************************************************/
 
 thread_t::thread_t(const std::string &name)
-#ifdef USE_SMTHREAD_AS_BASE
     : _thread_name(name), _ppool(NULL), _delete_me(true)
-#else
-      : _thread_name(name), _delete_me(true)
-#endif
 {
     // do nothing...
 }
 
 
-#ifdef USE_SMTHREAD_AS_BASE
 
 
 /*********************************************************************
@@ -151,7 +139,6 @@ void thread_t::setupthr()
     THREAD_KEY_SELF = this;
     THREAD_POOL     = _ppool;
 }
-#endif
 
 
 /**
@@ -405,7 +392,6 @@ void* start_thread(void* thread_object)
 // NOTE: we can't call thread_xxx methods because they call us
 void thread_pool::start()
 {
-#ifndef DISABLE_THREAD_POOL
     if(pthread_mutex_lock(&_lock)) throw ThreadException(__FILE__, __LINE__, __PRETTY_FUNCTION__, "");
     while(_active == _max_active) {
 	if(pthread_cond_wait(&_cond, &_lock)) throw ThreadException(__FILE__, __LINE__, __PRETTY_FUNCTION__, "");
@@ -413,17 +399,14 @@ void thread_pool::start()
     assert(_active < _max_active);
     _active++;
     if(pthread_mutex_unlock(&_lock)) throw ThreadException(__FILE__, __LINE__, __PRETTY_FUNCTION__, "");
-#endif
 }
 
 void thread_pool::stop()
 {
-#ifndef DISABLE_THREAD_POOL
     if(pthread_mutex_lock(&_lock)) throw ThreadException(__FILE__, __LINE__, __PRETTY_FUNCTION__, "");
     _active--;
     thread_cond_signal(_cond);
     if(pthread_mutex_unlock(&_lock)) throw ThreadException(__FILE__, __LINE__, __PRETTY_FUNCTION__, "");
-#endif
 }
 
 
@@ -446,35 +429,3 @@ static void setup_thread(thread_args* args)
     THREAD_POOL     = pool;
 }
 
-
-
-#ifdef USE_SMTHREAD_AS_BASE
-
-/*********************************************************************
- *
- *  @fn:    wait_for_sthread_clients
- *
- *  @brief: Wait for an array of created clients (sthread-derived) threads
- *           to exit.
- *
- *  @param: threads - An array of sthreads.
- *
- *  @param: num_thread_ids - The number of valid thread IDs in the
- *  thread_ids array.
- *
- *********************************************************************/
-
-// void wait_for_sthread_clients(sthread_t** threads, int num_thread_ids)
-// {
-//     // wait for client threads to receive error message
-//     for (int i = 0; i < num_thread_ids; i++) {
-//         // join should not really fail unless we are doing
-//         // something seriously wrong...
-//         threads[i]->join();
-
-//         //int join_ret = pthread_join(thread_ids[i], NULL);
-//         //assert(join_ret == 0);
-//     }
-// }
-
-#endif /** USE_SMTHREAD_AS_BASE */

@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -95,11 +95,11 @@ struct block_list;
    to deallocation.
 
    A given "chip" may be in one of three states:
-   
+
        USABLE: available to be allocated
-    
+
        IN-USE: allocated but not yet freed
-    
+
        ZOMBIE: freed more recently than the last recycling pass
 
    Allocation is double-buffered in a sense: at the beginning of each
@@ -107,26 +107,26 @@ struct block_list;
    zombie chips into the usable set; in-use chips are ignored.
 
    The class has two members to support higher-level functionality:
-   
+
        _owner: an opaque pointer which is used to verify that blocks
            are being released properly
-        
+
        _next: an embedded linked list node for use by the owner and
            otherwise ignored by the implementation
  */
 struct block_bits {
-    
-    typedef uint64_t     bitmap; 
+
+    typedef uint64_t     bitmap;
 
     enum         { MAX_CHIPS=8*sizeof(bitmap) };
-    
+
     NORET        block_bits(size_t chip_count);
-    
+
     size_t       acquire_contiguous(size_t chip_count);
 
     // @return whether released successfully
     bool         release_contiguous(size_t idx, size_t chip_count);
-    
+
     static
     bitmap       create_mask(size_t bits_set);
 
@@ -134,7 +134,7 @@ struct block_bits {
     size_t        zombie_count() const { return _popc(_zombie_chips); }
 
     void          recycle();
-    
+
     static
     size_t        _popc(bitmap bm);
 
@@ -174,12 +174,13 @@ struct block {
     void         recycle() { _bits.recycle(); }
 
     char*        _get(size_t idx, size_t chip_size);
-    
+
     block_bits      _bits;
     block_list*     _owner;
     block*          _next;
     // The memory managed:
-    char            _data[EMPTY_ARRAY_DIM];
+    // char            _data[EMPTY_ARRAY_DIM];
+    char            _data[0];
 };
 
 
@@ -189,11 +190,11 @@ struct block_pool {
 
     // true if /ptr/ points to data inside some block managed by this pool
     virtual bool    validate_pointer(void* ptr)=0;
-    
+
     virtual NORET    ~block_pool() { }
-    
+
 protected:
-    
+
     virtual block*   _acquire_block()=0;
     // takes back b, then returns b->_next
     virtual void     _release_block(block* b)=0;
@@ -202,9 +203,9 @@ protected:
 struct block_list {
     NORET        block_list(block_pool* pool, size_t chip_size,
                    size_t chip_count, size_t block_size);
-    
+
     NORET        ~block_list();
-    
+
     void*         acquire(size_t chip_size, size_t chip_count, size_t block_size);
     block*        acquire_block(size_t block_size);
 
@@ -216,7 +217,7 @@ struct block_list {
     block_pool*   _pool;
     size_t        _hit_count;
     double        _avg_hit_rate;
-    
+
 };
 
 
@@ -297,7 +298,7 @@ struct meta_min {
 
    For any given parameters there exists only one value of /BYTES/
    which is a power of two and utilizes 50% < util <= 100% of a
-   block_bit's chips. 
+   block_bit's chips.
  */
 template<int ChipSize, int OverheadBytes=sizeof(memory_block::block), int MaxChips=block_bits::MAX_CHIPS>
 struct meta_block_size : public fail_unless<(ChipSize > 0 && OverheadBytes >= 0)> {
@@ -307,10 +308,10 @@ struct meta_block_size : public fail_unless<(ChipSize > 0 && OverheadBytes >= 0)
     enum { MIN_CHIPS     = MAX_CHIPS/2 + 1 };
     enum { BYTES_NEEDED = MIN_CHIPS*ChipSize+OverheadBytes };
     enum { LOG2     = meta_log2<2*BYTES_NEEDED-1>::VALUE };
-    
+
     enum { BYTES     = 1 << LOG2 };
     fail_unless<((BYTES &- BYTES) == BYTES)>     power_of_two;
-    
+
     /* ugly corner case...
 
        if chips are small compared to overhead then we can end up with
@@ -319,10 +320,10 @@ struct meta_block_size : public fail_unless<(ChipSize > 0 && OverheadBytes >= 0)
 
        Note that this wasted space would be small compared with the
        enormous overhead that causes the situation in the first place.
-     */    
+     */
     enum { REAL_COUNT     = (BYTES-OverheadBytes)/ChipSize };
     fail_unless<((OVERHEAD + MIN_CHIPS*ChipSize) > (int)BYTES/2)> sane_chip_count;
-    
+
     enum { COUNT     = meta_min<MAX_CHIPS, REAL_COUNT>::VALUE };
     bounds_check<COUNT, MIN_CHIPS, MAX_CHIPS>     bounds;
 

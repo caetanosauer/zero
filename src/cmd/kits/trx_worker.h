@@ -34,7 +34,7 @@
 #define __SHORE_TRX_WORKER_H
 
 #include <boost/program_options.hpp>
-#include "thread.h"
+#include "kits_thread.h"
 #include "reqs.h"
 #include "util/stl_pooled_alloc.h"
 // Use this to enable verbode stats for worker threads

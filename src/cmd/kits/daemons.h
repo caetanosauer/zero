@@ -35,7 +35,7 @@
 
 #include "table_man.h"
 #include "shore_env.h"
-#include "thread.h"
+#include "kits_thread.h"
 
 class ShoreEnv;
 
