@@ -1,6 +1,6 @@
 #include "logarchive_index.h"
 
-#include <boost/regex.hpp>
+#include <regex>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
@@ -58,9 +58,9 @@ skip_log SKIP_LOGREC;
 
 bool ArchiveIndex::parseRunFileName(string fname, RunId& fstats)
 {
-    boost::regex run_rx(run_regex, boost::regex::perl);
-    boost::smatch res;
-    if (!boost::regex_match(fname, res, run_rx)) { return false; }
+    std::regex run_rx(run_regex);
+    std::smatch res;
+    if (!std::regex_match(fname, res, run_rx)) { return false; }
 
     fstats.level = std::stoi(res[1]);
 
@@ -112,7 +112,7 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
     maxLevel = 0;
     archpath = archdir;
     fs::directory_iterator it(archpath), eod;
-    boost::regex current_rx(current_regex, boost::regex::perl);
+    std::regex current_rx(current_regex);
 
     // create/load index
     unsigned runsFound = 0;
@@ -135,7 +135,7 @@ ArchiveIndex::ArchiveIndex(const sm_options& options)
 
             runsFound++;
         }
-        else if (boost::regex_match(fname, current_rx)) {
+        else if (std::regex_match(fname, current_rx)) {
             DBGTHRD(<< "Found unfinished log archive run. Deleting");
             fs::remove(fpath);
         }
@@ -481,10 +481,10 @@ void ArchiveIndex::deleteRuns(unsigned replicationFactor)
 
     if (replicationFactor == 0) { // delete all runs
         fs::directory_iterator it(archpath), eod;
-        boost::regex run_rx(run_regex, boost::regex::perl);
+        std::regex run_rx(run_regex);
         for (; it != eod; it++) {
             string fname = it->path().filename().string();
-            if (boost::regex_match(fname, run_rx)) {
+            if (std::regex_match(fname, run_rx)) {
                 fs::remove(it->path());
             }
         }
