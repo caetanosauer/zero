@@ -35,7 +35,7 @@
 
 
 #include "zipfian.h"
-#include "thread.h"
+#include "kits_thread.h"
 
 int URand(const int low, const int high);
 

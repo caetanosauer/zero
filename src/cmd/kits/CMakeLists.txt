@@ -12,7 +12,7 @@ set(kits_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/reqs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/daemons.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/skewer.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/thread.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/kits_thread.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/trx_worker.cpp
 
     # UTILITIES

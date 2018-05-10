@@ -29,7 +29,6 @@
 #include <cstddef>
 #include <unistd.h>
 #include "trace.h"
-//#include "util/exception.h"
 #include <type_traits> // alignment_of
 
 // see http://src.opensolaris.org/source/xref/sfw/usr/src/cmd/gcc/gcc-3.4.3/gcc/testsuite/g++.old-deja/g++.abi/align.C

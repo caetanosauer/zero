@@ -34,7 +34,7 @@
 #include "util/trace.h"              /* for prototypes */
 // #include "util/sync.h"
 #include <cstdio>
-#include "thread.h"
+#include "kits_thread.h"
 
 /* internal data structures */
 #if 0

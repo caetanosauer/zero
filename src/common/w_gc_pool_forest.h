@@ -128,6 +128,10 @@ union gc_pointer_raw {
     uint64_t word;
 };
 
+// csauer: gcc 6+ needs this
+inline bool operator==(const gc_pointer_raw& a, const gc_pointer_raw& b) { return a.word == b.word; };
+inline bool operator!=(const gc_pointer_raw& a, const gc_pointer_raw& b) { return a.word != b.word; };
+
 /**
  * \brief Wrapper for gc_pointer_raw
  * \ingroup LOCKFREE
