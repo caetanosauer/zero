@@ -1,4 +1,6 @@
 build/
+debug/
+release/
 *~
 dox
 doxygen.warnings
