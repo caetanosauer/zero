@@ -138,7 +138,7 @@ void KitsCommand::setupOptions()
             "Transaction code or mix identifier (0 = all trxs)")
         ("queried_sf,q", po::value<int>(&opt_queried_sf)->default_value(1),
             "Scale factor to which to restrict queries")
-        ("asyncCommit", po::value<bool>(&opt_asyncCommit)->default_value(false)
+        ("asyncCommit", po::value<bool>(&opt_asyncCommit)->default_value(true)
             ->implicit_value(true),
             "Whether to use asynchronous commit (non-durable) for Kits transactions")
         ("spread", po::value<bool>(&opt_spread)->default_value(true)
