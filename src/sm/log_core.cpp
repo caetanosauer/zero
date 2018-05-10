@@ -458,7 +458,7 @@ log_core::log_core(const sm_options& options)
     _ticker = NULL;
     if (options.get_bool_option("sm_ticker_enable", false)) {
         bool msec = options.get_bool_option("sm_ticker_msec", false);
-        bool print_tput = options.get_bool_option("sm_ticker_print_tput", false);
+        bool print_tput = options.get_bool_option("sm_ticker_print_tput", true);
         _ticker = new ticker_thread_t(msec, print_tput);
     }
 
