@@ -428,10 +428,11 @@ protected:
     // Used for some benchmarks - number of records to access
     volatile uint _rec_to_acc;
 
-    // The insert/delete/probe frequencies for microbenchmarks
+    // The insert/delete/probe/update frequencies for microbenchmarks
     int _insert_freq;
     int _delete_freq;
     int _probe_freq;
+    int _update_freq;
 
     // Frequency at which checkpoits are taken (period in seconds)
     int _chkpt_freq;
@@ -568,7 +569,7 @@ public:
     virtual w_rc_t update_partitioning() { return (RCOK); }
 
     // -- insert/delete/probe frequencies for microbenchmarks -- //
-    void set_freqs(int insert_freq = 0, int delete_freq = 0, int probe_freq = 0);
+    void set_freqs(int insert_freq = 0, int delete_freq = 0, int probe_freq = 0, int update_freq = 0);
 
     // checkpoint frequency
     void set_chkpt_freq(int);

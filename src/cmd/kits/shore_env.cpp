@@ -333,14 +333,16 @@ bool ShoreEnv::is_hacks_enabled() const
  *  @brief: Set the insert/delete/probe frequencies
  *
  ********************************************************************/
-void ShoreEnv::set_freqs(int insert_freq, int delete_freq, int probe_freq)
+void ShoreEnv::set_freqs(int insert_freq, int delete_freq, int probe_freq, int update_freq)
 {
     assert ((insert_freq>=0) && (insert_freq<=100));
     assert ((delete_freq>=0) && (delete_freq<=100));
     assert ((probe_freq>=0) && (probe_freq<=100));
+    assert ((update_freq>=0) && (update_freq<=100));
     _insert_freq = insert_freq;
     _delete_freq = delete_freq;
     _probe_freq = probe_freq;
+    _update_freq = update_freq;
 }
 
 void ShoreEnv::set_chkpt_freq(int chkpt_freq)

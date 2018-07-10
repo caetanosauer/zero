@@ -17,6 +17,7 @@ namespace fs = boost::filesystem;
 #include "tpcc/tpcc_env.h"
 #include "tpcc/tpcc_client.h"
 #include "tpcc/tpcc_input.h"
+#include "ycsb/ycsb.h"
 
 #include "util/stopwatch.h"
 
@@ -115,7 +116,7 @@ void KitsCommand::setupOptions()
     boost::program_options::options_description kits("Kits Options");
     kits.add_options()
         ("benchmark,b", po::value<string>(&opt_benchmark)->required(),
-            "Benchmark to execute. Possible values: tpcb, tpcc")
+            "Benchmark to execute. Possible values: tpcb, tpcc, ycsb")
         ("load", po::value<bool>(&opt_load)->default_value(false)
             ->implicit_value(true),
             "If set, log and archive folders are emptied, database files \
@@ -138,6 +139,8 @@ void KitsCommand::setupOptions()
             "Transaction code or mix identifier (0 = all trxs)")
         ("queried_sf,q", po::value<int>(&opt_queried_sf)->default_value(1),
             "Scale factor to which to restrict queries")
+        ("updateFreq", po::value<int>(&opt_update_freq)->default_value(50),
+            "Workload update frequency beteen 0 and 100")
         ("asyncCommit", po::value<bool>(&opt_asyncCommit)->default_value(true)
             ->implicit_value(true),
             "Whether to use asynchronous commit (non-durable) for Kits transactions")
@@ -247,6 +250,9 @@ void KitsCommand::init()
     else if (opt_benchmark == "tpcc") {
         initShoreEnv<tpcc::ShoreTPCCEnv>();
     }
+    else if (opt_benchmark == "ycsb") {
+        initShoreEnv<ycsb::ShoreYCSBEnv>();
+    }
     else {
         throw runtime_error("Unknown benchmark string");
     }
@@ -259,6 +265,9 @@ void KitsCommand::runBenchmark()
     }
     else if (opt_benchmark == "tpcc") {
         runBenchmarkSpec<tpcc::baseline_tpcc_client_t, tpcc::ShoreTPCCEnv>();
+    }
+    else if (opt_benchmark == "ycsb") {
+        runBenchmarkSpec<ycsb::baseline_ycsb_client_t, ycsb::ShoreYCSBEnv>();
     }
     else {
         throw runtime_error("Unknown benchmark string");
@@ -278,6 +287,8 @@ void KitsCommand::runBenchmarkSpec()
     if (opt_queried_sf <= 0) {
         opt_queried_sf = shoreEnv->get_sf();
     }
+    // TODO only update frequency supported for now, and only on YCSB
+    shoreEnv->set_freqs(0, 0, 0, opt_update_freq);
 
     stopwatch_t timer;
 
