@@ -147,7 +147,6 @@ protected:
 
     // for processor binding
     bool          _is_bound;
-    int _prs_id;
 
     int _id; // thread id
     int _rv;
@@ -159,17 +158,15 @@ public:
     base_client_t()
         : thread_t("none"), _env(NULL), _measure_type(MT_UNDEF),
           _trxid(-1), _notrxs(-1), _think_time(0),
-          _is_bound(false), _prs_id(-1),
-          _rv(1)
+          _is_bound(false), _rv(1)
     { }
 
     base_client_t(std::string tname, const int id, ShoreEnv* env,
                   const MeasurementType aType, const int trxid,
-                  const int numOfTrxs,
-                  int aprsid = -1) // PBIND_NONE)
+                  const int numOfTrxs)
 	: thread_t(tname), _env(env), _measure_type(aType),
           _trxid(trxid), _notrxs(numOfTrxs), _think_time(0),
-          _is_bound(false), _prs_id(aprsid), _id(id), _rv(0)
+          _id(id), _rv(0)
     {
         assert (_env);
         assert (_measure_type != MT_UNDEF);
@@ -182,9 +179,6 @@ public:
 
     // thread entrance
     void work() {
-
-        TRY_TO_BIND(_prs_id,_is_bound);
-
         // 2. init env in not initialized
         if (!_env->is_initialized()) {
             if (_env->init()) {

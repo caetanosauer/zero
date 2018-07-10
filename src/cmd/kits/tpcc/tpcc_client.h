@@ -64,7 +64,7 @@ public:
     baseline_tpcc_client_t(std::string tname, const int id, ShoreTPCCEnv* env,
                            const MeasurementType aType, const int trxid,
                            const int numOfTrxs,
-                           int aprsid, const int sWH, const double qf,
+                           const int sWH, const double qf,
                            int tspread);
 
     ~baseline_tpcc_client_t() { }

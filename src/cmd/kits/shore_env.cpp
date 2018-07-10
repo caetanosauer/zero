@@ -559,7 +559,7 @@ int ShoreEnv::start()
     WorkerPtr aworker;
     for (uint i=0; i<_worker_cnt; i++) {
 
-        aworker = new Worker(this,std::string("work-%d", i), -1,_bUseSLI);
+        aworker = new Worker(this,std::string("work-%d", i), _bUseSLI);
         _workers.push_back(aworker);
 
         aworker->init(lc);

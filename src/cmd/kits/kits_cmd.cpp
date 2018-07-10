@@ -329,7 +329,6 @@ template<class Client, class Environment>
 void KitsCommand::createClients()
 {
     // reset starting cpu and wh id
-    int current_prs_id = -1;
     int wh_id = 0;
 
     mtype = MT_UNDEF;
@@ -355,17 +354,11 @@ void KitsCommand::createClients()
             wh_id = (i%(int)opt_queried_sf)+1;
         }
 
-        // CS: 1st arg is binding type, which I don't know what it is for It
-        // seems like it is a way to specify what the next CPU id is.  If
-        // BT_NONE is given, it simply returns -1 TODO: this is required to
-        // implement opt_spread -- take a look!  current_prs_id =
-        // next_cpu(BT_NONE, current_prs_id);
         Client* client = new Client(
                 "client-" + std::to_string(i), i,
                 (Environment*) shoreEnv,
                 mtype, opt_select_trx,
                 trxsPerThread,
-                current_prs_id /* cpu id -- see below */,
                 wh_id, opt_queried_sf,
                 opt_num_threads);
         w_assert0(client);
