@@ -44,10 +44,9 @@ baseline_tpcc_client_t::baseline_tpcc_client_t(std::string tname, const int id,
                                                const MeasurementType aType,
                                                const int trxid,
                                                const int numOfTrxs,
-                                               int aprsid,
                                                const int sWH, const double qf,
                                                int tspread)
-    : base_client_t(tname,id,env,aType,trxid,numOfTrxs,aprsid),
+    : base_client_t(tname,id,env,aType,trxid,numOfTrxs),
       _wh(sWH), _qf(qf), _tspread(tspread)
 {
     assert (env);

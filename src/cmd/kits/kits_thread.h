@@ -43,24 +43,6 @@
 
 #include "thread_wrapper.h"
 
-#ifdef __spacrv9
-// Macro that tries to bind a thread to a specific CPU
-#define TRY_TO_BIND(cpu,boundflag)                                      \
-    if (processor_bind(P_LWPID, P_MYID, cpu, NULL)) {                   \
-       TRACE( TRACE_CPU_BINDING, "Cannot bind to processor (%d)\n", cpu);  \
-       boundflag = false; }                                             \
-    else {                                                              \
-    TRACE( TRACE_CPU_BINDING, "Binded to processor (%d)\n", cpu);       \
-    boundflag = true; }
-
-#else
-
-// No-op
-#define TRY_TO_BIND(cpu,boundflag)              \
- /*    TRACE( TRACE_DEBUG, "Should bind me to (%d)\n", _prs_id); */
-
-#endif
-
 #ifndef __GCC
 //using std::rand_r;
 #endif
