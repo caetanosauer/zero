@@ -232,6 +232,7 @@ public:
     void set_value(const unsigned idx, const short v);
     void set_value(const unsigned idx, const double v);
     void set_value(const unsigned idx, const long long v);
+    void set_value(const unsigned idx, const uint64_t v);
     void set_value(const unsigned idx, const decimal v);
     void set_value(const unsigned idx, const time_t v);
     void set_value(const unsigned idx, const char v);
@@ -249,6 +250,7 @@ public:
     bool get_value(const unsigned idx, char& dest) const;
     bool get_value(const unsigned idx, char* destbuf, const unsigned bufsize) const;
     bool get_value(const unsigned idx, double& dest) const;
+    bool get_value(const unsigned idx, uint64_t& dest) const;
     bool get_value(const unsigned idx, long long& dest) const;
     bool get_value(const unsigned idx, decimal& dest) const;
     bool get_value(const unsigned idx, time_t& dest) const;
@@ -369,6 +371,14 @@ inline void table_row_t::set_value(const unsigned idx, const double v)
 }
 
 inline void table_row_t::set_value(const unsigned idx, const long long v)
+{
+    assert (_is_setup);
+    assert (idx < _field_cnt);
+    assert (_pvalues[idx].is_setup());
+    _pvalues[idx].set_long_value(v);
+}
+
+inline void table_row_t::set_value(const unsigned idx, const uint64_t v)
 {
     assert (_is_setup);
     assert (idx < _field_cnt);
@@ -520,6 +530,19 @@ inline bool table_row_t::get_value(const unsigned idx,
 
 inline bool table_row_t::get_value(const unsigned idx,
                                    long long& dest) const
+{
+    assert (_is_setup);
+    assert(idx < _field_cnt);
+    if (_pvalues[idx].is_null()) {
+        dest = 0;
+        return false;
+    }
+    dest = _pvalues[idx].get_long_value();
+    return true;
+}
+
+inline bool table_row_t::get_value(const unsigned idx,
+                                   uint64_t& dest) const
 {
     assert (_is_setup);
     assert(idx < _field_cnt);

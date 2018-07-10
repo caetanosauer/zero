@@ -40,6 +40,7 @@ protected:
     int opt_num_threads;
     int opt_select_trx;
     int opt_queried_sf;
+    int opt_update_freq;
     bool opt_eager;
     bool opt_skew;
     bool opt_spread;
