@@ -14,7 +14,7 @@ bool _change_load = false;
 constexpr unsigned RecordsPerSF = 100'000;
 // Records inserted on each populate transaction
 constexpr unsigned RecordsPerPopXct = 1000;
-static_assert(RecordsPerSF % RecordsPerPopXct == 0);
+static_assert(RecordsPerSF % RecordsPerPopXct == 0, "");
 
 // Thread-local Env stats
 static thread_local ShoreYCSBTrxStats my_stats;
