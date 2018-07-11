@@ -43,7 +43,7 @@ int get_key(int sf, int specificPrefix, int tspread)
     }
     w_assert1(prefix < std::numeric_limits<uint16_t>::max());
     int user = URand(0, RecordsPerSF-1);
-    uint64_t key = (static_cast<uint64_t>(prefix) << 24) | static_cast<uint64_t>(user);
+    uint64_t key = (static_cast<uint64_t>(prefix) << 48) | static_cast<uint64_t>(user);
     // cout << "probing prefix " << prefix << " user " << user << " key " << key <<endl;
     return key;
 }
@@ -233,7 +233,7 @@ public:
         for(uint64_t i=0; i < _count; i++) {
             uint64_t prefix = _start + i;
             for(uint64_t j=0; j < RecordsPerSF; j += RecordsPerPopXct) {
-               uint64_t firstKey = (prefix << 24) | j;
+               uint64_t firstKey = (prefix << 48) | j;
                populate_db_input_t in{firstKey, RecordsPerPopXct};
                W_COERCE(_env->xct_populate_db(prefix, in));
             }
