@@ -23,7 +23,7 @@ static thread_local ShoreYCSBTrxStats my_stats;
 const int XCT_YCSB_SIMPLE = 99;
 
 // This is similar to get_wh() used in tpcc_input.cpp
-int get_key(int sf, int specificPrefix, int tspread)
+uint64_t get_key(int sf, int specificPrefix, int tspread)
 {
     // 10-byte key has 2 parts: prefix and user
     // - Prefix (2 bytes) is determined by the sf, like the warehouse of TPC-C
@@ -42,7 +42,7 @@ int get_key(int sf, int specificPrefix, int tspread)
         w_assert1(prefix > 0);
     }
     w_assert1(prefix < std::numeric_limits<uint16_t>::max());
-    int user = URand(0, RecordsPerSF-1);
+    uint64_t user = URand(0, RecordsPerSF-1);
     uint64_t key = (static_cast<uint64_t>(prefix) << 48) | static_cast<uint64_t>(user);
     // cout << "probing prefix " << prefix << " user " << user << " key " << key <<endl;
     return key;
