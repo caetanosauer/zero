@@ -449,7 +449,7 @@ rc_t ShoreYCSBEnv::run_one_xct(Request* prequest)
     return (RCOK);
 }
 
-DEFINE_TRX(ShoreYCSBEnv,read);
+DEFINE_TRX_NO_COMMIT(ShoreYCSBEnv,read);
 DEFINE_TRX(ShoreYCSBEnv,update);
 DEFINE_TRX(ShoreYCSBEnv,populate_db);
 
@@ -487,6 +487,8 @@ rc_t ShoreYCSBEnv::xct_update(const int /* xct_id */, update_input_t& pin)
     assert (_initialized);
     assert (_loaded);
 
+    W_DO(db()->begin_xct());
+
     tuple_guard<ycsbtable_man_impl> tuple(ycsbtable_man);
     rep_row_t areprow(ycsbtable_man->ts());
     rep_row_t areprowkey(ycsbtable_man->ts());
@@ -496,12 +498,12 @@ rc_t ShoreYCSBEnv::xct_update(const int /* xct_id */, update_input_t& pin)
     tuple->_rep_key = &areprowkey;
 
     // Probe index for given key
-    W_DO(ycsbtable_man->index_probe_forupdate(_pssm, tuple, pin.key));
+    W_COERCE(ycsbtable_man->index_probe_forupdate(_pssm, tuple, pin.key));
     // Update value of given field
     w_assert1(pin.field_number <= FieldCount);
     w_assert1(pin.field_number > 0);
     tuple->set_value(pin.field_number, pin.value);
-    W_DO(ycsbtable_man->update_tuple(_pssm, tuple));
+    W_COERCE(ycsbtable_man->update_tuple(_pssm, tuple));
 
     return RCOK;
 }

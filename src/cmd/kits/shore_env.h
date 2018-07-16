@@ -121,6 +121,17 @@ const int SHORE_NUM_OF_RETRIES       = 3;
 
 #else // ***** NO FLUSHER ***** //
 
+#define DEFINE_RUN_WITH_INPUT_TRX_WRAPPER_NO_COMMIT(cname,trxlid,trximpl)         \
+    w_rc_t cname::run_##trximpl(Request* prequest, trxlid##_input_t& in) { \
+        int xct_id = prequest->xct_id();                                \
+        /* TRACE( TRACE_TRX_FLOW, "%d. %s ...\n", xct_id, #trximpl);     */  \
+        _inc_##trxlid##_att();                                          \
+        w_rc_t e = xct_##trximpl(xct_id, in);                           \
+        prequest->notify_client();                                      \
+        if ((*&_measure)!=MST_MEASURE) return (RCOK);                   \
+        _env_stats.inc_trx_com();                                       \
+        return (RCOK); }
+
 #define DEFINE_RUN_WITH_INPUT_TRX_WRAPPER(cname,trxlid,trximpl)         \
     w_rc_t cname::run_##trximpl(Request* prequest, trxlid##_input_t& in) { \
         int xct_id = prequest->xct_id();                                \
@@ -164,11 +175,16 @@ const int SHORE_NUM_OF_RETRIES       = 3;
 
 
 // In the common case, there is a single implementation per transaction
+#define DEFINE_TRX_NO_COMMIT(cname,trx)                                   \
+    DEFINE_RUN_WITHOUT_INPUT_TRX_WRAPPER(cname,trx,trx);        \
+    DEFINE_RUN_WITH_INPUT_TRX_WRAPPER_NO_COMMIT(cname,trx,trx);           \
+    DEFINE_TRX_STATS(cname,trx)
+
+// In the common case, there is a single implementation per transaction
 #define DEFINE_TRX(cname,trx)                                   \
     DEFINE_RUN_WITHOUT_INPUT_TRX_WRAPPER(cname,trx,trx);        \
     DEFINE_RUN_WITH_INPUT_TRX_WRAPPER(cname,trx,trx);           \
     DEFINE_TRX_STATS(cname,trx)
-
 
 #define CHECK_XCT_RETURN(rc,retry,ENV)			\
     if (rc.is_error()) {						\

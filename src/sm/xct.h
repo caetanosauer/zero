@@ -1002,17 +1002,19 @@ xct_t::set_undo_nxt(const lsn_t &l)
 
 /**\endcond skip */
 
-// TODO. this should accept store id/volume id.
-// it should say 'does not need' if we have absolute locks in LIL.
-// same thing can be manually achieved by user code, though.
-inline bool
-g_xct_does_need_lock()
-{
-    xct_t* x = xct();
-    if (x == NULL)  return false;
-    if (x->is_sys_xct()) return false; // system transaction never needs locks
-    return x->get_query_concurrency() == smlevel_0::t_cc_keyrange;
-}
+constexpr bool g_xct_does_need_lock() { return false; }
+
+// // TODO. this should accept store id/volume id.
+// // it should say 'does not need' if we have absolute locks in LIL.
+// // same thing can be manually achieved by user code, though.
+// inline bool
+// g_xct_does_need_lock()
+// {
+//     xct_t* x = xct();
+//     if (x == NULL)  return false;
+//     if (x->is_sys_xct()) return false; // system transaction never needs locks
+//     return x->get_query_concurrency() == smlevel_0::t_cc_keyrange;
+// }
 
 inline bool
 g_xct_does_ex_lock_for_select()
